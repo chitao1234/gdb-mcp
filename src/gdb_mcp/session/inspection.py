@@ -3,18 +3,22 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Optional, cast
 
 from ..domain import (
     BacktraceInfo,
     ExpressionValueInfo,
+    FrameRecord,
     FrameInfo,
     FrameSelectionInfo,
     OperationError,
     OperationSuccess,
+    RegisterRecord,
     RegistersInfo,
+    ThreadRecord,
     ThreadListInfo,
     ThreadSelectionInfo,
+    VariableRecord,
     VariablesInfo,
 )
 from ..transport import build_evaluate_expression_command, extract_mi_result_payload
@@ -54,8 +58,10 @@ class SessionInspectionService:
 
         if not isinstance(thread_info, dict):
             thread_info = {}
-        threads = thread_info.get("threads", [])
-        current_thread = thread_info.get("current-thread-id")
+        raw_threads = thread_info.get("threads", [])
+        threads = raw_threads if isinstance(raw_threads, list) else []
+        raw_current_thread = thread_info.get("current-thread-id")
+        current_thread = raw_current_thread if isinstance(raw_current_thread, str) else None
         logger.debug(
             "get_threads: found %s threads, current_thread_id=%s", len(threads), current_thread
         )
@@ -63,7 +69,7 @@ class SessionInspectionService:
 
         return OperationSuccess(
             ThreadListInfo(
-                threads=threads,
+                threads=cast(list[ThreadRecord], threads),
                 current_thread_id=current_thread,
                 count=len(threads),
             )
@@ -78,14 +84,17 @@ class SessionInspectionService:
         if isinstance(result, OperationError):
             return result
 
-        mi_result = extract_mi_result_payload(command_result_payload(result)) or {}
+        raw_payload = extract_mi_result_payload(command_result_payload(result)) or {}
+        mi_result = raw_payload if isinstance(raw_payload, dict) else {}
         self._runtime.mark_thread_selected(thread_id)
 
         return OperationSuccess(
             ThreadSelectionInfo(
                 thread_id=thread_id,
-                new_thread_id=mi_result.get("new-thread-id"),
-                frame=mi_result.get("frame"),
+                new_thread_id=mi_result.get("new-thread-id")
+                if isinstance(mi_result.get("new-thread-id"), str)
+                else None,
+                frame=cast(FrameRecord | None, mi_result.get("frame")),
             )
         )
 
@@ -108,10 +117,14 @@ class SessionInspectionService:
         if isinstance(result, OperationError):
             return result
 
-        stack_data = extract_mi_result_payload(command_result_payload(result)) or {}
-        frames = stack_data.get("stack", [])
+        raw_stack_data = extract_mi_result_payload(command_result_payload(result)) or {}
+        stack_data = raw_stack_data if isinstance(raw_stack_data, dict) else {}
+        raw_frames = stack_data.get("stack", [])
+        frames = raw_frames if isinstance(raw_frames, list) else []
 
-        return OperationSuccess(BacktraceInfo(thread_id=thread_id, frames=frames, count=len(frames)))
+        return OperationSuccess(
+            BacktraceInfo(thread_id=thread_id, frames=cast(list[FrameRecord], frames), count=len(frames))
+        )
 
     def get_frame_info(self) -> OperationSuccess[FrameInfo] | OperationError:
         """Get information about the current stack frame."""
@@ -122,10 +135,12 @@ class SessionInspectionService:
         if isinstance(result, OperationError):
             return result
 
-        mi_result = extract_mi_result_payload(command_result_payload(result)) or {}
-        frame = mi_result.get("frame", {})
+        raw_payload = extract_mi_result_payload(command_result_payload(result)) or {}
+        mi_result = raw_payload if isinstance(raw_payload, dict) else {}
+        raw_frame = mi_result.get("frame", {})
+        frame = raw_frame if isinstance(raw_frame, dict) else {}
 
-        return OperationSuccess(FrameInfo(frame=frame))
+        return OperationSuccess(FrameInfo(frame=cast(FrameRecord, frame)))
 
     def select_frame(self, frame_number: int) -> OperationSuccess[FrameSelectionInfo] | OperationError:
         """Select a specific stack frame to make it the current frame."""
@@ -150,10 +165,14 @@ class SessionInspectionService:
                 )
             )
 
-        mi_result = extract_mi_result_payload(command_result_payload(frame_info_result)) or {}
-        frame_info = mi_result.get("frame", {})
+        raw_payload = extract_mi_result_payload(command_result_payload(frame_info_result)) or {}
+        mi_result = raw_payload if isinstance(raw_payload, dict) else {}
+        raw_frame = mi_result.get("frame", {})
+        frame_info = raw_frame if isinstance(raw_frame, dict) else {}
 
-        return OperationSuccess(FrameSelectionInfo(frame_number=frame_number, frame=frame_info))
+        return OperationSuccess(
+            FrameSelectionInfo(frame_number=frame_number, frame=cast(FrameRecord, frame_info))
+        )
 
     def evaluate_expression(self, expression: str) -> OperationSuccess[ExpressionValueInfo] | OperationError:
         """Evaluate an expression in the current context."""
@@ -164,7 +183,8 @@ class SessionInspectionService:
         if isinstance(result, OperationError):
             return result
 
-        mi_result = extract_mi_result_payload(command_result_payload(result)) or {}
+        raw_payload = extract_mi_result_payload(command_result_payload(result)) or {}
+        mi_result = raw_payload if isinstance(raw_payload, dict) else {}
         value = mi_result.get("value")
 
         return OperationSuccess(ExpressionValueInfo(expression=expression, value=value))
@@ -195,10 +215,14 @@ class SessionInspectionService:
         if isinstance(result, OperationError):
             return result
 
-        mi_result = extract_mi_result_payload(command_result_payload(result)) or {}
-        variables = mi_result.get("variables", [])
+        raw_payload = extract_mi_result_payload(command_result_payload(result)) or {}
+        mi_result = raw_payload if isinstance(raw_payload, dict) else {}
+        raw_variables = mi_result.get("variables", [])
+        variables = raw_variables if isinstance(raw_variables, list) else []
 
-        return OperationSuccess(VariablesInfo(thread_id=thread_id, frame=frame, variables=variables))
+        return OperationSuccess(
+            VariablesInfo(thread_id=thread_id, frame=frame, variables=cast(list[VariableRecord], variables))
+        )
 
     def get_registers(self) -> OperationSuccess[RegistersInfo] | OperationError:
         """Get register values for current frame."""
@@ -209,7 +233,9 @@ class SessionInspectionService:
         if isinstance(result, OperationError):
             return result
 
-        mi_result = extract_mi_result_payload(command_result_payload(result)) or {}
-        registers = mi_result.get("register-values", [])
+        raw_payload = extract_mi_result_payload(command_result_payload(result)) or {}
+        mi_result = raw_payload if isinstance(raw_payload, dict) else {}
+        raw_registers = mi_result.get("register-values", [])
+        registers = raw_registers if isinstance(raw_registers, list) else []
 
-        return OperationSuccess(RegistersInfo(registers=registers))
+        return OperationSuccess(RegistersInfo(registers=cast(list[RegisterRecord], registers)))

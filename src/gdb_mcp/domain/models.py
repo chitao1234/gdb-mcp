@@ -1,7 +1,65 @@
 """Typed domain models shared across service layers."""
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TypedDict, TypeAlias
+
+
+StructuredPayload: TypeAlias = dict[str, object]
+
+
+class FrameRecord(TypedDict, total=False):
+    """Structured stack-frame payload returned by GDB."""
+
+    level: str
+    addr: str
+    func: str
+    file: str
+    fullname: str
+    line: str
+    arch: str
+
+
+class ThreadRecord(TypedDict, total=False):
+    """Structured thread payload returned by GDB."""
+
+    id: str
+    target_id: str
+    name: str
+    state: str
+    core: str
+    frame: FrameRecord
+
+
+class BreakpointRecord(TypedDict, total=False):
+    """Structured breakpoint payload returned by GDB."""
+
+    number: str
+    type: str
+    disp: str
+    enabled: str
+    addr: str
+    func: str
+    file: str
+    fullname: str
+    line: str
+    times: str
+    original_location: str
+
+
+class VariableRecord(TypedDict, total=False):
+    """Structured local-variable payload returned by GDB."""
+
+    name: str
+    value: str
+    type: str
+    arg: str
+
+
+class RegisterRecord(TypedDict, total=False):
+    """Structured register payload returned by GDB."""
+
+    number: str
+    value: str
 
 
 @dataclass(slots=True, frozen=True)
@@ -22,8 +80,8 @@ class SessionStartInfo:
     core: str | None = None
     startup_output: str | None = None
     warnings: list[str] | None = None
-    env_output: list[dict[str, Any]] | None = None
-    init_output: list[dict[str, Any]] | None = None
+    env_output: list[StructuredPayload] | None = None
+    init_output: list[StructuredPayload] | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -38,7 +96,7 @@ class MessageResult:
     """Message plus structured result payload."""
 
     message: str
-    result: Any
+    result: StructuredPayload
     status: str = "success"
 
 
@@ -48,15 +106,15 @@ class CommandExecutionInfo:
 
     command: str
     output: str | None = None
-    result: dict[str, Any] | None = None
+    result: StructuredPayload | None = None
 
 
 @dataclass(slots=True, frozen=True)
 class ThreadListInfo:
     """Structured thread-list response."""
 
-    threads: list[Any]
-    current_thread_id: Any
+    threads: list[ThreadRecord]
+    current_thread_id: str | None
     count: int
 
 
@@ -65,8 +123,8 @@ class ThreadSelectionInfo:
     """Structured thread-selection response."""
 
     thread_id: int
-    new_thread_id: Any = None
-    frame: Any = None
+    new_thread_id: str | None = None
+    frame: FrameRecord | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -74,7 +132,7 @@ class BacktraceInfo:
     """Structured backtrace response."""
 
     thread_id: int | None
-    frames: list[Any]
+    frames: list[FrameRecord]
     count: int
 
 
@@ -82,7 +140,7 @@ class BacktraceInfo:
 class FrameInfo:
     """Current frame details."""
 
-    frame: Any
+    frame: FrameRecord
 
 
 @dataclass(slots=True, frozen=True)
@@ -90,7 +148,7 @@ class FrameSelectionInfo:
     """Structured frame-selection response."""
 
     frame_number: int
-    frame: Any | None = None
+    frame: FrameRecord | None = None
     message: str | None = None
 
 
@@ -98,14 +156,14 @@ class FrameSelectionInfo:
 class BreakpointInfo:
     """Single breakpoint payload."""
 
-    breakpoint: Any
+    breakpoint: BreakpointRecord
 
 
 @dataclass(slots=True, frozen=True)
 class BreakpointListInfo:
     """Structured breakpoint-list response."""
 
-    breakpoints: list[Any]
+    breakpoints: list[BreakpointRecord]
     count: int
 
 
@@ -114,7 +172,7 @@ class ExpressionValueInfo:
     """Expression evaluation payload."""
 
     expression: str
-    value: Any
+    value: object
 
 
 @dataclass(slots=True, frozen=True)
@@ -123,14 +181,14 @@ class VariablesInfo:
 
     thread_id: int | None
     frame: int
-    variables: list[Any]
+    variables: list[VariableRecord]
 
 
 @dataclass(slots=True, frozen=True)
 class RegistersInfo:
     """Register inspection payload."""
 
-    registers: list[Any]
+    registers: list[RegisterRecord]
 
 
 @dataclass(slots=True, frozen=True)

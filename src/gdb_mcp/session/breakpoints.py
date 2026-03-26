@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Optional, cast
 
-from ..domain import BreakpointInfo, BreakpointListInfo, OperationError, OperationSuccess, SessionMessage
+from ..domain import (
+    BreakpointInfo,
+    BreakpointListInfo,
+    BreakpointRecord,
+    OperationError,
+    OperationSuccess,
+    SessionMessage,
+)
 from ..transport import extract_mi_result_payload, quote_mi_string
 from .command_runner import SessionCommandRunner
 from .constants import DEFAULT_TIMEOUT_SEC
@@ -52,7 +59,8 @@ class SessionBreakpointService:
             )
 
         bp_info = mi_result if isinstance(mi_result, dict) else {}
-        breakpoint = bp_info.get("bkpt", bp_info)
+        raw_breakpoint = bp_info.get("bkpt", bp_info)
+        breakpoint = raw_breakpoint if isinstance(raw_breakpoint, dict) else {}
 
         if not breakpoint:
             logger.warning("Empty breakpoint result for %s: %s", location, mi_result)
@@ -61,7 +69,7 @@ class SessionBreakpointService:
                 details={"raw_result": result.value},
             )
 
-        return OperationSuccess(BreakpointInfo(breakpoint=breakpoint))
+        return OperationSuccess(BreakpointInfo(breakpoint=cast(BreakpointRecord, breakpoint)))
 
     def list_breakpoints(self) -> OperationSuccess[BreakpointListInfo] | OperationError:
         """List all breakpoints with structured data."""
@@ -70,11 +78,19 @@ class SessionBreakpointService:
         if isinstance(result, OperationError):
             return result
 
-        mi_result = extract_mi_result_payload(command_result_payload(result)) or {}
-        bp_table = mi_result.get("BreakpointTable", {})
-        breakpoints = bp_table.get("body", [])
+        raw_payload = extract_mi_result_payload(command_result_payload(result)) or {}
+        mi_result = raw_payload if isinstance(raw_payload, dict) else {}
+        raw_bp_table = mi_result.get("BreakpointTable", {})
+        bp_table = raw_bp_table if isinstance(raw_bp_table, dict) else {}
+        raw_breakpoints = bp_table.get("body", [])
+        breakpoints = raw_breakpoints if isinstance(raw_breakpoints, list) else []
 
-        return OperationSuccess(BreakpointListInfo(breakpoints=breakpoints, count=len(breakpoints)))
+        return OperationSuccess(
+            BreakpointListInfo(
+                breakpoints=cast(list[BreakpointRecord], breakpoints),
+                count=len(breakpoints),
+            )
+        )
 
     def delete_breakpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
         """Delete a breakpoint by its number."""
