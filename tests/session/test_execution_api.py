@@ -140,6 +140,29 @@ class TestExecutionApi:
         assert "Thread ID 999 not known" in result["message"]
         assert controller.io_manager.stdin.writes[0].decode().endswith("-thread-select 999\n")
 
+    def test_run_with_args_preserves_argument_boundaries(
+        self,
+        scripted_running_session,
+        mi_result,
+        mi_notify,
+    ):
+        """run(args) should quote arguments instead of flattening them unsafely."""
+
+        session, controller = scripted_running_session(
+            [mi_result()],
+            [
+                mi_result(message="running"),
+                mi_notify("stopped", {"reason": "exited-normally"}),
+            ],
+        )
+
+        result = result_to_mapping(session.run(args=["--name", "hello world", 'quote"value']))
+
+        assert result["status"] == "success"
+        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert '-exec-arguments "--name" "hello world" "quote\\"value"\n' in written[0]
+        assert written[1].endswith("-exec-run\n")
+
 
 class TestCallFunctionApi:
     """Test function-call behavior through the public API."""

@@ -168,6 +168,20 @@ class SessionLifecycleMixin:
                     result = self._execute_command_result(env_cmd)
                     env_output.append(result_to_mapping(result))
 
+                    if isinstance(result, OperationError):
+                        self.state = SessionState.FAILED
+                        if self.controller:
+                            try:
+                                self._transport.exit()
+                            except Exception:
+                                pass
+                            self.controller = None
+                        return OperationError(
+                            message=f"Failed to set environment variable {var_name}: {result.message}",
+                            fatal=result.fatal,
+                            details={"env_output": env_output},
+                        )
+
             if program or core:
                 self.target_loaded = True
 

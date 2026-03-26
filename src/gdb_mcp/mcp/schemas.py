@@ -45,51 +45,51 @@ class StartSessionArgs(BaseModel):
 
 
 class ExecuteCommandArgs(BaseModel):
-    session_id: int = Field(..., description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
     command: str = Field(..., description="GDB command to execute")
 
 
 class GetBacktraceArgs(BaseModel):
-    session_id: int = Field(..., description="Session ID from gdb_start_session")
-    thread_id: Optional[int] = Field(None, description="Thread ID (None for current thread)")
-    max_frames: int = Field(100, description="Maximum number of frames to retrieve")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    thread_id: Optional[int] = Field(None, gt=0, description="Thread ID (None for current thread)")
+    max_frames: int = Field(100, gt=0, description="Maximum number of frames to retrieve")
 
 
 class SetBreakpointArgs(BaseModel):
-    session_id: int = Field(..., description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
     location: str = Field(..., description="Breakpoint location (function, file:line, or *address)")
     condition: Optional[str] = Field(None, description="Conditional expression")
     temporary: bool = Field(False, description="Whether breakpoint is temporary")
 
 
 class EvaluateExpressionArgs(BaseModel):
-    session_id: int = Field(..., description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
     expression: str = Field(..., description="C/C++ expression to evaluate")
 
 
 class GetVariablesArgs(BaseModel):
-    session_id: int = Field(..., description="Session ID from gdb_start_session")
-    thread_id: Optional[int] = Field(None, description="Thread ID (None for current)")
-    frame: int = Field(0, description="Frame number (0 is current)")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    thread_id: Optional[int] = Field(None, gt=0, description="Thread ID (None for current)")
+    frame: int = Field(0, ge=0, description="Frame number (0 is current)")
 
 
 class ThreadSelectArgs(BaseModel):
-    session_id: int = Field(..., description="Session ID from gdb_start_session")
-    thread_id: int = Field(..., description="Thread ID to select")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    thread_id: int = Field(..., gt=0, description="Thread ID to select")
 
 
 class BreakpointNumberArgs(BaseModel):
-    session_id: int = Field(..., description="Session ID from gdb_start_session")
-    number: int = Field(..., description="Breakpoint number")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    number: int = Field(..., gt=0, description="Breakpoint number")
 
 
 class FrameSelectArgs(BaseModel):
-    session_id: int = Field(..., description="Session ID from gdb_start_session")
-    frame_number: int = Field(..., description="Frame number (0 is current/innermost frame)")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    frame_number: int = Field(..., ge=0, description="Frame number (0 is current/innermost frame)")
 
 
 class CallFunctionArgs(BaseModel):
-    session_id: int = Field(..., description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
     function_call: str = Field(
         ...,
         description="Function call expression (e.g., 'printf(\"hello\\n\")' or 'my_func(arg1, arg2)')",
@@ -99,7 +99,7 @@ class CallFunctionArgs(BaseModel):
 class SessionIdArgs(BaseModel):
     """Arguments for tools that only need session_id."""
 
-    session_id: int = Field(..., description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
 
 
 def build_tool_definitions() -> list[Tool]:

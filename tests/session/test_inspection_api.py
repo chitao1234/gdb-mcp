@@ -107,6 +107,22 @@ class TestDataInspectionApi:
             '-data-evaluate-expression "x + y"\n'
         )
 
+    def test_evaluate_expression_escapes_quotes_and_backslashes(
+        self,
+        scripted_running_session,
+        mi_result,
+    ):
+        """Expression evaluation should escape MI-sensitive characters."""
+
+        session, controller = scripted_running_session([mi_result({"value": "5"})])
+
+        result = result_to_mapping(session.evaluate_expression('strlen("a\\\\b")'))
+
+        assert result["status"] == "success"
+        assert controller.io_manager.stdin.writes[0].decode().endswith(
+            '-data-evaluate-expression "strlen(\\"a\\\\\\\\b\\")"\n'
+        )
+
     def test_get_variables(self, scripted_running_session, mi_result):
         """Variable inspection should surface thread, frame, and values."""
 

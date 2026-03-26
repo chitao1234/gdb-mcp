@@ -6,7 +6,7 @@ import logging
 from typing import Optional
 
 from ..domain import BreakpointInfo, BreakpointListInfo, OperationError, OperationSuccess, SessionMessage
-from ..transport import extract_mi_result_payload
+from ..transport import extract_mi_result_payload, quote_mi_string
 from .result_utils import command_result_payload
 
 logger = logging.getLogger(__name__)
@@ -25,8 +25,7 @@ class SessionBreakpointMixin:
             cmd_parts.append("-t")
 
         if condition:
-            escaped_condition = condition.replace("\\", "\\\\").replace('"', '\\"')
-            cmd_parts.extend(["-c", f'"{escaped_condition}"'])
+            cmd_parts.extend(["-c", quote_mi_string(condition)])
 
         cmd_parts.append(location)
 

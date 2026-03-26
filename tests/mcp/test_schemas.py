@@ -237,3 +237,43 @@ class TestSessionIdRequired:
         # SetBreakpointArgs
         args3 = SetBreakpointArgs(session_id=3, location="main")
         assert args3.session_id == 3
+
+
+class TestArgumentBounds:
+    """Test numeric bounds for MCP tool argument models."""
+
+    def test_session_id_must_be_positive(self):
+        """Session-scoped tools should reject non-positive session IDs."""
+
+        with pytest.raises(ValidationError):
+            ExecuteCommandArgs(session_id=0, command="info threads")
+
+    def test_thread_id_must_be_positive(self):
+        """Thread selectors should reject non-positive thread IDs."""
+
+        with pytest.raises(ValidationError):
+            ThreadSelectArgs(session_id=1, thread_id=0)
+
+    def test_frame_number_must_be_non_negative(self):
+        """Frame selectors should reject negative frame indices."""
+
+        with pytest.raises(ValidationError):
+            FrameSelectArgs(session_id=1, frame_number=-1)
+
+    def test_max_frames_must_be_positive(self):
+        """Backtrace requests should reject non-positive max_frames."""
+
+        with pytest.raises(ValidationError):
+            GetBacktraceArgs(session_id=1, max_frames=0)
+
+    def test_breakpoint_number_must_be_positive(self):
+        """Breakpoint-number operations should reject non-positive numbers."""
+
+        with pytest.raises(ValidationError):
+            BreakpointNumberArgs(session_id=1, number=0)
+
+    def test_variable_frame_must_be_non_negative(self):
+        """Variable inspection should reject negative frame indices."""
+
+        with pytest.raises(ValidationError):
+            GetVariablesArgs(session_id=1, frame=-1)

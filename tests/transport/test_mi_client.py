@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from gdb_mcp.transport.mi_client import MiClient
 from gdb_mcp.transport.mi_commands import escape_mi_string, is_cli_command, wrap_cli_command
@@ -53,11 +53,22 @@ class TestMiCommands:
 
         assert escape_mi_string('say "hello" \\ world') == 'say \\"hello\\" \\\\ world'
 
+    def test_escape_mi_string_escapes_control_characters(self):
+        """Control characters should be escaped instead of being written literally."""
+
+        assert escape_mi_string("line1\nline2\r\t") == "line1\\nline2\\r\\t"
+
     def test_wrap_cli_command(self):
         """CLI commands should be wrapped with interpreter-exec."""
 
         wrapped = wrap_cli_command('print "hello"')
         assert wrapped == '-interpreter-exec console "print \\"hello\\""'
+
+    def test_wrap_cli_command_escapes_newlines(self):
+        """Wrapped CLI commands should not contain literal line breaks."""
+
+        wrapped = wrap_cli_command('print "hello"\nshow version\r')
+        assert wrapped == '-interpreter-exec console "print \\"hello\\"\\nshow version\\r"'
 
 
 class TestMiClient:
@@ -177,6 +188,38 @@ class TestMiClient:
         assert "fatal error" in result.error.lower()
         assert client.controller is None
         assert controller.exit_called is True
+
+    def test_send_command_uses_absolute_timeout_with_async_traffic(self):
+        """Unrelated async traffic should not extend the command deadline indefinitely."""
+
+        controller = _FakeController(
+            [
+                [{"type": "notify", "token": 999, "message": "thread-created", "payload": {}}],
+                [{"type": "notify", "token": 999, "message": "library-loaded", "payload": {}}],
+                [{"type": "notify", "token": 999, "message": "thread-created", "payload": {}}],
+                [{"type": "result", "token": 1000, "message": "done", "payload": {"ok": True}}],
+            ]
+        )
+        client = self._make_client(controller)
+
+        class _FakeClock:
+            def __init__(self):
+                self._value = 0.0
+
+            def monotonic(self) -> float:
+                current = self._value
+                self._value += 0.03
+                return current
+
+        fake_clock = _FakeClock()
+
+        with patch("gdb_mcp.transport.mi_client.time.monotonic", side_effect=fake_clock.monotonic):
+            result = client.send_command_and_wait_for_prompt("-thread-info", timeout_sec=0.1)
+
+        assert result.timed_out is True
+        assert result.error is None
+        assert result.command_responses == []
+        assert len(result.async_notifications) >= 1
 
     def test_send_command_serializes_same_session_calls(self):
         """Concurrent commands on one client should not interleave writes."""

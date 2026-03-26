@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from unittest.mock import MagicMock, Mock, patch
 
-from gdb_mcp.domain import result_to_mapping
+from gdb_mcp.domain import OperationError, result_to_mapping
 
 
 class TestLifecycleApi:
@@ -185,6 +185,39 @@ class TestLifecycleApi:
         assert len(env_commands) == 2
         assert any("DEBUG_MODE" in command for command in env_commands)
         assert any("LOG_LEVEL" in command for command in env_commands)
+
+    @patch("gdb_mcp.session.factory.GdbController")
+    def test_start_session_fails_when_env_setup_fails(
+        self,
+        mock_controller_class,
+        session_service,
+        prompt_response,
+        command_result,
+    ):
+        """Environment setup failures should fail startup instead of reporting READY."""
+
+        del mock_controller_class
+
+        def mock_execute(command, **kwargs):
+            del kwargs
+            if command.startswith("set environment "):
+                return OperationError(message="Permission denied for environment setup")
+            return command_result(command, output="")
+
+        with patch.object(
+            session_service,
+            "_send_command_and_wait_for_prompt",
+            return_value=prompt_response(
+                command_responses=[{"type": "result", "message": "done", "token": 1000}]
+            ),
+        ):
+            with patch.object(session_service, "_execute_command_result", side_effect=mock_execute):
+                result = result_to_mapping(
+                    session_service.start(program="/bin/ls", env={"DEBUG_MODE": "1"})
+                )
+
+        assert result["status"] == "error"
+        assert "environment" in result["message"].lower()
 
     @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_detects_missing_debug_symbols(

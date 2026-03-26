@@ -13,7 +13,12 @@ from ..domain import (
     OperationError,
     OperationSuccess,
 )
-from ..transport import is_cli_command, parse_mi_responses, wrap_cli_command
+from ..transport import (
+    build_exec_arguments_command,
+    is_cli_command,
+    parse_mi_responses,
+    wrap_cli_command,
+)
 from .constants import DEFAULT_TIMEOUT_SEC, INTERRUPT_RESPONSE_TIMEOUT_SEC, POLL_TIMEOUT_SEC
 
 logger = logging.getLogger(__name__)
@@ -90,8 +95,7 @@ class SessionExecutionMixin:
             return OperationError(message="No active GDB session")
 
         if args:
-            arg_str = " ".join(args)
-            result = self._execute_command_result(f"-exec-arguments {arg_str}")
+            result = self._execute_command_result(build_exec_arguments_command(args))
             if isinstance(result, OperationError):
                 return result
 

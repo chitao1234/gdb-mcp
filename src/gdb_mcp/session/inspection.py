@@ -17,7 +17,7 @@ from ..domain import (
     ThreadSelectionInfo,
     VariablesInfo,
 )
-from ..transport import extract_mi_result_payload
+from ..transport import build_evaluate_expression_command, extract_mi_result_payload
 from .constants import DEFAULT_MAX_BACKTRACE_FRAMES
 from .result_utils import command_result_payload
 
@@ -135,7 +135,7 @@ class SessionInspectionMixin:
 
     def evaluate_expression(self, expression: str) -> OperationSuccess[ExpressionValueInfo] | OperationError:
         """Evaluate an expression in the current context."""
-        result = self._execute_command_result(f'-data-evaluate-expression "{expression}"')
+        result = self._execute_command_result(build_evaluate_expression_command(expression))
 
         if isinstance(result, OperationError):
             return result

@@ -132,7 +132,7 @@ class MiClient:
             saw_stop_after_running = False
             result_class: str | None = None
 
-            while time.monotonic() - last_activity_time < timeout_sec:
+            while time.monotonic() - start_time < timeout_sec:
                 elapsed = time.monotonic() - start_time
                 if elapsed - last_alive_check >= _LIVENESS_CHECK_INTERVAL_SEC:
                     if not self.is_alive():
