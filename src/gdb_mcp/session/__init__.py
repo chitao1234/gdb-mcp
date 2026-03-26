@@ -3,12 +3,14 @@
 from .config import SessionConfig
 from .factory import create_default_session_service
 from .registry import SessionRegistry
+from .runtime import SessionRuntime
 from .service import SessionService
 from .state import SessionState
 
 __all__ = [
     "SessionConfig",
     "SessionRegistry",
+    "SessionRuntime",
     "SessionService",
     "SessionState",
     "create_default_session_service",

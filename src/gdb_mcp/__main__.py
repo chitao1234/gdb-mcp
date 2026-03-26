@@ -1,7 +1,6 @@
 """Main entry point for GDB MCP server."""
 
-import asyncio
-from .server import main
+from .server import run_server
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    run_server()

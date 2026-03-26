@@ -120,20 +120,16 @@ class TestHandlerDispatch:
         assert result_data["tool"] == "gdb_get_status"
         manager.get_session.assert_not_called()
 
-    def test_stop_session_removes_from_manager(self):
-        """Successful stop should remove the session from the registry."""
+    def test_stop_session_uses_registry_close(self):
+        """Successful stop should go through the registry lifecycle API."""
 
         manager = Mock()
-        session = Mock()
-        session.stop.return_value = OperationSuccess(SessionMessage(message="Session stopped"))
-        manager.get_session.return_value = session
-        manager.remove_session.return_value = True
+        manager.close_session.return_value = OperationSuccess(SessionMessage(message="Session stopped"))
 
         result_data = dispatch("gdb_stop_session", {"session_id": 1}, manager)
 
-        manager.get_session.assert_called_once_with(1)
-        session.stop.assert_called_once()
-        manager.remove_session.assert_called_once_with(1)
+        manager.close_session.assert_called_once_with(1)
+        manager.get_session.assert_not_called()
         assert result_data["status"] == "success"
 
     def test_unknown_tool_returns_unknown_tool_error(self):

@@ -2,7 +2,7 @@
 
 from dataclasses import asdict, is_dataclass
 from dataclasses import dataclass, field
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, TypeVar, cast
 
 PayloadT = TypeVar("PayloadT")
 
@@ -31,8 +31,8 @@ OperationResult = OperationSuccess[PayloadT] | OperationError
 def payload_to_mapping(value: Any) -> Any:
     """Convert typed payload objects into JSON-serializable builtin structures."""
 
-    if is_dataclass(value):
-        return asdict(value)
+    if is_dataclass(value) and not isinstance(value, type):
+        return asdict(cast(Any, value))
     if isinstance(value, dict):
         return {key: payload_to_mapping(item) for key, item in value.items()}
     if isinstance(value, list):
@@ -54,7 +54,7 @@ def result_to_mapping(result: OperationResult[Any]) -> dict[str, Any]:
             payload["warnings"] = list(result.warnings)
         return payload
 
-    error_payload = {
+    error_payload: dict[str, Any] = {
         "status": "error",
         "message": result.message,
     }

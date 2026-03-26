@@ -48,27 +48,55 @@ class TestSessionRegistry:
         session_id = manager.create_session()
         assert manager.get_session(session_id + 1) is None
 
-    def test_remove_session_deletes_session(self):
-        """Test that remove_session deletes a session and get_session returns None."""
+    def test_discard_session_deletes_inactive_session(self):
+        """Inactive sessions should be discardable without shutdown."""
         manager = SessionRegistry()
 
         session_id = manager.create_session()
         session = manager.get_session(session_id)
         assert session is not None
 
-        result = manager.remove_session(session_id)
+        result = manager.discard_session(session_id)
         assert result is True
         assert manager.get_session(session_id) is None
 
-    def test_remove_session_returns_false_for_nonexistent(self):
-        """Test that remove_session returns False for already-removed or non-existent IDs."""
+    def test_discard_session_returns_false_for_nonexistent(self):
+        """discard_session should return False for already-removed or unknown IDs."""
         manager = SessionRegistry()
 
-        assert manager.remove_session(999) is False
+        assert manager.discard_session(999) is False
 
         session_id = manager.create_session()
-        assert manager.remove_session(session_id) is True
-        assert manager.remove_session(session_id) is False
+        assert manager.discard_session(session_id) is True
+        assert manager.discard_session(session_id) is False
+
+    def test_discard_session_rejects_active_sessions(self):
+        """Active sessions must be closed explicitly instead of discarded."""
+
+        session = Mock(spec=SessionService)
+        session.controller = object()
+        session.is_running = True
+        manager = SessionRegistry(session_factory=lambda: session)
+
+        session_id = manager.create_session()
+
+        assert manager.discard_session(session_id) is False
+        assert manager.get_session(session_id) is session
+
+    def test_close_session_stops_and_removes_active_session(self):
+        """close_session should stop and remove active sessions atomically."""
+
+        session = Mock(spec=SessionService)
+        session.controller = object()
+        session.stop.return_value = OperationSuccess(SessionMessage(message="stopped"))
+        manager = SessionRegistry(session_factory=lambda: session)
+
+        session_id = manager.create_session()
+        result = manager.close_session(session_id)
+
+        assert isinstance(result, OperationSuccess)
+        session.stop.assert_called_once()
+        assert manager.get_session(session_id) is None
 
     def test_concurrent_create_session_thread_safe(self):
         """Test that concurrent create_session calls produce unique IDs."""

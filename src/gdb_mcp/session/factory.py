@@ -4,6 +4,7 @@ import logging
 import os
 import subprocess
 import time
+from typing import cast
 
 from pygdbmi.IoManager import IoManager
 from pygdbmi.gdbcontroller import GdbController
@@ -12,6 +13,7 @@ from .constants import (
     INITIAL_COMMAND_TOKEN,
     POLL_TIMEOUT_SEC,
 )
+from .protocols import OsModuleProtocol, TimeModuleProtocol
 from .service import SessionService
 
 logger = logging.getLogger(__name__)
@@ -105,8 +107,8 @@ def create_default_session_service() -> SessionService:
 
     return SessionService(
         controller_factory=create_gdb_controller,
-        os_module=os,
-        time_module=time,
+        os_module=cast(OsModuleProtocol, os),
+        time_module=cast(TimeModuleProtocol, time),
         initial_command_token=INITIAL_COMMAND_TOKEN,
         poll_timeout_sec=POLL_TIMEOUT_SEC,
     )

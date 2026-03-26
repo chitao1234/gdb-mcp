@@ -1,5 +1,7 @@
 """Entrypoint for the GDB MCP server."""
 
+from __future__ import annotations
+
 import logging
 import os
 from typing import Any
@@ -28,36 +30,57 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global session manager instance
-session_manager = SessionRegistry()
-runtime = create_server_runtime(session_manager_provider=lambda: session_manager, logger=logger)
+_runtime = None
+
+
+def create_default_runtime():
+    """Create the default runtime used by the CLI compatibility entrypoint."""
+
+    session_manager = SessionRegistry()
+    return create_server_runtime(session_manager_provider=lambda: session_manager, logger=logger)
+
+
+def get_runtime():
+    """Lazily create and cache the default runtime."""
+
+    global _runtime
+    if _runtime is None:
+        _runtime = create_default_runtime()
+    return _runtime
+
+
+class _LazyAppProxy:
+    """Defer access to the MCP Server object until it is actually needed."""
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(get_runtime().app, name)
 
 
 async def list_tools():
     """List all available GDB debugging tools."""
 
-    return await runtime.list_tools()
+    return await get_runtime().list_tools()
 
 
 async def call_tool(name: str, arguments: Any):
     """Handle tool calls from the MCP client."""
 
-    return await runtime.call_tool(name, arguments)
+    return await get_runtime().call_tool(name, arguments)
 
 
-app = runtime.app
+app = _LazyAppProxy()
 
 
 async def main():
     """Main async entry point for the MCP server."""
 
-    await runtime.main()
+    await get_runtime().main()
 
 
 def run_server():
     """Synchronous entry point for the MCP server (for script entry point)."""
 
-    runtime.run_server()
+    get_runtime().run_server()
 
 
 if __name__ == "__main__":
