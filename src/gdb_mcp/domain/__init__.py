@@ -1,17 +1,56 @@
 """Domain types for the GDB MCP server."""
 
 from .errors import FatalTransportError, GdbMcpError, TransportError, ValidationFailure
-from .models import SessionStatusSnapshot
-from .results import OperationError, OperationResult, OperationSuccess, from_legacy_result
+from .models import (
+    BacktraceInfo,
+    BreakpointInfo,
+    BreakpointListInfo,
+    CommandExecutionInfo,
+    ExpressionValueInfo,
+    FrameInfo,
+    FrameSelectionInfo,
+    FunctionCallInfo,
+    MessageResult,
+    RegistersInfo,
+    SessionMessage,
+    SessionStartInfo,
+    SessionStatusSnapshot,
+    ThreadListInfo,
+    ThreadSelectionInfo,
+    VariablesInfo,
+)
+from .results import (
+    OperationError,
+    OperationResult,
+    OperationSuccess,
+    payload_to_mapping,
+    result_to_mapping,
+)
 
 __all__ = [
+    "BacktraceInfo",
+    "BreakpointInfo",
+    "BreakpointListInfo",
+    "CommandExecutionInfo",
+    "ExpressionValueInfo",
     "FatalTransportError",
+    "FrameInfo",
+    "FrameSelectionInfo",
+    "FunctionCallInfo",
+    "MessageResult",
     "GdbMcpError",
     "OperationError",
     "OperationResult",
     "OperationSuccess",
+    "payload_to_mapping",
+    "RegistersInfo",
+    "result_to_mapping",
+    "SessionMessage",
+    "SessionStartInfo",
     "SessionStatusSnapshot",
+    "ThreadListInfo",
+    "ThreadSelectionInfo",
     "TransportError",
     "ValidationFailure",
-    "from_legacy_result",
+    "VariablesInfo",
 ]

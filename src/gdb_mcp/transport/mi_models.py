@@ -41,7 +41,7 @@ class ParsedMiResponse:
         return "GDB returned an error"
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert back to the legacy dict shape used by the current service layer."""
+        """Convert into plain builtin containers for higher-level payload assembly."""
 
         return {
             "console": list(self.console),
@@ -64,7 +64,7 @@ class MiTransportResponse:
     fatal: bool = False
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert back to the legacy dict shape used by the current session layer."""
+        """Convert into plain builtin containers for session-layer handling."""
 
         result = {
             "command_responses": list(self.command_responses),

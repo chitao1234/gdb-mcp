@@ -1,6 +1,6 @@
 """Typed result containers for internal operations."""
 
-from collections.abc import Mapping
+from dataclasses import asdict, is_dataclass
 from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar
 
@@ -28,20 +28,37 @@ class OperationError:
 OperationResult = OperationSuccess[PayloadT] | OperationError
 
 
-def from_legacy_result(payload: Mapping[str, Any]) -> OperationResult[dict[str, Any]]:
-    """Convert the current dict-shaped operation result into a typed result."""
+def payload_to_mapping(value: Any) -> Any:
+    """Convert typed payload objects into JSON-serializable builtin structures."""
 
-    payload_dict = dict(payload)
-    if payload_dict.get("status") == "error":
-        details = {
-            key: value
-            for key, value in payload_dict.items()
-            if key not in {"status", "message", "fatal"}
-        }
-        return OperationError(
-            message=str(payload_dict.get("message", "Unknown error")),
-            fatal=bool(payload_dict.get("fatal", False)),
-            details=details,
-        )
+    if is_dataclass(value):
+        return asdict(value)
+    if isinstance(value, dict):
+        return {key: payload_to_mapping(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [payload_to_mapping(item) for item in value]
+    if isinstance(value, tuple):
+        return [payload_to_mapping(item) for item in value]
+    return value
 
-    return OperationSuccess(payload_dict)
+
+def result_to_mapping(result: OperationResult[Any]) -> dict[str, Any]:
+    """Convert a typed operation result into the external JSON payload shape."""
+
+    if isinstance(result, OperationSuccess):
+        payload = payload_to_mapping(result.value)
+        if not isinstance(payload, dict):
+            payload = {"value": payload}
+        payload.setdefault("status", "success")
+        if result.warnings and "warnings" not in payload:
+            payload["warnings"] = list(result.warnings)
+        return payload
+
+    error_payload = {
+        "status": "error",
+        "message": result.message,
+    }
+    if result.fatal:
+        error_payload["fatal"] = True
+    error_payload.update(payload_to_mapping(result.details))
+    return error_payload

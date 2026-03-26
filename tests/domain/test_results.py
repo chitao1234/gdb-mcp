@@ -1,32 +1,32 @@
 """Unit tests for typed domain result helpers."""
 
-from gdb_mcp.domain import OperationError, OperationSuccess, from_legacy_result
+from gdb_mcp.domain import OperationError, OperationSuccess, result_to_mapping
 
 
 class TestDomainResults:
     """Test conversion helpers for typed internal results."""
 
-    def test_from_legacy_result_wraps_success_payload(self):
-        """Successful legacy payloads should become OperationSuccess."""
+    def test_result_to_mapping_wraps_scalar_success_payload(self):
+        """Scalar success payloads should be wrapped into the external value shape."""
 
-        result = from_legacy_result({"status": "success", "value": 42})
+        payload = result_to_mapping(OperationSuccess(42))
 
-        assert isinstance(result, OperationSuccess)
-        assert result.value == {"status": "success", "value": 42}
+        assert payload == {"status": "success", "value": 42}
 
-    def test_from_legacy_result_wraps_error_payload(self):
-        """Error legacy payloads should become OperationError with preserved details."""
+    def test_result_to_mapping_serializes_error_details(self):
+        """Structured error details should be merged into the external payload."""
 
-        result = from_legacy_result(
-            {
-                "status": "error",
-                "message": "boom",
-                "fatal": True,
-                "command": "-thread-info",
-            }
+        payload = result_to_mapping(
+            OperationError(
+                message="boom",
+                fatal=True,
+                details={"command": "-thread-info"},
+            )
         )
 
-        assert isinstance(result, OperationError)
-        assert result.message == "boom"
-        assert result.fatal is True
-        assert result.details == {"command": "-thread-info"}
+        assert payload == {
+            "status": "error",
+            "message": "boom",
+            "fatal": True,
+            "command": "-thread-info",
+        }

@@ -34,17 +34,17 @@ pytest -m "not integration"
 pytest tests/session
 
 # Run only a specific test file
-pytest tests/session/test_gdb_interface.py
+pytest tests/session/test_session_api.py
 
 # Run only a specific test
-pytest tests/session/test_gdb_interface.py::TestGDBSession::test_session_initialization
+pytest tests/session/test_session_api.py::TestSessionApi::test_session_initialization
 ```
 
 ## Test Structure
 
 - `domain/` - Typed result and domain-model tests
 - `mcp/` - MCP schemas, handlers, runtime, and serializer tests
-- `session/` - Session service, registry, config/state, and compatibility-layer tests
+- `session/` - Session service, registry, config/state, and session-operation tests
 - `transport/` - Low-level GDB/MI transport tests
 - `integration/` - Real GDB workflow tests
 

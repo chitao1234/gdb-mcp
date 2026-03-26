@@ -5,8 +5,21 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+from ..domain import (
+    BacktraceInfo,
+    ExpressionValueInfo,
+    FrameInfo,
+    FrameSelectionInfo,
+    OperationError,
+    OperationSuccess,
+    RegistersInfo,
+    ThreadListInfo,
+    ThreadSelectionInfo,
+    VariablesInfo,
+)
 from ..transport import extract_mi_result_payload
 from .constants import DEFAULT_MAX_BACKTRACE_FRAMES
+from .result_utils import command_result_payload
 
 logger = logging.getLogger(__name__)
 
@@ -14,25 +27,24 @@ logger = logging.getLogger(__name__)
 class SessionInspectionMixin:
     """Inspection and navigation methods used by SessionService."""
 
-    def get_threads(self) -> dict[str, object]:
+    def get_threads(self) -> OperationSuccess[ThreadListInfo] | OperationError:
         """Get information about all threads in the debugged process."""
         logger.debug("get_threads() called")
-        result = self.execute_command("-thread-info")
+        result = self._execute_command_result("-thread-info")
         logger.debug("get_threads: execute_command returned: %s", result)
 
-        if result["status"] == "error":
+        if isinstance(result, OperationError):
             logger.debug("get_threads: returning error from execute_command")
             return result
 
-        thread_info = extract_mi_result_payload(result)
+        thread_info = extract_mi_result_payload(command_result_payload(result))
         logger.debug("get_threads: thread_info type=%s, value=%s", type(thread_info), thread_info)
 
         if thread_info is None:
             logger.warning("get_threads: thread_info is None - GDB returned incomplete data")
-            return {
-                "status": "error",
-                "message": "GDB returned incomplete data - may still be loading symbols",
-            }
+            return OperationError(
+                message="GDB returned incomplete data - may still be loading symbols"
+            )
 
         if not isinstance(thread_info, dict):
             thread_info = {}
@@ -43,126 +55,127 @@ class SessionInspectionMixin:
         )
         logger.debug("get_threads: threads data: %s", threads)
 
-        return {
-            "status": "success",
-            "threads": threads,
-            "current_thread_id": current_thread,
-            "count": len(threads),
-        }
+        return OperationSuccess(
+            ThreadListInfo(
+                threads=threads,
+                current_thread_id=current_thread,
+                count=len(threads),
+            )
+        )
 
-    def select_thread(self, thread_id: int) -> dict[str, object]:
+    def select_thread(self, thread_id: int) -> OperationSuccess[ThreadSelectionInfo] | OperationError:
         """Select a specific thread to make it the current thread."""
-        result = self.execute_command(f"-thread-select {thread_id}")
+        result = self._execute_command_result(f"-thread-select {thread_id}")
 
-        if result["status"] == "error":
+        if isinstance(result, OperationError):
             return result
 
-        mi_result = extract_mi_result_payload(result) or {}
+        mi_result = extract_mi_result_payload(command_result_payload(result)) or {}
 
-        return {
-            "status": "success",
-            "thread_id": thread_id,
-            "new_thread_id": mi_result.get("new-thread-id"),
-            "frame": mi_result.get("frame"),
-        }
+        return OperationSuccess(
+            ThreadSelectionInfo(
+                thread_id=thread_id,
+                new_thread_id=mi_result.get("new-thread-id"),
+                frame=mi_result.get("frame"),
+            )
+        )
 
     def get_backtrace(
         self, thread_id: Optional[int] = None, max_frames: int = DEFAULT_MAX_BACKTRACE_FRAMES
-    ) -> dict[str, object]:
+    ) -> OperationSuccess[BacktraceInfo] | OperationError:
         """Get the stack backtrace for a specific thread or the current thread."""
         if thread_id is not None:
-            switch_result = self.execute_command(f"-thread-select {thread_id}")
-            if switch_result["status"] == "error":
+            switch_result = self._execute_command_result(f"-thread-select {thread_id}")
+            if isinstance(switch_result, OperationError):
                 return switch_result
 
-        result = self.execute_command(f"-stack-list-frames 0 {max_frames}")
+        result = self._execute_command_result(f"-stack-list-frames 0 {max_frames}")
 
-        if result["status"] == "error":
+        if isinstance(result, OperationError):
             return result
 
-        stack_data = extract_mi_result_payload(result) or {}
+        stack_data = extract_mi_result_payload(command_result_payload(result)) or {}
         frames = stack_data.get("stack", [])
 
-        return {"status": "success", "thread_id": thread_id, "frames": frames, "count": len(frames)}
+        return OperationSuccess(BacktraceInfo(thread_id=thread_id, frames=frames, count=len(frames)))
 
-    def get_frame_info(self) -> dict[str, object]:
+    def get_frame_info(self) -> OperationSuccess[FrameInfo] | OperationError:
         """Get information about the current stack frame."""
-        result = self.execute_command("-stack-info-frame")
+        result = self._execute_command_result("-stack-info-frame")
 
-        if result["status"] == "error":
+        if isinstance(result, OperationError):
             return result
 
-        mi_result = extract_mi_result_payload(result) or {}
+        mi_result = extract_mi_result_payload(command_result_payload(result)) or {}
         frame = mi_result.get("frame", {})
 
-        return {"status": "success", "frame": frame}
+        return OperationSuccess(FrameInfo(frame=frame))
 
-    def select_frame(self, frame_number: int) -> dict[str, object]:
+    def select_frame(self, frame_number: int) -> OperationSuccess[FrameSelectionInfo] | OperationError:
         """Select a specific stack frame to make it the current frame."""
-        result = self.execute_command(f"-stack-select-frame {frame_number}")
+        result = self._execute_command_result(f"-stack-select-frame {frame_number}")
 
-        if result["status"] == "error":
+        if isinstance(result, OperationError):
             return result
 
-        frame_info_result = self.execute_command("-stack-info-frame")
+        frame_info_result = self._execute_command_result("-stack-info-frame")
 
-        if frame_info_result["status"] == "error":
-            return {
-                "status": "success",
-                "frame_number": frame_number,
-                "message": f"Frame {frame_number} selected",
-            }
+        if isinstance(frame_info_result, OperationError):
+            return OperationSuccess(
+                FrameSelectionInfo(
+                    frame_number=frame_number,
+                    message=f"Frame {frame_number} selected",
+                )
+            )
 
-        mi_result = extract_mi_result_payload(frame_info_result) or {}
+        mi_result = extract_mi_result_payload(command_result_payload(frame_info_result)) or {}
         frame_info = mi_result.get("frame", {})
 
-        return {
-            "status": "success",
-            "frame_number": frame_number,
-            "frame": frame_info,
-        }
+        return OperationSuccess(FrameSelectionInfo(frame_number=frame_number, frame=frame_info))
 
-    def evaluate_expression(self, expression: str) -> dict[str, object]:
+    def evaluate_expression(self, expression: str) -> OperationSuccess[ExpressionValueInfo] | OperationError:
         """Evaluate an expression in the current context."""
-        result = self.execute_command(f'-data-evaluate-expression "{expression}"')
+        result = self._execute_command_result(f'-data-evaluate-expression "{expression}"')
 
-        if result["status"] == "error":
+        if isinstance(result, OperationError):
             return result
 
-        mi_result = extract_mi_result_payload(result) or {}
+        mi_result = extract_mi_result_payload(command_result_payload(result)) or {}
         value = mi_result.get("value")
 
-        return {"status": "success", "expression": expression, "value": value}
+        return OperationSuccess(ExpressionValueInfo(expression=expression, value=value))
 
-    def get_variables(self, thread_id: Optional[int] = None, frame: int = 0) -> dict[str, object]:
+    def get_variables(
+        self, thread_id: Optional[int] = None, frame: int = 0
+    ) -> OperationSuccess[VariablesInfo] | OperationError:
         """Get local variables for a specific frame."""
         if thread_id is not None:
-            thread_result = self.execute_command(f"-thread-select {thread_id}")
-            if thread_result.get("status") == "error":
+            thread_result = self._execute_command_result(f"-thread-select {thread_id}")
+            if isinstance(thread_result, OperationError):
                 return thread_result
 
-        frame_result = self.execute_command(f"-stack-select-frame {frame}")
-        if frame_result.get("status") == "error":
+        frame_result = self._execute_command_result(f"-stack-select-frame {frame}")
+        if isinstance(frame_result, OperationError):
             return frame_result
 
-        result = self.execute_command("-stack-list-variables --simple-values")
+        result = self._execute_command_result("-stack-list-variables --simple-values")
 
-        if result["status"] == "error":
+        if isinstance(result, OperationError):
             return result
 
-        mi_result = extract_mi_result_payload(result) or {}
+        mi_result = extract_mi_result_payload(command_result_payload(result)) or {}
         variables = mi_result.get("variables", [])
 
-        return {"status": "success", "thread_id": thread_id, "frame": frame, "variables": variables}
+        return OperationSuccess(VariablesInfo(thread_id=thread_id, frame=frame, variables=variables))
 
-    def get_registers(self) -> dict[str, object]:
+    def get_registers(self) -> OperationSuccess[RegistersInfo] | OperationError:
         """Get register values for current frame."""
-        result = self.execute_command("-data-list-register-values x")
+        result = self._execute_command_result("-data-list-register-values x")
 
-        if result["status"] == "error":
+        if isinstance(result, OperationError):
             return result
 
-        mi_result = extract_mi_result_payload(result) or {}
+        mi_result = extract_mi_result_payload(command_result_payload(result)) or {}
         registers = mi_result.get("register-values", [])
 
-        return {"status": "success", "registers": registers}
+        return OperationSuccess(RegistersInfo(registers=registers))

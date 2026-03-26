@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from ..domain.models import SessionStatusSnapshot
+from ..domain import OperationError, OperationSuccess, SessionMessage, SessionStartInfo, SessionStatusSnapshot, result_to_mapping
 from ..transport import parse_mi_responses
 from .config import SessionConfig
 from .constants import DEFAULT_TIMEOUT_SEC, FILE_LOAD_TIMEOUT_SEC, INIT_COMMAND_DELAY_SEC
@@ -26,10 +26,10 @@ class SessionLifecycleMixin:
         gdb_path: Optional[str] = None,
         working_dir: Optional[str] = None,
         core: Optional[str] = None,
-    ) -> dict[str, object]:
+    ) -> OperationSuccess[SessionStartInfo] | OperationError:
         """Start a new GDB session."""
         if self.controller:
-            return {"status": "error", "message": "Session already running. Stop it first."}
+            return OperationError(message="Session already running. Stop it first.")
 
         if gdb_path is None:
             gdb_path = self._os.environ.get("GDB_PATH", "gdb")
@@ -48,10 +48,7 @@ class SessionLifecycleMixin:
         try:
             if working_dir and not self._os.path.isdir(working_dir):
                 self.state = SessionState.FAILED
-                return {
-                    "status": "error",
-                    "message": f"Working directory does not exist: {working_dir}",
-                }
+                return OperationError(message=f"Working directory does not exist: {working_dir}")
 
             gdb_command = [gdb_path, "--quiet", "--interpreter=mi"]
 
@@ -87,13 +84,13 @@ class SessionLifecycleMixin:
                         pass
                     self.controller = None
                 error_response: dict[str, object] = {
-                    "status": "error",
                     "message": f"GDB failed to initialize: {error_msg}",
                 }
-                if ready_check.get("fatal"):
-                    error_response["fatal"] = True
                 self.state = SessionState.FAILED
-                return error_response
+                return OperationError(
+                    message=str(error_response["message"]),
+                    fatal=bool(ready_check.get("fatal", False)),
+                )
 
             logger.info("GDB initialized and ready")
 
@@ -122,32 +119,29 @@ class SessionLifecycleMixin:
                         else:
                             timeout = DEFAULT_TIMEOUT_SEC
 
-                        result = self.execute_command(cmd, timeout_sec=timeout)
-                        init_output.append(result)
+                        result = self._execute_command_result(cmd, timeout_sec=timeout)
+                        init_output.append(result_to_mapping(result))
 
                         if "core-file" in cmd.lower():
                             self._time.sleep(INIT_COMMAND_DELAY_SEC)
                             logger.debug("Waiting for GDB to stabilize after core-file command")
 
-                        if result.get("status") == "error":
-                            error_msg = result.get("message", "Unknown error")
+                        if isinstance(result, OperationError):
+                            error_msg = result.message
                             logger.error("Init command '%s' failed: %s", cmd, error_msg)
 
                             if (
-                                result.get("fatal")
+                                result.fatal
                                 or "GDB process" in error_msg
                                 or not self._is_gdb_alive()
                             ):
                                 logger.error("GDB process died during init commands")
-                                error_response = {
-                                    "status": "error",
-                                    "message": f"GDB crashed during init command '{cmd}': {error_msg}",
-                                    "init_output": init_output,
-                                }
-                                if result.get("fatal"):
-                                    error_response["fatal"] = True
                                 self.state = SessionState.FAILED
-                                return error_response
+                                return OperationError(
+                                    message=f"GDB crashed during init command '{cmd}': {error_msg}",
+                                    fatal=result.fatal,
+                                    details={"init_output": init_output},
+                                )
 
                         if "file" in cmd.lower():
                             logger.debug(
@@ -161,19 +155,18 @@ class SessionLifecycleMixin:
                         if not self._is_gdb_alive():
                             logger.error("GDB process died during init command execution")
                             self.state = SessionState.FAILED
-                            return {
-                                "status": "error",
-                                "message": f"GDB crashed during init command '{cmd}': {str(exc)}",
-                                "init_output": init_output,
-                            }
+                            return OperationError(
+                                message=f"GDB crashed during init command '{cmd}': {str(exc)}",
+                                details={"init_output": init_output},
+                            )
 
             env_output = []
             if env:
                 for var_name, var_value in env.items():
                     escaped_value = var_value.replace("\\", "\\\\").replace('"', '\\"')
                     env_cmd = f"set environment {var_name} {escaped_value}"
-                    result = self.execute_command(env_cmd)
-                    env_output.append(result)
+                    result = self._execute_command_result(env_cmd)
+                    env_output.append(result_to_mapping(result))
 
             if program or core:
                 self.target_loaded = True
@@ -181,21 +174,17 @@ class SessionLifecycleMixin:
             self.is_running = True
             self.state = SessionState.READY
 
-            final_result: dict[str, object] = {"status": "success", "message": "GDB session started"}
-            if program:
-                final_result["program"] = program
-            if core:
-                final_result["core"] = core
-            if startup_console.strip():
-                final_result["startup_output"] = startup_console.strip()
-            if warnings:
-                final_result["warnings"] = warnings
-            if env_output:
-                final_result["env_output"] = env_output
-            if init_output:
-                final_result["init_output"] = init_output
-
-            return final_result
+            return OperationSuccess(
+                SessionStartInfo(
+                    message="GDB session started",
+                    program=program,
+                    core=core,
+                    startup_output=startup_console.strip() or None,
+                    warnings=warnings or None,
+                    env_output=env_output or None,
+                    init_output=init_output or None,
+                )
+            )
 
         except Exception as exc:
             logger.error("Failed to start GDB session: %s", exc)
@@ -206,7 +195,7 @@ class SessionLifecycleMixin:
                     pass
                 self.controller = None
             self.state = SessionState.FAILED
-            return {"status": "error", "message": f"Failed to start GDB: {str(exc)}"}
+            return OperationError(message=f"Failed to start GDB: {str(exc)}")
 
     def _is_gdb_alive(self) -> bool:
         """Check if the GDB process is still running."""
@@ -225,10 +214,10 @@ class SessionLifecycleMixin:
 
         return result.to_dict()
 
-    def stop(self) -> dict[str, object]:
+    def stop(self) -> OperationSuccess[SessionMessage] | OperationError:
         """Stop the GDB session."""
         if not self.controller:
-            return {"status": "error", "message": "No active session"}
+            return OperationError(message="No active session")
 
         try:
             self.controller.exit()
@@ -237,21 +226,17 @@ class SessionLifecycleMixin:
             self.target_loaded = False
             self.state = SessionState.STOPPED
 
-            return {"status": "success", "message": "GDB session stopped"}
+            return OperationSuccess(SessionMessage(message="GDB session stopped"))
 
         except Exception as exc:
             logger.error("Failed to stop GDB session: %s", exc)
-            return {"status": "error", "message": str(exc)}
+            return OperationError(message=str(exc))
 
-    def get_status(self) -> dict[str, object]:
+    def get_status(self) -> OperationSuccess[SessionStatusSnapshot]:
         """Get the current status of the GDB session."""
         snapshot = SessionStatusSnapshot(
             is_running=self.is_running,
             target_loaded=self.target_loaded,
             has_controller=self.controller is not None,
         )
-        return {
-            "is_running": snapshot.is_running,
-            "target_loaded": snapshot.target_loaded,
-            "has_controller": snapshot.has_controller,
-        }
+        return OperationSuccess(snapshot)

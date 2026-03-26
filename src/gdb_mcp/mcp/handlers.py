@@ -8,7 +8,12 @@ from typing import Any, Callable
 
 from pydantic import BaseModel
 
-from ..domain import OperationError, OperationResult, OperationSuccess, from_legacy_result
+from ..domain import (
+    OperationError,
+    OperationResult,
+    OperationSuccess,
+    payload_to_mapping,
+)
 from ..session.registry import SessionRegistry
 from .schemas import (
     BreakpointNumberArgs,
@@ -31,7 +36,7 @@ class SessionToolSpec:
     """Definition of how to validate and invoke one session-scoped tool."""
 
     model: type[BaseModel]
-    handler: Callable[[Any, BaseModel], OperationResult[dict[str, Any]]]
+    handler: Callable[[Any, BaseModel], OperationResult[Any]]
 
 
 def _normalize_arguments(arguments: Any) -> dict[str, Any]:
@@ -44,119 +49,113 @@ def _normalize_arguments(arguments: Any) -> dict[str, Any]:
     return arguments
 
 
-def _handle_execute_command(session: Any, args: BaseModel) -> OperationResult[dict[str, Any]]:
+def _handle_execute_command(session: Any, args: BaseModel) -> OperationResult[Any]:
     typed_args = ExecuteCommandArgs.model_validate(args.model_dump())
-    return from_legacy_result(session.execute_command(command=typed_args.command))
+    return session.execute_command(command=typed_args.command)
 
 
-def _handle_get_status(session: Any, args: BaseModel) -> OperationResult[dict[str, Any]]:
+def _handle_get_status(session: Any, args: BaseModel) -> OperationResult[Any]:
     del args
-    return from_legacy_result(session.get_status())
+    return session.get_status()
 
 
-def _handle_get_threads(session: Any, args: BaseModel) -> OperationResult[dict[str, Any]]:
+def _handle_get_threads(session: Any, args: BaseModel) -> OperationResult[Any]:
     del args
-    return from_legacy_result(session.get_threads())
+    return session.get_threads()
 
 
-def _handle_select_thread(session: Any, args: BaseModel) -> OperationResult[dict[str, Any]]:
+def _handle_select_thread(session: Any, args: BaseModel) -> OperationResult[Any]:
     typed_args = ThreadSelectArgs.model_validate(args.model_dump())
-    return from_legacy_result(session.select_thread(thread_id=typed_args.thread_id))
+    return session.select_thread(thread_id=typed_args.thread_id)
 
 
-def _handle_get_backtrace(session: Any, args: BaseModel) -> OperationResult[dict[str, Any]]:
+def _handle_get_backtrace(session: Any, args: BaseModel) -> OperationResult[Any]:
     typed_args = GetBacktraceArgs.model_validate(args.model_dump())
-    return from_legacy_result(
-        session.get_backtrace(thread_id=typed_args.thread_id, max_frames=typed_args.max_frames)
-    )
+    return session.get_backtrace(thread_id=typed_args.thread_id, max_frames=typed_args.max_frames)
 
 
-def _handle_select_frame(session: Any, args: BaseModel) -> OperationResult[dict[str, Any]]:
+def _handle_select_frame(session: Any, args: BaseModel) -> OperationResult[Any]:
     typed_args = FrameSelectArgs.model_validate(args.model_dump())
-    return from_legacy_result(session.select_frame(frame_number=typed_args.frame_number))
+    return session.select_frame(frame_number=typed_args.frame_number)
 
 
-def _handle_get_frame_info(session: Any, args: BaseModel) -> OperationResult[dict[str, Any]]:
+def _handle_get_frame_info(session: Any, args: BaseModel) -> OperationResult[Any]:
     del args
-    return from_legacy_result(session.get_frame_info())
+    return session.get_frame_info()
 
 
-def _handle_set_breakpoint(session: Any, args: BaseModel) -> OperationResult[dict[str, Any]]:
+def _handle_set_breakpoint(session: Any, args: BaseModel) -> OperationResult[Any]:
     typed_args = SetBreakpointArgs.model_validate(args.model_dump())
-    return from_legacy_result(
-        session.set_breakpoint(
-            location=typed_args.location,
-            condition=typed_args.condition,
-            temporary=typed_args.temporary,
-        )
+    return session.set_breakpoint(
+        location=typed_args.location,
+        condition=typed_args.condition,
+        temporary=typed_args.temporary,
     )
 
 
-def _handle_list_breakpoints(session: Any, args: BaseModel) -> OperationResult[dict[str, Any]]:
+def _handle_list_breakpoints(session: Any, args: BaseModel) -> OperationResult[Any]:
     del args
-    return from_legacy_result(session.list_breakpoints())
+    return session.list_breakpoints()
 
 
-def _handle_delete_breakpoint(session: Any, args: BaseModel) -> OperationResult[dict[str, Any]]:
+def _handle_delete_breakpoint(session: Any, args: BaseModel) -> OperationResult[Any]:
     typed_args = BreakpointNumberArgs.model_validate(args.model_dump())
-    return from_legacy_result(session.delete_breakpoint(number=typed_args.number))
+    return session.delete_breakpoint(number=typed_args.number)
 
 
-def _handle_enable_breakpoint(session: Any, args: BaseModel) -> OperationResult[dict[str, Any]]:
+def _handle_enable_breakpoint(session: Any, args: BaseModel) -> OperationResult[Any]:
     typed_args = BreakpointNumberArgs.model_validate(args.model_dump())
-    return from_legacy_result(session.enable_breakpoint(number=typed_args.number))
+    return session.enable_breakpoint(number=typed_args.number)
 
 
-def _handle_disable_breakpoint(session: Any, args: BaseModel) -> OperationResult[dict[str, Any]]:
+def _handle_disable_breakpoint(session: Any, args: BaseModel) -> OperationResult[Any]:
     typed_args = BreakpointNumberArgs.model_validate(args.model_dump())
-    return from_legacy_result(session.disable_breakpoint(number=typed_args.number))
+    return session.disable_breakpoint(number=typed_args.number)
 
 
-def _handle_continue(session: Any, args: BaseModel) -> OperationResult[dict[str, Any]]:
+def _handle_continue(session: Any, args: BaseModel) -> OperationResult[Any]:
     del args
-    return from_legacy_result(session.continue_execution())
+    return session.continue_execution()
 
 
-def _handle_step(session: Any, args: BaseModel) -> OperationResult[dict[str, Any]]:
+def _handle_step(session: Any, args: BaseModel) -> OperationResult[Any]:
     del args
-    return from_legacy_result(session.step())
+    return session.step()
 
 
-def _handle_next(session: Any, args: BaseModel) -> OperationResult[dict[str, Any]]:
+def _handle_next(session: Any, args: BaseModel) -> OperationResult[Any]:
     del args
-    return from_legacy_result(session.next())
+    return session.next()
 
 
-def _handle_interrupt(session: Any, args: BaseModel) -> OperationResult[dict[str, Any]]:
+def _handle_interrupt(session: Any, args: BaseModel) -> OperationResult[Any]:
     del args
-    return from_legacy_result(session.interrupt())
+    return session.interrupt()
 
 
-def _handle_evaluate_expression(session: Any, args: BaseModel) -> OperationResult[dict[str, Any]]:
+def _handle_evaluate_expression(session: Any, args: BaseModel) -> OperationResult[Any]:
     typed_args = EvaluateExpressionArgs.model_validate(args.model_dump())
-    return from_legacy_result(session.evaluate_expression(typed_args.expression))
+    return session.evaluate_expression(typed_args.expression)
 
 
-def _handle_get_variables(session: Any, args: BaseModel) -> OperationResult[dict[str, Any]]:
+def _handle_get_variables(session: Any, args: BaseModel) -> OperationResult[Any]:
     typed_args = GetVariablesArgs.model_validate(args.model_dump())
-    return from_legacy_result(
-        session.get_variables(thread_id=typed_args.thread_id, frame=typed_args.frame)
-    )
+    return session.get_variables(thread_id=typed_args.thread_id, frame=typed_args.frame)
 
 
-def _handle_get_registers(session: Any, args: BaseModel) -> OperationResult[dict[str, Any]]:
+def _handle_get_registers(session: Any, args: BaseModel) -> OperationResult[Any]:
     del args
-    return from_legacy_result(session.get_registers())
+    return session.get_registers()
 
 
-def _handle_stop_session(session: Any, args: BaseModel) -> OperationResult[dict[str, Any]]:
+def _handle_stop_session(session: Any, args: BaseModel) -> OperationResult[Any]:
     del args
-    return from_legacy_result(session.stop())
+    return session.stop()
 
 
-def _handle_call_function(session: Any, args: BaseModel) -> OperationResult[dict[str, Any]]:
+def _handle_call_function(session: Any, args: BaseModel) -> OperationResult[Any]:
     typed_args = CallFunctionArgs.model_validate(args.model_dump())
-    return from_legacy_result(session.call_function(function_call=typed_args.function_call))
+    return session.call_function(function_call=typed_args.function_call)
 
 
 SESSION_TOOL_SPECS: dict[str, SessionToolSpec] = {
@@ -195,7 +194,7 @@ def _invalid_session_result(session_id: Any) -> OperationError:
 def _handle_start_session(
     arguments: dict[str, Any],
     session_manager: SessionRegistry,
-) -> OperationResult[dict[str, Any]]:
+) -> OperationResult[Any]:
     """Validate and start a new debugger session."""
 
     args = StartSessionArgs.model_validate(arguments)
@@ -208,12 +207,11 @@ def _handle_start_session(
         working_dir=args.working_dir,
         core=args.core,
     )
-    typed_result = from_legacy_result(result)
-    if session_id is not None:
-        payload = dict(typed_result.value) if isinstance(typed_result, OperationSuccess) else {}
+    if session_id is not None and isinstance(result, OperationSuccess):
+        payload = payload_to_mapping(result.value)
         payload["session_id"] = session_id
         return OperationSuccess(payload)
-    return typed_result
+    return result
 
 
 async def dispatch_tool_call(
@@ -243,11 +241,7 @@ async def dispatch_tool_call(
             return serialize_result(_invalid_session_result(session_id))
 
         result = tool_spec.handler(session, parsed_args)
-        if (
-            name == "gdb_stop_session"
-            and isinstance(result, OperationSuccess)
-            and result.value.get("status") == "success"
-        ):
+        if name == "gdb_stop_session" and isinstance(result, OperationSuccess):
             session_manager.remove_session(session_id)
 
         return serialize_result(result)

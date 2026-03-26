@@ -39,7 +39,7 @@ class MiClient:
 
     @controller.setter
     def controller(self, value: Any) -> None:
-        """Override the controller, mainly for tests and compatibility wrappers."""
+        """Override the controller, mainly for tests."""
 
         self._controller = value
 

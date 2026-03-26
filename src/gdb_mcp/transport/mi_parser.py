@@ -32,11 +32,14 @@ def parse_mi_responses(responses: list[dict[str, Any]]) -> ParsedMiResponse:
 def extract_mi_result_payload(command_result: Mapping[str, Any]) -> Any | None:
     """Extract the MI result payload from the current command result shape."""
 
-    if command_result.get("status") != "success":
-        return None
+    if "status" in command_result:
+        if command_result.get("status") != "success":
+            return None
 
-    result_container = command_result.get("result")
-    if not isinstance(result_container, Mapping):
-        return None
+        result_container = command_result.get("result")
+        if not isinstance(result_container, Mapping):
+            return None
 
-    return result_container.get("result")
+        return result_container.get("result")
+
+    return command_result.get("result")

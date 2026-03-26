@@ -5,6 +5,7 @@ import json
 import logging
 from unittest.mock import Mock
 
+from gdb_mcp.domain import OperationSuccess, SessionMessage, SessionStatusSnapshot
 from gdb_mcp.mcp.runtime import create_server_runtime
 
 
@@ -16,7 +17,9 @@ class TestServerRuntime:
 
         mock_manager = Mock()
         mock_session = Mock()
-        mock_session.get_status.return_value = {"status": "success", "session": 7}
+        mock_session.get_status.return_value = OperationSuccess(
+            SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=True)
+        )
         mock_manager.get_session.return_value = mock_session
 
         runtime = create_server_runtime(
@@ -27,7 +30,12 @@ class TestServerRuntime:
         result = asyncio.run(runtime.call_tool("gdb_get_status", {"session_id": 7}))
         result_data = json.loads(result[0].text)
 
-        assert result_data == {"status": "success", "session": 7}
+        assert result_data == {
+            "status": "success",
+            "is_running": False,
+            "target_loaded": False,
+            "has_controller": True,
+        }
         mock_manager.get_session.assert_called_once_with(7)
         mock_session.get_status.assert_called_once()
 
@@ -35,7 +43,9 @@ class TestServerRuntime:
         """Shutdown should call through the injected registry provider."""
 
         mock_manager = Mock()
-        mock_manager.shutdown_all.return_value = {1: {"status": "success"}}
+        mock_manager.shutdown_all.return_value = {
+            1: OperationSuccess(SessionMessage(message="stopped"))
+        }
 
         runtime = create_server_runtime(
             session_manager_provider=lambda: mock_manager,

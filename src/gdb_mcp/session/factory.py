@@ -8,11 +8,11 @@ import time
 from pygdbmi.IoManager import IoManager
 from pygdbmi.gdbcontroller import GdbController
 
-from .service import (
+from .constants import (
     INITIAL_COMMAND_TOKEN,
     POLL_TIMEOUT_SEC,
-    SessionService,
 )
+from .service import SessionService
 
 logger = logging.getLogger(__name__)
 
@@ -68,9 +68,12 @@ def create_gdb_controller(
     command: list[str],
     time_to_check_for_additional_output_sec: float,
     cwd: str | None = None,
-    controller_class=GdbController,
+    controller_class=None,
 ):
     """Create a GDB controller, adding cwd support for the default pygdbmi class."""
+
+    if controller_class is None:
+        controller_class = GdbController
 
     if cwd is None:
         return controller_class(

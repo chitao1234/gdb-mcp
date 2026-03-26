@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+from ..domain import BreakpointInfo, BreakpointListInfo, OperationError, OperationSuccess, SessionMessage
 from ..transport import extract_mi_result_payload
+from .result_utils import command_result_payload
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +17,7 @@ class SessionBreakpointMixin:
 
     def set_breakpoint(
         self, location: str, condition: Optional[str] = None, temporary: bool = False
-    ) -> dict[str, object]:
+    ) -> OperationSuccess[BreakpointInfo] | OperationError:
         """Set a breakpoint at the specified location."""
         cmd_parts = ["-break-insert"]
 
@@ -28,71 +30,69 @@ class SessionBreakpointMixin:
 
         cmd_parts.append(location)
 
-        result = self.execute_command(" ".join(cmd_parts))
+        result = self._execute_command_result(" ".join(cmd_parts))
 
-        if result["status"] == "error":
+        if isinstance(result, OperationError):
             return result
 
-        mi_result = extract_mi_result_payload(result)
+        mi_result = extract_mi_result_payload(command_result_payload(result))
         logger.debug("Breakpoint MI result: %s", mi_result)
 
         if mi_result is None:
             logger.warning("No MI result for breakpoint at %s", location)
-            return {
-                "status": "error",
-                "message": f"Failed to set breakpoint at {location}: no result from GDB",
-                "raw_result": result,
-            }
+            return OperationError(
+                message=f"Failed to set breakpoint at {location}: no result from GDB",
+                details={"raw_result": result.value},
+            )
 
         bp_info = mi_result if isinstance(mi_result, dict) else {}
         breakpoint = bp_info.get("bkpt", bp_info)
 
         if not breakpoint:
             logger.warning("Empty breakpoint result for %s: %s", location, mi_result)
-            return {
-                "status": "error",
-                "message": f"Breakpoint set but no info returned for {location}",
-                "raw_result": result,
-            }
+            return OperationError(
+                message=f"Breakpoint set but no info returned for {location}",
+                details={"raw_result": result.value},
+            )
 
-        return {"status": "success", "breakpoint": breakpoint}
+        return OperationSuccess(BreakpointInfo(breakpoint=breakpoint))
 
-    def list_breakpoints(self) -> dict[str, object]:
+    def list_breakpoints(self) -> OperationSuccess[BreakpointListInfo] | OperationError:
         """List all breakpoints with structured data."""
-        result = self.execute_command("-break-list")
+        result = self._execute_command_result("-break-list")
 
-        if result["status"] == "error":
+        if isinstance(result, OperationError):
             return result
 
-        mi_result = extract_mi_result_payload(result) or {}
+        mi_result = extract_mi_result_payload(command_result_payload(result)) or {}
         bp_table = mi_result.get("BreakpointTable", {})
         breakpoints = bp_table.get("body", [])
 
-        return {"status": "success", "breakpoints": breakpoints, "count": len(breakpoints)}
+        return OperationSuccess(BreakpointListInfo(breakpoints=breakpoints, count=len(breakpoints)))
 
-    def delete_breakpoint(self, number: int) -> dict[str, object]:
+    def delete_breakpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
         """Delete a breakpoint by its number."""
-        result = self.execute_command(f"-break-delete {number}")
+        result = self._execute_command_result(f"-break-delete {number}")
 
-        if result["status"] == "error":
+        if isinstance(result, OperationError):
             return result
 
-        return {"status": "success", "message": f"Breakpoint {number} deleted"}
+        return OperationSuccess(SessionMessage(message=f"Breakpoint {number} deleted"))
 
-    def enable_breakpoint(self, number: int) -> dict[str, object]:
+    def enable_breakpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
         """Enable a breakpoint by its number."""
-        result = self.execute_command(f"-break-enable {number}")
+        result = self._execute_command_result(f"-break-enable {number}")
 
-        if result["status"] == "error":
+        if isinstance(result, OperationError):
             return result
 
-        return {"status": "success", "message": f"Breakpoint {number} enabled"}
+        return OperationSuccess(SessionMessage(message=f"Breakpoint {number} enabled"))
 
-    def disable_breakpoint(self, number: int) -> dict[str, object]:
+    def disable_breakpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
         """Disable a breakpoint by its number."""
-        result = self.execute_command(f"-break-disable {number}")
+        result = self._execute_command_result(f"-break-disable {number}")
 
-        if result["status"] == "error":
+        if isinstance(result, OperationError):
             return result
 
-        return {"status": "success", "message": f"Breakpoint {number} disabled"}
+        return OperationSuccess(SessionMessage(message=f"Breakpoint {number} disabled"))

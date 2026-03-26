@@ -2,7 +2,7 @@
 
 import json
 
-from gdb_mcp.domain import OperationError, OperationSuccess
+from gdb_mcp.domain import OperationError, OperationSuccess, SessionMessage
 from gdb_mcp.mcp.serializer import result_to_payload, serialize_exception, serialize_result
 
 
@@ -17,7 +17,7 @@ class TestMcpSerializer:
         assert payload == {"status": "success", "value": 42}
 
     def test_result_to_payload_for_error(self):
-        """OperationError should serialize to the legacy error JSON shape."""
+        """OperationError should serialize to the standard external error shape."""
 
         payload = result_to_payload(
             OperationError(
@@ -46,10 +46,10 @@ class TestMcpSerializer:
             "tool": "gdb_get_status",
         }
 
-    def test_serialize_result_still_accepts_legacy_dicts(self):
-        """The serializer should remain compatible with dict payloads during migration."""
+    def test_serialize_result_serializes_typed_payloads(self):
+        """Typed payload objects should serialize through the shared result mapper."""
 
-        contents = serialize_result({"status": "success", "ok": True})
+        contents = serialize_result(OperationSuccess(SessionMessage(message="ok")))
         payload = json.loads(contents[0].text)
 
-        assert payload == {"status": "success", "ok": True}
+        assert payload == {"status": "success", "message": "ok"}

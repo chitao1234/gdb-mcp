@@ -2,37 +2,23 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 import json
 
 from mcp.types import TextContent
 
-from ..domain import OperationError, OperationResult, OperationSuccess
+from ..domain import OperationError, OperationResult, result_to_mapping
 
 
 def result_to_payload(
-    result: OperationResult[Mapping[str, object]] | Mapping[str, object],
+    result: OperationResult[object],
 ) -> dict[str, object]:
     """Convert a typed internal result into the external JSON payload shape."""
 
-    if isinstance(result, OperationSuccess):
-        payload = dict(result.value)
-        if result.warnings and "warnings" not in payload:
-            payload["warnings"] = list(result.warnings)
-        return payload
-
-    if isinstance(result, OperationError):
-        payload: dict[str, object] = {"status": "error", "message": result.message}
-        if result.fatal:
-            payload["fatal"] = True
-        payload.update(result.details)
-        return payload
-
-    return dict(result)
+    return result_to_mapping(result)
 
 
-def serialize_result(result: OperationResult[Mapping[str, object]] | Mapping[str, object]) -> list[TextContent]:
-    """Serialize a typed or legacy tool result into MCP text content."""
+def serialize_result(result: OperationResult[object]) -> list[TextContent]:
+    """Serialize a typed tool result into MCP text content."""
 
     return [TextContent(type="text", text=json.dumps(result_to_payload(result), indent=2))]
 

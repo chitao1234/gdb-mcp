@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
+from gdb_mcp.domain import OperationSuccess, SessionStartInfo
 from gdb_mcp.session.service import SessionService, SessionState
 
 
@@ -45,7 +46,10 @@ class TestSessionService:
         ):
             result = service.start(program="/bin/ls")
 
-        assert result["status"] == "success"
+        assert isinstance(result, OperationSuccess)
+        assert isinstance(result.value, SessionStartInfo)
+        assert result.value.message == "GDB session started"
+        assert result.value.program == "/bin/ls"
         assert service.state is SessionState.READY
         controller_factory.assert_called_once_with(
             command=["gdb", "--quiet", "--interpreter=mi", "/bin/ls"],
@@ -77,7 +81,8 @@ class TestSessionService:
         ):
             result = service.start(program="/bin/ls", working_dir="/tmp/work")
 
-        assert result["status"] == "success"
+        assert isinstance(result, OperationSuccess)
+        assert result.value.program == "/bin/ls"
         controller_factory.assert_called_once_with(
             command=["gdb", "--quiet", "--interpreter=mi", "/bin/ls"],
             time_to_check_for_additional_output_sec=1.0,

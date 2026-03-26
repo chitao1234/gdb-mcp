@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 from typing import Any, Callable
 
+from ..domain import OperationError, OperationResult
 from .factory import create_default_session_service
 from .service import SessionService
 
@@ -13,8 +14,8 @@ class SessionRegistry:
     """
     Thread-safe registry for debugger sessions.
 
-    The registry supports both the legacy create/get/remove flow and an atomic
-    `start_session` flow that only publishes successfully started sessions.
+    `start_session` publishes sessions atomically so failed startup never leaks
+    a reachable half-initialized session.
     """
 
     def __init__(self, session_factory: Callable[[], SessionService] | None = None):
@@ -36,8 +37,6 @@ class SessionRegistry:
     def create_session(self) -> int:
         """
         Create and store a new empty session.
-
-        This legacy method is kept for compatibility with older tests and code.
         """
 
         session_id = self._allocate_session_id()
@@ -46,7 +45,7 @@ class SessionRegistry:
             self._sessions[session_id] = session
         return session_id
 
-    def start_session(self, **start_kwargs: Any) -> tuple[int | None, dict[str, Any]]:
+    def start_session(self, **start_kwargs: Any) -> tuple[int | None, OperationResult[Any]]:
         """
         Start a session and only publish it if startup succeeds.
 
@@ -58,7 +57,7 @@ class SessionRegistry:
         session = self._session_factory()
         result = session.start(**start_kwargs)
 
-        if result.get("status") != "success":
+        if isinstance(result, OperationError):
             return None, result
 
         with self._lock:
@@ -81,18 +80,18 @@ class SessionRegistry:
                 return True
             return False
 
-    def shutdown_all(self) -> dict[int, dict[str, Any]]:
+    def shutdown_all(self) -> dict[int, OperationResult[Any]]:
         """Stop and remove all registered sessions."""
 
         with self._lock:
             sessions = self._sessions
             self._sessions = {}
 
-        results: dict[int, dict[str, Any]] = {}
+        results: dict[int, OperationResult[Any]] = {}
         for session_id, session in sessions.items():
             try:
                 results[session_id] = session.stop()
             except Exception as exc:
-                results[session_id] = {"status": "error", "message": str(exc)}
+                results[session_id] = OperationError(message=str(exc))
 
         return results

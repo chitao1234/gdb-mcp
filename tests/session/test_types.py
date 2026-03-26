@@ -2,7 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
-from gdb_mcp.gdb_interface import GDBSession
+from gdb_mcp.domain import result_to_mapping
+from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.config import SessionConfig
 from gdb_mcp.session.state import SessionState
 
@@ -40,23 +41,23 @@ class TestSessionConfig:
         assert config.core == "/tmp/core"
 
 
-class TestGDBSessionState:
-    """Test that GDBSession tracks the new explicit lifecycle state."""
+class TestSessionState:
+    """Test that SessionService tracks the explicit lifecycle state."""
 
     def test_initial_state_is_created(self):
         """Fresh sessions should start in CREATED state without config."""
 
-        session = GDBSession()
+        session = create_default_session_service()
 
         assert session.state is SessionState.CREATED
         assert session.config is None
 
-    @patch("gdb_mcp.gdb_interface.GdbController")
+    @patch("gdb_mcp.session.factory.GdbController")
     def test_start_success_sets_config_and_ready_state(self, mock_controller_class):
         """Successful startup should populate config and move to READY."""
 
         mock_controller_class.return_value = MagicMock()
-        session = GDBSession()
+        session = create_default_session_service()
 
         with patch.object(
             session,
@@ -67,7 +68,7 @@ class TestGDBSessionState:
                 "timed_out": False,
             },
         ):
-            result = session.start(program="/bin/ls", args=["-l"])
+            result = result_to_mapping(session.start(program="/bin/ls", args=["-l"]))
 
         assert result["status"] == "success"
         assert session.state is SessionState.READY
@@ -75,19 +76,19 @@ class TestGDBSessionState:
         assert session.config.program == "/bin/ls"
         assert session.config.args == ("-l",)
 
-    @patch("gdb_mcp.gdb_interface.os.chdir")
-    @patch("gdb_mcp.gdb_interface.os.path.isdir", return_value=True)
-    @patch("gdb_mcp.gdb_interface.GdbController")
+    @patch("gdb_mcp.session.factory.os.chdir")
+    @patch("gdb_mcp.session.factory.os.path.isdir", return_value=True)
+    @patch("gdb_mcp.session.factory.create_gdb_controller")
     def test_start_with_working_dir_does_not_change_process_cwd(
         self,
-        mock_controller_class,
+        mock_create_controller,
         mock_isdir,
         mock_chdir,
     ):
-        """The GDBSession compatibility wrapper should forward cwd into process startup."""
+        """working_dir should be forwarded into process startup without chdir."""
 
-        mock_controller_class.return_value = MagicMock()
-        session = GDBSession()
+        mock_create_controller.return_value = MagicMock()
+        session = create_default_session_service()
 
         with patch.object(
             session,
@@ -98,10 +99,10 @@ class TestGDBSessionState:
                 "timed_out": False,
             },
         ):
-            result = session.start(program="/bin/ls", working_dir="/tmp/work")
+            result = result_to_mapping(session.start(program="/bin/ls", working_dir="/tmp/work"))
 
         assert result["status"] == "success"
-        mock_controller_class.assert_called_once_with(
+        mock_create_controller.assert_called_once_with(
             command=["gdb", "--quiet", "--interpreter=mi", "/bin/ls"],
             time_to_check_for_additional_output_sec=1.0,
             cwd="/tmp/work",
@@ -112,9 +113,9 @@ class TestGDBSessionState:
     def test_start_failure_sets_failed_state_and_config(self):
         """Validation failures during startup should still record attempted config."""
 
-        session = GDBSession()
+        session = create_default_session_service()
 
-        result = session.start(program="/bin/ls", working_dir="/definitely/missing")
+        result = result_to_mapping(session.start(program="/bin/ls", working_dir="/definitely/missing"))
 
         assert result["status"] == "error"
         assert session.state is SessionState.FAILED
@@ -124,12 +125,12 @@ class TestGDBSessionState:
     def test_stop_success_sets_stopped_state(self):
         """Stopping an active session should move it to STOPPED."""
 
-        session = GDBSession()
+        session = create_default_session_service()
         session.controller = MagicMock()
         session.is_running = True
         session.state = SessionState.READY
 
-        result = session.stop()
+        result = result_to_mapping(session.stop())
 
         assert result["status"] == "success"
         assert session.state is SessionState.STOPPED

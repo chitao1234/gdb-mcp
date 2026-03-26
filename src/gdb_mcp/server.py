@@ -1,4 +1,4 @@
-"""Compatibility entrypoint for the GDB MCP server."""
+"""Entrypoint for the GDB MCP server."""
 
 import logging
 import os
@@ -27,8 +27,6 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-SessionManager = SessionRegistry
 
 # Global session manager instance
 session_manager = SessionRegistry()

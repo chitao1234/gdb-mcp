@@ -58,12 +58,12 @@ class SessionService(
 
     @property
     def controller(self) -> Any:
-        """Expose the underlying controller for compatibility and testing."""
+        """Expose the underlying controller for orchestration and tests."""
 
         return self._transport.controller
 
     @controller.setter
     def controller(self, value: Any) -> None:
-        """Allow tests and wrappers to replace the underlying controller."""
+        """Allow tests to replace the underlying controller."""
 
         self._transport.controller = value
