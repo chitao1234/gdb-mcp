@@ -36,8 +36,8 @@ class TestSessionService:
         )
 
         with patch.object(
-            service,
-            "_send_command_and_wait_for_prompt",
+            service._command_runner,
+            "send_command_and_wait_for_prompt",
             return_value={
                 "command_responses": [{"type": "result", "message": "done", "token": 1000}],
                 "async_notifications": [],
@@ -71,8 +71,8 @@ class TestSessionService:
         )
 
         with patch.object(
-            service,
-            "_send_command_and_wait_for_prompt",
+            service._command_runner,
+            "send_command_and_wait_for_prompt",
             return_value={
                 "command_responses": [{"type": "result", "message": "done", "token": 1000}],
                 "async_notifications": [],

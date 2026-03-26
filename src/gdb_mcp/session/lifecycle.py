@@ -14,9 +14,10 @@ from ..domain import (
     result_to_mapping,
 )
 from ..transport import parse_mi_responses
+from .command_runner import SessionCommandRunner
 from .config import SessionConfig
 from .constants import DEFAULT_TIMEOUT_SEC, FILE_LOAD_TIMEOUT_SEC, INIT_COMMAND_DELAY_SEC
-from .protocols import SessionHostProtocol
+from .runtime import SessionRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +25,9 @@ logger = logging.getLogger(__name__)
 class SessionLifecycleService:
     """Lifecycle orchestration backed by explicit runtime state."""
 
-    def __init__(self, session: SessionHostProtocol):
-        self._session = session
-
-    @property
-    def _runtime(self):
-        return self._session.runtime
+    def __init__(self, runtime: SessionRuntime, command_runner: SessionCommandRunner):
+        self._runtime = runtime
+        self._command_runner = command_runner
 
     def start(
         self,
@@ -84,7 +82,7 @@ class SessionLifecycleService:
             )
 
             logger.debug("Waiting for GDB initialization to complete...")
-            ready_check = self._session._send_command_and_wait_for_prompt(
+            ready_check = self._command_runner.send_command_and_wait_for_prompt(
                 "-gdb-version", timeout_sec=DEFAULT_TIMEOUT_SEC
             )
 
@@ -134,7 +132,7 @@ class SessionLifecycleService:
                         else:
                             timeout = DEFAULT_TIMEOUT_SEC
 
-                        result = self._session._execute_command_result(cmd, timeout_sec=timeout)
+                        result = self._command_runner.execute_command_result(cmd, timeout_sec=timeout)
                         init_output.append(result_to_mapping(result))
 
                         cmd_lower = cmd.lower().strip()
@@ -146,7 +144,7 @@ class SessionLifecycleService:
                             error_msg = result.message
                             logger.error("Init command '%s' failed: %s", cmd, error_msg)
 
-                            if result.fatal or "GDB process" in error_msg or not self._session._is_gdb_alive():
+                            if result.fatal or "GDB process" in error_msg or not self._command_runner.is_gdb_alive():
                                 logger.error("GDB process died during init commands")
                             self._cleanup_failed_start(
                                 f"Init command '{cmd}' failed: {error_msg}"
@@ -166,7 +164,7 @@ class SessionLifecycleService:
                         logger.error("Exception during init command '%s': %s", cmd, exc, exc_info=True)
                         init_output.append({"status": "error", "command": cmd, "message": str(exc)})
 
-                        if not self._session._is_gdb_alive():
+                        if not self._command_runner.is_gdb_alive():
                             logger.error("GDB process died during init command execution")
                         self._cleanup_failed_start(
                             f"Init command '{cmd}' raised an exception: {str(exc)}"
@@ -181,7 +179,9 @@ class SessionLifecycleService:
                 for var_name, var_value in env.items():
                     escaped_value = var_value.replace("\\", "\\\\").replace('"', '\\"')
                     env_cmd = f"set environment {var_name} {escaped_value}"
-                    result = self._session._execute_command_result(env_cmd, timeout_sec=DEFAULT_TIMEOUT_SEC)
+                    result = self._command_runner.execute_command_result(
+                        env_cmd, timeout_sec=DEFAULT_TIMEOUT_SEC
+                    )
                     env_output.append(result_to_mapping(result))
 
                     if isinstance(result, OperationError):

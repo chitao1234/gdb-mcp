@@ -25,8 +25,8 @@ class TestSessionErrorPaths:
         """Transport errors during command execution should surface clearly."""
 
         with patch.object(
-            running_session,
-            "_send_command_and_wait_for_prompt",
+            running_session._command_runner,
+            "send_command_and_wait_for_prompt",
             return_value=prompt_response(error="Timeout"),
         ):
             result = result_to_mapping(running_session.execute_command("info threads"))
@@ -38,8 +38,8 @@ class TestSessionErrorPaths:
         """MI error result records should not be flattened into success."""
 
         with patch.object(
-            running_session,
-            "_send_command_and_wait_for_prompt",
+            running_session._command_runner,
+            "send_command_and_wait_for_prompt",
             return_value=prompt_response(
                 command_responses=[
                     {
@@ -64,7 +64,9 @@ class TestSessionErrorPaths:
             del kwargs
             return command_result(command, result={"result": None})
 
-        with patch.object(running_session, "_execute_command_result", side_effect=mock_execute):
+        with patch.object(
+            running_session._command_runner, "execute_command_result", side_effect=mock_execute
+        ):
             result = result_to_mapping(running_session.set_breakpoint("main"))
 
         assert result["status"] == "error"
@@ -74,8 +76,8 @@ class TestSessionErrorPaths:
         """Fatal transport responses should propagate the fatal flag."""
 
         with patch.object(
-            running_session,
-            "_send_command_and_wait_for_prompt",
+            running_session._command_runner,
+            "send_command_and_wait_for_prompt",
             return_value=prompt_response(
                 error="GDB internal fatal error: internal-error: assertion failed",
                 fatal=True,
@@ -91,8 +93,8 @@ class TestSessionErrorPaths:
         """The alternate fatal-error message format should also propagate fatality."""
 
         with patch.object(
-            running_session,
-            "_send_command_and_wait_for_prompt",
+            running_session._command_runner,
+            "send_command_and_wait_for_prompt",
             return_value=prompt_response(
                 error=(
                     "GDB internal fatal error: A fatal error internal to GDB has been "
@@ -119,8 +121,8 @@ class TestSessionErrorPaths:
         mock_controller_class.return_value = MagicMock()
 
         with patch.object(
-            session_service,
-            "_send_command_and_wait_for_prompt",
+            session_service._command_runner,
+            "send_command_and_wait_for_prompt",
             return_value=prompt_response(
                 error="GDB internal fatal error: internal-error during initialization",
                 fatal=True,

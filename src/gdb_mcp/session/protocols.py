@@ -3,12 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Protocol, TYPE_CHECKING
-
-from ..domain import CommandExecutionInfo, OperationError, OperationSuccess
-
-if TYPE_CHECKING:
-    from .runtime import SessionRuntime
+from typing import Any, Protocol
 
 
 class OsPathProtocol(Protocol):
@@ -36,27 +31,3 @@ class TimeModuleProtocol(Protocol):
 
     def time(self) -> float:
         """Return the current wall-clock time in seconds."""
-
-
-class SessionHostProtocol(Protocol):
-    """Capabilities required by composed session operation services."""
-
-    runtime: "SessionRuntime"
-
-    @property
-    def controller(self) -> Any:
-        """Expose the underlying controller for compatibility and tests."""
-
-    def _execute_command_result(
-        self, command: str, timeout_sec: int
-    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
-        """Execute a command through the shared command runner."""
-
-    def _send_command_and_wait_for_prompt(
-        self, command: str, timeout_sec: float
-    ) -> dict[str, object]:
-        """Send one command and wait for a prompt/result."""
-
-    def _is_gdb_alive(self) -> bool:
-        """Return whether the underlying GDB process is still alive."""
-

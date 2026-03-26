@@ -7,8 +7,8 @@ from typing import Optional
 
 from ..domain import BreakpointInfo, BreakpointListInfo, OperationError, OperationSuccess, SessionMessage
 from ..transport import extract_mi_result_payload, quote_mi_string
+from .command_runner import SessionCommandRunner
 from .constants import DEFAULT_TIMEOUT_SEC
-from .protocols import SessionHostProtocol
 from .result_utils import command_result_payload
 
 logger = logging.getLogger(__name__)
@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 class SessionBreakpointService:
     """Breakpoint-related operations."""
 
-    def __init__(self, session: SessionHostProtocol):
-        self._session = session
+    def __init__(self, command_runner: SessionCommandRunner):
+        self._command_runner = command_runner
 
     def set_breakpoint(
         self, location: str, condition: Optional[str] = None, temporary: bool = False
@@ -34,7 +34,7 @@ class SessionBreakpointService:
 
         cmd_parts.append(location)
 
-        result = self._session._execute_command_result(
+        result = self._command_runner.execute_command_result(
             " ".join(cmd_parts), timeout_sec=DEFAULT_TIMEOUT_SEC
         )
 
@@ -65,7 +65,7 @@ class SessionBreakpointService:
 
     def list_breakpoints(self) -> OperationSuccess[BreakpointListInfo] | OperationError:
         """List all breakpoints with structured data."""
-        result = self._session._execute_command_result("-break-list", timeout_sec=DEFAULT_TIMEOUT_SEC)
+        result = self._command_runner.execute_command_result("-break-list", timeout_sec=DEFAULT_TIMEOUT_SEC)
 
         if isinstance(result, OperationError):
             return result
@@ -78,7 +78,7 @@ class SessionBreakpointService:
 
     def delete_breakpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
         """Delete a breakpoint by its number."""
-        result = self._session._execute_command_result(
+        result = self._command_runner.execute_command_result(
             f"-break-delete {number}", timeout_sec=DEFAULT_TIMEOUT_SEC
         )
 
@@ -89,7 +89,7 @@ class SessionBreakpointService:
 
     def enable_breakpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
         """Enable a breakpoint by its number."""
-        result = self._session._execute_command_result(
+        result = self._command_runner.execute_command_result(
             f"-break-enable {number}", timeout_sec=DEFAULT_TIMEOUT_SEC
         )
 
@@ -100,7 +100,7 @@ class SessionBreakpointService:
 
     def disable_breakpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
         """Disable a breakpoint by its number."""
-        result = self._session._execute_command_result(
+        result = self._command_runner.execute_command_result(
             f"-break-disable {number}", timeout_sec=DEFAULT_TIMEOUT_SEC
         )
 

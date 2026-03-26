@@ -45,8 +45,8 @@ class TestLifecycleApi:
         mock_controller_class.return_value = MagicMock()
 
         with patch.object(
-            session_service,
-            "_send_command_and_wait_for_prompt",
+            session_service._command_runner,
+            "send_command_and_wait_for_prompt",
             return_value=prompt_response(
                 command_responses=[
                     {"type": "console", "payload": "Reading symbols from /bin/ls...\n"},
@@ -72,8 +72,8 @@ class TestLifecycleApi:
         mock_controller_class.return_value = MagicMock()
 
         with patch.object(
-            session_service,
-            "_send_command_and_wait_for_prompt",
+            session_service._command_runner,
+            "send_command_and_wait_for_prompt",
             return_value=prompt_response(
                 command_responses=[{"type": "result", "message": "done", "token": 1000}]
             ),
@@ -102,8 +102,8 @@ class TestLifecycleApi:
         mock_controller_class.return_value = MagicMock()
 
         with patch.object(
-            session_service,
-            "_send_command_and_wait_for_prompt",
+            session_service._command_runner,
+            "send_command_and_wait_for_prompt",
             return_value=prompt_response(
                 command_responses=[{"type": "result", "message": "done", "token": 1000}]
             ),
@@ -130,8 +130,8 @@ class TestLifecycleApi:
         mock_controller_class.return_value = MagicMock()
 
         with patch.object(
-            session_service,
-            "_send_command_and_wait_for_prompt",
+            session_service._command_runner,
+            "send_command_and_wait_for_prompt",
             return_value=prompt_response(
                 command_responses=[{"type": "result", "message": "done", "token": 1000}]
             ),
@@ -167,13 +167,15 @@ class TestLifecycleApi:
             return command_result(command, output="")
 
         with patch.object(
-            session_service,
-            "_send_command_and_wait_for_prompt",
+            session_service._command_runner,
+            "send_command_and_wait_for_prompt",
             return_value=prompt_response(
                 command_responses=[{"type": "result", "message": "done", "token": 1000}]
             ),
         ):
-            with patch.object(session_service, "_execute_command_result", side_effect=mock_execute):
+            with patch.object(
+                session_service._command_runner, "execute_command_result", side_effect=mock_execute
+            ):
                 result = result_to_mapping(
                     session_service.start(
                         program="/bin/ls",
@@ -205,13 +207,15 @@ class TestLifecycleApi:
             return command_result(command, output="")
 
         with patch.object(
-            session_service,
-            "_send_command_and_wait_for_prompt",
+            session_service._command_runner,
+            "send_command_and_wait_for_prompt",
             return_value=prompt_response(
                 command_responses=[{"type": "result", "message": "done", "token": 1000}]
             ),
         ):
-            with patch.object(session_service, "_execute_command_result", side_effect=mock_execute):
+            with patch.object(
+                session_service._command_runner, "execute_command_result", side_effect=mock_execute
+            ):
                 result = result_to_mapping(
                     session_service.start(program="/bin/ls", env={"DEBUG_MODE": "1"})
                 )
@@ -231,8 +235,8 @@ class TestLifecycleApi:
         mock_controller_class.return_value = MagicMock()
 
         with patch.object(
-            session_service,
-            "_send_command_and_wait_for_prompt",
+            session_service._command_runner,
+            "send_command_and_wait_for_prompt",
             return_value=prompt_response(
                 command_responses=[
                     {"type": "console", "payload": "Reading symbols from /bin/ls...\n"},

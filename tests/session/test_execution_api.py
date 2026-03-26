@@ -79,7 +79,7 @@ class TestExecutionApi:
             {"type": "notify", "message": "stopped", "payload": {"reason": "signal-received"}}
         ]
 
-        with patch.object(running_session._os, "kill") as mock_kill:
+        with patch.object(running_session.runtime.os_module, "kill") as mock_kill:
             result = result_to_mapping(running_session.interrupt())
 
         assert result["status"] == "success"
@@ -92,7 +92,7 @@ class TestExecutionApi:
         running_session.controller.gdb_process.pid = 12345
         running_session.controller.get_gdb_response.return_value = []
 
-        with patch.object(running_session._os, "kill") as mock_kill:
+        with patch.object(running_session.runtime.os_module, "kill") as mock_kill:
             result = result_to_mapping(running_session.interrupt())
 
         assert result["status"] == "warning"
@@ -196,8 +196,8 @@ class TestCallFunctionApi:
         """Function calls should report timeout failures."""
 
         with patch.object(
-            running_session,
-            "_send_command_and_wait_for_prompt",
+            running_session._command_runner,
+            "send_command_and_wait_for_prompt",
             return_value=prompt_response(timed_out=True),
         ):
             result = result_to_mapping(running_session.call_function("some_slow_function()"))
@@ -209,8 +209,8 @@ class TestCallFunctionApi:
         """Transport-level call failures should surface their message."""
 
         with patch.object(
-            running_session,
-            "_send_command_and_wait_for_prompt",
+            running_session._command_runner,
+            "send_command_and_wait_for_prompt",
             return_value=prompt_response(error="No symbol table loaded"),
         ):
             result = result_to_mapping(running_session.call_function("unknown_func()"))

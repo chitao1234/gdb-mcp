@@ -60,8 +60,8 @@ class TestSessionState:
         session = create_default_session_service()
 
         with patch.object(
-            session,
-            "_send_command_and_wait_for_prompt",
+            session._command_runner,
+            "send_command_and_wait_for_prompt",
             return_value={
                 "command_responses": [{"type": "result", "message": "done", "token": 1000}],
                 "async_notifications": [],
@@ -91,8 +91,8 @@ class TestSessionState:
         session = create_default_session_service()
 
         with patch.object(
-            session,
-            "_send_command_and_wait_for_prompt",
+            session._command_runner,
+            "send_command_and_wait_for_prompt",
             return_value={
                 "command_responses": [{"type": "result", "message": "done", "token": 1000}],
                 "async_notifications": [],

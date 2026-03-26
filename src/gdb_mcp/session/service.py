@@ -23,8 +23,7 @@ from ..domain import (
     ThreadSelectionInfo,
     VariablesInfo,
 )
-
-from ..transport import MiClient, is_cli_command, parse_mi_responses, wrap_cli_command
+from ..transport import MiClient
 from .breakpoints import SessionBreakpointService
 from .command_runner import SessionCommandRunner
 from .config import SessionConfig
@@ -69,10 +68,10 @@ class SessionService:
             time_module=time_module,
         )
         self._command_runner = SessionCommandRunner(self.runtime)
-        self._lifecycle = SessionLifecycleService(self)
-        self._execution = SessionExecutionService(self)
-        self._breakpoints = SessionBreakpointService(self)
-        self._inspection = SessionInspectionService(self)
+        self._lifecycle = SessionLifecycleService(self.runtime, self._command_runner)
+        self._execution = SessionExecutionService(self.runtime, self._command_runner)
+        self._breakpoints = SessionBreakpointService(self._command_runner)
+        self._inspection = SessionInspectionService(self.runtime, self._command_runner)
 
     @property
     def controller(self) -> Any:
@@ -125,82 +124,6 @@ class SessionService:
     @target_loaded.setter
     def target_loaded(self, value: bool) -> None:
         self.runtime.target_loaded = value
-
-    @property
-    def _os(self) -> OsModuleProtocol:
-        """Compatibility alias for tests that patch the injected os module."""
-
-        return self.runtime.os_module
-
-    @property
-    def _time(self) -> TimeModuleProtocol:
-        """Compatibility alias for tests that patch the injected time module."""
-
-        return self.runtime.time_module
-
-    def _is_gdb_alive(self) -> bool:
-        """Compatibility wrapper for tests and collaborators."""
-
-        return self._command_runner.is_gdb_alive()
-
-    def _send_command_and_wait_for_prompt(
-        self, command: str, timeout_sec: float = DEFAULT_TIMEOUT_SEC
-    ) -> dict[str, object]:
-        """Compatibility wrapper for tests and collaborators."""
-
-        return self._command_runner.send_command_and_wait_for_prompt(command, timeout_sec)
-
-    def _execute_command_result(
-        self, command: str, timeout_sec: int = DEFAULT_TIMEOUT_SEC
-    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
-        """Compatibility wrapper for tests and collaborators."""
-
-        if not self.runtime.has_controller:
-            return OperationError(message="No active GDB session")
-
-        if not self._is_gdb_alive():
-            return OperationError(
-                message="GDB process has exited - cannot execute command",
-                details={"command": command},
-            )
-
-        cli_command = is_cli_command(command)
-        actual_command = wrap_cli_command(command) if cli_command else command
-        result = self._send_command_and_wait_for_prompt(actual_command, timeout_sec)
-
-        if "error" in result:
-            return OperationError(
-                message=str(result["error"]),
-                fatal=bool(result.get("fatal", False)),
-                details={"command": command},
-            )
-
-        if result.get("timed_out"):
-            return OperationError(
-                message=f"Timeout waiting for command response after {timeout_sec}s",
-                details={"command": command},
-            )
-
-        raw_responses = result.get("command_responses", [])
-        command_responses = raw_responses if isinstance(raw_responses, list) else []
-        parsed = parse_mi_responses(command_responses)
-
-        if parsed.is_error_result():
-            return OperationError(
-                message=parsed.error_message() or "GDB returned an error",
-                details={"command": command},
-            )
-
-        if cli_command:
-            console_output = "".join(item for item in parsed.console if isinstance(item, str))
-            return OperationSuccess(
-                CommandExecutionInfo(
-                    command=command,
-                    output=console_output.strip() if console_output else "(no output)",
-                )
-            )
-
-        return OperationSuccess(CommandExecutionInfo(command=command, result=parsed.to_dict()))
 
     def start(self, *args: Any, **kwargs: Any) -> OperationSuccess[Any] | OperationError:
         """Delegate session startup to the lifecycle service."""

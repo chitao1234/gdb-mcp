@@ -18,8 +18,9 @@ from ..transport import (
     parse_mi_responses,
     wrap_cli_command,
 )
+from .command_runner import SessionCommandRunner
 from .constants import DEFAULT_TIMEOUT_SEC, INTERRUPT_RESPONSE_TIMEOUT_SEC, POLL_TIMEOUT_SEC
-from .protocols import SessionHostProtocol
+from .runtime import SessionRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -27,19 +28,16 @@ logger = logging.getLogger(__name__)
 class SessionExecutionService:
     """Execution and command-control operations."""
 
-    def __init__(self, session: SessionHostProtocol):
-        self._session = session
-
-    @property
-    def _runtime(self):
-        return self._session.runtime
+    def __init__(self, runtime: SessionRuntime, command_runner: SessionCommandRunner):
+        self._runtime = runtime
+        self._command_runner = command_runner
 
     def execute_command(
         self, command: str, timeout_sec: int = DEFAULT_TIMEOUT_SEC
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Execute a GDB command and return the parsed response."""
 
-        return self._session._execute_command_result(command, timeout_sec)
+        return self._command_runner.execute_command_result(command, timeout_sec)
 
     def run(
         self, args: Optional[list[str]] = None
@@ -49,25 +47,25 @@ class SessionExecutionService:
             return OperationError(message="No active GDB session")
 
         if args:
-            result = self._session._execute_command_result(
+            result = self._command_runner.execute_command_result(
                 build_exec_arguments_command(args), timeout_sec=DEFAULT_TIMEOUT_SEC
             )
             if isinstance(result, OperationError):
                 return result
 
-        return self._session._execute_command_result("-exec-run", timeout_sec=DEFAULT_TIMEOUT_SEC)
+        return self._command_runner.execute_command_result("-exec-run", timeout_sec=DEFAULT_TIMEOUT_SEC)
 
     def continue_execution(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Continue execution of the program."""
-        return self._session._execute_command_result("-exec-continue", timeout_sec=DEFAULT_TIMEOUT_SEC)
+        return self._command_runner.execute_command_result("-exec-continue", timeout_sec=DEFAULT_TIMEOUT_SEC)
 
     def step(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Step into the next source line."""
-        return self._session._execute_command_result("-exec-step", timeout_sec=DEFAULT_TIMEOUT_SEC)
+        return self._command_runner.execute_command_result("-exec-step", timeout_sec=DEFAULT_TIMEOUT_SEC)
 
     def next(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Step over the next source line."""
-        return self._session._execute_command_result("-exec-next", timeout_sec=DEFAULT_TIMEOUT_SEC)
+        return self._command_runner.execute_command_result("-exec-next", timeout_sec=DEFAULT_TIMEOUT_SEC)
 
     def interrupt(self) -> OperationSuccess[MessageResult] | OperationError:
         """Interrupt (pause) a running program."""
@@ -125,13 +123,13 @@ class SessionExecutionService:
         if not self._runtime.has_controller:
             return OperationError(message="No active GDB session")
 
-        if not self._session._is_gdb_alive():
+        if not self._command_runner.is_gdb_alive():
             return OperationError(message="GDB process has exited - cannot execute call")
 
         command = f"call {function_call}"
         mi_command = wrap_cli_command(command)
 
-        result = self._session._send_command_and_wait_for_prompt(mi_command, timeout_sec)
+        result = self._command_runner.send_command_and_wait_for_prompt(mi_command, timeout_sec)
 
         if "error" in result:
             return OperationError(
