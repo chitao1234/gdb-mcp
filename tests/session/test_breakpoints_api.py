@@ -2,23 +2,19 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 from gdb_mcp.domain import result_to_mapping
 
 
 class TestBreakpointApi:
     """Test breakpoint management through the public API."""
 
-    def test_set_breakpoint_simple(self, running_session, command_result):
+    def test_set_breakpoint_simple(self, scripted_running_session, mi_result):
         """Setting a simple breakpoint should return breakpoint details."""
 
-        def mock_execute(command, **kwargs):
-            del kwargs
-            return command_result(
-                command,
-                result={
-                    "result": {
+        session, controller = scripted_running_session(
+            [
+                mi_result(
+                    {
                         "bkpt": {
                             "number": "1",
                             "type": "breakpoint",
@@ -26,47 +22,41 @@ class TestBreakpointApi:
                             "func": "main",
                         }
                     }
-                },
-            )
+                )
+            ]
+        )
 
-        with patch.object(running_session, "_execute_command_result", side_effect=mock_execute):
-            result = result_to_mapping(running_session.set_breakpoint("main"))
+        result = result_to_mapping(session.set_breakpoint("main"))
 
         assert result["status"] == "success"
         assert "breakpoint" in result
         assert result["breakpoint"]["func"] == "main"
+        assert controller.io_manager.stdin.writes[0].decode().endswith("-break-insert main\n")
 
-    def test_set_breakpoint_with_condition(self, running_session, command_result):
+    def test_set_breakpoint_with_condition(self, scripted_running_session, mi_result):
         """Conditional and temporary flags should be preserved in the command."""
 
-        commands_executed: list[str] = []
+        session, controller = scripted_running_session([mi_result({"bkpt": {"number": "1"}})])
 
-        def mock_execute(command, **kwargs):
-            del kwargs
-            commands_executed.append(command)
-            return command_result(command, result={"result": {"bkpt": {"number": "1"}}})
-
-        with patch.object(running_session, "_execute_command_result", side_effect=mock_execute):
-            result = result_to_mapping(
-                running_session.set_breakpoint(
-                    "foo.c:42",
-                    condition="x > 10",
-                    temporary=True,
-                )
+        result = result_to_mapping(
+            session.set_breakpoint(
+                "foo.c:42",
+                condition="x > 10",
+                temporary=True,
             )
+        )
 
         assert result["status"] == "success"
-        assert any("-break-insert" in command for command in commands_executed)
+        command = controller.io_manager.stdin.writes[0].decode()
+        assert "-break-insert -t -c \"x > 10\" foo.c:42" in command
 
-    def test_list_breakpoints(self, running_session, command_result):
+    def test_list_breakpoints(self, scripted_running_session, mi_result):
         """Listing breakpoints should surface the breakpoint table body."""
 
-        def mock_execute(command, **kwargs):
-            del kwargs
-            return command_result(
-                command,
-                result={
-                    "result": {
+        session, controller = scripted_running_session(
+            [
+                mi_result(
+                    {
                         "BreakpointTable": {
                             "body": [
                                 {"number": "1", "type": "breakpoint"},
@@ -74,12 +64,13 @@ class TestBreakpointApi:
                             ]
                         }
                     }
-                },
-            )
+                )
+            ]
+        )
 
-        with patch.object(running_session, "_execute_command_result", side_effect=mock_execute):
-            result = result_to_mapping(running_session.list_breakpoints())
+        result = result_to_mapping(session.list_breakpoints())
 
         assert result["status"] == "success"
         assert result["count"] == 2
         assert len(result["breakpoints"]) == 2
+        assert controller.io_manager.stdin.writes[0].decode().endswith("-break-list\n")

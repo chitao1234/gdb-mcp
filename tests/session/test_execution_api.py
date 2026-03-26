@@ -18,53 +18,50 @@ class TestExecutionApi:
         assert result["status"] == "error"
         assert "No active GDB session" in result["message"]
 
-    def test_continue_execution(self, running_session, command_result):
-        """Continue should delegate to the MI exec-continue command."""
+    def test_continue_execution(self, scripted_running_session, mi_result, mi_notify):
+        """Continue should emit the MI exec-continue command."""
 
-        with patch.object(
-            running_session,
-            "_execute_command_result",
-            return_value=command_result(
-                "-exec-continue",
-                result={"notify": [{"reason": "breakpoint-hit"}]},
-            ),
-        ) as mock_execute:
-            result = result_to_mapping(running_session.continue_execution())
+        session, controller = scripted_running_session(
+            [
+                mi_result(message="running"),
+                mi_notify("stopped", {"reason": "breakpoint-hit"}),
+            ]
+        )
 
-        assert result["status"] == "success"
-        mock_execute.assert_called_once_with("-exec-continue")
-
-    def test_step(self, running_session, command_result):
-        """Step should delegate to the MI exec-step command."""
-
-        with patch.object(
-            running_session,
-            "_execute_command_result",
-            return_value=command_result(
-                "-exec-step",
-                result={"notify": [{"reason": "end-stepping-range"}]},
-            ),
-        ) as mock_execute:
-            result = result_to_mapping(running_session.step())
+        result = result_to_mapping(session.continue_execution())
 
         assert result["status"] == "success"
-        mock_execute.assert_called_once_with("-exec-step")
+        assert controller.io_manager.stdin.writes[0].decode().endswith("-exec-continue\n")
 
-    def test_next(self, running_session, command_result):
-        """Next should delegate to the MI exec-next command."""
+    def test_step(self, scripted_running_session, mi_result, mi_notify):
+        """Step should emit the MI exec-step command."""
 
-        with patch.object(
-            running_session,
-            "_execute_command_result",
-            return_value=command_result(
-                "-exec-next",
-                result={"notify": [{"reason": "end-stepping-range"}]},
-            ),
-        ) as mock_execute:
-            result = result_to_mapping(running_session.next())
+        session, controller = scripted_running_session(
+            [
+                mi_result(message="running"),
+                mi_notify("stopped", {"reason": "end-stepping-range"}),
+            ]
+        )
+
+        result = result_to_mapping(session.step())
 
         assert result["status"] == "success"
-        mock_execute.assert_called_once_with("-exec-next")
+        assert controller.io_manager.stdin.writes[0].decode().endswith("-exec-step\n")
+
+    def test_next(self, scripted_running_session, mi_result, mi_notify):
+        """Next should emit the MI exec-next command."""
+
+        session, controller = scripted_running_session(
+            [
+                mi_result(message="running"),
+                mi_notify("stopped", {"reason": "end-stepping-range"}),
+            ]
+        )
+
+        result = result_to_mapping(session.next())
+
+        assert result["status"] == "success"
+        assert controller.io_manager.stdin.writes[0].decode().endswith("-exec-next\n")
 
     def test_interrupt_no_controller(self, session_service):
         """Interrupt without a controller should return a clear error."""
@@ -102,63 +99,46 @@ class TestExecutionApi:
         assert "no stopped notification" in result["message"].lower()
         mock_kill.assert_called_once()
 
-    def test_execute_command_cli(self, running_session, prompt_response):
+    def test_execute_command_cli(self, scripted_running_session, mi_console, mi_result):
         """CLI commands should surface console output."""
 
-        with patch.object(
-            running_session,
-            "_send_command_and_wait_for_prompt",
-            return_value=prompt_response(
-                command_responses=[
-                    {"type": "console", "payload": "Thread 1 (main)\n"},
-                    {"type": "result", "payload": None, "token": 1000},
-                ]
-            ),
-        ):
-            result = result_to_mapping(running_session.execute_command("info threads"))
+        session, controller = scripted_running_session(
+            [
+                mi_console("Thread 1 (main)\n"),
+                mi_result(),
+            ]
+        )
+
+        result = result_to_mapping(session.execute_command("info threads"))
 
         assert result["status"] == "success"
         assert "Thread 1" in result["output"]
+        assert '-interpreter-exec console "info threads"' in controller.io_manager.stdin.writes[0].decode()
 
-    def test_execute_command_mi(self, running_session, prompt_response):
+    def test_execute_command_mi(self, scripted_running_session, mi_result):
         """MI commands should surface parsed result payloads."""
 
-        with patch.object(
-            running_session,
-            "_send_command_and_wait_for_prompt",
-            return_value=prompt_response(
-                command_responses=[
-                    {"type": "result", "payload": {"threads": []}, "token": 1000},
-                ]
-            ),
-        ):
-            result = result_to_mapping(running_session.execute_command("-thread-info"))
+        session, controller = scripted_running_session([mi_result({"threads": []})])
+
+        result = result_to_mapping(session.execute_command("-thread-info"))
 
         assert result["status"] == "success"
         assert "result" in result
+        assert controller.io_manager.stdin.writes[0].decode().endswith("-thread-info\n")
 
-    def test_execute_command_mi_error_result(self, running_session, prompt_response):
+    def test_execute_command_mi_error_result(self, scripted_running_session, mi_result):
         """MI error result records should remain visible as errors."""
 
-        with patch.object(
-            running_session,
-            "_send_command_and_wait_for_prompt",
-            return_value=prompt_response(
-                command_responses=[
-                    {
-                        "type": "result",
-                        "message": "error",
-                        "payload": {"msg": "Thread ID 999 not known"},
-                        "token": 1000,
-                    }
-                ]
-            ),
-        ):
-            result = result_to_mapping(running_session.execute_command("-thread-select 999"))
+        session, controller = scripted_running_session(
+            [mi_result({"msg": "Thread ID 999 not known"}, message="error")]
+        )
+
+        result = result_to_mapping(session.execute_command("-thread-select 999"))
 
         assert result["status"] == "error"
         assert result["command"] == "-thread-select 999"
         assert "Thread ID 999 not known" in result["message"]
+        assert controller.io_manager.stdin.writes[0].decode().endswith("-thread-select 999\n")
 
 
 class TestCallFunctionApi:
@@ -172,24 +152,22 @@ class TestCallFunctionApi:
         assert result["status"] == "error"
         assert "No active GDB session" in result["message"]
 
-    def test_call_function_success(self, running_session, prompt_response):
+    def test_call_function_success(self, scripted_running_session, mi_console, mi_result):
         """Function calls should surface console return values."""
 
-        with patch.object(
-            running_session,
-            "_send_command_and_wait_for_prompt",
-            return_value=prompt_response(
-                command_responses=[
-                    {"type": "console", "payload": "$1 = 5\n"},
-                    {"type": "result", "payload": None, "token": 1000},
-                ]
-            ),
-        ):
-            result = result_to_mapping(running_session.call_function('strlen("hello")'))
+        session, controller = scripted_running_session(
+            [
+                mi_console("$1 = 5\n"),
+                mi_result(),
+            ]
+        )
+
+        result = result_to_mapping(session.call_function('strlen("hello")'))
 
         assert result["status"] == "success"
         assert result["function_call"] == 'strlen("hello")'
         assert "$1 = 5" in result["result"]
+        assert 'call strlen(\\"hello\\")' in controller.io_manager.stdin.writes[0].decode()
 
     def test_call_function_timeout(self, running_session, prompt_response):
         """Function calls should report timeout failures."""
