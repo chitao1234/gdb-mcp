@@ -2,7 +2,6 @@
 
 import os
 import signal
-import subprocess
 import time
 from typing import Any, Optional
 import logging
@@ -12,7 +11,7 @@ from pygdbmi.gdbcontroller import GdbController
 from .domain.models import SessionStatusSnapshot
 from .session.config import SessionConfig
 from .session.state import SessionState
-from .transport.mi_parser import extract_mi_result_payload, parse_mi_responses
+from .transport import MiClient, extract_mi_result_payload, is_cli_command, parse_mi_responses, wrap_cli_command
 
 logger = logging.getLogger(__name__)
 
@@ -37,13 +36,28 @@ class GDBSession:
     """
 
     def __init__(self):
-        self.controller: Optional[GdbController] = None
+        self._transport = MiClient(
+            controller_factory=GdbController,
+            initial_command_token=INITIAL_COMMAND_TOKEN,
+            poll_timeout_sec=POLL_TIMEOUT_SEC,
+        )
         self.is_running = False
         self.target_loaded = False
         self.original_cwd: Optional[str] = None  # Store original working directory
-        self._command_token = INITIAL_COMMAND_TOKEN
         self.config: Optional[SessionConfig] = None
         self.state = SessionState.CREATED
+
+    @property
+    def controller(self) -> Optional[GdbController]:
+        """Expose the underlying controller for compatibility with existing callers/tests."""
+
+        return self._transport.controller
+
+    @controller.setter
+    def controller(self, value: Optional[GdbController]) -> None:
+        """Allow tests and compatibility code to replace the underlying controller."""
+
+        self._transport.controller = value
 
     def start(
         self,
@@ -145,7 +159,7 @@ class GDBSession:
 
             # pygdbmi 0.11+ uses 'command' parameter instead of 'gdb_path' and 'gdb_args'
             # Use 1.0s for output checking to robustly handle core files with errors/warnings
-            self.controller = GdbController(
+            self._transport.start(
                 command=gdb_command,
                 time_to_check_for_additional_output_sec=1.0,
             )
@@ -164,7 +178,7 @@ class GDBSession:
                 # Controller might already be None if fatal error occurred
                 if self.controller:
                     try:
-                        self.controller.exit()
+                        self._transport.exit()
                     except Exception:
                         pass  # Best effort cleanup
                     self.controller = None
@@ -328,32 +342,7 @@ class GDBSession:
 
     def _is_gdb_alive(self) -> bool:
         """Check if the GDB process is still running."""
-        if not self.controller:
-            return False
-
-        try:
-            # Only check if this is a real GdbController with an actual subprocess.Popen
-            # For tests with mocks, assume the process is alive
-            if not hasattr(self.controller, "gdb_process"):
-                return True
-
-            gdb_process = self.controller.gdb_process
-
-            # Check if this is actually a subprocess.Popen instance
-            # If not (e.g., it's a Mock), assume alive to avoid breaking tests
-            if not isinstance(gdb_process, subprocess.Popen):
-                return True
-
-            # Check if process is alive by checking its return code
-            # poll() returns None if still running, or the exit code if exited
-            poll_result = gdb_process.poll()
-            if poll_result is not None:
-                logger.error(f"GDB process exited with code {poll_result}")
-            return poll_result is None
-        except Exception as e:
-            # If we can't check, assume alive to avoid false positives in tests
-            logger.debug(f"Exception checking if GDB alive: {e}, assuming alive")
-            return True
+        return self._transport.is_alive()
 
     def _send_command_and_wait_for_prompt(
         self, command: str, timeout_sec: float = DEFAULT_TIMEOUT_SEC
@@ -376,200 +365,24 @@ class GDBSession:
                 - async_notifications: list of async responses (no token or different token)
                 - timed_out: bool indicating if we hit the timeout
         """
-        import time
+        result = self._transport.send_command_and_wait_for_prompt(command, timeout_sec=timeout_sec)
 
-        if not self.controller:
-            return {
-                "command_responses": [],
-                "async_notifications": [],
-                "timed_out": True,
-                "error": "No active GDB session",
-            }
+        if result.fatal:
+            self.is_running = False
+            self.target_loaded = False
+            self.state = SessionState.FAILED
 
-        # Get next token and increment counter
-        token = self._command_token
-        self._command_token += 1
-
-        # Add token prefix to command
-        tokenized_command = f"{token}{command}"
-
-        logger.debug(f"Sending tokenized command: {tokenized_command}")
-
-        # Write command to GDB without waiting for response
-        # (we'll manually read until we see the prompt)
-        try:
-            self.controller.io_manager.stdin.write((tokenized_command + "\n").encode())
-            self.controller.io_manager.stdin.flush()
-        except (BrokenPipeError, OSError) as e:
-            logger.error(f"Failed to send command: {e}")
-            return {
-                "command_responses": [],
-                "async_notifications": [],
-                "timed_out": False,
-                "error": f"Failed to send command: {e}",
-            }
-
-        # Read responses until we see the (gdb) prompt
-        # Timeout is based on inactivity, not total elapsed time
-        # As long as GDB keeps producing output, we keep waiting
-        command_responses: list[dict[str, Any]] = []
-        async_notifications: list[dict[str, Any]] = []
-        start_time = time.time()
-        last_activity_time = start_time  # Track when we last received output
-        last_alive_check = start_time
-
-        while time.time() - last_activity_time < timeout_sec:
-            # Check if GDB is alive periodically (every 1 second) to avoid overhead
-            elapsed = time.time() - start_time
-            if elapsed - last_alive_check >= 1.0:
-                if not self._is_gdb_alive():
-                    # Get the exit code for diagnostics
-                    exit_code = None
-                    try:
-                        if hasattr(self.controller, "gdb_process") and isinstance(
-                            self.controller.gdb_process, subprocess.Popen
-                        ):
-                            exit_code = self.controller.gdb_process.poll()
-                    except Exception:
-                        pass
-
-                    error_details = f"GDB process exited unexpectedly after {elapsed:.1f}s"
-                    if exit_code is not None:
-                        if exit_code == -9:
-                            error_details += " (exit code -9: killed, likely out of memory)"
-                        elif exit_code == -6:
-                            error_details += " (exit code -6: aborted, possibly assertion failure)"
-                        elif exit_code == -11:
-                            error_details += " (exit code -11: segmentation fault)"
-                        else:
-                            error_details += f" (exit code {exit_code})"
-
-                    logger.error(error_details)
-                    return {
-                        "command_responses": command_responses,
-                        "async_notifications": async_notifications,
-                        "timed_out": False,
-                        "error": error_details,
-                    }
-                last_alive_check = elapsed
-                inactive_time = time.time() - last_activity_time
-                logger.debug(
-                    f"Still waiting for response... (total: {elapsed:.1f}s, inactive: {inactive_time:.1f}s)"
-                )
-
-            try:
-                # Try to get responses with a short timeout
-                responses = self.controller.get_gdb_response(
-                    timeout_sec=POLL_TIMEOUT_SEC, raise_error_on_timeout=False
-                )
-
-                if not responses:
-                    continue
-
-                # Got responses - update last activity time
-                last_activity_time = time.time()
-
-                for response in responses:
-                    response_type = response.get("type")
-                    response_token = response.get("token")
-
-                    logger.debug(
-                        f"Received: type={response_type}, token={response_token}, message={response.get('message')}"
+            if self.original_cwd:
+                try:
+                    os.chdir(self.original_cwd)
+                    logger.info(
+                        "Restored working directory after fatal error: %s", self.original_cwd
                     )
+                except Exception as exc:
+                    logger.warning("Failed to restore working directory: %s", exc)
+                self.original_cwd = None
 
-                    # Check for GDB internal fatal errors in console/log output
-                    # These indicate GDB itself has crashed and won't recover
-                    if response_type in ("console", "log"):
-                        payload = response.get("payload", "")
-                        payload_lower = payload.lower() if payload else ""
-                        # Check for various fatal error messages from GDB
-                        if payload and (
-                            "internal-error" in payload_lower
-                            or "fatal error internal to gdb" in payload_lower
-                        ):
-                            logger.error(f"GDB internal fatal error detected: {payload}")
-                            # Stop the session immediately
-                            if self.controller:
-                                try:
-                                    self.controller.exit()
-                                except Exception:
-                                    pass  # Best effort cleanup
-                                self.controller = None
-                                self.is_running = False
-                                self.target_loaded = False
-                                self.state = SessionState.FAILED
-
-                            # Restore original working directory if it was changed
-                            if self.original_cwd:
-                                try:
-                                    os.chdir(self.original_cwd)
-                                    logger.info(
-                                        f"Restored working directory after fatal error: {self.original_cwd}"
-                                    )
-                                except Exception as e:
-                                    logger.warning(f"Failed to restore working directory: {e}")
-                                self.original_cwd = None
-
-                            return {
-                                "command_responses": command_responses,
-                                "async_notifications": async_notifications,
-                                "timed_out": False,
-                                "error": f"GDB internal fatal error: {payload.strip()}",
-                                "fatal": True,
-                            }
-
-                    # According to GDB/MI spec, output is:
-                    #   ( out-of-band-record )* [ result-record ] "(gdb)"
-                    #
-                    # When we send a command with token N:
-                    # - We get various out-of-band records (console, notify, etc.)
-                    #   These may have no token or different tokens
-                    # - We get a result record with token N
-                    # - Then we get (gdb) prompt (not exposed by pygdbmi)
-                    #
-                    # Since we operate synchronously (one command at a time),
-                    # ALL responses between sending command and receiving result
-                    # are part of this command's output.
-
-                    # Check if this is the result record for our command
-                    if response_type == "result" and response_token == token:
-                        # Command complete - add result and return everything
-                        command_responses.append(response)
-                        logger.debug(f"Received result record for token {token}, command complete")
-                        return {
-                            "command_responses": command_responses,
-                            "async_notifications": async_notifications,
-                            "timed_out": False,
-                        }
-
-                    # This is output related to our command (or truly async)
-                    # For synchronous operation, assume it's command output
-                    if response_token == token or response_token is None:
-                        command_responses.append(response)
-                    else:
-                        # Response with different token - truly async or from old command
-                        async_notifications.append(response)
-                        logger.info(
-                            f"Async notification (token={response_token}): {response.get('message')} - {response.get('payload')}"
-                        )
-
-            except (BrokenPipeError, OSError) as e:
-                logger.error(f"Communication error while reading responses: {e}")
-                return {
-                    "command_responses": command_responses,
-                    "async_notifications": async_notifications,
-                    "timed_out": False,
-                    "error": f"Communication error: {e}",
-                }
-
-        # Timeout reached - GDB stopped producing output
-        elapsed = time.time() - start_time
-        logger.warning(f"Timeout: no GDB output for {timeout_sec}s (total elapsed: {elapsed:.1f}s)")
-        return {
-            "command_responses": command_responses,
-            "async_notifications": async_notifications,
-            "timed_out": True,
-        }
+        return result.to_dict()
 
     def execute_command(
         self, command: str, timeout_sec: int = DEFAULT_TIMEOUT_SEC
@@ -603,13 +416,11 @@ class GDBSession:
 
         # Detect if this is a CLI command (doesn't start with '-')
         # CLI commands need to be wrapped with -interpreter-exec
-        is_cli_command = not command.strip().startswith("-")
+        cli_command = is_cli_command(command)
         actual_command = command
 
-        if is_cli_command:
-            # Escape backslashes and quotes in the command
-            escaped_command = command.replace("\\", "\\\\").replace('"', '\\"')
-            actual_command = f'-interpreter-exec console "{escaped_command}"'
+        if cli_command:
+            actual_command = wrap_cli_command(command)
             logger.debug(f"Wrapping CLI command: {command} -> {actual_command}")
 
         # Send command and wait for (gdb) prompt using the proper MI protocol
@@ -639,7 +450,7 @@ class GDBSession:
         parsed = parse_mi_responses(command_responses)
 
         # For CLI commands, format the output more clearly
-        if is_cli_command:
+        if cli_command:
             # Combine all console output
             console_output = "".join(parsed.console)
 
@@ -1210,8 +1021,7 @@ class GDBSession:
         command = f"call {function_call}"
 
         # Escape for MI command
-        escaped_command = command.replace("\\", "\\\\").replace('"', '\\"')
-        mi_command = f'-interpreter-exec console "{escaped_command}"'
+        mi_command = wrap_cli_command(command)
 
         result = self._send_command_and_wait_for_prompt(mi_command, timeout_sec)
 
