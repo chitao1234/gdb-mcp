@@ -4,7 +4,8 @@ import threading
 from unittest.mock import Mock
 
 from gdb_mcp.server import SessionManager
-from gdb_mcp.gdb_interface import GDBSession
+from gdb_mcp.session.factory import create_default_session_service
+from gdb_mcp.session.service import SessionService
 
 
 class TestSessionManager:
@@ -23,14 +24,14 @@ class TestSessionManager:
         assert session_id_3 == 3
 
     def test_get_session_returns_correct_session(self):
-        """Test that get_session returns the correct GDBSession for a given ID."""
+        """Test that get_session returns the default SessionService implementation."""
         manager = SessionManager()
 
         session_id = manager.create_session()
         session = manager.get_session(session_id)
 
         assert session is not None
-        assert isinstance(session, GDBSession)
+        assert isinstance(session, SessionService)
 
         # Verify it's the same session on repeated calls
         same_session = manager.get_session(session_id)
@@ -122,7 +123,7 @@ class TestSessionManager:
     def test_start_session_stores_successful_session(self):
         """Atomic startup should publish the session only after success."""
 
-        session = Mock(spec=GDBSession)
+        session = Mock(spec=SessionService)
         session.start.return_value = {"status": "success", "message": "started"}
         manager = SessionManager(session_factory=lambda: session)
 
@@ -135,7 +136,7 @@ class TestSessionManager:
     def test_shutdown_all_stops_and_clears_sessions(self):
         """Shutdown should stop every registered session and clear the registry."""
 
-        sessions = [Mock(spec=GDBSession), Mock(spec=GDBSession)]
+        sessions = [Mock(spec=SessionService), Mock(spec=SessionService)]
         for session in sessions:
             session.stop.return_value = {"status": "success"}
 
@@ -158,3 +159,10 @@ class TestSessionManager:
         }
         assert manager.get_session(session_id_1) is None
         assert manager.get_session(session_id_2) is None
+
+    def test_default_factory_returns_session_service(self):
+        """The default registry factory should construct SessionService directly."""
+
+        session = create_default_session_service()
+
+        assert isinstance(session, SessionService)
