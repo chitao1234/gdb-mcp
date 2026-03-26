@@ -73,7 +73,7 @@ def compiled_program_2(compile_program):
 
 
 @pytest.mark.integration
-def test_create_multiple_sessions(compiled_program_1, compiled_program_2, start_session):
+def test_create_multiple_sessions(compiled_program_1, compiled_program_2, start_session, stop_session):
     """Test creating multiple GDB sessions and verify they have different session IDs."""
     session_id_1 = start_session(
         compiled_program_1,
@@ -97,12 +97,12 @@ def test_create_multiple_sessions(compiled_program_1, compiled_program_2, start_
     assert status2["is_running"] is True
 
     # Cleanup
-    call_gdb_tool("gdb_stop_session", {"session_id": session_id_1})
-    call_gdb_tool("gdb_stop_session", {"session_id": session_id_2})
+    stop_session(session_id_1)
+    stop_session(session_id_2)
 
 
 @pytest.mark.integration
-def test_session_isolation_breakpoints(compiled_program_1, compiled_program_2, start_session):
+def test_session_isolation_breakpoints(compiled_program_1, compiled_program_2, start_session, stop_session):
     """Test that breakpoints in one session don't affect another session."""
     session_id_1 = start_session(
         compiled_program_1,
@@ -159,8 +159,8 @@ def test_session_isolation_breakpoints(compiled_program_1, compiled_program_2, s
 
     finally:
         # Cleanup
-        call_gdb_tool("gdb_stop_session", {"session_id": session_id_1})
-        call_gdb_tool("gdb_stop_session", {"session_id": session_id_2})
+        stop_session(session_id_1, ignore_errors=True)
+        stop_session(session_id_2, ignore_errors=True)
 
 
 @pytest.mark.integration
@@ -178,7 +178,7 @@ def test_invalid_session_id_returns_error():
 
 
 @pytest.mark.integration
-def test_session_after_stop_cannot_be_used(compiled_program_1, start_session):
+def test_session_after_stop_cannot_be_used(compiled_program_1, start_session, stop_session):
     """Test that after stopping a session, it cannot be used anymore."""
     session_id = start_session(
         compiled_program_1,
@@ -190,7 +190,7 @@ def test_session_after_stop_cannot_be_used(compiled_program_1, start_session):
     assert status1["is_running"] is True
 
     # Stop the session
-    stop_result = call_gdb_tool("gdb_stop_session", {"session_id": session_id})
+    stop_result = stop_session(session_id)
     assert stop_result["status"] == "success"
 
     # Try to use the stopped session
@@ -200,7 +200,12 @@ def test_session_after_stop_cannot_be_used(compiled_program_1, start_session):
 
 
 @pytest.mark.integration
-def test_concurrent_debugging_different_programs(compiled_program_1, compiled_program_2, start_session):
+def test_concurrent_debugging_different_programs(
+    compiled_program_1,
+    compiled_program_2,
+    start_session,
+    stop_session,
+):
     """Test debugging two different programs simultaneously in separate sessions."""
     session_id_1 = start_session(
         compiled_program_1,
@@ -300,12 +305,17 @@ def test_concurrent_debugging_different_programs(compiled_program_1, compiled_pr
 
     finally:
         # Cleanup both sessions
-        call_gdb_tool("gdb_stop_session", {"session_id": session_id_1})
-        call_gdb_tool("gdb_stop_session", {"session_id": session_id_2})
+        stop_session(session_id_1, ignore_errors=True)
+        stop_session(session_id_2, ignore_errors=True)
 
 
 @pytest.mark.integration
-def test_session_isolation_execution_state(compiled_program_1, compiled_program_2, start_session):
+def test_session_isolation_execution_state(
+    compiled_program_1,
+    compiled_program_2,
+    start_session,
+    stop_session,
+):
     """Test that execution state (running/paused) is isolated between sessions."""
     session_id_1 = start_session(
         compiled_program_1,
@@ -356,12 +366,17 @@ def test_session_isolation_execution_state(compiled_program_1, compiled_program_
 
     finally:
         # Cleanup
-        call_gdb_tool("gdb_stop_session", {"session_id": session_id_1})
-        call_gdb_tool("gdb_stop_session", {"session_id": session_id_2})
+        stop_session(session_id_1, ignore_errors=True)
+        stop_session(session_id_2, ignore_errors=True)
 
 
 @pytest.mark.integration
-def test_session_isolation_variables(compiled_program_1, compiled_program_2, start_session):
+def test_session_isolation_variables(
+    compiled_program_1,
+    compiled_program_2,
+    start_session,
+    stop_session,
+):
     """Test that variable inspection in one session doesn't affect another."""
     session_id_1 = start_session(
         compiled_program_1,
@@ -423,12 +438,17 @@ def test_session_isolation_variables(compiled_program_1, compiled_program_2, sta
 
     finally:
         # Cleanup
-        call_gdb_tool("gdb_stop_session", {"session_id": session_id_1})
-        call_gdb_tool("gdb_stop_session", {"session_id": session_id_2})
+        stop_session(session_id_1, ignore_errors=True)
+        stop_session(session_id_2, ignore_errors=True)
 
 
 @pytest.mark.integration
-def test_stop_one_session_doesnt_affect_other(compiled_program_1, compiled_program_2, start_session):
+def test_stop_one_session_doesnt_affect_other(
+    compiled_program_1,
+    compiled_program_2,
+    start_session,
+    stop_session,
+):
     """Test that stopping one session doesn't affect other active sessions."""
     session_id_1 = start_session(
         compiled_program_1,
@@ -455,7 +475,7 @@ def test_stop_one_session_doesnt_affect_other(compiled_program_1, compiled_progr
         assert status3["is_running"] is True
 
         # Stop the middle session
-        stop_result = call_gdb_tool("gdb_stop_session", {"session_id": session_id_2})
+        stop_result = stop_session(session_id_2)
         assert stop_result["status"] == "success"
 
         # Verify session 2 is no longer usable
@@ -490,11 +510,5 @@ def test_stop_one_session_doesnt_affect_other(compiled_program_1, compiled_progr
 
     finally:
         # Cleanup remaining sessions
-        try:
-            call_gdb_tool("gdb_stop_session", {"session_id": session_id_1})
-        except Exception:
-            pass
-        try:
-            call_gdb_tool("gdb_stop_session", {"session_id": session_id_3})
-        except Exception:
-            pass
+        stop_session(session_id_1, ignore_errors=True)
+        stop_session(session_id_3, ignore_errors=True)
