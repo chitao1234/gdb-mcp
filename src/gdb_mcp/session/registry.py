@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import threading
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
-from ..gdb_interface import GDBSession
+if TYPE_CHECKING:
+    from ..gdb_interface import GDBSession
 
 
 class SessionRegistry:
@@ -16,9 +17,13 @@ class SessionRegistry:
     `start_session` flow that only publishes successfully started sessions.
     """
 
-    def __init__(self, session_factory: Callable[[], GDBSession] = GDBSession):
+    def __init__(self, session_factory: Callable[[], "GDBSession"] | None = None):
+        if session_factory is None:
+            from ..gdb_interface import GDBSession
+
+            session_factory = GDBSession
         self._session_factory = session_factory
-        self._sessions: dict[int, GDBSession] = {}
+        self._sessions: dict[int, "GDBSession"] = {}
         self._next_session_id: int = 1
         self._lock = threading.Lock()
 
@@ -63,7 +68,7 @@ class SessionRegistry:
 
         return session_id, result
 
-    def get_session(self, session_id: int) -> GDBSession | None:
+    def get_session(self, session_id: int) -> "GDBSession" | None:
         """Retrieve a session by ID."""
 
         with self._lock:

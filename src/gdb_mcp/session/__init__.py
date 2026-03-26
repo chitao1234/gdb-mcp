@@ -2,6 +2,7 @@
 
 from .config import SessionConfig
 from .registry import SessionRegistry
+from .service import SessionService
 from .state import SessionState
 
-__all__ = ["SessionConfig", "SessionRegistry", "SessionState"]
+__all__ = ["SessionConfig", "SessionRegistry", "SessionService", "SessionState"]
