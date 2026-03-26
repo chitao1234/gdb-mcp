@@ -2,6 +2,7 @@
 
 from .app import create_mcp_app, run_stdio_app
 from .handlers import dispatch_tool_call
+from .runtime import ServerRuntime, create_server_runtime
 from .schemas import (
     BreakpointNumberArgs,
     CallFunctionArgs,
@@ -31,6 +32,8 @@ __all__ = [
     "ThreadSelectArgs",
     "build_tool_definitions",
     "create_mcp_app",
+    "create_server_runtime",
     "dispatch_tool_call",
     "run_stdio_app",
+    "ServerRuntime",
 ]
