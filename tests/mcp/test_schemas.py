@@ -1,12 +1,15 @@
-"""Unit tests for MCP server."""
+"""Unit tests for MCP schema models."""
 
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
 from pydantic import ValidationError
-from gdb_mcp.server import (
+from gdb_mcp.mcp.schemas import (
+    BreakpointNumberArgs,
+    CallFunctionArgs,
     StartSessionArgs,
     ExecuteCommandArgs,
+    FrameSelectArgs,
     GetBacktraceArgs,
+    ThreadSelectArgs,
     SetBreakpointArgs,
     EvaluateExpressionArgs,
     GetVariablesArgs,
@@ -148,23 +151,17 @@ class TestCallFunctionArgs:
 
     def test_function_call_required(self):
         """Test that function_call is required."""
-        from gdb_mcp.server import CallFunctionArgs
-
         with pytest.raises(ValidationError):
             CallFunctionArgs()
 
     def test_function_call_arg(self):
         """Test function_call argument."""
-        from gdb_mcp.server import CallFunctionArgs
-
         args = CallFunctionArgs(session_id=1, function_call='printf("hello")')
         assert args.session_id == 1
         assert args.function_call == 'printf("hello")'
 
     def test_function_call_with_args(self):
         """Test function_call with multiple arguments."""
-        from gdb_mcp.server import CallFunctionArgs
-
         args = CallFunctionArgs(session_id=2, function_call='snprintf(buf, 100, "%d", x)')
         assert args.session_id == 2
         assert args.function_call == 'snprintf(buf, 100, "%d", x)'
@@ -205,32 +202,24 @@ class TestSessionIdRequired:
 
     def test_thread_select_requires_session_id(self):
         """Test ThreadSelectArgs requires session_id."""
-        from gdb_mcp.server import ThreadSelectArgs
-
         with pytest.raises(ValidationError) as exc_info:
             ThreadSelectArgs(thread_id=1)
         assert "session_id" in str(exc_info.value)
 
     def test_frame_select_requires_session_id(self):
         """Test FrameSelectArgs requires session_id."""
-        from gdb_mcp.server import FrameSelectArgs
-
         with pytest.raises(ValidationError) as exc_info:
             FrameSelectArgs(frame_number=0)
         assert "session_id" in str(exc_info.value)
 
     def test_breakpoint_number_requires_session_id(self):
         """Test BreakpointNumberArgs requires session_id."""
-        from gdb_mcp.server import BreakpointNumberArgs
-
         with pytest.raises(ValidationError) as exc_info:
             BreakpointNumberArgs(number=1)
         assert "session_id" in str(exc_info.value)
 
     def test_call_function_requires_session_id(self):
         """Test CallFunctionArgs requires session_id."""
-        from gdb_mcp.server import CallFunctionArgs
-
         with pytest.raises(ValidationError) as exc_info:
             CallFunctionArgs(function_call='printf("hello")')
         assert "session_id" in str(exc_info.value)

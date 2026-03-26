@@ -1,4 +1,4 @@
-"""Integration tests for multi-session support in GDB MCP Server.
+"""Integration tests for multi-session support in the GDB MCP server.
 
 These tests verify that multiple GDB sessions can coexist independently,
 including testing:
@@ -11,28 +11,7 @@ including testing:
 All tests use real GDB processes via the MCP server interface.
 """
 
-import asyncio
-import json
 import pytest
-import subprocess
-import tempfile
-from pathlib import Path
-from gdb_mcp.server import call_tool
-
-
-def call_gdb_tool(tool_name: str, arguments: dict) -> dict:
-    """
-    Helper to call MCP tools synchronously and return parsed result.
-
-    Args:
-        tool_name: Name of the GDB MCP tool to call
-        arguments: Arguments dictionary for the tool
-
-    Returns:
-        Parsed JSON result from the tool call
-    """
-    result = asyncio.run(call_tool(tool_name, arguments))
-    return json.loads(result[0].text)
 
 
 # Simple C program for testing - different from main test suite
@@ -69,45 +48,25 @@ int main() {
 
 
 @pytest.fixture
-def compiled_program_1():
+def compiled_program_1(compile_program):
     """Compile test program 1 with debug symbols."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        source_file = Path(tmpdir) / "program1.c"
-        executable_file = Path(tmpdir) / "program1"
 
-        source_file.write_text(TEST_PROGRAM_1)
-
-        result = subprocess.run(
-            ["gcc", "-g", "-O0", "-o", str(executable_file), str(source_file)],
-            capture_output=True,
-            text=True,
-        )
-
-        if result.returncode != 0:
-            pytest.fail(f"Failed to compile program 1: {result.stderr}")
-
-        yield str(executable_file)
+    return compile_program(
+        TEST_PROGRAM_1,
+        filename="program1.c",
+        compiler="gcc",
+    )
 
 
 @pytest.fixture
-def compiled_program_2():
+def compiled_program_2(compile_program):
     """Compile test program 2 with debug symbols."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        source_file = Path(tmpdir) / "program2.c"
-        executable_file = Path(tmpdir) / "program2"
 
-        source_file.write_text(TEST_PROGRAM_2)
-
-        result = subprocess.run(
-            ["gcc", "-g", "-O0", "-o", str(executable_file), str(source_file)],
-            capture_output=True,
-            text=True,
-        )
-
-        if result.returncode != 0:
-            pytest.fail(f"Failed to compile program 2: {result.stderr}")
-
-        yield str(executable_file)
+    return compile_program(
+        TEST_PROGRAM_2,
+        filename="program2.c",
+        compiler="gcc",
+    )
 
 
 # Multi-session integration tests

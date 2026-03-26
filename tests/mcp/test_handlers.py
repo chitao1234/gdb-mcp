@@ -1,8 +1,11 @@
-"""Unit tests for session routing in call_tool()."""
+"""Unit tests for MCP handler dispatch."""
+
+from __future__ import annotations
 
 import asyncio
 import json
-from unittest.mock import Mock, patch
+import logging
+from unittest.mock import Mock
 
 from gdb_mcp.domain import (
     BreakpointInfo,
@@ -12,70 +15,69 @@ from gdb_mcp.domain import (
     SessionMessage,
     SessionStatusSnapshot,
 )
+from gdb_mcp.mcp.handlers import dispatch_tool_call
 
 
-class TestSessionRouting:
-    """Test that call_tool() routes to the correct session instances."""
+def dispatch(name: str, arguments, session_manager) -> dict[str, object]:
+    """Call the structured MCP dispatcher and parse its JSON payload."""
 
-    @patch("gdb_mcp.server.session_manager")
-    def test_start_session_returns_session_id(self, mock_manager):
-        """Test gdb_start_session creates session and returns session_id."""
-        from gdb_mcp.server import call_tool
+    result = asyncio.run(
+        dispatch_tool_call(
+            name,
+            arguments,
+            session_manager,
+            logger=logging.getLogger("test-mcp-handlers"),
+        )
+    )
+    return json.loads(result[0].text)
 
-        # Mock the session manager
-        mock_manager.start_session.return_value = (
+
+class TestHandlerDispatch:
+    """Test direct MCP handler dispatch against the handler boundary."""
+
+    def test_start_session_returns_session_id(self):
+        """Successful startup should include the published session ID."""
+
+        manager = Mock()
+        manager.start_session.return_value = (
             42,
             OperationSuccess(SessionMessage(message="Session started")),
         )
 
-        # Call start_session (synchronous call to async function)
-        result = asyncio.run(call_tool("gdb_start_session", {}))
+        result_data = dispatch("gdb_start_session", {}, manager)
 
-        # Verify session was created
-        mock_manager.start_session.assert_called_once()
-
-        # Verify response contains session_id
-        result_data = json.loads(result[0].text)
+        manager.start_session.assert_called_once()
         assert result_data["status"] == "success"
         assert result_data["session_id"] == 42
 
-    @patch("gdb_mcp.server.session_manager")
-    def test_start_session_failure_does_not_expose_session_id(self, mock_manager):
-        """Failed startup should return the error without publishing a session ID."""
-        from gdb_mcp.server import call_tool
+    def test_start_session_failure_does_not_expose_session_id(self):
+        """Failed startup should not expose a session ID."""
 
-        mock_manager.start_session.return_value = (
+        manager = Mock()
+        manager.start_session.return_value = (
             None,
             OperationError(message="Startup failed"),
         )
 
-        result = asyncio.run(call_tool("gdb_start_session", {}))
+        result_data = dispatch("gdb_start_session", {}, manager)
 
-        result_data = json.loads(result[0].text)
         assert result_data["status"] == "error"
         assert "session_id" not in result_data
 
-    @patch("gdb_mcp.server.session_manager")
-    def test_tool_with_valid_session_id_works(self, mock_manager):
-        """Test that tools work with valid session_id."""
-        from gdb_mcp.server import call_tool
+    def test_tool_with_valid_session_id_works(self):
+        """Session-scoped tools should route to the retrieved session."""
 
-        # Mock the session manager
-        mock_session = Mock()
-        mock_session.get_status.return_value = OperationSuccess(
+        manager = Mock()
+        session = Mock()
+        session.get_status.return_value = OperationSuccess(
             SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=True)
         )
-        mock_manager.get_session.return_value = mock_session
+        manager.get_session.return_value = session
 
-        # Call tool with valid session_id
-        result = asyncio.run(call_tool("gdb_get_status", {"session_id": 1}))
+        result_data = dispatch("gdb_get_status", {"session_id": 1}, manager)
 
-        # Verify correct session was retrieved
-        mock_manager.get_session.assert_called_once_with(1)
-        mock_session.get_status.assert_called_once()
-
-        # Verify result
-        result_data = json.loads(result[0].text)
+        manager.get_session.assert_called_once_with(1)
+        session.get_status.assert_called_once()
         assert result_data == {
             "status": "success",
             "is_running": False,
@@ -83,162 +85,125 @@ class TestSessionRouting:
             "has_controller": True,
         }
 
-    @patch("gdb_mcp.server.session_manager")
-    def test_tool_with_invalid_session_id_returns_error(self, mock_manager):
-        """Test that tools return error for invalid session_id."""
-        from gdb_mcp.server import call_tool
+    def test_tool_with_invalid_session_id_returns_error(self):
+        """Invalid session IDs should fail before any tool execution."""
 
-        # Mock the session manager to return None (invalid session)
-        mock_manager.get_session.return_value = None
+        manager = Mock()
+        manager.get_session.return_value = None
 
-        # Call tool with invalid session_id
-        result = asyncio.run(call_tool("gdb_get_status", {"session_id": 999}))
+        result_data = dispatch("gdb_get_status", {"session_id": 999}, manager)
 
-        # Verify error response
-        result_data = json.loads(result[0].text)
         assert result_data["status"] == "error"
         assert "Invalid session_id: 999" in result_data["message"]
         assert "gdb_start_session" in result_data["message"]
 
-    @patch("gdb_mcp.server.session_manager")
-    def test_tool_with_missing_session_id_returns_validation_error(self, mock_manager):
+    def test_tool_with_missing_session_id_returns_validation_error(self):
         """Known tools should validate arguments before session lookup."""
-        from gdb_mcp.server import call_tool
 
-        result = asyncio.run(call_tool("gdb_get_status", {}))
+        manager = Mock()
 
-        result_data = json.loads(result[0].text)
+        result_data = dispatch("gdb_get_status", {}, manager)
+
         assert result_data["status"] == "error"
         assert "session_id" in result_data["message"]
-        mock_manager.get_session.assert_not_called()
+        manager.get_session.assert_not_called()
 
-    @patch("gdb_mcp.server.session_manager")
-    def test_tool_with_non_object_arguments_returns_validation_error(self, mock_manager):
-        """Non-dict tool arguments should fail as request validation errors."""
-        from gdb_mcp.server import call_tool
+    def test_tool_with_non_object_arguments_returns_validation_error(self):
+        """Non-dict arguments should fail as request validation errors."""
 
-        result = asyncio.run(call_tool("gdb_get_status", ["not", "an", "object"]))
+        manager = Mock()
 
-        result_data = json.loads(result[0].text)
+        result_data = dispatch("gdb_get_status", ["not", "an", "object"], manager)
+
         assert result_data["status"] == "error"
         assert result_data["message"] == "Tool arguments must be a JSON object"
         assert result_data["tool"] == "gdb_get_status"
-        mock_manager.get_session.assert_not_called()
+        manager.get_session.assert_not_called()
 
-    @patch("gdb_mcp.server.session_manager")
-    def test_stop_session_removes_from_manager(self, mock_manager):
-        """Test that gdb_stop_session removes session from manager."""
-        from gdb_mcp.server import call_tool
+    def test_stop_session_removes_from_manager(self):
+        """Successful stop should remove the session from the registry."""
 
-        # Mock the session manager
-        mock_session = Mock()
-        mock_session.stop.return_value = OperationSuccess(SessionMessage(message="Session stopped"))
-        mock_manager.get_session.return_value = mock_session
-        mock_manager.remove_session.return_value = True
+        manager = Mock()
+        session = Mock()
+        session.stop.return_value = OperationSuccess(SessionMessage(message="Session stopped"))
+        manager.get_session.return_value = session
+        manager.remove_session.return_value = True
 
-        # Call stop_session
-        result = asyncio.run(call_tool("gdb_stop_session", {"session_id": 1}))
+        result_data = dispatch("gdb_stop_session", {"session_id": 1}, manager)
 
-        # Verify session was stopped and removed
-        mock_manager.get_session.assert_called_once_with(1)
-        mock_session.stop.assert_called_once()
-        mock_manager.remove_session.assert_called_once_with(1)
-
-        # Verify result
-        result_data = json.loads(result[0].text)
+        manager.get_session.assert_called_once_with(1)
+        session.stop.assert_called_once()
+        manager.remove_session.assert_called_once_with(1)
         assert result_data["status"] == "success"
 
-    @patch("gdb_mcp.server.session_manager")
-    def test_unknown_tool_returns_unknown_tool_error(self, mock_manager):
+    def test_unknown_tool_returns_unknown_tool_error(self):
         """Unknown tools should fail before any session lookup happens."""
-        from gdb_mcp.server import call_tool
 
-        result = asyncio.run(call_tool("gdb_typo_tool", {"session_id": 1}))
+        manager = Mock()
 
-        result_data = json.loads(result[0].text)
+        result_data = dispatch("gdb_typo_tool", {"session_id": 1}, manager)
+
         assert result_data["status"] == "error"
         assert result_data["message"] == "Unknown tool: gdb_typo_tool"
-        mock_manager.get_session.assert_not_called()
+        manager.get_session.assert_not_called()
 
-    @patch("gdb_mcp.server.session_manager")
-    def test_execute_command_routes_to_correct_session(self, mock_manager):
-        """Test that gdb_execute_command routes to correct session."""
-        from gdb_mcp.server import call_tool
+    def test_execute_command_routes_to_correct_session(self):
+        """Execute-command requests should forward the command payload."""
 
-        # Mock the session manager with session 5
-        mock_session = Mock()
-        mock_session.execute_command.return_value = OperationSuccess(
+        manager = Mock()
+        session = Mock()
+        session.execute_command.return_value = OperationSuccess(
             CommandExecutionInfo(command="info threads", output="Thread info")
         )
-        mock_manager.get_session.return_value = mock_session
+        manager.get_session.return_value = session
 
-        # Call with session_id=5
-        result = asyncio.run(
-            call_tool("gdb_execute_command", {"session_id": 5, "command": "info threads"})
-        )
+        dispatch("gdb_execute_command", {"session_id": 5, "command": "info threads"}, manager)
 
-        # Verify correct session was used
-        mock_manager.get_session.assert_called_once_with(5)
-        mock_session.execute_command.assert_called_once_with(command="info threads")
+        manager.get_session.assert_called_once_with(5)
+        session.execute_command.assert_called_once_with(command="info threads")
 
-    @patch("gdb_mcp.server.session_manager")
-    def test_set_breakpoint_routes_to_correct_session(self, mock_manager):
-        """Test that gdb_set_breakpoint routes to correct session."""
-        from gdb_mcp.server import call_tool
+    def test_set_breakpoint_routes_to_correct_session(self):
+        """Breakpoint requests should be routed to the resolved session."""
 
-        # Mock the session manager
-        mock_session = Mock()
-        mock_session.set_breakpoint.return_value = OperationSuccess(
+        manager = Mock()
+        session = Mock()
+        session.set_breakpoint.return_value = OperationSuccess(
             BreakpointInfo(breakpoint={"number": 1, "location": "main"})
         )
-        mock_manager.get_session.return_value = mock_session
+        manager.get_session.return_value = session
 
-        # Call with session_id=3
-        result = asyncio.run(call_tool("gdb_set_breakpoint", {"session_id": 3, "location": "main"}))
+        dispatch("gdb_set_breakpoint", {"session_id": 3, "location": "main"}, manager)
 
-        # Verify correct session was used
-        mock_manager.get_session.assert_called_once_with(3)
-        mock_session.set_breakpoint.assert_called_once()
+        manager.get_session.assert_called_once_with(3)
+        session.set_breakpoint.assert_called_once()
 
-    @patch("gdb_mcp.server.session_manager")
-    def test_multiple_tools_use_different_sessions(self, mock_manager):
-        """Test that different session_ids route to different sessions."""
-        from gdb_mcp.server import call_tool
+    def test_multiple_tools_use_different_sessions(self):
+        """Separate session IDs should be routed independently."""
 
-        # Mock two different sessions
-        mock_session_1 = Mock()
-        mock_session_1.get_status.return_value = OperationSuccess(
+        manager = Mock()
+        session_1 = Mock()
+        session_1.get_status.return_value = OperationSuccess(
             SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=True)
         )
-
-        mock_session_2 = Mock()
-        mock_session_2.get_status.return_value = OperationSuccess(
+        session_2 = Mock()
+        session_2.get_status.return_value = OperationSuccess(
             SessionStatusSnapshot(is_running=True, target_loaded=True, has_controller=True)
         )
 
-        # Mock get_session to return different sessions based on ID
         def get_session_side_effect(session_id):
             if session_id == 1:
-                return mock_session_1
-            elif session_id == 2:
-                return mock_session_2
+                return session_1
+            if session_id == 2:
+                return session_2
             return None
 
-        mock_manager.get_session.side_effect = get_session_side_effect
+        manager.get_session.side_effect = get_session_side_effect
 
-        # Call with session 1
-        result1 = asyncio.run(call_tool("gdb_get_status", {"session_id": 1}))
+        result_1 = dispatch("gdb_get_status", {"session_id": 1}, manager)
+        result_2 = dispatch("gdb_get_status", {"session_id": 2}, manager)
 
-        # Call with session 2
-        result2 = asyncio.run(call_tool("gdb_get_status", {"session_id": 2}))
-
-        # Verify correct sessions were called
-        assert mock_manager.get_session.call_count == 2
-        mock_session_1.get_status.assert_called_once()
-        mock_session_2.get_status.assert_called_once()
-
-        # Verify results are different
-        result1_data = json.loads(result1[0].text)
-        result2_data = json.loads(result2[0].text)
-        assert result1_data["is_running"] is False
-        assert result2_data["is_running"] is True
+        assert manager.get_session.call_count == 2
+        session_1.get_status.assert_called_once()
+        session_2.get_status.assert_called_once()
+        assert result_1["is_running"] is False
+        assert result_2["is_running"] is True

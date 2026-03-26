@@ -1,4 +1,4 @@
-"""Integration tests for GDB MCP Server with real GDB instances.
+"""Integration tests for GDB MCP server with real GDB instances.
 
 These tests compile and debug a real C++ program using GDB through the MCP
 server interface. They validate the complete workflow including:
@@ -15,29 +15,6 @@ tests that interact with external processes.
 """
 
 import pytest
-import tempfile
-import subprocess
-import os
-import asyncio
-import json
-from pathlib import Path
-from gdb_mcp.server import call_tool
-
-
-def call_gdb_tool(tool_name: str, arguments: dict) -> dict:
-    """
-    Helper to call MCP tools synchronously and return parsed result.
-
-    Args:
-        tool_name: Name of the GDB MCP tool to call
-        arguments: Arguments dictionary for the tool
-
-    Returns:
-        Parsed JSON result from the tool call
-    """
-    result = asyncio.run(call_tool(tool_name, arguments))
-    # Parse the JSON response from the tool
-    return json.loads(result[0].text)
 
 
 # Simple C++ program with function calls for testing
@@ -70,71 +47,21 @@ int main() {
 
 
 @pytest.fixture
-def compiled_program():
-    """
-    Fixture that compiles the test C++ program for each test.
-    Uses a context manager to ensure proper cleanup.
-    """
-    # Create a temporary directory for our test files
-    with tempfile.TemporaryDirectory() as tmpdir:
-        source_file = Path(tmpdir) / "test_program.cpp"
-        executable_file = Path(tmpdir) / "test_program"
+def compiled_program(compile_program):
+    """Compile the shared C++ test program."""
 
-        # Write the C++ source code
-        source_file.write_text(TEST_CPP_PROGRAM)
-
-        # Compile with debugging symbols and no optimization
-        compile_result = subprocess.run(
-            ["g++", "-g", "-O0", "-o", str(executable_file), str(source_file)],
-            capture_output=True,
-            text=True,
-        )
-
-        if compile_result.returncode != 0:
-            pytest.fail(f"Failed to compile test program: {compile_result.stderr}")
-
-        yield str(executable_file)
+    return compile_program(
+        TEST_CPP_PROGRAM,
+        filename="test_program.cpp",
+        compiler="g++",
+    )
 
 
 @pytest.fixture
-def session_id(compiled_program):
-    """
-    Fixture that starts a GDB MCP session and returns its session_id.
+def session_id(compiled_program, start_session):
+    """Start one integration session and return its ID."""
 
-    Automatically configures the session to avoid ASLR-related crashes in
-    containerized environments. Ensures cleanup after test completion.
-
-    Args:
-        compiled_program: Path to compiled test program
-
-    Yields:
-        session_id: Integer session ID for use in subsequent tool calls
-    """
-    # Start session with ASLR configuration to avoid crashes
-    init_commands = [
-        "set disable-randomization on",
-        "set startup-with-shell off",
-    ]
-
-    result = call_gdb_tool(
-        "gdb_start_session",
-        {
-            "program": compiled_program,
-            "init_commands": init_commands,
-        },
-    )
-
-    assert result["status"] == "success", f"Failed to start session: {result}"
-    session_id = result["session_id"]
-
-    yield session_id
-
-    # Cleanup: stop the session
-    try:
-        call_gdb_tool("gdb_stop_session", {"session_id": session_id})
-    except Exception:
-        # Session may already be stopped by the test
-        pass
+    return start_session(compiled_program)
 
 
 # Integration tests that run GDB with a real program
