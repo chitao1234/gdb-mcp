@@ -75,6 +75,40 @@ class TestGDBSessionState:
         assert session.config.program == "/bin/ls"
         assert session.config.args == ("-l",)
 
+    @patch("gdb_mcp.gdb_interface.os.chdir")
+    @patch("gdb_mcp.gdb_interface.os.path.isdir", return_value=True)
+    @patch("gdb_mcp.gdb_interface.GdbController")
+    def test_start_with_working_dir_does_not_change_process_cwd(
+        self,
+        mock_controller_class,
+        mock_isdir,
+        mock_chdir,
+    ):
+        """The GDBSession compatibility wrapper should forward cwd into process startup."""
+
+        mock_controller_class.return_value = MagicMock()
+        session = GDBSession()
+
+        with patch.object(
+            session,
+            "_send_command_and_wait_for_prompt",
+            return_value={
+                "command_responses": [{"type": "result", "message": "done", "token": 1000}],
+                "async_notifications": [],
+                "timed_out": False,
+            },
+        ):
+            result = session.start(program="/bin/ls", working_dir="/tmp/work")
+
+        assert result["status"] == "success"
+        mock_controller_class.assert_called_once_with(
+            command=["gdb", "--quiet", "--interpreter=mi", "/bin/ls"],
+            time_to_check_for_additional_output_sec=1.0,
+            cwd="/tmp/work",
+        )
+        mock_isdir.assert_called_once_with("/tmp/work")
+        mock_chdir.assert_not_called()
+
     def test_start_failure_sets_failed_state_and_config(self):
         """Validation failures during startup should still record attempted config."""
 

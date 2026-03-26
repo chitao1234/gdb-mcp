@@ -29,7 +29,7 @@ class StartSessionArgs(BaseModel):
             "Working directory to use when starting GDB. "
             "Use this when debugging programs that need to be run from a specific directory, "
             "or when the program expects to find files (config, data, etc.) relative to its working directory. "
-            "GDB will be started in this directory, then the original directory is restored. "
+            "GDB will be started in this directory. "
             "Example: If debugging a server that loads config from './config.json', set working_dir to the server's directory."
         ),
     )

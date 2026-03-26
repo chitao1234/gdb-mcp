@@ -45,19 +45,13 @@ class SessionLifecycleMixin:
         )
         self.state = SessionState.STARTING
 
-        if working_dir:
-            self.original_cwd = self._os.getcwd()
-
         try:
-            if working_dir:
-                if not self._os.path.isdir(working_dir):
-                    self.state = SessionState.FAILED
-                    return {
-                        "status": "error",
-                        "message": f"Working directory does not exist: {working_dir}",
-                    }
-                self._os.chdir(working_dir)
-                logger.info("Changed working directory to: %s", working_dir)
+            if working_dir and not self._os.path.isdir(working_dir):
+                self.state = SessionState.FAILED
+                return {
+                    "status": "error",
+                    "message": f"Working directory does not exist: {working_dir}",
+                }
 
             gdb_command = [gdb_path, "--quiet", "--interpreter=mi"]
 
@@ -75,6 +69,7 @@ class SessionLifecycleMixin:
             self._transport.start(
                 command=gdb_command,
                 time_to_check_for_additional_output_sec=1.0,
+                cwd=working_dir,
             )
 
             logger.debug("Waiting for GDB initialization to complete...")
@@ -210,10 +205,6 @@ class SessionLifecycleMixin:
                 except Exception:
                     pass
                 self.controller = None
-            if self.original_cwd:
-                self._os.chdir(self.original_cwd)
-                logger.info("Restored working directory after failed start: %s", self.original_cwd)
-                self.original_cwd = None
             self.state = SessionState.FAILED
             return {"status": "error", "message": f"Failed to start GDB: {str(exc)}"}
 
@@ -232,16 +223,6 @@ class SessionLifecycleMixin:
             self.target_loaded = False
             self.state = SessionState.FAILED
 
-            if self.original_cwd:
-                try:
-                    self._os.chdir(self.original_cwd)
-                    logger.info(
-                        "Restored working directory after fatal error: %s", self.original_cwd
-                    )
-                except Exception as exc:
-                    logger.warning("Failed to restore working directory: %s", exc)
-                self.original_cwd = None
-
         return result.to_dict()
 
     def stop(self) -> dict[str, object]:
@@ -256,22 +237,10 @@ class SessionLifecycleMixin:
             self.target_loaded = False
             self.state = SessionState.STOPPED
 
-            if self.original_cwd:
-                self._os.chdir(self.original_cwd)
-                logger.info("Restored working directory to: %s", self.original_cwd)
-                self.original_cwd = None
-
             return {"status": "success", "message": "GDB session stopped"}
 
         except Exception as exc:
             logger.error("Failed to stop GDB session: %s", exc)
-            if self.original_cwd:
-                try:
-                    self._os.chdir(self.original_cwd)
-                    logger.info("Restored working directory after error: %s", self.original_cwd)
-                    self.original_cwd = None
-                except Exception as cwd_error:
-                    logger.warning("Failed to restore working directory: %s", cwd_error)
             return {"status": "error", "message": str(exc)}
 
     def get_status(self) -> dict[str, object]:

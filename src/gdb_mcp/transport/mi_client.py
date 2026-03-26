@@ -48,12 +48,19 @@ class MiClient:
         *,
         command: list[str],
         time_to_check_for_additional_output_sec: float,
+        cwd: str | None = None,
     ) -> Any:
         """Start a new GDB controller process."""
 
+        controller_kwargs = {
+            "command": command,
+            "time_to_check_for_additional_output_sec": time_to_check_for_additional_output_sec,
+        }
+        if cwd is not None:
+            controller_kwargs["cwd"] = cwd
+
         self._controller = self._controller_factory(
-            command=command,
-            time_to_check_for_additional_output_sec=time_to_check_for_additional_output_sec,
+            **controller_kwargs,
         )
         return self._controller
 

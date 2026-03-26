@@ -53,7 +53,6 @@ class SessionService(
         self._time = time_module
         self.is_running = False
         self.target_loaded = False
-        self.original_cwd: Optional[str] = None
         self.config: Optional[SessionConfig] = None
         self.state = SessionState.CREATED
 

@@ -5,6 +5,7 @@ import time
 
 from pygdbmi.gdbcontroller import GdbController
 
+from .session.factory import create_gdb_controller
 from .session.service import (
     DEFAULT_MAX_BACKTRACE_FRAMES,
     DEFAULT_TIMEOUT_SEC,
@@ -22,7 +23,9 @@ class GDBSession(SessionService):
 
     def __init__(self):
         super().__init__(
-            controller_factory=GdbController,
+            controller_factory=lambda **kwargs: create_gdb_controller(
+                controller_class=GdbController, **kwargs
+            ),
             os_module=os,
             time_module=time,
             initial_command_token=INITIAL_COMMAND_TOKEN,

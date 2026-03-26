@@ -93,6 +93,29 @@ class TestMiClient:
             time_to_check_for_additional_output_sec=1.0,
         )
 
+    def test_start_forwards_cwd_when_provided(self):
+        """Starting with a working directory should forward cwd to the controller factory."""
+
+        controller = _FakeController([])
+        controller_factory = MagicMock(return_value=controller)
+        client = MiClient(
+            controller_factory=controller_factory,
+            initial_command_token=1000,
+            poll_timeout_sec=0.01,
+        )
+
+        client.start(
+            command=["gdb", "--quiet", "--interpreter=mi"],
+            time_to_check_for_additional_output_sec=1.0,
+            cwd="/tmp/work",
+        )
+
+        controller_factory.assert_called_once_with(
+            command=["gdb", "--quiet", "--interpreter=mi"],
+            time_to_check_for_additional_output_sec=1.0,
+            cwd="/tmp/work",
+        )
+
     def test_send_command_collects_result_and_async_notifications(self):
         """A matching result record should end the read loop and retain async output."""
 
