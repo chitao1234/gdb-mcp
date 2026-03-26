@@ -68,19 +68,9 @@ def session_id(compiled_program, start_session):
 
 
 @pytest.mark.integration
-def test_start_session_with_program(compiled_program):
+def test_start_session_with_program(compiled_program, start_session_result, stop_session):
     """Test starting a GDB session with a compiled program via MCP server."""
-    # Start session (session_id fixture already starts one, but let's test explicitly)
-    result = call_gdb_tool(
-        "gdb_start_session",
-        {
-            "program": compiled_program,
-            "init_commands": [
-                "set disable-randomization on",
-                "set startup-with-shell off",
-            ],
-        },
-    )
+    result = start_session_result(compiled_program)
 
     assert result["status"] == "success"
     assert result["program"] == compiled_program
@@ -94,7 +84,7 @@ def test_start_session_with_program(compiled_program):
     assert status["target_loaded"] is True
 
     # Cleanup
-    call_gdb_tool("gdb_stop_session", {"session_id": session_id})
+    stop_session(session_id)
 
 
 @pytest.mark.integration
@@ -282,15 +272,11 @@ def test_get_variables_in_frame(session_id):
 
 
 @pytest.mark.integration
-def test_session_cleanup(compiled_program):
+def test_session_cleanup(compiled_program, start_session_result, stop_session):
     """Test that session can be properly stopped and restarted."""
-    # Start first session
-    result1 = call_gdb_tool(
-        "gdb_start_session",
-        {
-            "program": compiled_program,
-            "init_commands": ["set disable-randomization on"],
-        },
+    result1 = start_session_result(
+        compiled_program,
+        init_commands=["set disable-randomization on"],
     )
     assert result1["status"] == "success"
     assert "session_id" in result1
@@ -301,7 +287,7 @@ def test_session_cleanup(compiled_program):
     assert status1["is_running"] is True
 
     # Stop session
-    stop_result = call_gdb_tool("gdb_stop_session", {"session_id": session_id1})
+    stop_result = stop_session(session_id1)
     assert stop_result["status"] == "success"
 
     stopped_status = call_gdb_tool("gdb_get_status", {"session_id": session_id1})
@@ -309,12 +295,9 @@ def test_session_cleanup(compiled_program):
     assert "Invalid session_id" in stopped_status["message"]
 
     # Verify we can start another session
-    result2 = call_gdb_tool(
-        "gdb_start_session",
-        {
-            "program": compiled_program,
-            "init_commands": ["set disable-randomization on"],
-        },
+    result2 = start_session_result(
+        compiled_program,
+        init_commands=["set disable-randomization on"],
     )
     assert result2["status"] == "success"
     assert "session_id" in result2
@@ -325,7 +308,7 @@ def test_session_cleanup(compiled_program):
     assert status2["is_running"] is True
 
     # Cleanup
-    call_gdb_tool("gdb_stop_session", {"session_id": session_id2})
+    stop_session(session_id2)
 
 
 @pytest.mark.integration
@@ -368,15 +351,11 @@ def test_temporary_breakpoint(session_id):
 
 
 @pytest.mark.integration
-def test_get_status(compiled_program):
+def test_get_status(compiled_program, start_session_result, stop_session):
     """Test getting session status."""
-    # Start a session to test status
-    result = call_gdb_tool(
-        "gdb_start_session",
-        {
-            "program": compiled_program,
-            "init_commands": ["set disable-randomization on"],
-        },
+    result = start_session_result(
+        compiled_program,
+        init_commands=["set disable-randomization on"],
     )
     assert result["status"] == "success"
     session_id = result["session_id"]
@@ -387,7 +366,7 @@ def test_get_status(compiled_program):
     assert status["target_loaded"] is True
 
     # Cleanup
-    call_gdb_tool("gdb_stop_session", {"session_id": session_id})
+    stop_session(session_id)
 
 
 @pytest.mark.integration

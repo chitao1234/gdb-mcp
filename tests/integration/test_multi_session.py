@@ -428,32 +428,20 @@ def test_session_isolation_variables(compiled_program_1, compiled_program_2, sta
 
 
 @pytest.mark.integration
-def test_stop_one_session_doesnt_affect_other(compiled_program_1, compiled_program_2):
+def test_stop_one_session_doesnt_affect_other(compiled_program_1, compiled_program_2, start_session):
     """Test that stopping one session doesn't affect other active sessions."""
-    # Create three sessions to be extra sure
-    session_id_1 = call_gdb_tool(
-        "gdb_start_session",
-        {
-            "program": compiled_program_1,
-            "init_commands": ["set disable-randomization on"],
-        },
-    )["session_id"]
-
-    session_id_2 = call_gdb_tool(
-        "gdb_start_session",
-        {
-            "program": compiled_program_2,
-            "init_commands": ["set disable-randomization on"],
-        },
-    )["session_id"]
-
-    session_id_3 = call_gdb_tool(
-        "gdb_start_session",
-        {
-            "program": compiled_program_1,
-            "init_commands": ["set disable-randomization on"],
-        },
-    )["session_id"]
+    session_id_1 = start_session(
+        compiled_program_1,
+        init_commands=["set disable-randomization on"],
+    )
+    session_id_2 = start_session(
+        compiled_program_2,
+        init_commands=["set disable-randomization on"],
+    )
+    session_id_3 = start_session(
+        compiled_program_1,
+        init_commands=["set disable-randomization on"],
+    )
 
     try:
         # Verify all three sessions are running
