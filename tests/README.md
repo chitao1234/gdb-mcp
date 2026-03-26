@@ -15,38 +15,39 @@ pip install -e ".[dev]"
 
 ```bash
 # Run all tests
-pytest
+.venv/bin/pytest
 
 # Run with verbose output
-pytest -v
+.venv/bin/pytest -v
 
 # Run with coverage
-pytest --cov=gdb_mcp --cov-report=html
+.venv/bin/pytest --cov=gdb_mcp --cov-report=html
 ```
 
 ### Run Specific Tests
 
 ```bash
 # Run only unit tests (excluding integration tests)
-pytest -m "not integration"
+.venv/bin/pytest -m "not integration"
 
 # Run only the session-layer tests
-pytest tests/session
+.venv/bin/pytest tests/session
 
-# Run only a specific test file
-pytest tests/session/test_session_api.py
+# Run the split session API tests
+.venv/bin/pytest tests/session/test_lifecycle_api.py
+.venv/bin/pytest tests/session/test_execution_api.py
 
 # Run only a specific test
-pytest tests/session/test_session_api.py::TestSessionApi::test_session_initialization
+.venv/bin/pytest tests/mcp/test_handlers.py::TestHandlerDispatch::test_start_session_returns_session_id
 ```
 
 ## Test Structure
 
 - `domain/` - Typed result and domain-model tests
 - `mcp/` - MCP schemas, handlers, runtime, and serializer tests
-- `session/` - Session service, registry, config/state, and session-operation tests
-- `transport/` - Low-level GDB/MI transport tests
-- `integration/` - Real GDB workflow tests
+- `session/` - Session service, registry, config/state, and split session API tests
+- `transport/` - Low-level GDB/MI transport and parser tests
+- `integration/` - Real GDB workflow tests backed by a shared runtime harness
 
 ## Test Categories
 
@@ -62,7 +63,8 @@ When adding new tests:
 1. Follow the existing naming conventions (`test_*.py`, `Test*`, `test_*`)
 2. Use descriptive test names that explain what is being tested
 3. Mock external dependencies (GdbController) when possible
-4. Mark integration tests appropriately
+4. Prefer testing the true ownership boundary instead of routing through `server.py`
+5. Mark integration tests appropriately
 
 ## Continuous Integration
 

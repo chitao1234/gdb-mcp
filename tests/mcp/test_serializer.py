@@ -53,3 +53,42 @@ class TestMcpSerializer:
         payload = json.loads(contents[0].text)
 
         assert payload == {"status": "success", "message": "ok"}
+
+    def test_serialize_result_preserves_warning_payload_contract(self):
+        """Serializer output should include wrapper warnings for typed payloads."""
+
+        contents = serialize_result(
+            OperationSuccess(
+                SessionMessage(message="ok"),
+                warnings=("symbols missing",),
+            )
+        )
+        payload = json.loads(contents[0].text)
+
+        assert payload == {
+            "status": "success",
+            "message": "ok",
+            "warnings": ["symbols missing"],
+        }
+
+    def test_result_to_payload_normalizes_nested_typed_payloads(self):
+        """Nested typed payload objects should be converted into JSON-ready structures."""
+
+        payload = result_to_payload(
+            OperationSuccess(
+                {
+                    "messages": (
+                        SessionMessage(message="first"),
+                        SessionMessage(message="second"),
+                    )
+                }
+            )
+        )
+
+        assert payload == {
+            "status": "success",
+            "messages": [
+                {"message": "first"},
+                {"message": "second"},
+            ],
+        }
