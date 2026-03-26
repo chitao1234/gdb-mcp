@@ -1,4 +1,4 @@
-"""Command execution helpers for SessionService."""
+"""Execution helpers for a composed SessionService."""
 
 from __future__ import annotations
 
@@ -15,121 +15,78 @@ from ..domain import (
 )
 from ..transport import (
     build_exec_arguments_command,
-    is_cli_command,
     parse_mi_responses,
     wrap_cli_command,
 )
 from .constants import DEFAULT_TIMEOUT_SEC, INTERRUPT_RESPONSE_TIMEOUT_SEC, POLL_TIMEOUT_SEC
+from .protocols import SessionHostProtocol
 
 logger = logging.getLogger(__name__)
 
 
-class SessionExecutionMixin:
-    """Execution and command-control methods used by SessionService."""
+class SessionExecutionService:
+    """Execution and command-control operations."""
 
-    def _execute_command_result(
-        self, command: str, timeout_sec: int = DEFAULT_TIMEOUT_SEC
-    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
-        """Execute a GDB command and return the parsed response."""
-        if not self.controller:
-            return OperationError(message="No active GDB session")
+    def __init__(self, session: SessionHostProtocol):
+        self._session = session
 
-        if not self._is_gdb_alive():
-            logger.error("GDB process is not running when trying to execute: %s", command)
-            return OperationError(
-                message="GDB process has exited - cannot execute command",
-                details={"command": command},
-            )
-
-        cli_command = is_cli_command(command)
-        actual_command = wrap_cli_command(command) if cli_command else command
-
-        if cli_command:
-            logger.debug("Wrapping CLI command: %s -> %s", command, actual_command)
-
-        result = self._send_command_and_wait_for_prompt(actual_command, timeout_sec)
-
-        if "error" in result:
-            return OperationError(
-                message=str(result["error"]),
-                fatal=bool(result.get("fatal", False)),
-                details={"command": command},
-            )
-
-        if result.get("timed_out"):
-            return OperationError(
-                message=f"Timeout waiting for command response after {timeout_sec}s",
-                details={"command": command},
-            )
-
-        command_responses = result.get("command_responses", [])
-        parsed = parse_mi_responses(command_responses)
-
-        if parsed.is_error_result():
-            return OperationError(
-                message=parsed.error_message() or "GDB returned an error",
-                details={"command": command},
-            )
-
-        if cli_command:
-            console_output = "".join(parsed.console)
-            return OperationSuccess(
-                CommandExecutionInfo(
-                    command=command,
-                    output=console_output.strip() if console_output else "(no output)",
-                )
-            )
-
-        return OperationSuccess(CommandExecutionInfo(command=command, result=parsed.to_dict()))
+    @property
+    def _runtime(self):
+        return self._session.runtime
 
     def execute_command(
         self, command: str, timeout_sec: int = DEFAULT_TIMEOUT_SEC
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Execute a GDB command and return the parsed response."""
 
-        return self._execute_command_result(command, timeout_sec)
+        return self._session._execute_command_result(command, timeout_sec)
 
-    def run(self, args: Optional[list[str]] = None) -> dict[str, object]:
+    def run(
+        self, args: Optional[list[str]] = None
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Run the program."""
-        if not self.controller:
+        if not self._runtime.has_controller:
             return OperationError(message="No active GDB session")
 
         if args:
-            result = self._execute_command_result(build_exec_arguments_command(args))
+            result = self._session._execute_command_result(
+                build_exec_arguments_command(args), timeout_sec=DEFAULT_TIMEOUT_SEC
+            )
             if isinstance(result, OperationError):
                 return result
 
-        return self._execute_command_result("-exec-run")
+        return self._session._execute_command_result("-exec-run", timeout_sec=DEFAULT_TIMEOUT_SEC)
 
-    def continue_execution(self) -> dict[str, object]:
+    def continue_execution(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Continue execution of the program."""
-        return self._execute_command_result("-exec-continue")
+        return self._session._execute_command_result("-exec-continue", timeout_sec=DEFAULT_TIMEOUT_SEC)
 
-    def step(self) -> dict[str, object]:
+    def step(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Step into the next source line."""
-        return self._execute_command_result("-exec-step")
+        return self._session._execute_command_result("-exec-step", timeout_sec=DEFAULT_TIMEOUT_SEC)
 
-    def next(self) -> dict[str, object]:
+    def next(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Step over the next source line."""
-        return self._execute_command_result("-exec-next")
+        return self._session._execute_command_result("-exec-next", timeout_sec=DEFAULT_TIMEOUT_SEC)
 
-    def interrupt(self) -> dict[str, object]:
+    def interrupt(self) -> OperationSuccess[MessageResult] | OperationError:
         """Interrupt (pause) a running program."""
-        if not self.controller:
+        if not self._runtime.has_controller:
             return OperationError(message="No active GDB session")
 
-        if not self.controller.gdb_process:
+        controller = self._runtime.controller
+        if not getattr(controller, "gdb_process", None):
             return OperationError(message="No GDB process running")
 
         try:
-            self._os.kill(self.controller.gdb_process.pid, signal.SIGINT)
+            self._runtime.os_module.kill(controller.gdb_process.pid, signal.SIGINT)
 
-            start_time = self._time.time()
+            start_time = self._runtime.time_module.time()
             all_responses: list[dict[str, object]] = []
             stopped_received = False
 
-            while self._time.time() - start_time < INTERRUPT_RESPONSE_TIMEOUT_SEC:
-                responses = self.controller.get_gdb_response(
+            while self._runtime.time_module.time() - start_time < INTERRUPT_RESPONSE_TIMEOUT_SEC:
+                responses = controller.get_gdb_response(
                     timeout_sec=POLL_TIMEOUT_SEC, raise_error_on_timeout=False
                 )
 
@@ -165,16 +122,16 @@ class SessionExecutionMixin:
         self, function_call: str, timeout_sec: int = DEFAULT_TIMEOUT_SEC
     ) -> OperationSuccess[FunctionCallInfo] | OperationError:
         """Call a function in the target process."""
-        if not self.controller:
+        if not self._runtime.has_controller:
             return OperationError(message="No active GDB session")
 
-        if not self._is_gdb_alive():
+        if not self._session._is_gdb_alive():
             return OperationError(message="GDB process has exited - cannot execute call")
 
         command = f"call {function_call}"
         mi_command = wrap_cli_command(command)
 
-        result = self._send_command_and_wait_for_prompt(mi_command, timeout_sec)
+        result = self._session._send_command_and_wait_for_prompt(mi_command, timeout_sec)
 
         if "error" in result:
             return OperationError(
@@ -188,13 +145,15 @@ class SessionExecutionMixin:
                 details={"function_call": function_call},
             )
 
-        parsed = parse_mi_responses(result.get("command_responses", []))
+        raw_responses = result.get("command_responses", [])
+        command_responses = raw_responses if isinstance(raw_responses, list) else []
+        parsed = parse_mi_responses(command_responses)
         if parsed.is_error_result():
             return OperationError(
                 message=parsed.error_message() or "GDB returned an error",
                 details={"function_call": function_call},
             )
-        console_output = "".join(parsed.console)
+        console_output = "".join(item for item in parsed.console if isinstance(item, str))
 
         return OperationSuccess(
             FunctionCallInfo(

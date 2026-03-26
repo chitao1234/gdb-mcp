@@ -1,4 +1,4 @@
-"""Inspection and navigation operations for SessionService."""
+"""Inspection and navigation operations for a composed SessionService."""
 
 from __future__ import annotations
 
@@ -18,19 +18,27 @@ from ..domain import (
     VariablesInfo,
 )
 from ..transport import build_evaluate_expression_command, extract_mi_result_payload
-from .constants import DEFAULT_MAX_BACKTRACE_FRAMES
+from .constants import DEFAULT_MAX_BACKTRACE_FRAMES, DEFAULT_TIMEOUT_SEC
+from .protocols import SessionHostProtocol
 from .result_utils import command_result_payload
 
 logger = logging.getLogger(__name__)
 
 
-class SessionInspectionMixin:
-    """Inspection and navigation methods used by SessionService."""
+class SessionInspectionService:
+    """Inspection and navigation helpers."""
+
+    def __init__(self, session: SessionHostProtocol):
+        self._session = session
+
+    @property
+    def _runtime(self):
+        return self._session.runtime
 
     def get_threads(self) -> OperationSuccess[ThreadListInfo] | OperationError:
         """Get information about all threads in the debugged process."""
         logger.debug("get_threads() called")
-        result = self._execute_command_result("-thread-info")
+        result = self._session._execute_command_result("-thread-info", timeout_sec=DEFAULT_TIMEOUT_SEC)
         logger.debug("get_threads: execute_command returned: %s", result)
 
         if isinstance(result, OperationError):
@@ -65,12 +73,15 @@ class SessionInspectionMixin:
 
     def select_thread(self, thread_id: int) -> OperationSuccess[ThreadSelectionInfo] | OperationError:
         """Select a specific thread to make it the current thread."""
-        result = self._execute_command_result(f"-thread-select {thread_id}")
+        result = self._session._execute_command_result(
+            f"-thread-select {thread_id}", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
 
         if isinstance(result, OperationError):
             return result
 
         mi_result = extract_mi_result_payload(command_result_payload(result)) or {}
+        self._runtime.mark_thread_selected(thread_id)
 
         return OperationSuccess(
             ThreadSelectionInfo(
@@ -85,11 +96,16 @@ class SessionInspectionMixin:
     ) -> OperationSuccess[BacktraceInfo] | OperationError:
         """Get the stack backtrace for a specific thread or the current thread."""
         if thread_id is not None:
-            switch_result = self._execute_command_result(f"-thread-select {thread_id}")
+            switch_result = self._session._execute_command_result(
+                f"-thread-select {thread_id}", timeout_sec=DEFAULT_TIMEOUT_SEC
+            )
             if isinstance(switch_result, OperationError):
                 return switch_result
+            self._runtime.mark_thread_selected(thread_id)
 
-        result = self._execute_command_result(f"-stack-list-frames 0 {max_frames}")
+        result = self._session._execute_command_result(
+            f"-stack-list-frames 0 {max_frames}", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
 
         if isinstance(result, OperationError):
             return result
@@ -101,7 +117,9 @@ class SessionInspectionMixin:
 
     def get_frame_info(self) -> OperationSuccess[FrameInfo] | OperationError:
         """Get information about the current stack frame."""
-        result = self._execute_command_result("-stack-info-frame")
+        result = self._session._execute_command_result(
+            "-stack-info-frame", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
 
         if isinstance(result, OperationError):
             return result
@@ -113,12 +131,18 @@ class SessionInspectionMixin:
 
     def select_frame(self, frame_number: int) -> OperationSuccess[FrameSelectionInfo] | OperationError:
         """Select a specific stack frame to make it the current frame."""
-        result = self._execute_command_result(f"-stack-select-frame {frame_number}")
+        result = self._session._execute_command_result(
+            f"-stack-select-frame {frame_number}", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
 
         if isinstance(result, OperationError):
             return result
 
-        frame_info_result = self._execute_command_result("-stack-info-frame")
+        self._runtime.mark_frame_selected(frame_number)
+
+        frame_info_result = self._session._execute_command_result(
+            "-stack-info-frame", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
 
         if isinstance(frame_info_result, OperationError):
             return OperationSuccess(
@@ -135,7 +159,9 @@ class SessionInspectionMixin:
 
     def evaluate_expression(self, expression: str) -> OperationSuccess[ExpressionValueInfo] | OperationError:
         """Evaluate an expression in the current context."""
-        result = self._execute_command_result(build_evaluate_expression_command(expression))
+        result = self._session._execute_command_result(
+            build_evaluate_expression_command(expression), timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
 
         if isinstance(result, OperationError):
             return result
@@ -150,15 +176,23 @@ class SessionInspectionMixin:
     ) -> OperationSuccess[VariablesInfo] | OperationError:
         """Get local variables for a specific frame."""
         if thread_id is not None:
-            thread_result = self._execute_command_result(f"-thread-select {thread_id}")
+            thread_result = self._session._execute_command_result(
+                f"-thread-select {thread_id}", timeout_sec=DEFAULT_TIMEOUT_SEC
+            )
             if isinstance(thread_result, OperationError):
                 return thread_result
+            self._runtime.mark_thread_selected(thread_id)
 
-        frame_result = self._execute_command_result(f"-stack-select-frame {frame}")
+        frame_result = self._session._execute_command_result(
+            f"-stack-select-frame {frame}", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
         if isinstance(frame_result, OperationError):
             return frame_result
+        self._runtime.mark_frame_selected(frame)
 
-        result = self._execute_command_result("-stack-list-variables --simple-values")
+        result = self._session._execute_command_result(
+            "-stack-list-variables --simple-values", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
 
         if isinstance(result, OperationError):
             return result
@@ -170,7 +204,9 @@ class SessionInspectionMixin:
 
     def get_registers(self) -> OperationSuccess[RegistersInfo] | OperationError:
         """Get register values for current frame."""
-        result = self._execute_command_result("-data-list-register-values x")
+        result = self._session._execute_command_result(
+            "-data-list-register-values x", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
 
         if isinstance(result, OperationError):
             return result
