@@ -228,11 +228,17 @@ def test_next_vs_step(session_id):
 
     # Get backtrace after next - should still be in main or at same depth
     backtrace1 = call_gdb_tool("gdb_get_backtrace", {"session_id": session_id})
+    assert backtrace1["status"] == "success"
     depth1 = backtrace1["count"]
+    assert depth1 >= 1
 
     # Now try step() which should step into function calls
     step_result = call_gdb_tool("gdb_step", {"session_id": session_id})
     assert step_result["status"] == "success"
+
+    backtrace2 = call_gdb_tool("gdb_get_backtrace", {"session_id": session_id})
+    assert backtrace2["status"] == "success"
+    assert backtrace2["count"] >= depth1
 
 
 @pytest.mark.integration
@@ -252,9 +258,8 @@ def test_evaluate_expressions(session_id):
     result = call_gdb_tool(
         "gdb_evaluate_expression", {"session_id": session_id, "expression": "5 + 3"}
     )
-    # GDB should be able to evaluate constant expressions
-    if result["status"] == "success":
-        assert "value" in result
+    assert result["status"] == "success"
+    assert str(result["value"]).strip() == "8"
 
 
 @pytest.mark.integration
@@ -272,11 +277,10 @@ def test_get_variables_in_frame(session_id):
     # Get local variables
     vars_result = call_gdb_tool("gdb_get_variables", {"session_id": session_id})
     assert vars_result["status"] == "success"
-    # Should have variables like 'a', 'b', 'result'
     assert "variables" in vars_result
+    assert len(vars_result["variables"]) >= 1
 
 
-@pytest.mark.integration
 @pytest.mark.integration
 def test_session_cleanup(compiled_program):
     """Test that session can be properly stopped and restarted."""
@@ -299,6 +303,10 @@ def test_session_cleanup(compiled_program):
     # Stop session
     stop_result = call_gdb_tool("gdb_stop_session", {"session_id": session_id1})
     assert stop_result["status"] == "success"
+
+    stopped_status = call_gdb_tool("gdb_get_status", {"session_id": session_id1})
+    assert stopped_status["status"] == "error"
+    assert "Invalid session_id" in stopped_status["message"]
 
     # Verify we can start another session
     result2 = call_gdb_tool(
@@ -348,14 +356,15 @@ def test_temporary_breakpoint(session_id):
     assert bp_result["status"] == "success"
 
     # Run to hit the breakpoint
-    call_gdb_tool("gdb_execute_command", {"session_id": session_id, "command": "run"})
+    run_result = call_gdb_tool("gdb_execute_command", {"session_id": session_id, "command": "run"})
+    assert run_result["status"] == "success"
+    assert "Temporary breakpoint" in run_result["output"]
 
     # After hitting a temporary breakpoint once, it should be removed
     # Continue and check breakpoint list
     list_result = call_gdb_tool("gdb_list_breakpoints", {"session_id": session_id})
     assert list_result["status"] == "success"
-    # Temporary breakpoint should be gone after being hit
-    # (though we can't guarantee it was hit vs still pending)
+    assert list_result["count"] == 0
 
 
 @pytest.mark.integration
@@ -408,8 +417,8 @@ def test_breakpoint_at_nonexistent_function(session_id):
         "gdb_set_breakpoint",
         {"session_id": session_id, "location": "nonexistent_function"},
     )
-    # GDB might still create a pending breakpoint, but won't have full info
-    # Just verify the command executes without crashing
+    assert bp_result["status"] == "error"
+    assert "nonexistent_function" in bp_result["message"]
 
 
 @pytest.mark.integration
@@ -663,11 +672,12 @@ def test_frame_selection_and_variables(session_id):
     call_gdb_tool("gdb_select_frame", {"session_id": session_id, "frame_number": 0})
     vars_frame0 = call_gdb_tool("gdb_get_variables", {"session_id": session_id, "frame": 0})
     assert vars_frame0["status"] == "success"
+    assert vars_frame0["frame"] == 0
 
     # Select frame 1 (caller)
     if backtrace["count"] >= 2:
         call_gdb_tool("gdb_select_frame", {"session_id": session_id, "frame_number": 1})
         vars_frame1 = call_gdb_tool("gdb_get_variables", {"session_id": session_id, "frame": 1})
         assert vars_frame1["status"] == "success"
-        # Variables should be different in different frames
-        # (though we can't guarantee the exact variable names)
+        assert vars_frame1["frame"] == 1
+        assert vars_frame1["variables"] != vars_frame0["variables"]

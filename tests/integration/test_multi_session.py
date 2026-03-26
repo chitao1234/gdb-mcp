@@ -73,31 +73,16 @@ def compiled_program_2(compile_program):
 
 
 @pytest.mark.integration
-def test_create_multiple_sessions(compiled_program_1, compiled_program_2):
+def test_create_multiple_sessions(compiled_program_1, compiled_program_2, start_session):
     """Test creating multiple GDB sessions and verify they have different session IDs."""
-    # Create first session
-    result1 = call_gdb_tool(
-        "gdb_start_session",
-        {
-            "program": compiled_program_1,
-            "init_commands": ["set disable-randomization on"],
-        },
+    session_id_1 = start_session(
+        compiled_program_1,
+        init_commands=["set disable-randomization on"],
     )
-    assert result1["status"] == "success"
-    assert "session_id" in result1
-    session_id_1 = result1["session_id"]
-
-    # Create second session
-    result2 = call_gdb_tool(
-        "gdb_start_session",
-        {
-            "program": compiled_program_2,
-            "init_commands": ["set disable-randomization on"],
-        },
+    session_id_2 = start_session(
+        compiled_program_2,
+        init_commands=["set disable-randomization on"],
     )
-    assert result2["status"] == "success"
-    assert "session_id" in result2
-    session_id_2 = result2["session_id"]
 
     # Verify session IDs are different
     assert (
@@ -117,24 +102,16 @@ def test_create_multiple_sessions(compiled_program_1, compiled_program_2):
 
 
 @pytest.mark.integration
-def test_session_isolation_breakpoints(compiled_program_1, compiled_program_2):
+def test_session_isolation_breakpoints(compiled_program_1, compiled_program_2, start_session):
     """Test that breakpoints in one session don't affect another session."""
-    # Create two sessions
-    session_id_1 = call_gdb_tool(
-        "gdb_start_session",
-        {
-            "program": compiled_program_1,
-            "init_commands": ["set disable-randomization on"],
-        },
-    )["session_id"]
-
-    session_id_2 = call_gdb_tool(
-        "gdb_start_session",
-        {
-            "program": compiled_program_2,
-            "init_commands": ["set disable-randomization on"],
-        },
-    )["session_id"]
+    session_id_1 = start_session(
+        compiled_program_1,
+        init_commands=["set disable-randomization on"],
+    )
+    session_id_2 = start_session(
+        compiled_program_2,
+        init_commands=["set disable-randomization on"],
+    )
 
     try:
         # Set breakpoint at main in session 1
@@ -201,18 +178,12 @@ def test_invalid_session_id_returns_error():
 
 
 @pytest.mark.integration
-def test_session_after_stop_cannot_be_used(compiled_program_1):
+def test_session_after_stop_cannot_be_used(compiled_program_1, start_session):
     """Test that after stopping a session, it cannot be used anymore."""
-    # Create a session
-    result = call_gdb_tool(
-        "gdb_start_session",
-        {
-            "program": compiled_program_1,
-            "init_commands": ["set disable-randomization on"],
-        },
+    session_id = start_session(
+        compiled_program_1,
+        init_commands=["set disable-randomization on"],
     )
-    assert result["status"] == "success"
-    session_id = result["session_id"]
 
     # Verify session works
     status1 = call_gdb_tool("gdb_get_status", {"session_id": session_id})
@@ -229,24 +200,16 @@ def test_session_after_stop_cannot_be_used(compiled_program_1):
 
 
 @pytest.mark.integration
-def test_concurrent_debugging_different_programs(compiled_program_1, compiled_program_2):
+def test_concurrent_debugging_different_programs(compiled_program_1, compiled_program_2, start_session):
     """Test debugging two different programs simultaneously in separate sessions."""
-    # Create two sessions with different programs
-    session_id_1 = call_gdb_tool(
-        "gdb_start_session",
-        {
-            "program": compiled_program_1,
-            "init_commands": ["set disable-randomization on"],
-        },
-    )["session_id"]
-
-    session_id_2 = call_gdb_tool(
-        "gdb_start_session",
-        {
-            "program": compiled_program_2,
-            "init_commands": ["set disable-randomization on"],
-        },
-    )["session_id"]
+    session_id_1 = start_session(
+        compiled_program_1,
+        init_commands=["set disable-randomization on"],
+    )
+    session_id_2 = start_session(
+        compiled_program_2,
+        init_commands=["set disable-randomization on"],
+    )
 
     try:
         # Set breakpoints in both sessions at main
@@ -342,24 +305,16 @@ def test_concurrent_debugging_different_programs(compiled_program_1, compiled_pr
 
 
 @pytest.mark.integration
-def test_session_isolation_execution_state(compiled_program_1, compiled_program_2):
+def test_session_isolation_execution_state(compiled_program_1, compiled_program_2, start_session):
     """Test that execution state (running/paused) is isolated between sessions."""
-    # Create two sessions
-    session_id_1 = call_gdb_tool(
-        "gdb_start_session",
-        {
-            "program": compiled_program_1,
-            "init_commands": ["set disable-randomization on"],
-        },
-    )["session_id"]
-
-    session_id_2 = call_gdb_tool(
-        "gdb_start_session",
-        {
-            "program": compiled_program_2,
-            "init_commands": ["set disable-randomization on"],
-        },
-    )["session_id"]
+    session_id_1 = start_session(
+        compiled_program_1,
+        init_commands=["set disable-randomization on"],
+    )
+    session_id_2 = start_session(
+        compiled_program_2,
+        init_commands=["set disable-randomization on"],
+    )
 
     try:
         # Set breakpoint and run in session 1
@@ -406,24 +361,16 @@ def test_session_isolation_execution_state(compiled_program_1, compiled_program_
 
 
 @pytest.mark.integration
-def test_session_isolation_variables(compiled_program_1, compiled_program_2):
+def test_session_isolation_variables(compiled_program_1, compiled_program_2, start_session):
     """Test that variable inspection in one session doesn't affect another."""
-    # Create two sessions
-    session_id_1 = call_gdb_tool(
-        "gdb_start_session",
-        {
-            "program": compiled_program_1,
-            "init_commands": ["set disable-randomization on"],
-        },
-    )["session_id"]
-
-    session_id_2 = call_gdb_tool(
-        "gdb_start_session",
-        {
-            "program": compiled_program_2,
-            "init_commands": ["set disable-randomization on"],
-        },
-    )["session_id"]
+    session_id_1 = start_session(
+        compiled_program_1,
+        init_commands=["set disable-randomization on"],
+    )
+    session_id_2 = start_session(
+        compiled_program_2,
+        init_commands=["set disable-randomization on"],
+    )
 
     try:
         # Set breakpoints at the functions with parameters
