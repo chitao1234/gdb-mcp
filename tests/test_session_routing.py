@@ -15,21 +15,37 @@ class TestSessionRouting:
         from gdb_mcp.server import call_tool
 
         # Mock the session manager
-        mock_session = Mock()
-        mock_session.start.return_value = {"status": "success", "message": "Session started"}
-        mock_manager.create_session.return_value = 42
-        mock_manager.get_session.return_value = mock_session
+        mock_manager.start_session.return_value = (
+            42,
+            {"status": "success", "message": "Session started"},
+        )
 
         # Call start_session (synchronous call to async function)
         result = asyncio.run(call_tool("gdb_start_session", {}))
 
         # Verify session was created
-        mock_manager.create_session.assert_called_once()
+        mock_manager.start_session.assert_called_once()
 
         # Verify response contains session_id
         result_data = json.loads(result[0].text)
         assert result_data["status"] == "success"
         assert result_data["session_id"] == 42
+
+    @patch("gdb_mcp.server.session_manager")
+    def test_start_session_failure_does_not_expose_session_id(self, mock_manager):
+        """Failed startup should return the error without publishing a session ID."""
+        from gdb_mcp.server import call_tool
+
+        mock_manager.start_session.return_value = (
+            None,
+            {"status": "error", "message": "Startup failed"},
+        )
+
+        result = asyncio.run(call_tool("gdb_start_session", {}))
+
+        result_data = json.loads(result[0].text)
+        assert result_data["status"] == "error"
+        assert "session_id" not in result_data
 
     @patch("gdb_mcp.server.session_manager")
     def test_tool_with_valid_session_id_works(self, mock_manager):

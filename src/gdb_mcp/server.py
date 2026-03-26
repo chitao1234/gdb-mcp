@@ -4,12 +4,11 @@ import asyncio
 import json
 import logging
 import os
-import threading
 from typing import Any, Optional
 from mcp.server import Server
 from mcp.types import Tool, TextContent
 from pydantic import BaseModel, Field
-from .gdb_interface import GDBSession
+from .session.registry import SessionRegistry
 
 # Set up logging - use GDB_MCP_LOG_LEVEL environment variable
 log_level = os.environ.get("GDB_MCP_LOG_LEVEL", "INFO").upper()
@@ -19,66 +18,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
-class SessionManager:
-    """
-    Manages multiple GDB debugging sessions.
-
-    Thread-safe session management with simple integer session IDs.
-    Sessions are created, retrieved by ID, and explicitly removed.
-    """
-
-    def __init__(self):
-        """Initialize the session manager with empty session storage."""
-        self._sessions: dict[int, GDBSession] = {}
-        self._next_session_id: int = 1
-        self._lock = threading.Lock()
-
-    def create_session(self) -> int:
-        """
-        Create a new GDB session and return its unique session ID.
-
-        Returns:
-            Integer session ID (starts at 1, monotonically increasing)
-        """
-        with self._lock:
-            session_id = self._next_session_id
-            self._next_session_id += 1
-            self._sessions[session_id] = GDBSession()
-        return session_id
-
-    def get_session(self, session_id: int) -> Optional[GDBSession]:
-        """
-        Retrieve a GDB session by its ID.
-
-        Args:
-            session_id: The session ID to look up
-
-        Returns:
-            GDBSession instance if found, None otherwise
-        """
-        with self._lock:
-            return self._sessions.get(session_id)
-
-    def remove_session(self, session_id: int) -> bool:
-        """
-        Remove a GDB session by its ID.
-
-        Args:
-            session_id: The session ID to remove
-
-        Returns:
-            True if session was removed, False if it didn't exist
-        """
-        with self._lock:
-            if session_id in self._sessions:
-                del self._sessions[session_id]
-                return True
-            return False
+SessionManager = SessionRegistry
 
 
 # Global session manager instance
-session_manager = SessionManager()
+session_manager = SessionRegistry()
 
 # Create MCP server instance
 app = Server("gdb-mcp-server")
@@ -438,13 +382,7 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
     try:
         if name == "gdb_start_session":
             args = StartSessionArgs(**arguments)
-            session_id = session_manager.create_session()
-            session = session_manager.get_session(session_id)
-
-            if session is None:
-                raise RuntimeError(f"Failed to create session {session_id}")
-
-            result = session.start(
+            session_id, result = session_manager.start_session(
                 program=args.program,
                 args=args.args,
                 init_commands=args.init_commands,
@@ -453,7 +391,8 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
                 working_dir=args.working_dir,
                 core=args.core,
             )
-            result["session_id"] = session_id
+            if session_id is not None:
+                result["session_id"] = session_id
 
         else:
             session_id = arguments.get("session_id")
@@ -564,7 +503,12 @@ async def main():
 
     async with stdio_server() as (read_stream, write_stream):
         logger.info("GDB MCP Server starting...")
-        await app.run(read_stream, write_stream, app.create_initialization_options())
+        try:
+            await app.run(read_stream, write_stream, app.create_initialization_options())
+        finally:
+            cleanup_results = session_manager.shutdown_all()
+            if cleanup_results:
+                logger.info("Stopped %s session(s) during shutdown", len(cleanup_results))
 
 
 def run_server():

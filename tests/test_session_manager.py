@@ -1,15 +1,14 @@
-"""Unit tests for SessionManager class."""
+"""Unit tests for SessionRegistry compatibility and lifecycle behavior."""
 
 import threading
-from unittest.mock import Mock, patch
-import pytest
+from unittest.mock import Mock
 
 from gdb_mcp.server import SessionManager
 from gdb_mcp.gdb_interface import GDBSession
 
 
 class TestSessionManager:
-    """Test cases for SessionManager class."""
+    """Test cases for the server-facing session registry alias."""
 
     def test_create_session_returns_sequential_ids(self):
         """Test that create_session returns sequential integer IDs starting at 1."""
@@ -106,3 +105,56 @@ class TestSessionManager:
 
         # Verify IDs are sequential (1 through 10)
         assert sorted(session_ids) == list(range(1, 11))
+
+    def test_start_session_only_publishes_successful_sessions(self):
+        """Failed startup should not leave a reachable session in the registry."""
+
+        session = Mock()
+        session.start.return_value = {"status": "error", "message": "boom"}
+        manager = SessionManager(session_factory=lambda: session)
+
+        session_id, result = manager.start_session(program="/bin/ls")
+
+        assert session_id is None
+        assert result["status"] == "error"
+        assert manager.get_session(1) is None
+
+    def test_start_session_stores_successful_session(self):
+        """Atomic startup should publish the session only after success."""
+
+        session = Mock(spec=GDBSession)
+        session.start.return_value = {"status": "success", "message": "started"}
+        manager = SessionManager(session_factory=lambda: session)
+
+        session_id, result = manager.start_session(program="/bin/ls")
+
+        assert session_id == 1
+        assert result["status"] == "success"
+        assert manager.get_session(session_id) is session
+
+    def test_shutdown_all_stops_and_clears_sessions(self):
+        """Shutdown should stop every registered session and clear the registry."""
+
+        sessions = [Mock(spec=GDBSession), Mock(spec=GDBSession)]
+        for session in sessions:
+            session.stop.return_value = {"status": "success"}
+
+        index = {"value": 0}
+
+        def session_factory():
+            session = sessions[index["value"]]
+            index["value"] += 1
+            return session
+
+        manager = SessionManager(session_factory=session_factory)
+        session_id_1 = manager.create_session()
+        session_id_2 = manager.create_session()
+
+        results = manager.shutdown_all()
+
+        assert results == {
+            session_id_1: {"status": "success"},
+            session_id_2: {"status": "success"},
+        }
+        assert manager.get_session(session_id_1) is None
+        assert manager.get_session(session_id_2) is None
