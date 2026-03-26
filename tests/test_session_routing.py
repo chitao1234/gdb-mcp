@@ -109,6 +109,18 @@ class TestSessionRouting:
         assert result_data["status"] == "success"
 
     @patch("gdb_mcp.server.session_manager")
+    def test_unknown_tool_returns_unknown_tool_error(self, mock_manager):
+        """Unknown tools should fail before any session lookup happens."""
+        from gdb_mcp.server import call_tool
+
+        result = asyncio.run(call_tool("gdb_typo_tool", {"session_id": 1}))
+
+        result_data = json.loads(result[0].text)
+        assert result_data["status"] == "error"
+        assert result_data["message"] == "Unknown tool: gdb_typo_tool"
+        mock_manager.get_session.assert_not_called()
+
+    @patch("gdb_mcp.server.session_manager")
     def test_execute_command_routes_to_correct_session(self, mock_manager):
         """Test that gdb_execute_command routes to correct session."""
         from gdb_mcp.server import call_tool
