@@ -30,17 +30,23 @@ pytest --cov=gdb_mcp --cov-report=html
 # Run only unit tests (excluding integration tests)
 pytest -m "not integration"
 
+# Run only the session-layer tests
+pytest tests/session
+
 # Run only a specific test file
-pytest tests/test_gdb_interface.py
+pytest tests/session/test_gdb_interface.py
 
 # Run only a specific test
-pytest tests/test_gdb_interface.py::TestGDBSession::test_session_initialization
+pytest tests/session/test_gdb_interface.py::TestGDBSession::test_session_initialization
 ```
 
 ## Test Structure
 
-- `test_gdb_interface.py` - Unit tests for the GDB interface layer
-- `test_server.py` - Unit tests for the MCP server and argument models
+- `domain/` - Typed result and domain-model tests
+- `mcp/` - MCP schemas, handlers, runtime, and serializer tests
+- `session/` - Session service, registry, config/state, and compatibility-layer tests
+- `transport/` - Low-level GDB/MI transport tests
+- `integration/` - Real GDB workflow tests
 
 ## Test Categories
 

@@ -86,6 +86,31 @@ class TestSessionRouting:
         assert "gdb_start_session" in result_data["message"]
 
     @patch("gdb_mcp.server.session_manager")
+    def test_tool_with_missing_session_id_returns_validation_error(self, mock_manager):
+        """Known tools should validate arguments before session lookup."""
+        from gdb_mcp.server import call_tool
+
+        result = asyncio.run(call_tool("gdb_get_status", {}))
+
+        result_data = json.loads(result[0].text)
+        assert result_data["status"] == "error"
+        assert "session_id" in result_data["message"]
+        mock_manager.get_session.assert_not_called()
+
+    @patch("gdb_mcp.server.session_manager")
+    def test_tool_with_non_object_arguments_returns_validation_error(self, mock_manager):
+        """Non-dict tool arguments should fail as request validation errors."""
+        from gdb_mcp.server import call_tool
+
+        result = asyncio.run(call_tool("gdb_get_status", ["not", "an", "object"]))
+
+        result_data = json.loads(result[0].text)
+        assert result_data["status"] == "error"
+        assert result_data["message"] == "Tool arguments must be a JSON object"
+        assert result_data["tool"] == "gdb_get_status"
+        mock_manager.get_session.assert_not_called()
+
+    @patch("gdb_mcp.server.session_manager")
     def test_stop_session_removes_from_manager(self, mock_manager):
         """Test that gdb_stop_session removes session from manager."""
         from gdb_mcp.server import call_tool
