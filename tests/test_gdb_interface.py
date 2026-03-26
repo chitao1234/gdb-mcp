@@ -4,6 +4,7 @@ import os
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from gdb_mcp.gdb_interface import GDBSession
+from gdb_mcp.transport.mi_parser import extract_mi_result_payload, parse_mi_responses
 
 
 class TestGDBSession:
@@ -39,21 +40,36 @@ class TestGDBSession:
         assert "No active GDB session" in result["message"]
 
     def test_response_parsing(self):
-        """Test _parse_responses method."""
-        session = GDBSession()
+        """Test parsing raw MI responses into a normalized structure."""
 
         # Mock responses from GDB
         responses = [
             {"type": "console", "payload": "Test output\n"},
-            {"type": "result", "payload": {"msg": "done"}},
+            {"type": "result", "message": "done", "payload": {"msg": "done"}},
             {"type": "notify", "payload": {"msg": "thread-created"}},
         ]
 
-        parsed = session._parse_responses(responses)
+        parsed = parse_mi_responses(responses)
 
-        assert "Test output\n" in parsed["console"]
-        assert parsed["result"] == {"msg": "done"}
-        assert {"msg": "thread-created"} in parsed["notify"]
+        assert "Test output\n" in parsed.console
+        assert parsed.result == {"msg": "done"}
+        assert parsed.result_class == "done"
+        assert {"msg": "thread-created"} in parsed.notify
+
+    def test_extract_mi_result_payload(self):
+        """Test extracting the inner MI result payload from command results."""
+
+        payload = extract_mi_result_payload(
+            {
+                "status": "success",
+                "result": {
+                    "result": {"threads": []},
+                    "result_class": "done",
+                },
+            }
+        )
+
+        assert payload == {"threads": []}
 
     def test_cli_command_wrapping(self):
         """Test that CLI commands are properly detected."""

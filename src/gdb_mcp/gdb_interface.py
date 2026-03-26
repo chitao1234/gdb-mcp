@@ -5,8 +5,14 @@ import signal
 import subprocess
 import time
 from typing import Any, Optional
-from pygdbmi.gdbcontroller import GdbController
 import logging
+
+from pygdbmi.gdbcontroller import GdbController
+
+from .domain.models import SessionStatusSnapshot
+from .session.config import SessionConfig
+from .session.state import SessionState
+from .transport.mi_parser import extract_mi_result_payload, parse_mi_responses
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +42,8 @@ class GDBSession:
         self.target_loaded = False
         self.original_cwd: Optional[str] = None  # Store original working directory
         self._command_token = INITIAL_COMMAND_TOKEN
+        self.config: Optional[SessionConfig] = None
+        self.state = SessionState.CREATED
 
     def start(
         self,
@@ -85,6 +93,17 @@ class GDBSession:
         if gdb_path is None:
             gdb_path = os.environ.get("GDB_PATH", "gdb")
 
+        self.config = SessionConfig.from_inputs(
+            program=program,
+            args=args,
+            init_commands=init_commands,
+            env=env,
+            gdb_path=gdb_path,
+            working_dir=working_dir,
+            core=core,
+        )
+        self.state = SessionState.STARTING
+
         # Save current working directory if we need to change it
         # This will be restored when stop() is called
         if working_dir:
@@ -94,6 +113,7 @@ class GDBSession:
             # Change to working directory if specified
             if working_dir:
                 if not os.path.isdir(working_dir):
+                    self.state = SessionState.FAILED
                     return {
                         "status": "error",
                         "message": f"Working directory does not exist: {working_dir}",
@@ -155,13 +175,14 @@ class GDBSession:
                 # Propagate fatal flag if present
                 if ready_check.get("fatal"):
                     error_response["fatal"] = True
+                self.state = SessionState.FAILED
                 return error_response
 
             logger.info("GDB initialized and ready")
 
             # Parse the version info for startup messages
-            startup_result = self._parse_responses(ready_check.get("command_responses", []))
-            startup_console = "".join(startup_result.get("console", []))
+            startup_result = parse_mi_responses(ready_check.get("command_responses", []))
+            startup_console = "".join(startup_result.console)
 
             # Check for common warnings/issues in startup
             warnings = []
@@ -219,6 +240,7 @@ class GDBSession:
                                 # Propagate fatal flag if present
                                 if result.get("fatal"):
                                     error_response["fatal"] = True
+                                self.state = SessionState.FAILED
                                 return error_response
 
                         # Set target_loaded flag for file-related commands
@@ -235,6 +257,7 @@ class GDBSession:
                         # If it's a fatal error or GDB died, fail the start operation
                         if not self._is_gdb_alive():
                             logger.error("GDB process died during init command execution")
+                            self.state = SessionState.FAILED
                             return {
                                 "status": "error",
                                 "message": f"GDB crashed during init command '{cmd}': {str(e)}",
@@ -257,6 +280,7 @@ class GDBSession:
                 self.target_loaded = True
 
             self.is_running = True
+            self.state = SessionState.READY
 
             final_result: dict[str, Any] = {
                 "status": "success",
@@ -299,6 +323,7 @@ class GDBSession:
                 os.chdir(self.original_cwd)
                 logger.info(f"Restored working directory after failed start: {self.original_cwd}")
                 self.original_cwd = None
+            self.state = SessionState.FAILED
             return {"status": "error", "message": f"Failed to start GDB: {str(e)}"}
 
     def _is_gdb_alive(self) -> bool:
@@ -472,6 +497,7 @@ class GDBSession:
                                 self.controller = None
                                 self.is_running = False
                                 self.target_loaded = False
+                                self.state = SessionState.FAILED
 
                             # Restore original working directory if it was changed
                             if self.original_cwd:
@@ -610,12 +636,12 @@ class GDBSession:
 
         # Parse command responses
         command_responses = result.get("command_responses", [])
-        parsed = self._parse_responses(command_responses)
+        parsed = parse_mi_responses(command_responses)
 
         # For CLI commands, format the output more clearly
         if is_cli_command:
             # Combine all console output
-            console_output = "".join(parsed.get("console", []))
+            console_output = "".join(parsed.console)
 
             return {
                 "status": "success",
@@ -624,57 +650,7 @@ class GDBSession:
             }
         else:
             # For MI commands, return structured result
-            return {"status": "success", "command": command, "result": parsed}
-
-    def _parse_responses(self, responses: list[dict]) -> dict[str, Any]:
-        """Parse GDB/MI responses into a structured format."""
-        parsed: dict[str, Any] = {
-            "console": [],
-            "log": [],
-            "output": [],
-            "result": None,
-            "notify": [],
-        }
-
-        for response in responses:
-            msg_type = response.get("type")
-
-            if msg_type == "console":
-                console_list: list[Any] = parsed["console"]
-                console_list.append(response.get("payload"))
-            elif msg_type == "log":
-                log_list: list[Any] = parsed["log"]
-                log_list.append(response.get("payload"))
-            elif msg_type == "output":
-                output_list: list[Any] = parsed["output"]
-                output_list.append(response.get("payload"))
-            elif msg_type == "result":
-                parsed["result"] = response.get("payload")
-            elif msg_type == "notify":
-                notify_list: list[Any] = parsed["notify"]
-                notify_list.append(response.get("payload"))
-
-        return parsed
-
-    def _extract_mi_result(self, result: dict[str, Any]) -> Optional[dict[str, Any]]:
-        """
-        Extract the MI result payload from a command response.
-
-        GDB/MI commands return results in the format:
-        {"status": "success", "result": {"result": {...actual data...}}}
-
-        This helper extracts the inner "result" dictionary.
-
-        Args:
-            result: The command result dictionary
-
-        Returns:
-            The MI result payload, or None if not found
-        """
-        if result.get("status") != "success":
-            return None
-        inner_result: Optional[dict[str, Any]] = result.get("result", {}).get("result")
-        return inner_result
+            return {"status": "success", "command": command, "result": parsed.to_dict()}
 
     def get_threads(self) -> dict[str, Any]:
         """
@@ -693,7 +669,7 @@ class GDBSession:
 
         # Extract thread data from result
         # Use helper method but keep robust error handling for None cases
-        thread_info = self._extract_mi_result(result)
+        thread_info = extract_mi_result_payload(result)
         logger.debug(f"get_threads: thread_info type={type(thread_info)}, value={thread_info}")
 
         if thread_info is None:
@@ -735,7 +711,7 @@ class GDBSession:
         if result["status"] == "error":
             return result
 
-        mi_result = self._extract_mi_result(result) or {}
+        mi_result = extract_mi_result_payload(result) or {}
 
         return {
             "status": "success",
@@ -769,7 +745,7 @@ class GDBSession:
         if result["status"] == "error":
             return result
 
-        stack_data = self._extract_mi_result(result) or {}
+        stack_data = extract_mi_result_payload(result) or {}
         frames = stack_data.get("stack", [])
 
         return {"status": "success", "thread_id": thread_id, "frames": frames, "count": len(frames)}
@@ -786,7 +762,7 @@ class GDBSession:
         if result["status"] == "error":
             return result
 
-        mi_result = self._extract_mi_result(result) or {}
+        mi_result = extract_mi_result_payload(result) or {}
         frame = mi_result.get("frame", {})
 
         return {"status": "success", "frame": frame}
@@ -816,7 +792,7 @@ class GDBSession:
                 "message": f"Frame {frame_number} selected",
             }
 
-        mi_result = self._extract_mi_result(frame_info_result) or {}
+        mi_result = extract_mi_result_payload(frame_info_result) or {}
         frame_info = mi_result.get("frame", {})
 
         return {
@@ -858,7 +834,7 @@ class GDBSession:
 
         # The MI result payload is in result["result"]["result"]
         # This contains the actual GDB/MI command result
-        mi_result = self._extract_mi_result(result)
+        mi_result = extract_mi_result_payload(result)
 
         # Debug logging
         logger.debug(f"Breakpoint MI result: {mi_result}")
@@ -909,7 +885,7 @@ class GDBSession:
             return result
 
         # Extract breakpoint table from MI result
-        mi_result = self._extract_mi_result(result) or {}
+        mi_result = extract_mi_result_payload(result) or {}
 
         # The MI response has a BreakpointTable with body containing array of bkpt objects
         bp_table = mi_result.get("BreakpointTable", {})
@@ -1073,7 +1049,7 @@ class GDBSession:
                 if stopped_received:
                     break
 
-            result = self._parse_responses(all_responses)
+            result = parse_mi_responses(all_responses).to_dict()
 
             if not stopped_received:
                 return {
@@ -1106,7 +1082,7 @@ class GDBSession:
         if result["status"] == "error":
             return result
 
-        mi_result = self._extract_mi_result(result) or {}
+        mi_result = extract_mi_result_payload(result) or {}
         value = mi_result.get("value")
 
         return {"status": "success", "expression": expression, "value": value}
@@ -1139,7 +1115,7 @@ class GDBSession:
         if result["status"] == "error":
             return result
 
-        mi_result = self._extract_mi_result(result) or {}
+        mi_result = extract_mi_result_payload(result) or {}
         variables = mi_result.get("variables", [])
 
         return {"status": "success", "thread_id": thread_id, "frame": frame, "variables": variables}
@@ -1151,7 +1127,7 @@ class GDBSession:
         if result["status"] == "error":
             return result
 
-        mi_result = self._extract_mi_result(result) or {}
+        mi_result = extract_mi_result_payload(result) or {}
         registers = mi_result.get("register-values", [])
 
         return {"status": "success", "registers": registers}
@@ -1166,6 +1142,7 @@ class GDBSession:
             self.controller = None
             self.is_running = False
             self.target_loaded = False
+            self.state = SessionState.STOPPED
 
             # Restore original working directory if it was changed during start()
             if self.original_cwd:
@@ -1189,10 +1166,15 @@ class GDBSession:
 
     def get_status(self) -> dict[str, Any]:
         """Get the current status of the GDB session."""
+        snapshot = SessionStatusSnapshot(
+            is_running=self.is_running,
+            target_loaded=self.target_loaded,
+            has_controller=self.controller is not None,
+        )
         return {
-            "is_running": self.is_running,
-            "target_loaded": self.target_loaded,
-            "has_controller": self.controller is not None,
+            "is_running": snapshot.is_running,
+            "target_loaded": snapshot.target_loaded,
+            "has_controller": snapshot.has_controller,
         }
 
     def call_function(
@@ -1247,8 +1229,8 @@ class GDBSession:
                 "function_call": function_call,
             }
 
-        parsed = self._parse_responses(result.get("command_responses", []))
-        console_output = "".join(parsed.get("console", []))
+        parsed = parse_mi_responses(result.get("command_responses", []))
+        console_output = "".join(parsed.console)
 
         return {
             "status": "success",
