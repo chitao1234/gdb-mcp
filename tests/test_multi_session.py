@@ -358,12 +358,23 @@ def test_concurrent_debugging_different_programs(compiled_program_1, compiled_pr
         cont_result2 = call_gdb_tool("gdb_continue", {"session_id": session_id_2})
         assert cont_result2["status"] == "success"
 
-        # Get final backtraces - should be at different functions
+        # Session 1 may legitimately exit normally if stepping already moved past the
+        # double_value call site; session 2 should still stop at triple_value.
         final_bt1 = call_gdb_tool("gdb_get_backtrace", {"session_id": session_id_1})
-        assert final_bt1["status"] == "success"
+        session_1_reasons = [
+            notify.get("reason")
+            for notify in cont_result1.get("result", {}).get("notify", [])
+            if isinstance(notify, dict)
+        ]
+        if "breakpoint-hit" in session_1_reasons:
+            assert final_bt1["status"] == "success"
+        else:
+            assert "exited-normally" in session_1_reasons
+            assert final_bt1["status"] == "error"
 
         final_bt2 = call_gdb_tool("gdb_get_backtrace", {"session_id": session_id_2})
         assert final_bt2["status"] == "success"
+        assert any("triple_value" in frame.get("func", "") for frame in final_bt2["frames"])
 
     finally:
         # Cleanup both sessions

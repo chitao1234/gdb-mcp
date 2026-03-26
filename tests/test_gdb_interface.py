@@ -71,6 +71,22 @@ class TestGDBSession:
 
         assert payload == {"threads": []}
 
+    def test_parsed_mi_response_extracts_error_message(self):
+        """MI error results should expose their message for higher layers."""
+
+        parsed = parse_mi_responses(
+            [
+                {
+                    "type": "result",
+                    "message": "error",
+                    "payload": {"msg": "Thread ID 999 not known"},
+                }
+            ]
+        )
+
+        assert parsed.is_error_result() is True
+        assert parsed.error_message() == "Thread ID 999 not known"
+
     def test_cli_command_wrapping(self):
         """Test that CLI commands are properly detected."""
         session = GDBSession()
@@ -749,6 +765,36 @@ class TestSessionManagement:
         assert result["status"] == "success"
         assert "result" in result
 
+    @patch("gdb_mcp.gdb_interface.GdbController")
+    def test_execute_command_mi_error_result(self, mock_controller_class):
+        """MI error result records should be surfaced as errors."""
+
+        session = GDBSession()
+        session.controller = MagicMock()
+        session.is_running = True
+
+        with patch.object(
+            session,
+            "_send_command_and_wait_for_prompt",
+            return_value={
+                "command_responses": [
+                    {
+                        "type": "result",
+                        "message": "error",
+                        "payload": {"msg": "Thread ID 999 not known"},
+                        "token": 1000,
+                    }
+                ],
+                "async_notifications": [],
+                "timed_out": False,
+            },
+        ):
+            result = session.execute_command("-thread-select 999")
+
+        assert result["status"] == "error"
+        assert result["command"] == "-thread-select 999"
+        assert "Thread ID 999 not known" in result["message"]
+
 
 class TestErrorHandling:
     """Test cases for error handling."""
@@ -786,6 +832,36 @@ class TestErrorHandling:
 
         assert result["status"] == "error"
         assert "Timeout" in result["message"]
+
+    @patch("gdb_mcp.gdb_interface.GdbController")
+    def test_call_function_mi_error_result(self, mock_controller_class):
+        """Function-call MI errors should not be reported as success."""
+
+        session = GDBSession()
+        session.controller = MagicMock()
+        session.is_running = True
+
+        with patch.object(
+            session,
+            "_send_command_and_wait_for_prompt",
+            return_value={
+                "command_responses": [
+                    {
+                        "type": "result",
+                        "message": "error",
+                        "payload": {"msg": "Cannot evaluate function -- may be inlined"},
+                        "token": 1000,
+                    }
+                ],
+                "async_notifications": [],
+                "timed_out": False,
+            },
+        ):
+            result = session.call_function("foo()")
+
+        assert result["status"] == "error"
+        assert result["function_call"] == "foo()"
+        assert "Cannot evaluate function" in result["message"]
 
     @patch("gdb_mcp.gdb_interface.GdbController")
     def test_set_breakpoint_no_result(self, mock_controller_class):

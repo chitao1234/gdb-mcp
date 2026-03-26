@@ -58,6 +58,13 @@ class SessionExecutionMixin:
         command_responses = result.get("command_responses", [])
         parsed = parse_mi_responses(command_responses)
 
+        if parsed.is_error_result():
+            return {
+                "status": "error",
+                "message": parsed.error_message() or "GDB returned an error",
+                "command": command,
+            }
+
         if cli_command:
             console_output = "".join(parsed.console)
             return {
@@ -174,6 +181,12 @@ class SessionExecutionMixin:
             }
 
         parsed = parse_mi_responses(result.get("command_responses", []))
+        if parsed.is_error_result():
+            return {
+                "status": "error",
+                "message": parsed.error_message() or "GDB returned an error",
+                "function_call": function_call,
+            }
         console_output = "".join(parsed.console)
 
         return {

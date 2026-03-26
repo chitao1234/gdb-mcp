@@ -128,6 +128,9 @@ class MiClient:
             start_time = time.monotonic()
             last_activity_time = start_time
             last_alive_check = 0.0
+            saw_result_record = False
+            saw_stop_after_running = False
+            result_class: str | None = None
 
             while time.monotonic() - last_activity_time < timeout_sec:
                 elapsed = time.monotonic() - start_time
@@ -174,6 +177,11 @@ class MiClient:
                     )
 
                 if not responses:
+                    if saw_result_record and (result_class != "running" or saw_stop_after_running):
+                        return MiTransportResponse(
+                            command_responses=command_responses,
+                            async_notifications=async_notifications,
+                        )
                     continue
 
                 last_activity_time = time.monotonic()
@@ -202,14 +210,26 @@ class MiClient:
 
                     if response_type == "result" and response_token == token:
                         command_responses.append(response)
-                        logger.debug("Received result record for token %s, command complete", token)
-                        return MiTransportResponse(
-                            command_responses=command_responses,
-                            async_notifications=async_notifications,
+                        result_class = (
+                            response.get("message") if isinstance(response.get("message"), str) else None
                         )
+                        saw_result_record = True
+                        logger.debug(
+                            "Received result record for token %s with class %s",
+                            token,
+                            result_class,
+                        )
+                        continue
 
                     if response_token == token or response_token is None:
                         command_responses.append(response)
+                        if (
+                            saw_result_record
+                            and result_class == "running"
+                            and response_type == "notify"
+                            and response.get("message") == "stopped"
+                        ):
+                            saw_stop_after_running = True
                     else:
                         async_notifications.append(response)
                         logger.info(

@@ -1,5 +1,6 @@
 """Typed models for parsed GDB/MI responses."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -14,6 +15,30 @@ class ParsedMiResponse:
     result: Any = None
     result_class: str | None = None
     notify: list[Any] = field(default_factory=list)
+
+    def is_error_result(self) -> bool:
+        """Return True when the MI result record reported an error."""
+
+        return self.result_class == "error"
+
+    def error_message(self) -> str | None:
+        """Extract the best available error message from the parsed MI result."""
+
+        if not self.is_error_result():
+            return None
+
+        if isinstance(self.result, Mapping):
+            for key in ("msg", "message"):
+                message = self.result.get(key)
+                if isinstance(message, str) and message.strip():
+                    return message.strip()
+
+        for stream in (self.console, self.log, self.output):
+            text = "".join(item for item in stream if isinstance(item, str)).strip()
+            if text:
+                return text
+
+        return "GDB returned an error"
 
     def to_dict(self) -> dict[str, Any]:
         """Convert back to the legacy dict shape used by the current service layer."""

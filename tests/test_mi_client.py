@@ -141,6 +141,26 @@ class TestMiClient:
         assert result.command_responses[-1]["type"] == "result"
         assert result.async_notifications == [{"type": "notify", "token": 999, "payload": {"msg": "old-command"}}]
 
+    def test_send_command_waits_for_stop_after_running_result(self):
+        """Execution commands should not return until the later stopped notification drains."""
+
+        controller = _FakeController(
+            [
+                [{"type": "result", "token": 1000, "message": "running", "payload": None}],
+                [{"type": "notify", "message": "stopped", "payload": {"reason": "breakpoint-hit"}}],
+                [],
+            ]
+        )
+        client = self._make_client(controller)
+
+        result = client.send_command_and_wait_for_prompt("-exec-continue", timeout_sec=1.0)
+
+        assert result.error is None
+        assert result.timed_out is False
+        assert [record["type"] for record in result.command_responses] == ["result", "notify"]
+        assert result.command_responses[0]["message"] == "running"
+        assert result.command_responses[1]["message"] == "stopped"
+
     def test_send_command_detects_fatal_error_and_cleans_up(self):
         """Fatal GDB output should stop the client and return a fatal response."""
 
