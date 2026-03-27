@@ -15,6 +15,7 @@ from gdb_mcp.mcp.schemas import (
     SetBreakpointArgs,
     EvaluateExpressionArgs,
     GetVariablesArgs,
+    ListSessionsArgs,
     RunArgs,
 )
 
@@ -116,6 +117,16 @@ class TestAttachProcessArgs:
         assert args.session_id == 1
         assert args.pid == 4321
         assert args.timeout_sec == 15
+
+
+class TestListSessionsArgs:
+    """Test cases for ListSessionsArgs model."""
+
+    def test_no_args(self):
+        """Listing sessions should accept an empty payload."""
+
+        args = ListSessionsArgs()
+        assert args.model_dump() == {}
 
 
 class TestGetBacktraceArgs:

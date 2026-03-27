@@ -12,8 +12,10 @@ from gdb_mcp.domain import (
     CommandExecutionInfo,
     OperationError,
     OperationSuccess,
+    SessionListInfo,
     SessionMessage,
     SessionStatusSnapshot,
+    SessionSummary,
 )
 from gdb_mcp.mcp.handlers import SESSION_TOOL_SPECS, dispatch_tool_call
 from gdb_mcp.mcp.schemas import build_tool_definitions
@@ -65,6 +67,34 @@ class TestHandlerDispatch:
         assert result_data["status"] == "error"
         assert "session_id" not in result_data
 
+    def test_list_sessions_routes_to_registry(self):
+        """Global session inventory requests should not require a session_id."""
+
+        manager = Mock()
+        manager.list_sessions.return_value = OperationSuccess(
+            SessionListInfo(
+                sessions=[
+                    SessionSummary(
+                        session_id=1,
+                        lifecycle_state="ready",
+                        execution_state="paused",
+                        target_loaded=True,
+                        has_controller=True,
+                        program="/tmp/a.out",
+                    )
+                ],
+                count=1,
+            )
+        )
+
+        result_data = dispatch("gdb_list_sessions", {}, manager)
+
+        manager.list_sessions.assert_called_once()
+        manager.resolve_session.assert_not_called()
+        assert result_data["status"] == "success"
+        assert result_data["count"] == 1
+        assert result_data["sessions"][0]["session_id"] == 1
+
     def test_tool_with_valid_session_id_works(self):
         """Session-scoped tools should route to the retrieved session."""
 
@@ -73,11 +103,11 @@ class TestHandlerDispatch:
         session.get_status.return_value = OperationSuccess(
             SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=True)
         )
-        manager.get_session.return_value = session
+        manager.resolve_session.return_value = session
 
         result_data = dispatch("gdb_get_status", {"session_id": 1}, manager)
 
-        manager.get_session.assert_called_once_with(1)
+        manager.resolve_session.assert_called_once_with(1)
         session.get_status.assert_called_once()
         assert result_data == {
             "status": "success",
@@ -93,13 +123,26 @@ class TestHandlerDispatch:
         """Invalid session IDs should fail before any tool execution."""
 
         manager = Mock()
-        manager.get_session.return_value = None
+        manager.resolve_session.return_value = OperationError(
+            message="Invalid session_id: 999. Use gdb_start_session to create a new session."
+        )
 
         result_data = dispatch("gdb_get_status", {"session_id": 999}, manager)
 
         assert result_data["status"] == "error"
         assert "Invalid session_id: 999" in result_data["message"]
         assert "gdb_start_session" in result_data["message"]
+
+    def test_tool_with_closing_session_returns_closing_error(self):
+        """Commands against closing sessions should get a precise lifecycle error."""
+
+        manager = Mock()
+        manager.resolve_session.return_value = OperationError(message="Session 2 is closing")
+
+        result_data = dispatch("gdb_get_status", {"session_id": 2}, manager)
+
+        assert result_data["status"] == "error"
+        assert "closing" in result_data["message"]
 
     def test_tool_with_missing_session_id_returns_validation_error(self):
         """Known tools should validate arguments before session lookup."""
@@ -110,7 +153,7 @@ class TestHandlerDispatch:
 
         assert result_data["status"] == "error"
         assert "session_id" in result_data["message"]
-        manager.get_session.assert_not_called()
+        manager.resolve_session.assert_not_called()
 
     def test_tool_with_non_object_arguments_returns_validation_error(self):
         """Non-dict arguments should fail as request validation errors."""
@@ -122,7 +165,7 @@ class TestHandlerDispatch:
         assert result_data["status"] == "error"
         assert result_data["message"] == "Tool arguments must be a JSON object"
         assert result_data["tool"] == "gdb_get_status"
-        manager.get_session.assert_not_called()
+        manager.resolve_session.assert_not_called()
 
     def test_tool_with_unknown_argument_returns_validation_error(self):
         """Unexpected tool arguments should be rejected at the MCP boundary."""
@@ -133,7 +176,7 @@ class TestHandlerDispatch:
 
         assert result_data["status"] == "error"
         assert "unexpected" in result_data["message"]
-        manager.get_session.assert_not_called()
+        manager.resolve_session.assert_not_called()
 
     def test_stop_session_uses_registry_close(self):
         """Successful stop should go through the registry lifecycle API."""
@@ -146,7 +189,7 @@ class TestHandlerDispatch:
         result_data = dispatch("gdb_stop_session", {"session_id": 1}, manager)
 
         manager.close_session.assert_called_once_with(1)
-        manager.get_session.assert_not_called()
+        manager.resolve_session.assert_not_called()
         assert result_data["status"] == "success"
 
     def test_unknown_tool_returns_unknown_tool_error(self):
@@ -158,7 +201,7 @@ class TestHandlerDispatch:
 
         assert result_data["status"] == "error"
         assert result_data["message"] == "Unknown tool: gdb_typo_tool"
-        manager.get_session.assert_not_called()
+        manager.resolve_session.assert_not_called()
 
     def test_execute_command_routes_to_correct_session(self):
         """Execute-command requests should forward the command payload."""
@@ -168,7 +211,7 @@ class TestHandlerDispatch:
         session.execute_command.return_value = OperationSuccess(
             CommandExecutionInfo(command="info threads", output="Thread info")
         )
-        manager.get_session.return_value = session
+        manager.resolve_session.return_value = session
 
         dispatch(
             "gdb_execute_command",
@@ -176,7 +219,7 @@ class TestHandlerDispatch:
             manager,
         )
 
-        manager.get_session.assert_called_once_with(5)
+        manager.resolve_session.assert_called_once_with(5)
         session.execute_command.assert_called_once_with(command="info threads", timeout_sec=12)
 
     def test_run_routes_to_correct_session(self):
@@ -185,7 +228,7 @@ class TestHandlerDispatch:
         manager = Mock()
         session = Mock()
         session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
-        manager.get_session.return_value = session
+        manager.resolve_session.return_value = session
 
         dispatch(
             "gdb_run",
@@ -193,7 +236,7 @@ class TestHandlerDispatch:
             manager,
         )
 
-        manager.get_session.assert_called_once_with(5)
+        manager.resolve_session.assert_called_once_with(5)
         session.run.assert_called_once_with(args=["--flag", "value"], timeout_sec=7)
 
     def test_attach_process_routes_to_correct_session(self):
@@ -204,7 +247,7 @@ class TestHandlerDispatch:
         session.attach_process.return_value = OperationSuccess(
             CommandExecutionInfo(command="attach 42")
         )
-        manager.get_session.return_value = session
+        manager.resolve_session.return_value = session
 
         dispatch(
             "gdb_attach_process",
@@ -212,7 +255,7 @@ class TestHandlerDispatch:
             manager,
         )
 
-        manager.get_session.assert_called_once_with(3)
+        manager.resolve_session.assert_called_once_with(3)
         session.attach_process.assert_called_once_with(pid=42, timeout_sec=9)
 
     def test_set_breakpoint_routes_to_correct_session(self):
@@ -223,11 +266,11 @@ class TestHandlerDispatch:
         session.set_breakpoint.return_value = OperationSuccess(
             BreakpointInfo(breakpoint={"number": 1, "location": "main"})
         )
-        manager.get_session.return_value = session
+        manager.resolve_session.return_value = session
 
         dispatch("gdb_set_breakpoint", {"session_id": 3, "location": "main"}, manager)
 
-        manager.get_session.assert_called_once_with(3)
+        manager.resolve_session.assert_called_once_with(3)
         session.set_breakpoint.assert_called_once()
 
     def test_multiple_tools_use_different_sessions(self):
@@ -243,19 +286,21 @@ class TestHandlerDispatch:
             SessionStatusSnapshot(is_running=True, target_loaded=True, has_controller=True)
         )
 
-        def get_session_side_effect(session_id):
+        def resolve_session_side_effect(session_id):
             if session_id == 1:
                 return session_1
             if session_id == 2:
                 return session_2
-            return None
+            return OperationError(
+                message=f"Invalid session_id: {session_id}. Use gdb_start_session to create a new session."
+            )
 
-        manager.get_session.side_effect = get_session_side_effect
+        manager.resolve_session.side_effect = resolve_session_side_effect
 
         result_1 = dispatch("gdb_get_status", {"session_id": 1}, manager)
         result_2 = dispatch("gdb_get_status", {"session_id": 2}, manager)
 
-        assert manager.get_session.call_count == 2
+        assert manager.resolve_session.call_count == 2
         session_1.get_status.assert_called_once()
         session_2.get_status.assert_called_once()
         assert result_1["is_running"] is False
@@ -269,7 +314,7 @@ class TestHandlerDispatch:
         session.evaluate_expression.return_value = OperationSuccess(
             CommandExecutionInfo(command="-data-evaluate-expression")
         )
-        manager.get_session.return_value = session
+        manager.resolve_session.return_value = session
 
         dispatch(
             "gdb_evaluate_expression",
@@ -287,7 +332,7 @@ class TestHandlerDispatch:
         session.get_registers.return_value = OperationSuccess(
             CommandExecutionInfo(command="-data-list-register-values x")
         )
-        manager.get_session.return_value = session
+        manager.resolve_session.return_value = session
 
         dispatch(
             "gdb_get_registers",
@@ -301,6 +346,10 @@ class TestHandlerDispatch:
         """Every exported tool should have a matching dispatch path and vice versa."""
 
         exported_tools = {tool.name for tool in build_tool_definitions()}
-        dispatched_tools = set(SESSION_TOOL_SPECS) | {"gdb_start_session", "gdb_stop_session"}
+        dispatched_tools = set(SESSION_TOOL_SPECS) | {
+            "gdb_start_session",
+            "gdb_stop_session",
+            "gdb_list_sessions",
+        }
 
         assert exported_tools == dispatched_tools

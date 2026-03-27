@@ -3,7 +3,14 @@
 import threading
 from unittest.mock import Mock
 
-from gdb_mcp.domain import OperationError, OperationSuccess, SessionMessage, SessionStartInfo
+from gdb_mcp.domain import (
+    OperationError,
+    OperationSuccess,
+    SessionListInfo,
+    SessionMessage,
+    SessionStartInfo,
+    SessionStatusSnapshot,
+)
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.registry import SessionRegistry
 from gdb_mcp.session.service import SessionService
@@ -128,6 +135,57 @@ class TestSessionRegistry:
         assert isinstance(result, OperationError)
         assert "inconsistent" in result.message.lower()
         assert manager.get_session(session_id) is session
+
+    def test_resolve_session_rejects_closing_sessions(self):
+        """Closing sessions should reject new command resolution with a clear error."""
+
+        session = Mock(spec=SessionService)
+        manager = SessionRegistry(session_factory=lambda: session)
+        session_id = manager.create_session()
+
+        manager._closing_sessions.add(session_id)
+        result = manager.resolve_session(session_id)
+
+        assert isinstance(result, OperationError)
+        assert "closing" in result.message.lower()
+
+    def test_list_sessions_returns_structured_summaries(self):
+        """Session inventory should expose metadata useful for multi-session clients."""
+
+        session = Mock(spec=SessionService)
+        session.get_status.return_value = OperationSuccess(
+            SessionStatusSnapshot(
+                is_running=True,
+                target_loaded=True,
+                has_controller=True,
+                execution_state="paused",
+                stop_reason="breakpoint-hit",
+                exit_code=None,
+            )
+        )
+        session.state = SessionState.READY
+        session.config = Mock(program="/tmp/a.out", core=None, working_dir="/tmp")
+        session.runtime = Mock(
+            attached_pid=None,
+            current_thread_id=2,
+            current_frame=1,
+            last_failure_message=None,
+        )
+        manager = SessionRegistry(session_factory=lambda: session)
+
+        session_id = manager.create_session()
+        result = manager.list_sessions()
+
+        assert isinstance(result, OperationSuccess)
+        assert isinstance(result.value, SessionListInfo)
+        assert result.value.count == 1
+        summary = result.value.sessions[0]
+        assert summary.session_id == session_id
+        assert summary.lifecycle_state == "ready"
+        assert summary.execution_state == "paused"
+        assert summary.program == "/tmp/a.out"
+        assert summary.current_thread_id == 2
+        assert summary.current_frame == 1
 
     def test_close_session_removes_failed_dead_session_without_stop(self):
         """Dead failed sessions should be removable without another stop attempt."""

@@ -26,6 +26,7 @@ from .schemas import (
     GetBacktraceArgs,
     GetRegistersArgs,
     GetVariablesArgs,
+    ListSessionsArgs,
     RunArgs,
     SessionIdArgs,
     SetBreakpointArgs,
@@ -231,9 +232,9 @@ def _dispatch_session_tool(
     """Validate one session-scoped request and invoke its handler."""
 
     args = cast(SessionArgsProtocol, tool_spec.model.model_validate(arguments))
-    session = session_manager.get_session(args.session_id)
-    if session is None:
-        return _invalid_session_result(args.session_id)
+    session = session_manager.resolve_session(args.session_id)
+    if isinstance(session, OperationError):
+        return session
     return tool_spec.handler(session, cast(BaseModel, args))
 
 
@@ -279,6 +280,9 @@ async def dispatch_tool_call(
 
         if name == "gdb_start_session":
             return serialize_result(_handle_start_session(normalized_args, session_manager))
+        if name == "gdb_list_sessions":
+            ListSessionsArgs.model_validate(normalized_args)
+            return serialize_result(session_manager.list_sessions())
         if name == "gdb_stop_session":
             args = SessionIdArgs.model_validate(normalized_args)
             return serialize_result(session_manager.close_session(args.session_id))

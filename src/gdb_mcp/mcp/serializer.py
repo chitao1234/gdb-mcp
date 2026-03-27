@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from mcp.types import TextContent
 
@@ -10,14 +11,16 @@ from ..domain import OperationError, OperationResult, result_to_mapping
 
 
 def result_to_payload(
-    result: OperationResult[object],
+    result: OperationResult[Any],
 ) -> dict[str, object]:
     """Convert a typed internal result into the external JSON payload shape."""
 
     return result_to_mapping(result)
 
 
-def serialize_result(result: OperationResult[object]) -> list[TextContent]:
+def serialize_result(
+    result: OperationResult[Any],
+) -> list[TextContent]:
     """Serialize a typed tool result into MCP text content."""
 
     return [TextContent(type="text", text=json.dumps(result_to_payload(result), indent=2))]

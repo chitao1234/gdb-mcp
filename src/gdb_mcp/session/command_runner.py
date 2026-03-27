@@ -162,6 +162,7 @@ class SessionCommandRunner:
         normalized_command = command.strip().lower()
         if self._loads_target(normalized_command):
             self._runtime.target_loaded = True
+            self._runtime.clear_attached_pid()
             if self._runtime.execution_state == "unknown":
                 if normalized_command.startswith("core-file "):
                     self._runtime.mark_inferior_paused("core-file")
@@ -169,8 +170,13 @@ class SessionCommandRunner:
                     self._runtime.mark_inferior_not_started()
         elif normalized_command.startswith("attach ") and not parsed.is_error_result():
             self._runtime.target_loaded = True
+            attached_pid = self._parse_attached_pid(normalized_command)
+            if attached_pid is not None:
+                self._runtime.mark_attached(attached_pid)
             if self._runtime.execution_state == "unknown":
                 self._runtime.mark_inferior_paused("attached")
+        elif normalized_command == "detach" and not parsed.is_error_result():
+            self._runtime.clear_attached_pid()
 
     @staticmethod
     def _loads_target(command: str) -> bool:
@@ -200,3 +206,13 @@ class SessionCommandRunner:
             except ValueError:
                 return None
         return None
+
+    @staticmethod
+    def _parse_attached_pid(command: str) -> int | None:
+        """Parse an attach command and return the PID if present."""
+
+        parts = command.split(maxsplit=1)
+        if len(parts) != 2:
+            return None
+        pid_text = parts[1].strip()
+        return int(pid_text) if pid_text.isdigit() else None

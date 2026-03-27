@@ -74,6 +74,34 @@ class SessionStatusSnapshot:
 
 
 @dataclass(slots=True, frozen=True)
+class SessionSummary:
+    """Structured summary of one active debugger session."""
+
+    session_id: int
+    lifecycle_state: str
+    execution_state: str
+    target_loaded: bool
+    has_controller: bool
+    program: str | None = None
+    core: str | None = None
+    working_dir: str | None = None
+    attached_pid: int | None = None
+    current_thread_id: int | None = None
+    current_frame: int | None = None
+    stop_reason: str | None = None
+    exit_code: int | None = None
+    last_failure_message: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class SessionListInfo:
+    """Structured list of currently registered sessions."""
+
+    sessions: list[SessionSummary]
+    count: int
+
+
+@dataclass(slots=True, frozen=True)
 class SessionStartInfo:
     """Structured result for a successful session start."""
 

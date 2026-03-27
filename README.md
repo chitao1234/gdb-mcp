@@ -100,10 +100,11 @@ gdb-mcp-server
 
 ## Available Tools
 
-The GDB MCP Server provides 24 tools for controlling GDB debugging sessions:
+The GDB MCP Server provides 26 tools for controlling GDB debugging sessions:
 
 **Session Management:**
 - `gdb_start_session` - Start a new GDB session with optional initialization
+- `gdb_list_sessions` - List all active sessions with structured metadata
 - `gdb_execute_command` - Execute GDB commands (CLI or MI format)
 - `gdb_run` - Start the loaded program with optional argv overrides
 - `gdb_attach_process` - Attach GDB to a running process by PID
@@ -146,6 +147,10 @@ immediately whether startup loaded a usable target.
 It also includes the initial `execution_state` when startup leaves the inferior
 in a known state, such as `not_started` for a loaded executable or `paused` for
 a loaded core dump.
+When multiple sessions are active, `gdb_list_sessions` provides an inventory view
+with session IDs, lifecycle/execution state, and basic target metadata so MCP
+clients can recover or render session state without maintaining all bookkeeping
+out of band.
 `gdb_get_status` also reports the inferior execution state as `not_started`,
 `running`, `paused`, `exited`, or `unknown`.
 

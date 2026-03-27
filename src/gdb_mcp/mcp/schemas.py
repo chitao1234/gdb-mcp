@@ -140,6 +140,10 @@ class SessionIdArgs(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
 
 
+class ListSessionsArgs(StrictArgsModel):
+    """Arguments for tools that do not require any parameters."""
+
+
 def build_tool_definitions() -> list[Tool]:
     """Build the MCP tool definitions exposed by this server."""
 
@@ -217,6 +221,16 @@ def build_tool_definitions() -> list[Tool]:
                 "Requires session_id parameter (obtained from gdb_start_session)."
             ),
             inputSchema=SessionIdArgs.model_json_schema(),
+        ),
+        Tool(
+            name="gdb_list_sessions",
+            description=(
+                "List all currently registered GDB sessions with structured metadata. "
+                "This is intended for MCP clients that manage multiple sessions and need "
+                "an inventory view with lifecycle state, execution state, target info, "
+                "and other summary fields."
+            ),
+            inputSchema=ListSessionsArgs.model_json_schema(),
         ),
         Tool(
             name="gdb_get_threads",

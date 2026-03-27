@@ -12,6 +12,7 @@ All tests use real GDB processes via the MCP server interface.
 """
 
 import pytest
+import threading
 
 # Simple C program for testing - different from main test suite
 TEST_PROGRAM_1 = """
@@ -96,6 +97,12 @@ def test_create_multiple_sessions(
 
     status2 = call_gdb_tool("gdb_get_status", {"session_id": session_id_2})
     assert status2["is_running"] is True
+
+    sessions = call_gdb_tool("gdb_list_sessions", {})
+    assert sessions["status"] == "success"
+    assert sessions["count"] == 2
+    listed_ids = {item["session_id"] for item in sessions["sessions"]}
+    assert listed_ids == {session_id_1, session_id_2}
 
     # Cleanup
     stop_session(session_id_1)
@@ -313,6 +320,55 @@ def test_concurrent_debugging_different_programs(
 
 
 @pytest.mark.integration
+def test_concurrent_calls_across_sessions(
+    compiled_program_1,
+    compiled_program_2,
+    start_session,
+    stop_session,
+):
+    """Commands to different sessions should work correctly when issued concurrently."""
+
+    session_id_1 = start_session(compiled_program_1, init_commands=["set disable-randomization on"])
+    session_id_2 = start_session(compiled_program_2, init_commands=["set disable-randomization on"])
+
+    try:
+        call_gdb_tool("gdb_set_breakpoint", {"session_id": session_id_1, "location": "main"})
+        call_gdb_tool("gdb_set_breakpoint", {"session_id": session_id_2, "location": "main"})
+
+        results: dict[int, dict[str, object]] = {}
+        errors: list[Exception] = []
+        lock = threading.Lock()
+
+        def run_session(session_id: int) -> None:
+            try:
+                result = call_gdb_tool("gdb_run", {"session_id": session_id})
+                with lock:
+                    results[session_id] = result
+            except Exception as exc:  # pragma: no cover - diagnostic path
+                with lock:
+                    errors.append(exc)
+
+        thread_1 = threading.Thread(target=run_session, args=(session_id_1,))
+        thread_2 = threading.Thread(target=run_session, args=(session_id_2,))
+        thread_1.start()
+        thread_2.start()
+        thread_1.join()
+        thread_2.join()
+
+        assert errors == []
+        assert results[session_id_1]["status"] == "success"
+        assert results[session_id_2]["status"] == "success"
+
+        status_1 = call_gdb_tool("gdb_get_status", {"session_id": session_id_1})
+        status_2 = call_gdb_tool("gdb_get_status", {"session_id": session_id_2})
+        assert status_1["execution_state"] == "paused"
+        assert status_2["execution_state"] == "paused"
+    finally:
+        stop_session(session_id_1, ignore_errors=True)
+        stop_session(session_id_2, ignore_errors=True)
+
+
+@pytest.mark.integration
 def test_session_isolation_execution_state(
     compiled_program_1,
     compiled_program_2,
@@ -480,6 +536,11 @@ def test_stop_one_session_doesnt_affect_other(
         # Stop the middle session
         stop_result = stop_session(session_id_2)
         assert stop_result["status"] == "success"
+
+        sessions = call_gdb_tool("gdb_list_sessions", {})
+        assert sessions["count"] == 2
+        listed_ids = {item["session_id"] for item in sessions["sessions"]}
+        assert listed_ids == {session_id_1, session_id_3}
 
         # Verify session 2 is no longer usable
         status2_after = call_gdb_tool("gdb_get_status", {"session_id": session_id_2})

@@ -24,6 +24,7 @@ class SessionRuntime:
     state: SessionState = SessionState.CREATED
     is_running: bool = False
     target_loaded: bool = False
+    attached_pid: int | None = None
     execution_state: str = "unknown"
     stop_reason: str | None = None
     exit_code: int | None = None
@@ -56,6 +57,7 @@ class SessionRuntime:
         self.state = SessionState.STARTING
         self.is_running = False
         self.target_loaded = False
+        self.attached_pid = None
         self.execution_state = "unknown"
         self.stop_reason = None
         self.exit_code = None
@@ -76,6 +78,7 @@ class SessionRuntime:
         self.state = SessionState.FAILED
         self.is_running = False
         self.target_loaded = False
+        self.attached_pid = None
         self.execution_state = "unknown"
         self.stop_reason = None
         self.exit_code = None
@@ -95,6 +98,7 @@ class SessionRuntime:
         self.state = SessionState.STOPPED
         self.is_running = False
         self.target_loaded = False
+        self.attached_pid = None
         self.execution_state = "unknown"
         self.stop_reason = None
         self.exit_code = None
@@ -111,6 +115,16 @@ class SessionRuntime:
         """Track the currently selected frame."""
 
         self.current_frame = frame_number
+
+    def mark_attached(self, pid: int) -> None:
+        """Track the PID of the currently attached process."""
+
+        self.attached_pid = pid
+
+    def clear_attached_pid(self) -> None:
+        """Clear any remembered attached process PID."""
+
+        self.attached_pid = None
 
     def mark_inferior_not_started(self) -> None:
         """Record that a target is loaded but execution has not begun."""

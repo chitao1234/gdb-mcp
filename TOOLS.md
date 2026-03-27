@@ -89,6 +89,33 @@ Environment variables are applied before any `init_commands` run. This is useful
 - Configuring application behavior (DEBUG_MODE, LOG_LEVEL, etc.)
 - Testing with different environment configurations
 
+### `gdb_list_sessions`
+List all currently registered debugger sessions.
+
+**Parameters:**
+- none
+
+**Returns:**
+- `status`: "success" or "error"
+- `sessions`: Array of session summary objects
+- `count`: Total number of active sessions
+
+**Each session summary contains:**
+- `session_id`: Session identifier
+- `lifecycle_state`: Session lifecycle state (`created`, `starting`, `ready`, `failed`, `stopped`, or `closing`)
+- `execution_state`: Inferior execution state (`not_started`, `running`, `paused`, `exited`, or `unknown`)
+- `target_loaded`: Whether an executable or core is loaded
+- `has_controller`: Whether the underlying GDB controller is still active
+- `program`: Loaded executable path when known
+- `core`: Loaded core path when known
+- `working_dir`: Startup working directory when known
+- `attached_pid`: Attached process PID when relevant
+- `current_thread_id`: Last known selected thread
+- `current_frame`: Last known selected frame
+- `stop_reason`: Last stop reason when known
+- `exit_code`: Inferior exit code when known
+- `last_failure_message`: Failure detail when the session is in a failed state
+
 ### `gdb_execute_command`
 Execute a GDB command. Supports both CLI and MI commands.
 

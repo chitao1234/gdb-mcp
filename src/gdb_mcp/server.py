@@ -17,6 +17,7 @@ from .mcp import (
     GetBacktraceArgs,
     GetRegistersArgs,
     GetVariablesArgs,
+    ListSessionsArgs,
     RunArgs,
     SessionIdArgs,
     SetBreakpointArgs,

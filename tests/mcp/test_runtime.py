@@ -20,7 +20,7 @@ class TestServerRuntime:
         mock_session.get_status.return_value = OperationSuccess(
             SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=True)
         )
-        mock_manager.get_session.return_value = mock_session
+        mock_manager.resolve_session.return_value = mock_session
 
         runtime = create_server_runtime(
             session_manager_provider=lambda: mock_manager,
@@ -39,7 +39,7 @@ class TestServerRuntime:
             "stop_reason": None,
             "exit_code": None,
         }
-        mock_manager.get_session.assert_called_once_with(7)
+        mock_manager.resolve_session.assert_called_once_with(7)
         mock_session.get_status.assert_called_once()
 
     def test_runtime_shutdown_uses_injected_session_manager(self):
