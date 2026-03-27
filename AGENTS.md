@@ -17,6 +17,7 @@ This file defines repository-specific guidance for agents and contributors worki
 - Transport layers: `src/gdb_mcp/transport/`
 - Test suites: `tests/`
 - API and usage docs: `README.md`, `TOOLS.md`
+- Skill definitions and playbooks: `skills/`
 
 ## Development Workflow
 
@@ -27,10 +28,10 @@ This file defines repository-specific guidance for agents and contributors worki
 
 ## Validation Before Commit
 
-Run these checks for code changes (and run relevant subsets for docs-only changes), local venv or `uv` might be required:
+Run these checks for code changes (and run relevant subsets for docs-only changes):
 
-- `mypy src`
-- `pytest -q`
+- `mypy src` or `uv run mypy src`
+- `pytest -q` or `uv run pytest -q`
 - `git diff --check`
 
 If a full run is too expensive for the change size, run the narrowest relevant tests and state what was not run.
@@ -57,3 +58,4 @@ When adding or changing MCP tools, keep schemas, runtime behavior, tests, and do
 - Keep examples runnable against current APIs.
 - When behavior changes, document exact parameter and response shapes.
 - Use relative repository paths in documentation and internal guidance.
+- When updating skill docs under `skills/`, keep them aligned with `README.md` and `TOOLS.md` behavior.
