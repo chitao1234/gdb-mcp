@@ -143,6 +143,65 @@ class TestExecutionApi:
         assert session.last_stop_event is not None
         assert session.last_stop_event.inferior_id == 2
 
+    def test_execute_command_tracks_thread_group_exit_notifications(
+        self,
+        scripted_running_session,
+        mi_result,
+        mi_notify,
+    ):
+        """Non-stop async thread-group exits should update per-inferior status."""
+
+        session, _controller = scripted_running_session(
+            [
+                mi_notify("thread-group-started", {"id": "i2", "pid": "4321"}),
+                mi_notify("thread-group-exited", {"id": "i2", "exit-code": "03"}),
+                mi_result(),
+            ]
+        )
+        session.runtime.mark_inferior_selected(2)
+
+        result = result_to_mapping(session.execute_command("info threads"))
+
+        assert result["status"] == "success"
+        status = result_to_mapping(session.get_status())
+        assert status["execution_state"] == "exited"
+        assert status["stop_reason"] == "thread-group-exited"
+        assert status["exit_code"] == 3
+        assert status["inferior_states"] is not None
+        inferior_state = next(
+            record for record in status["inferior_states"] if record["inferior_id"] == 2
+        )
+        assert inferior_state["execution_state"] == "exited"
+        assert inferior_state["exit_code"] == 3
+
+    def test_execute_command_reselects_when_current_thread_group_removed(
+        self,
+        scripted_running_session,
+        mi_result,
+        mi_notify,
+    ):
+        """Removing the selected inferior should select a remaining inferior deterministically."""
+
+        session, _controller = scripted_running_session(
+            [
+                mi_notify("thread-group-removed", {"id": "i2"}),
+                mi_result(),
+            ]
+        )
+        session.runtime.mark_inferior_running(inferior_id=1)
+        session.runtime.mark_inferior_paused("signal-received", inferior_id=2)
+        session.runtime.mark_inferior_selected(2)
+
+        result = result_to_mapping(session.execute_command("info inferiors"))
+
+        assert result["status"] == "success"
+        status = result_to_mapping(session.get_status())
+        assert status["current_inferior_id"] == 1
+        assert status["execution_state"] == "running"
+        assert status["inferior_states"] is not None
+        inferior_ids = [record["inferior_id"] for record in status["inferior_states"]]
+        assert inferior_ids == [1]
+
     def test_step(self, scripted_running_session, mi_result, mi_notify):
         """Step should emit the MI exec-step command."""
 

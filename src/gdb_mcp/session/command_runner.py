@@ -230,11 +230,43 @@ class SessionCommandRunner:
         saw_stopped = False
         stop_event: StopEvent | None = None
         for notify in parsed.notify:
-            if notify.get("message") != "stopped":
+            message = notify.get("message")
+            payload = notify.get("payload")
+            payload_dict = payload if isinstance(payload, dict) else {}
+
+            if message == "thread-group-added":
+                inferior_id = self._parse_inferior_id_from_thread_group(payload_dict.get("id"))
+                if inferior_id is not None:
+                    self._runtime.ensure_inferior(inferior_id)
+                continue
+
+            if message == "thread-group-started":
+                inferior_id = self._parse_inferior_id_from_thread_group(payload_dict.get("id"))
+                if inferior_id is not None:
+                    self._runtime.mark_inferior_running(inferior_id=inferior_id)
+                continue
+
+            if message == "thread-group-exited":
+                inferior_id = self._parse_inferior_id_from_thread_group(payload_dict.get("id"))
+                group_exit_code = self._parse_exit_code(payload_dict.get("exit-code"))
+                group_reason = self._str_or_none(payload_dict.get("reason")) or "thread-group-exited"
+                self._runtime.mark_inferior_exited(
+                    group_reason,
+                    group_exit_code,
+                    inferior_id=inferior_id,
+                )
+                continue
+
+            if message == "thread-group-removed":
+                inferior_id = self._parse_inferior_id_from_thread_group(payload_dict.get("id"))
+                if inferior_id is not None:
+                    self._runtime.remove_inferior(inferior_id)
+                continue
+
+            if message != "stopped":
                 continue
 
             saw_stopped = True
-            payload = notify.get("payload")
             if isinstance(payload, dict):
                 reason_value = payload.get("reason")
                 if isinstance(reason_value, str):

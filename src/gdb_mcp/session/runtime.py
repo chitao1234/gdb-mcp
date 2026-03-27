@@ -186,8 +186,8 @@ class SessionRuntime:
         self.current_inferior_id = inferior_id
         self.current_thread_id = None
         self.current_frame = None
-        if inferior_id is not None and inferior_id not in self.inferior_states:
-            self.inferior_states[inferior_id] = InferiorRuntimeState()
+        if inferior_id is not None:
+            self.ensure_inferior(inferior_id)
         self._synchronize_selected_state()
 
     def update_inferior_inventory(
@@ -210,8 +210,36 @@ class SessionRuntime:
 
         self.current_inferior_id = current_inferior_id
         self.inferior_count = count
-        if current_inferior_id is not None and current_inferior_id not in self.inferior_states:
-            self.inferior_states[current_inferior_id] = InferiorRuntimeState()
+        if self.current_inferior_id is None and self.inferior_states:
+            self.current_inferior_id = min(self.inferior_states)
+        if self.current_inferior_id is not None:
+            self.ensure_inferior(self.current_inferior_id)
+        self._synchronize_selected_state()
+
+    def ensure_inferior(self, inferior_id: int) -> None:
+        """Ensure one inferior has an allocated runtime state record."""
+
+        if inferior_id <= 0:
+            return
+        if inferior_id not in self.inferior_states:
+            self.inferior_states[inferior_id] = InferiorRuntimeState()
+        if self.inferior_count is None or self.inferior_count < len(self.inferior_states):
+            self.inferior_count = len(self.inferior_states)
+
+    def remove_inferior(self, inferior_id: int) -> None:
+        """Remove one inferior from runtime tracking after thread-group removal."""
+
+        if inferior_id not in self.inferior_states:
+            return
+
+        del self.inferior_states[inferior_id]
+        self.inferior_count = len(self.inferior_states)
+
+        if self.current_inferior_id == inferior_id:
+            self.current_inferior_id = min(self.inferior_states) if self.inferior_states else None
+            self.current_thread_id = None
+            self.current_frame = None
+
         self._synchronize_selected_state()
 
     def mark_follow_fork_mode(self, mode: FollowForkMode | None) -> None:

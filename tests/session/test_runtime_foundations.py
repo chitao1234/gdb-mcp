@@ -98,3 +98,31 @@ class TestRuntimeFoundations:
         assert len(summaries) == 1
         assert summaries[0]["inferior_id"] == 1
         assert summaries[0]["execution_state"] == "paused"
+
+    def test_remove_inferior_reselects_remaining_state(self, session_service):
+        """Removing the selected inferior should synchronize status to a remaining inferior."""
+
+        runtime = session_service.runtime
+        runtime.mark_inferior_running(inferior_id=1)
+        runtime.mark_inferior_exited("thread-group-exited", 7, inferior_id=2)
+        runtime.mark_inferior_selected(2)
+
+        runtime.remove_inferior(2)
+
+        assert runtime.current_inferior_id == 1
+        assert runtime.execution_state == "running"
+        summaries = runtime.inferiors_state_summary()
+        assert [record["inferior_id"] for record in summaries] == [1]
+
+    def test_ensure_inferior_allocates_state_and_count(self, session_service):
+        """ensure_inferior should allocate state records without mutating selected status."""
+
+        runtime = session_service.runtime
+        runtime.mark_inferior_selected(1)
+
+        runtime.ensure_inferior(3)
+
+        summaries = runtime.inferiors_state_summary()
+        assert [record["inferior_id"] for record in summaries] == [1, 3]
+        assert runtime.inferior_count == 2
+        assert runtime.current_inferior_id == 1
