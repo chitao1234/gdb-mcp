@@ -1,324 +1,340 @@
 # GDB MCP Remediation Plan
 
-This document replaces the previous refactor plan. The old plan mixed broad
-architectural cleanup with earlier completed work. The current priority is
-more concrete: fix the audited correctness and contract issues first, then
-tighten the architecture only where it directly supports those fixes.
+This document replaces the previous refactor plan.
 
-The plan below is intentionally defect-driven. Each workstream maps back to a
-specific bug, risk, or coverage gap found in the audit.
+The old plan mixed broader cleanup with bugs that are no longer the current
+priority. The immediate work should be driven by the audit findings reproduced
+against the live runtime on 2026-03-27.
 
 ## Scope
 
-This plan addresses the following problems:
+This plan addresses these concrete defects:
 
-- concurrent `start()` can launch multiple GDB processes for one session;
-- `stop()` is not coordinated with in-flight transport reads and can race with
-  command execution or interrupt handling;
-- failed shutdown can leave session state inconsistent;
-- startup builds invalid GDB argv when `program`, `args`, and `core` are used
-  together;
-- `env` is applied after `init_commands`, which violates the documented startup
-  contract;
-- MCP request models silently ignore unknown arguments;
-- transport behavior around async MI records needs clearer ownership and better
-  regression coverage;
-- the test suite misses the most important lifecycle and startup race cases.
+- dead GDB processes remain visible as healthy, running sessions;
+- read-only inspection calls mutate selected thread or frame state;
+- startup can report `target_loaded=true` even when no target was loaded;
+- breakpoint locations are not MI-quoted, so paths with spaces fail;
+- backtrace limits are off by one relative to the public `max_frames`
+  contract.
+
+This plan also closes the related test and documentation gaps that allowed
+those issues to survive.
 
 ## Goals
 
-- make session lifecycle operations safe under concurrency;
-- make startup command construction correct for every supported argument
-  combination;
-- make externally documented behavior match actual execution order;
-- tighten the MCP boundary so invalid requests fail early and explicitly;
-- add regression tests for the failure modes that are currently uncovered;
-- preserve the external tool names and response shapes unless a contract change
-  is explicitly approved.
+- make session status reflect transport reality after process death;
+- separate read-only inspection from explicit state-changing selection tools;
+- make startup status truthful when program or core loading fails;
+- make MI command construction safe for real-world file paths;
+- align the backtrace implementation with the documented API contract;
+- add regression coverage for each defect before or alongside the code change.
 
 ## Non-Goals
 
-- broad renaming or module reshuffling that does not directly help the audited
-  issues;
-- replacing the MCP API surface;
-- redesigning domain models purely for style reasons;
-- adding new debugger features while lifecycle correctness is unresolved.
+- adding new debugger features;
+- broad architectural reshuffling unrelated to the audited issues;
+- changing MCP tool names or the overall response envelope shape;
+- redesigning the domain model for style reasons.
 
-## Workstream 1: Session Lifecycle Serialization
+## Delivery Order
 
-This is the highest-priority workstream because it addresses process leaks,
-race conditions, and state corruption.
+1. Fix session liveness and status truth first.
+2. Fix startup target-loading truth next.
+3. Remove hidden state mutation from inspection APIs.
+4. Fix MI command construction and backtrace limit behavior.
+5. Update tests and docs to lock the contract down.
 
-### Problems closed
+The first two items come first because they affect whether callers can trust
+the session at all. The later items are correctness and contract issues inside
+an otherwise live session.
 
-- concurrent `start()` can spawn multiple controllers;
-- `stop()` can race with command reads and interrupt waits;
-- failed shutdown can leave `controller`, `is_running`, and `state` out of
-  sync;
-- registry cleanup can remove a session that still appears logically active.
+## Workstream 1: Session Liveness And Status Truth
 
-### Implementation plan
+### Problem
 
-1. Introduce an explicit session lifecycle lock.
-   Use a dedicated lock in the session runtime or lifecycle service for
-   `start()`, `stop()`, and any operation that swaps or destroys the active
-   controller.
-
-2. Define controller ownership rules.
-   `transport.start()` and `transport.exit()` should only run while the session
-   lifecycle lock is held, so there is one clear owner for controller
-   replacement and teardown.
-
-3. Make transport shutdown coordination explicit.
-   The transport layer should either:
-   - hold the same lock while a command is being read; or
-   - guard access to the controller with a stable local reference plus
-     shutdown-aware state so teardown cannot invalidate in-flight reads.
-
-4. Normalize stop semantics.
-   Decide and document what the runtime state becomes when controller exit
-   partially fails. The recommended policy is:
-   - if the controller reference is gone, the session is not runnable anymore;
-   - record shutdown failure metadata separately;
-   - never leave `is_running=True` when no controller exists.
-
-5. Tighten registry removal rules.
-   `close_session()` should not treat `controller is None` as sufficient proof
-   of a clean stop. Removal should depend on a coherent terminal session state.
-
-### Suggested code changes
-
-- add a lifecycle lock and terminal failure/shutdown metadata to
-  `SessionRuntime`;
-- move controller swap/clear operations behind transport methods that are safe
-  under concurrency;
-- update `SessionLifecycleService.stop()` to produce consistent runtime
-  transitions on both success and failure;
-- update `SessionRegistry.close_session()` to key off session state, not just
-  controller presence.
-
-### Acceptance criteria
-
-- concurrent calls to `start()` on one session cannot launch more than one GDB
-  process;
-- `stop()` during an in-flight command or interrupt does not raise unexpected
-  transport exceptions;
-- session status cannot report `is_running=True` when no controller is present;
-- registry removal logic cannot silently discard a logically active session.
-
-## Workstream 2: Startup Contract and Command Construction
-
-This workstream fixes incorrect process argv construction and aligns startup
-execution order with the documented contract.
-
-### Problems closed
-
-- invalid argv when `program`, `args`, and `core` are supplied together;
-- environment variables are applied too late relative to `init_commands`;
-- startup behavior differs from what `TOOLS.md` promises.
+When the GDB child process exits unexpectedly, the current flow can return a
+plain transport error without clearing the controller or transitioning the
+session out of the running state. `gdb_get_status` can then continue to report
+`is_running=true`, `target_loaded=true`, and `has_controller=true` even though
+the process is gone.
 
 ### Implementation plan
 
-1. Introduce one startup command builder.
-   The lifecycle layer should stop hand-assembling the initial GDB argv inline.
-   Add a helper that takes `program`, `args`, `core`, and `working_dir` and
-   returns a valid GDB invocation for every allowed combination.
+1. Define one terminal state policy for dead transports.
+   Recommended policy:
+   - if the GDB process is known dead, the session is not runnable anymore;
+   - runtime state must not continue to advertise `is_running=true`;
+   - controller references should be cleared as part of terminal cleanup.
 
-2. Define supported startup combinations explicitly.
-   The recommended policy is:
-   - `program` only: start with executable loaded;
-   - `program + args`: use `--args executable ...`;
-   - `program + core`: pass executable and core using GDB-supported ordering;
-   - `program + args + core`: reject as invalid input unless the code adopts an
-     explicit alternative strategy, because inferior argv is irrelevant for
-     core analysis and `--args` conflicts with later debugger options.
+2. Make transport death explicit in `MiClient`.
+   Update the transport so that process-death detection and unrecoverable I/O
+   errors are surfaced as terminal transport failures, not soft command
+   errors.
 
-3. Reorder startup steps to match the contract.
-   The recommended startup sequence is:
-   - start GDB;
-   - wait for readiness;
-   - apply environment variables;
-   - run `init_commands`;
-   - mark the session ready.
+3. Centralize runtime transition on terminal transport failure.
+   `SessionCommandRunner` should handle both `fatal=True` and explicit dead
+   transport responses the same way:
+   - clear or invalidate the controller;
+   - transition the runtime to a terminal failed or disconnected state;
+   - preserve the failure message for later inspection.
 
-4. Clarify `target_loaded` transitions.
-   Set `target_loaded` from explicit startup actions, not from string matching
-   on arbitrary command text.
+4. Tighten `get_status()`.
+   Status should be derived from authoritative runtime state and controller
+   reality. If a controller exists but the process is dead, `get_status()`
+   should not report a healthy running session.
 
-5. Update docs together with behavior.
-   `README.md` and `TOOLS.md` should describe the final supported combinations
-   and the actual execution order.
+5. Recheck registry close and shutdown behavior for dead sessions.
+   `close_session()` and `shutdown_all()` should remove dead sessions cleanly
+   without requiring a second transport round-trip that assumes GDB is still
+   alive.
 
 ### Suggested code changes
 
-- extract startup argv construction from `SessionLifecycleService.start()`;
-- validate invalid combinations before launching GDB;
-- apply `env` before `init_commands`;
-- replace heuristic `target_loaded` updates based on substring checks with
-  explicit state transitions.
+- extend runtime state handling in
+  [session/runtime.py](/home/chi/ddev/gdb-mcp/src/gdb_mcp/session/runtime.py);
+- update dead-process handling in
+  [transport/mi_client.py](/home/chi/ddev/gdb-mcp/src/gdb_mcp/transport/mi_client.py);
+- normalize terminal error handling in
+  [session/command_runner.py](/home/chi/ddev/gdb-mcp/src/gdb_mcp/session/command_runner.py);
+- review lifecycle and registry cleanup paths in
+  [session/lifecycle.py](/home/chi/ddev/gdb-mcp/src/gdb_mcp/session/lifecycle.py) and
+  [session/registry.py](/home/chi/ddev/gdb-mcp/src/gdb_mcp/session/registry.py).
 
 ### Acceptance criteria
 
-- startup with `program + args`, `program + core`, and `program` alone works
-  deterministically;
-- invalid `program + args + core` requests fail at validation or startup policy
-  checks with a clear error;
-- environment variables are guaranteed to be installed before any init command
-  that can run or attach the inferior;
-- docs and behavior match.
+- after the GDB child exits unexpectedly, `gdb_get_status` no longer reports a
+  healthy running session;
+- follow-up commands fail with a consistent terminal-session error;
+- dead sessions can be closed and removed without inconsistent status fields.
 
-## Workstream 3: MCP Boundary Hardening
+## Workstream 2: Startup Truth And Target Loading
 
-This workstream makes request validation stricter and keeps the external
-contract honest.
+### Problem
 
-### Problems closed
-
-- typoed request fields are silently ignored;
-- tool definitions and handler wiring can drift apart without a clear test;
-- entrypoint logging side effects are too eager for embedded use.
+Startup currently treats `program` or `core` input as sufficient proof that a
+target is loaded, even when GDB did not actually load the file. This produces
+false-positive `target_loaded=true` states and hides missing-target failures.
 
 ### Implementation plan
 
-1. Forbid unknown request fields.
-   Add explicit Pydantic model configuration so request validation rejects extra
-   keys instead of dropping them.
+1. Separate "request asked for a target" from "GDB loaded a target".
+   The runtime should only set `target_loaded=true` after a successful,
+   confirmed target-load action.
 
-2. Add a tool-schema parity test.
-   Verify every exported MCP tool has a dispatch path and every dispatched tool
-   is present in the schema list.
+2. Replace the unconditional target-loaded assignment with explicit evidence.
+   Recommended evidence sources:
+   - successful startup console or MI output from initial program/core load;
+   - successful `file` or `core-file` init commands;
+   - successful attach or equivalent explicit target-loading operations.
 
-3. Reduce import-time side effects in `server.py`.
-   Move logging configuration behind the actual CLI/server startup path instead
-   of running `basicConfig()` during module import.
+3. Promote missing-target startup cases from warning-only to truthful state.
+   If GDB starts but the requested target was not found or was not a valid
+   executable/core, return either:
+   - a startup error; or
+   - a success result with `target_loaded=false` and a clear warning.
 
-4. Keep error messages stable where practical.
-   Validation failures should become stricter without producing vague generic
-   exceptions.
+4. Make the policy explicit and consistent.
+   Pick one contract and use it across code, tests, and docs:
+   - recommended contract: starting GDB itself may succeed even if target
+     loading fails, but session status must still report `target_loaded=false`.
+
+5. Audit the startup warning extraction path.
+   The current readiness probe may not include target-load diagnostics for all
+   cases. The plan should verify exactly which startup output contains file
+   load errors and adjust parsing accordingly.
 
 ### Suggested code changes
 
-- update all MCP argument models to forbid extras;
-- add tests for typoed fields such as `workingdir` or `frameNumber`;
-- add one invariant test comparing `build_tool_definitions()` with handler
-  dispatch coverage;
-- move logging setup into `run_server()` or a dedicated CLI-only bootstrap
-  function.
+- refine startup parsing and state transitions in
+  [session/lifecycle.py](/home/chi/ddev/gdb-mcp/src/gdb_mcp/session/lifecycle.py);
+- introduce a small helper for target-load state decisions instead of writing
+  directly to `runtime.target_loaded` from multiple branches.
 
 ### Acceptance criteria
 
-- unknown MCP arguments produce validation errors;
-- adding a tool in one place without wiring the other fails tests;
-- importing `gdb_mcp.server` no longer mutates host logging configuration.
+- starting with a missing executable no longer yields `target_loaded=true`;
+- startup responses clearly distinguish "GDB started" from "target loaded";
+- init commands that successfully load a target flip `target_loaded` to true;
+- docs describe the final policy precisely.
 
-## Workstream 4: Transport Async Semantics
+## Workstream 3: Inspection APIs Must Not Mutate Selection Implicitly
 
-This workstream clarifies how MI async records are attributed and prevents the
-transport layer from hiding protocol details the higher layers may need.
+### Problem
 
-### Problems closed
-
-- async MI notifications have ambiguous ownership relative to the active
-  command;
-- parser normalization currently drops the notification class;
-- tests do not model token-less async notifications realistically.
+`gdb_get_backtrace(thread_id=...)` and `gdb_get_variables(thread_id=..., frame=...)`
+currently change the selected thread or frame as a side effect. That violates
+the intent of the dedicated `gdb_select_thread` and `gdb_select_frame` tools
+and makes later commands run in a surprising context.
 
 ### Implementation plan
 
-1. Revisit response attribution rules.
-   Make a deliberate distinction between:
-   - command-scoped result records;
-   - async notifications that happened during the command window;
-   - notifications that should not satisfy command completion conditions.
+1. Declare the contract explicitly.
+   Read-only inspection tools should not leave debugger selection changed after
+   they return, unless the tool is specifically a selector.
 
-2. Preserve notification metadata.
-   The parsed representation should keep the async record class or message, not
-   just the payload.
+2. Choose one of two implementation strategies.
+   Recommended strategy:
+   - capture the current selection;
+   - switch temporarily if the underlying GDB command requires it;
+   - restore the prior selection before returning.
 
-3. Tighten completion conditions for running commands.
-   `-exec-*` completion should not be satisfied by unrelated async records
-   unless they are explicitly recognized as the stop event for the command
-   being awaited.
+   Alternative strategy:
+   - use MI commands that accept explicit thread or frame inputs without
+     changing global selection, where GDB supports them.
 
-4. Add realistic transport tests.
-   Include token-less async notifications interleaved with command responses.
+3. Make runtime bookkeeping match the visible contract.
+   `mark_thread_selected()` and `mark_frame_selected()` should only be called
+   from explicit selection tools or from temporary-switch logic after the
+   original selection has been restored.
+
+4. Review related methods for the same smell.
+   `get_backtrace`, `get_variables`, and any future helpers that issue
+   `-thread-select` or `-stack-select-frame` should be audited together.
 
 ### Suggested code changes
 
-- refine `MiClient.send_command_and_wait_for_prompt()` attribution logic;
-- update parsed MI response models to preserve notify message/class;
-- add transport tests for token-less `notify` traffic and interleaved async
-  output.
+- refactor selection handling in
+  [session/inspection.py](/home/chi/ddev/gdb-mcp/src/gdb_mcp/session/inspection.py);
+- keep runtime selection tracking authoritative and explicit in
+  [session/runtime.py](/home/chi/ddev/gdb-mcp/src/gdb_mcp/session/runtime.py).
 
 ### Acceptance criteria
 
-- unrelated async notifications cannot incorrectly complete an in-flight
-  `-exec-*` command;
-- parsed notify records retain enough information for higher-level decisions;
-- regression tests cover token-less async records.
+- `gdb_get_backtrace(thread_id=...)` does not permanently change the current
+  thread;
+- `gdb_get_variables(frame=...)` does not permanently change the current
+  frame;
+- `gdb_select_thread` and `gdb_select_frame` remain the only intentional
+  selection-changing tools from the caller’s perspective.
 
-## Workstream 5: Regression Coverage
+## Workstream 4: Safe MI Command Construction For Breakpoints
 
-The current suite is large, but it misses the exact failure modes that matter
-most.
+### Problem
 
-### Required tests
+Breakpoint conditions are quoted, but breakpoint locations are not. Paths,
+function signatures, or other valid locations containing spaces are split into
+multiple MI arguments and rejected by GDB.
 
-- unit test: concurrent `start()` on one session cannot create two controllers;
-- unit test: `stop()` racing with command read returns a controlled error or
-  clean shutdown, not an unexpected exception;
-- unit test: `stop()` failure leaves coherent terminal or failed state;
-- unit test: `close_session()` does not remove inconsistent sessions silently;
-- unit test: startup rejects or handles `program + args + core` according to
-  the chosen policy;
-- unit test: `env` is applied before `init_commands`;
-- unit test: extra MCP request fields are rejected;
-- unit test: tool schema list and handler registry stay in sync;
-- transport test: token-less async notifications do not get misattributed;
-- integration test: startup ordering and failure behavior remain correct with a
-  real GDB instance where practical.
+### Implementation plan
 
-### Test execution target
+1. Treat breakpoint location as a structured MI argument, not raw text.
+   Apply MI quoting to `location` the same way expressions and conditions are
+   quoted elsewhere.
 
-- `pytest -q` remains green;
-- new tests fail before the fixes and pass after them;
-- any intentionally changed external error messages are updated in docs and
-  tests together.
+2. Review other command builders for the same pattern.
+   Check for additional MI commands that append user-controlled strings without
+   quoting.
 
-## Recommended Delivery Order
+3. Preserve existing behavior for common simple locations.
+   The quoting fix should be transparent for cases like `main` or `foo.c:42`.
 
-1. Session lifecycle serialization and stop-state cleanup.
-2. Startup argv validation and `env` ordering.
-3. MCP hardening for extra fields and logging bootstrap cleanup.
-4. Transport async attribution fixes.
-5. Regression and integration coverage expansion.
+### Suggested code changes
 
-This ordering is deliberate:
+- update breakpoint command assembly in
+  [session/breakpoints.py](/home/chi/ddev/gdb-mcp/src/gdb_mcp/session/breakpoints.py);
+- optionally add a dedicated helper in
+  [transport/mi_commands.py](/home/chi/ddev/gdb-mcp/src/gdb_mcp/transport/mi_commands.py)
+  if the project wants one consistent place for MI argument encoding.
 
-- lifecycle safety eliminates the highest-risk process and state bugs first;
-- startup fixes remove user-visible contract bugs next;
-- MCP hardening is low-risk and reduces future support issues;
-- transport async semantics may touch deeper assumptions and should land after
-  the lifecycle layer is made safer;
-- coverage work should be added alongside each change, with a final pass to
-  close any remaining gaps.
+### Acceptance criteria
 
-## Rollout Notes
+- breakpoint locations that include spaces succeed;
+- current simple breakpoint tests still pass unchanged;
+- there is regression coverage for path-with-spaces input.
 
-- Keep changes incremental. Do not combine all workstreams into one large
-  refactor branch.
-- Land tests with the fixes that require them, not as a final cleanup pass.
-- Prefer explicit policy decisions over heuristic behavior, especially for
-  startup combinations and shutdown failure states.
-- If a fix requires an external contract change, update `README.md`,
-  `TOOLS.md`, and MCP schema descriptions in the same change.
+## Workstream 5: Backtrace Limit Contract
 
-## Done Definition
+### Problem
 
-This plan is complete when:
+The public `max_frames` argument is documented as the maximum number of frames
+to retrieve, but the implementation currently requests `0..max_frames`
+inclusive from GDB. A request for `1` can therefore return `2` frames.
 
-- the audited correctness bugs are fixed;
-- the startup contract is explicit and documented;
-- MCP validation rejects unknown fields;
-- lifecycle and transport race regressions are covered by tests;
-- `pytest -q` passes with the new coverage in place.
+### Implementation plan
+
+1. Decide the contract boundary precisely.
+   Recommended contract:
+   - `max_frames` means an upper bound on returned frame count.
+
+2. Adjust the GDB request accordingly.
+   Convert the user-facing count to the correct inclusive end index before
+   building `-stack-list-frames`.
+
+3. Verify edge cases.
+   `max_frames=1` is the key regression case; default handling should still
+   return the prior default-sized window.
+
+### Suggested code changes
+
+- fix frame-range calculation in
+  [session/inspection.py](/home/chi/ddev/gdb-mcp/src/gdb_mcp/session/inspection.py);
+- keep the schema and docs as-is if the implementation is corrected to match
+  the current public wording.
+
+### Acceptance criteria
+
+- `max_frames=1` returns at most one frame;
+- larger limits return no more than the requested number of frames;
+- tests cover both the boundary case and a representative multi-frame case.
+
+## Workstream 6: Test Coverage And Documentation
+
+### Problem
+
+The current suite passes, but it does not pin the reproduced failures. The
+docs also describe selector semantics and status behavior too loosely to catch
+drift.
+
+### Test plan
+
+Add or update tests for:
+
+- dead-GDB status after forced child-process exit;
+- startup with a missing program path;
+- successful target loading via `file` or `core-file` init commands;
+- `get_backtrace(thread_id=...)` preserving original selection;
+- `get_variables(frame=...)` preserving original frame;
+- breakpoint locations containing spaces;
+- `max_frames=1` returning one frame at most.
+
+Use both unit tests and integration tests:
+
+- unit tests for state transitions and command construction;
+- integration tests for real GDB behavior and path-handling edge cases.
+
+### Documentation plan
+
+Update:
+
+- [TOOLS.md](/home/chi/ddev/gdb-mcp/TOOLS.md);
+- [README.md](/home/chi/ddev/gdb-mcp/README.md).
+
+Document:
+
+- what `gdb_get_status` means after transport death;
+- when `target_loaded` is true versus false;
+- that `gdb_select_thread` and `gdb_select_frame` are the explicit tools that
+  change debugger context;
+- that `max_frames` is a true upper bound on returned frames.
+
+## Suggested Execution Sequence
+
+1. Add failing regression tests for process-death status and missing-target
+   startup.
+2. Implement session liveness cleanup and truthful status transitions.
+3. Add failing tests for inspection side effects.
+4. Implement selection-preserving inspection behavior.
+5. Add failing tests for breakpoint path quoting and `max_frames=1`.
+6. Implement MI quoting and frame-limit correction.
+7. Update docs to match final behavior.
+8. Run the full suite plus targeted integration coverage.
+
+## Verification Checklist
+
+Before merging, verify:
+
+- `uv run pytest -q` passes;
+- targeted integration tests cover all five audit findings;
+- `uv run mypy src` still passes;
+- `git diff --check` is clean;
+- the docs and tests agree on the final contract wording.
