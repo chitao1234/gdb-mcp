@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Optional, TypeAlias, cast
 
 from ..domain import (
     OperationError,
@@ -13,13 +13,15 @@ from ..domain import (
     SessionStatusSnapshot,
     result_to_mapping,
 )
-from ..transport import parse_mi_responses
+from ..transport import ParsedMiResponse, parse_mi_responses
 from .command_runner import SessionCommandRunner
 from .config import SessionConfig
 from .constants import DEFAULT_TIMEOUT_SEC, FILE_LOAD_TIMEOUT_SEC, INIT_COMMAND_DELAY_SEC
 from .runtime import SessionRuntime
 
 logger = logging.getLogger(__name__)
+
+SerializedResultMapping: TypeAlias = dict[str, object]
 
 
 class SessionLifecycleService:
@@ -143,7 +145,7 @@ class SessionLifecycleService:
                 if isinstance(env_output, OperationError):
                     return env_output
 
-                init_output: list[dict[str, Any]] = []
+                init_output: list[SerializedResultMapping] = []
                 if init_commands:
                     for cmd in init_commands:
                         try:
@@ -160,7 +162,9 @@ class SessionLifecycleService:
                             result = self._command_runner.execute_command_result(
                                 cmd, timeout_sec=timeout
                             )
-                            init_output.append(result_to_mapping(result))
+                            init_output.append(
+                                cast(SerializedResultMapping, result_to_mapping(result))
+                            )
 
                             if cmd_lower.startswith("core-file "):
                                 self._runtime.time_module.sleep(INIT_COMMAND_DELAY_SEC)
@@ -308,10 +312,10 @@ class SessionLifecycleService:
 
     def _apply_environment(
         self, env: dict[str, str] | None
-    ) -> list[dict[str, Any]] | OperationError:
+    ) -> list[SerializedResultMapping] | OperationError:
         """Apply inferior environment variables before startup commands run."""
 
-        env_output: list[dict[str, Any]] = []
+        env_output: list[SerializedResultMapping] = []
         if not env:
             return env_output
 
@@ -321,7 +325,7 @@ class SessionLifecycleService:
             result = self._command_runner.execute_command_result(
                 env_cmd, timeout_sec=DEFAULT_TIMEOUT_SEC
             )
-            env_output.append(result_to_mapping(result))
+            env_output.append(cast(SerializedResultMapping, result_to_mapping(result)))
 
             if isinstance(result, OperationError):
                 self._cleanup_failed_start(
@@ -342,7 +346,7 @@ class SessionLifecycleService:
         return command.startswith("file ") or command.startswith("core-file ")
 
     @staticmethod
-    def _startup_output_text(startup_result: Any) -> str:
+    def _startup_output_text(startup_result: ParsedMiResponse) -> str:
         """Join all textual startup streams into one searchable string."""
 
         streams: list[str] = []

@@ -106,13 +106,15 @@ class SessionExecutionService:
             return OperationError(message=message)
 
         controller = self._runtime.controller
-        if not getattr(controller, "gdb_process", None):
+        if controller is None:
+            return OperationError(message="No active GDB session")
+
+        gdb_process = controller.gdb_process
+        if gdb_process is None:
             return OperationError(message="No GDB process running")
 
         result = self._command_runner.interrupt_and_wait_for_stop(
-            send_interrupt=lambda: self._runtime.os_module.kill(
-                controller.gdb_process.pid, signal.SIGINT
-            ),
+            send_interrupt=lambda: self._runtime.os_module.kill(gdb_process.pid, signal.SIGINT),
             timeout_sec=INTERRUPT_RESPONSE_TIMEOUT_SEC,
         )
 

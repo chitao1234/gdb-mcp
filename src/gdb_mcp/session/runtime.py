@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import threading
-from typing import Any
 
 from ..transport import MiClient
+from ..transport.protocols import GdbControllerProtocol
 from .config import SessionConfig
-from .protocols import OsModuleProtocol, TimeModuleProtocol
+from .protocols import LockProtocol, OsModuleProtocol, TimeModuleProtocol
 from .state import SessionState
 
 
@@ -19,7 +19,7 @@ class SessionRuntime:
     transport: MiClient
     os_module: OsModuleProtocol
     time_module: TimeModuleProtocol
-    lifecycle_lock: Any = field(default_factory=threading.RLock, repr=False)
+    lifecycle_lock: LockProtocol = field(default_factory=threading.RLock, repr=False)
     config: SessionConfig | None = None
     state: SessionState = SessionState.CREATED
     is_running: bool = False
@@ -33,13 +33,13 @@ class SessionRuntime:
     current_frame: int | None = None
 
     @property
-    def controller(self) -> Any:
+    def controller(self) -> GdbControllerProtocol | None:
         """Expose the transport controller for compatibility and tests."""
 
         return self.transport.controller
 
     @controller.setter
-    def controller(self, value: Any) -> None:
+    def controller(self, value: GdbControllerProtocol | None) -> None:
         """Replace the underlying transport controller."""
 
         self.transport.controller = value

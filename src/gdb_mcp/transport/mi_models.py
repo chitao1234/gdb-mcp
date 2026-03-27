@@ -2,24 +2,26 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, TypedDict
+from typing import TypeAlias, TypedDict
+
+MiRecord: TypeAlias = dict[str, object]
 
 
 class MiNotifyRecord(TypedDict):
     """Normalized async notification record."""
 
     message: str | None
-    payload: Any
+    payload: object
 
 
 @dataclass(slots=True)
 class ParsedMiResponse:
     """Normalized view of the records emitted for a single GDB/MI command."""
 
-    console: list[Any] = field(default_factory=list)
-    log: list[Any] = field(default_factory=list)
-    output: list[Any] = field(default_factory=list)
-    result: Any = None
+    console: list[object] = field(default_factory=list)
+    log: list[object] = field(default_factory=list)
+    output: list[object] = field(default_factory=list)
+    result: object | None = None
     result_class: str | None = None
     notify: list[MiNotifyRecord] = field(default_factory=list)
 
@@ -47,7 +49,7 @@ class ParsedMiResponse:
 
         return "GDB returned an error"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Convert into plain builtin containers for higher-level payload assembly."""
 
         return {
@@ -64,13 +66,13 @@ class ParsedMiResponse:
 class MiTransportResponse:
     """Result of sending one command over the GDB/MI transport."""
 
-    command_responses: list[dict[str, Any]] = field(default_factory=list)
-    async_notifications: list[dict[str, Any]] = field(default_factory=list)
+    command_responses: list[MiRecord] = field(default_factory=list)
+    async_notifications: list[MiRecord] = field(default_factory=list)
     timed_out: bool = False
     error: str | None = None
     fatal: bool = False
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Convert into plain builtin containers for session-layer handling."""
 
         result = {

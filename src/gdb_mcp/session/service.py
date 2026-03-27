@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from ..domain import (
     BacktraceInfo,
     BreakpointInfo,
@@ -18,12 +16,14 @@ from ..domain import (
     OperationSuccess,
     RegistersInfo,
     SessionMessage,
+    SessionStartInfo,
     SessionStatusSnapshot,
     ThreadListInfo,
     ThreadSelectionInfo,
     VariablesInfo,
 )
 from ..transport import MiClient
+from ..transport.protocols import GdbControllerFactoryProtocol, GdbControllerProtocol
 from .breakpoints import SessionBreakpointService
 from .command_runner import SessionCommandRunner
 from .config import SessionConfig
@@ -51,7 +51,7 @@ class SessionService:
     def __init__(
         self,
         *,
-        controller_factory: Any,
+        controller_factory: GdbControllerFactoryProtocol,
         os_module: OsModuleProtocol,
         time_module: TimeModuleProtocol,
         initial_command_token: int = INITIAL_COMMAND_TOKEN,
@@ -74,7 +74,7 @@ class SessionService:
         self._inspection = SessionInspectionService(self.runtime, self._command_runner)
 
     @property
-    def controller(self) -> Any:
+    def controller(self) -> GdbControllerProtocol | None:
         """Expose the underlying controller for orchestration and tests."""
 
         return self.runtime.controller
@@ -109,10 +109,27 @@ class SessionService:
 
         return self.runtime.execution_state
 
-    def start(self, *args: Any, **kwargs: Any) -> OperationSuccess[Any] | OperationError:
+    def start(
+        self,
+        program: str | None = None,
+        args: list[str] | None = None,
+        init_commands: list[str] | None = None,
+        env: dict[str, str] | None = None,
+        gdb_path: str | None = None,
+        working_dir: str | None = None,
+        core: str | None = None,
+    ) -> OperationSuccess[SessionStartInfo] | OperationError:
         """Delegate session startup to the lifecycle service."""
 
-        return self._lifecycle.start(*args, **kwargs)
+        return self._lifecycle.start(
+            program=program,
+            args=args,
+            init_commands=init_commands,
+            env=env,
+            gdb_path=gdb_path,
+            working_dir=working_dir,
+            core=core,
+        )
 
     def stop(self) -> OperationSuccess[SessionMessage] | OperationError:
         """Delegate session shutdown to the lifecycle service."""

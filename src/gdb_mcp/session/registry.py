@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from typing import Any, Callable
+from collections.abc import Callable
 
 from ..domain import (
     OperationError,
@@ -11,6 +11,7 @@ from ..domain import (
     OperationSuccess,
     SessionListInfo,
     SessionMessage,
+    SessionStartInfo,
     SessionSummary,
 )
 from .factory import create_default_session_service
@@ -53,7 +54,17 @@ class SessionRegistry:
             self._sessions[session_id] = session
         return session_id
 
-    def start_session(self, **start_kwargs: Any) -> tuple[int | None, OperationResult[Any]]:
+    def start_session(
+        self,
+        *,
+        program: str | None = None,
+        args: list[str] | None = None,
+        init_commands: list[str] | None = None,
+        env: dict[str, str] | None = None,
+        gdb_path: str | None = None,
+        working_dir: str | None = None,
+        core: str | None = None,
+    ) -> tuple[int | None, OperationSuccess[SessionStartInfo] | OperationError]:
         """
         Start a session and only publish it if startup succeeds.
 
@@ -63,7 +74,15 @@ class SessionRegistry:
 
         session_id = self._allocate_session_id()
         session = self._session_factory()
-        result = session.start(**start_kwargs)
+        result = session.start(
+            program=program,
+            args=args,
+            init_commands=init_commands,
+            env=env,
+            gdb_path=gdb_path,
+            working_dir=working_dir,
+            core=core,
+        )
 
         if isinstance(result, OperationError):
             return None, result
@@ -149,7 +168,7 @@ class SessionRegistry:
             del self._sessions[session_id]
             return True
 
-    def close_session(self, session_id: int) -> OperationResult[Any]:
+    def close_session(self, session_id: int) -> OperationSuccess[SessionMessage] | OperationError:
         """Stop and remove a session in one explicit lifecycle operation."""
 
         with self._lock:
@@ -197,7 +216,7 @@ class SessionRegistry:
 
         return result
 
-    def shutdown_all(self) -> dict[int, OperationResult[Any]]:
+    def shutdown_all(self) -> dict[int, OperationSuccess[SessionMessage] | OperationError]:
         """Stop and remove all registered sessions."""
 
         with self._lock:
@@ -205,7 +224,7 @@ class SessionRegistry:
             self._sessions = {}
             self._closing_sessions = set(sessions)
 
-        results: dict[int, OperationResult[Any]] = {}
+        results: dict[int, OperationSuccess[SessionMessage] | OperationError] = {}
         for session_id, session in sessions.items():
             if session.controller is None:
                 results[session_id] = OperationSuccess(SessionMessage(message="Session removed"))

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import logging
-import subprocess
 import threading
 import time
-from typing import Any, Callable
+from collections.abc import Callable
 
-from .mi_models import MiTransportResponse
+from .mi_models import MiRecord, MiTransportResponse
+from .protocols import GdbControllerFactoryProtocol, GdbControllerProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -21,25 +21,25 @@ class MiClient:
     def __init__(
         self,
         *,
-        controller_factory: Callable[..., Any],
+        controller_factory: GdbControllerFactoryProtocol,
         initial_command_token: int,
         poll_timeout_sec: float,
     ):
         self._controller_factory = controller_factory
-        self._controller: Any = None
+        self._controller: GdbControllerProtocol | None = None
         self._command_token = initial_command_token
         self._poll_timeout_sec = poll_timeout_sec
         # One lock guards serialized MI access and controller teardown.
         self._command_lock = threading.Lock()
 
     @property
-    def controller(self) -> Any:
+    def controller(self) -> GdbControllerProtocol | None:
         """Return the active pygdbmi controller if one exists."""
 
         return self._controller
 
     @controller.setter
-    def controller(self, value: Any) -> None:
+    def controller(self, value: GdbControllerProtocol | None) -> None:
         """Override the controller, mainly for tests."""
 
         self._controller = value
@@ -50,28 +50,29 @@ class MiClient:
         command: list[str],
         time_to_check_for_additional_output_sec: float,
         cwd: str | None = None,
-    ) -> Any:
+    ) -> GdbControllerProtocol:
         """Start a new GDB controller process."""
 
-        controller_kwargs = {
-            "command": command,
-            "time_to_check_for_additional_output_sec": time_to_check_for_additional_output_sec,
-        }
-        if cwd is not None:
-            controller_kwargs["cwd"] = cwd
-
-        self._controller = self._controller_factory(
-            **controller_kwargs,
-        )
+        if cwd is None:
+            self._controller = self._controller_factory(
+                command=command,
+                time_to_check_for_additional_output_sec=time_to_check_for_additional_output_sec,
+            )
+        else:
+            self._controller = self._controller_factory(
+                command=command,
+                time_to_check_for_additional_output_sec=time_to_check_for_additional_output_sec,
+                cwd=cwd,
+            )
         return self._controller
 
-    def read_initial_output(self, *, timeout_sec: float) -> list[dict[str, Any]]:
+    def read_initial_output(self, *, timeout_sec: float) -> list[MiRecord]:
         """Drain startup records emitted before the first explicit command."""
 
         if not self._controller:
             return []
 
-        records: list[dict[str, Any]] = []
+        records: list[MiRecord] = []
         deadline = time.monotonic() + timeout_sec
 
         with self._command_lock:
@@ -133,15 +134,13 @@ class MiClient:
             return False
 
         try:
-            if not hasattr(self._controller, "gdb_process"):
-                return True
-
             gdb_process = self._controller.gdb_process
-
-            if not isinstance(gdb_process, subprocess.Popen):
+            if gdb_process is None:
                 return True
 
             poll_result = gdb_process.poll()
+            if poll_result is not None and not isinstance(poll_result, int):
+                return True
             if poll_result is not None:
                 logger.error("GDB process exited with code %s", poll_result)
             return poll_result is None
@@ -177,8 +176,8 @@ class MiClient:
                 self._exit_unlocked()
                 return MiTransportResponse(error=f"Failed to send command: {exc}", fatal=True)
 
-            command_responses: list[dict[str, Any]] = []
-            async_notifications: list[dict[str, Any]] = []
+            command_responses: list[MiRecord] = []
+            async_notifications: list[MiRecord] = []
             start_time = time.monotonic()
             last_activity_time = start_time
             last_alive_check = 0.0
@@ -270,11 +269,8 @@ class MiClient:
 
                     if response_type == "result" and response_token == token:
                         command_responses.append(response)
-                        result_class = (
-                            response.get("message")
-                            if isinstance(response.get("message"), str)
-                            else None
-                        )
+                        message = response.get("message")
+                        result_class = message if isinstance(message, str) else None
                         saw_result_record = True
                         logger.debug(
                             "Received result record for token %s with class %s",
@@ -336,7 +332,7 @@ class MiClient:
         try:
             send_interrupt()
 
-            command_responses: list[dict[str, Any]] = []
+            command_responses: list[MiRecord] = []
             start_time = time.monotonic()
 
             while time.monotonic() - start_time < timeout_sec:
@@ -388,20 +384,21 @@ class MiClient:
     def _extract_exit_code(self) -> int | None:
         """Return the current process exit code when it is available."""
 
-        if not self._controller or not hasattr(self._controller, "gdb_process"):
+        if not self._controller:
             return None
 
         gdb_process = self._controller.gdb_process
-        if not isinstance(gdb_process, subprocess.Popen):
+        if gdb_process is None:
             return None
 
         try:
-            return gdb_process.poll()
+            poll_result = gdb_process.poll()
+            return poll_result if isinstance(poll_result, int) else None
         except Exception:
             return None
 
     @staticmethod
-    def _is_fatal_payload(payload: Any) -> bool:
+    def _is_fatal_payload(payload: object) -> bool:
         """Detect unrecoverable fatal error text emitted by GDB itself."""
 
         if not payload:

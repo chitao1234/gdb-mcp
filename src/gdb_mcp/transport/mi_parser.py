@@ -1,11 +1,11 @@
 """Pure helpers for parsing GDB/MI responses."""
 
-from typing import Any, Mapping
+from collections.abc import Mapping
 
-from .mi_models import ParsedMiResponse
+from .mi_models import MiRecord, ParsedMiResponse
 
 
-def parse_mi_responses(responses: list[dict[str, Any]]) -> ParsedMiResponse:
+def parse_mi_responses(responses: list[MiRecord]) -> ParsedMiResponse:
     """Parse raw pygdbmi response dictionaries into a normalized structure."""
 
     parsed = ParsedMiResponse()
@@ -24,9 +24,10 @@ def parse_mi_responses(responses: list[dict[str, Any]]) -> ParsedMiResponse:
             message = response.get("message")
             parsed.result_class = message if isinstance(message, str) else None
         elif msg_type == "notify":
+            message = response.get("message")
             parsed.notify.append(
                 {
-                    "message": response.get("message"),
+                    "message": message if isinstance(message, str) else None,
                     "payload": response.get("payload"),
                 }
             )
@@ -34,7 +35,7 @@ def parse_mi_responses(responses: list[dict[str, Any]]) -> ParsedMiResponse:
     return parsed
 
 
-def extract_mi_result_payload(command_result: Mapping[str, Any]) -> Any | None:
+def extract_mi_result_payload(command_result: Mapping[str, object]) -> object | None:
     """Extract the MI result payload from the current command result shape."""
 
     if "status" in command_result:

@@ -1,5 +1,6 @@
 """Factories for constructing the default session service implementation."""
 
+from collections.abc import Callable
 import logging
 import os
 import subprocess
@@ -15,6 +16,7 @@ from .constants import (
 )
 from .protocols import OsModuleProtocol, TimeModuleProtocol
 from .service import SessionService
+from ..transport.protocols import GdbControllerFactoryProtocol, GdbControllerProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -70,31 +72,41 @@ def create_gdb_controller(
     command: list[str],
     time_to_check_for_additional_output_sec: float,
     cwd: str | None = None,
-    controller_class=None,
-):
+    controller_class: Callable[..., object] | None = None,
+) -> GdbControllerProtocol:
     """Create a GDB controller, adding cwd support for the default pygdbmi class."""
 
-    if controller_class is None:
-        controller_class = GdbController
+    selected_controller_class = (
+        cast(Callable[..., object], GdbController) if controller_class is None else controller_class
+    )
 
     if cwd is None:
-        return controller_class(
-            command=command,
-            time_to_check_for_additional_output_sec=time_to_check_for_additional_output_sec,
+        return cast(
+            GdbControllerProtocol,
+            selected_controller_class(
+                command=command,
+                time_to_check_for_additional_output_sec=time_to_check_for_additional_output_sec,
+            ),
         )
 
-    if controller_class is GdbController:
-        return _WorkingDirGdbController(
-            command=command,
-            time_to_check_for_additional_output_sec=time_to_check_for_additional_output_sec,
-            cwd=cwd,
+    if controller_class is None or controller_class is GdbController:
+        return cast(
+            GdbControllerProtocol,
+            _WorkingDirGdbController(
+                command=command,
+                time_to_check_for_additional_output_sec=time_to_check_for_additional_output_sec,
+                cwd=cwd,
+            ),
         )
 
     try:
-        return controller_class(
-            command=command,
-            time_to_check_for_additional_output_sec=time_to_check_for_additional_output_sec,
-            cwd=cwd,
+        return cast(
+            GdbControllerProtocol,
+            selected_controller_class(
+                command=command,
+                time_to_check_for_additional_output_sec=time_to_check_for_additional_output_sec,
+                cwd=cwd,
+            ),
         )
     except TypeError as exc:
         raise TypeError(
@@ -106,7 +118,7 @@ def create_default_session_service() -> SessionService:
     """Create the standard SessionService used by the registry and server."""
 
     return SessionService(
-        controller_factory=create_gdb_controller,
+        controller_factory=cast(GdbControllerFactoryProtocol, create_gdb_controller),
         os_module=cast(OsModuleProtocol, os),
         time_module=cast(TimeModuleProtocol, time),
         initial_command_token=INITIAL_COMMAND_TOKEN,
