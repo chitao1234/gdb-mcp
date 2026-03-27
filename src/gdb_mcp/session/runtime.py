@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 import threading
 from typing import TypeVar
 
-from ..domain import CommandTranscriptEntry, StopEvent
+from ..domain import CommandTranscriptEntry, FollowForkMode, StopEvent
 from ..transport import MiClient
 from ..transport.protocols import GdbControllerProtocol
 from .config import SessionConfig
@@ -37,6 +37,10 @@ class SessionRuntime:
     last_failure_message: str | None = None
     current_thread_id: int | None = None
     current_frame: int | None = None
+    current_inferior_id: int | None = None
+    inferior_count: int | None = None
+    follow_fork_mode: FollowForkMode | None = None
+    detach_on_fork: bool | None = None
     artifact_root: str | None = None
     last_stop_event: StopEvent | None = None
     stop_history: list[StopEvent] = field(default_factory=list)
@@ -76,6 +80,10 @@ class SessionRuntime:
         self.last_failure_message = None
         self.current_thread_id = None
         self.current_frame = None
+        self.current_inferior_id = None
+        self.inferior_count = None
+        self.follow_fork_mode = None
+        self.detach_on_fork = None
         self.last_stop_event = None
         self.stop_history.clear()
         self.command_transcript.clear()
@@ -86,6 +94,14 @@ class SessionRuntime:
         self.state = SessionState.READY
         self.is_running = True
         self.last_failure_message = None
+        if self.current_inferior_id is None:
+            self.current_inferior_id = 1
+        if self.inferior_count is None:
+            self.inferior_count = 1
+        if self.follow_fork_mode is None:
+            self.follow_fork_mode = "parent"
+        if self.detach_on_fork is None:
+            self.detach_on_fork = True
 
     def mark_failed(self, message: str) -> None:
         """Record a terminal failure for the current session."""
@@ -100,6 +116,10 @@ class SessionRuntime:
         self.last_failure_message = message
         self.current_thread_id = None
         self.current_frame = None
+        self.current_inferior_id = None
+        self.inferior_count = None
+        self.follow_fork_mode = None
+        self.detach_on_fork = None
 
     def mark_transport_terminated(self, message: str) -> None:
         """Record that the debugger transport has died and clear its controller."""
@@ -120,6 +140,10 @@ class SessionRuntime:
         self.last_failure_message = None
         self.current_thread_id = None
         self.current_frame = None
+        self.current_inferior_id = None
+        self.inferior_count = None
+        self.follow_fork_mode = None
+        self.detach_on_fork = None
 
     def mark_thread_selected(self, thread_id: int | None) -> None:
         """Track the currently selected thread."""
@@ -130,6 +154,34 @@ class SessionRuntime:
         """Track the currently selected frame."""
 
         self.current_frame = frame_number
+
+    def mark_inferior_selected(self, inferior_id: int | None) -> None:
+        """Track the currently selected inferior and clear stale stack selection."""
+
+        self.current_inferior_id = inferior_id
+        self.current_thread_id = None
+        self.current_frame = None
+
+    def update_inferior_inventory(
+        self,
+        *,
+        current_inferior_id: int | None,
+        count: int,
+    ) -> None:
+        """Track the current inferior inventory snapshot."""
+
+        self.current_inferior_id = current_inferior_id
+        self.inferior_count = count
+
+    def mark_follow_fork_mode(self, mode: FollowForkMode | None) -> None:
+        """Track the configured follow-fork-mode value."""
+
+        self.follow_fork_mode = mode
+
+    def mark_detach_on_fork(self, enabled: bool | None) -> None:
+        """Track the configured detach-on-fork value."""
+
+        self.detach_on_fork = enabled
 
     def mark_attached(self, pid: int) -> None:
         """Track the PID of the currently attached process."""

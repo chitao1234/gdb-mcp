@@ -169,6 +169,10 @@ class TestSessionRegistry:
             attached_pid=None,
             current_thread_id=2,
             current_frame=1,
+            current_inferior_id=1,
+            inferior_count=2,
+            follow_fork_mode="child",
+            detach_on_fork=False,
             last_failure_message=None,
         )
         manager = SessionRegistry(session_factory=lambda: session)
@@ -186,6 +190,10 @@ class TestSessionRegistry:
         assert summary.program == "/tmp/a.out"
         assert summary.current_thread_id == 2
         assert summary.current_frame == 1
+        assert summary.current_inferior_id == 1
+        assert summary.inferior_count == 2
+        assert summary.follow_fork_mode == "child"
+        assert summary.detach_on_fork is False
 
     def test_close_session_removes_failed_dead_session_without_stop(self):
         """Dead failed sessions should be removable without another stop attempt."""

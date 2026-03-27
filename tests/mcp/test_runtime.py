@@ -38,6 +38,10 @@ class TestServerRuntime:
             "execution_state": "unknown",
             "stop_reason": None,
             "exit_code": None,
+            "current_inferior_id": None,
+            "inferior_count": None,
+            "follow_fork_mode": None,
+            "detach_on_fork": None,
         }
         mock_manager.resolve_session.assert_called_once_with(7)
         mock_session.get_status.assert_called_once()

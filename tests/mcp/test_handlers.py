@@ -119,6 +119,10 @@ class TestHandlerDispatch:
             "execution_state": "unknown",
             "stop_reason": None,
             "exit_code": None,
+            "current_inferior_id": None,
+            "inferior_count": None,
+            "follow_fork_mode": None,
+            "detach_on_fork": None,
         }
 
     def test_tool_with_invalid_session_id_returns_error(self):
@@ -259,6 +263,66 @@ class TestHandlerDispatch:
 
         manager.resolve_session.assert_called_once_with(3)
         session.attach_process.assert_called_once_with(pid=42, timeout_sec=9)
+
+    def test_list_inferiors_routes_to_correct_session(self):
+        """Inferior inventory requests should route to the resolved session."""
+
+        manager = Mock()
+        session = Mock()
+        session.list_inferiors.return_value = OperationSuccess({"count": 1, "inferiors": []})
+        manager.resolve_session.return_value = session
+
+        dispatch("gdb_list_inferiors", {"session_id": 4}, manager)
+
+        manager.resolve_session.assert_called_once_with(4)
+        session.list_inferiors.assert_called_once_with()
+
+    def test_select_inferior_routes_to_correct_session(self):
+        """Inferior selection should forward the requested inferior ID."""
+
+        manager = Mock()
+        session = Mock()
+        session.select_inferior.return_value = OperationSuccess({"inferior_id": 2})
+        manager.resolve_session.return_value = session
+
+        dispatch("gdb_select_inferior", {"session_id": 4, "inferior_id": 2}, manager)
+
+        manager.resolve_session.assert_called_once_with(4)
+        session.select_inferior.assert_called_once_with(inferior_id=2)
+
+    def test_set_follow_fork_mode_routes_to_correct_session(self):
+        """Follow-fork-mode requests should forward the selected mode."""
+
+        manager = Mock()
+        session = Mock()
+        session.set_follow_fork_mode.return_value = OperationSuccess({"mode": "child"})
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_set_follow_fork_mode",
+            {"session_id": 4, "mode": "child"},
+            manager,
+        )
+
+        manager.resolve_session.assert_called_once_with(4)
+        session.set_follow_fork_mode.assert_called_once_with(mode="child")
+
+    def test_set_detach_on_fork_routes_to_correct_session(self):
+        """Detach-on-fork requests should forward the selected boolean value."""
+
+        manager = Mock()
+        session = Mock()
+        session.set_detach_on_fork.return_value = OperationSuccess({"enabled": False})
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_set_detach_on_fork",
+            {"session_id": 4, "enabled": False},
+            manager,
+        )
+
+        manager.resolve_session.assert_called_once_with(4)
+        session.set_detach_on_fork.assert_called_once_with(enabled=False)
 
     def test_set_breakpoint_routes_to_correct_session(self):
         """Breakpoint requests should be routed to the resolved session."""

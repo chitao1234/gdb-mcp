@@ -274,6 +274,36 @@ class TestExecutionApi:
         assert status["target_loaded"] is True
         assert status["execution_state"] == "paused"
 
+    def test_set_follow_fork_mode(self, scripted_running_session, mi_result):
+        """Follow-fork-mode should execute the expected CLI command and update runtime state."""
+
+        session, controller = scripted_running_session([mi_result()])
+
+        result = result_to_mapping(session.set_follow_fork_mode("child"))
+
+        assert result["status"] == "success"
+        assert result["mode"] == "child"
+        assert session.runtime.follow_fork_mode == "child"
+        assert (
+            '-interpreter-exec console "set follow-fork-mode child"'
+            in controller.io_manager.stdin.writes[0].decode()
+        )
+
+    def test_set_detach_on_fork(self, scripted_running_session, mi_result):
+        """Detach-on-fork should execute the expected CLI command and update runtime state."""
+
+        session, controller = scripted_running_session([mi_result()])
+
+        result = result_to_mapping(session.set_detach_on_fork(False))
+
+        assert result["status"] == "success"
+        assert result["enabled"] is False
+        assert session.runtime.detach_on_fork is False
+        assert (
+            '-interpreter-exec console "set detach-on-fork off"'
+            in controller.io_manager.stdin.writes[0].decode()
+        )
+
 
 class TestCallFunctionApi:
     """Test function-call behavior through the public API."""

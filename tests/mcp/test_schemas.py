@@ -9,12 +9,14 @@ from gdb_mcp.mcp.schemas import (
     BreakpointNumberArgs,
     CallFunctionArgs,
     CaptureBundleArgs,
-    StartSessionArgs,
+    DetachOnForkArgs,
     ExecuteCommandArgs,
+    FollowForkModeArgs,
     FrameSelectArgs,
     GetBacktraceArgs,
     GetRegistersArgs,
     ThreadSelectArgs,
+    InferiorSelectArgs,
     SetBreakpointArgs,
     EvaluateExpressionArgs,
     GetVariablesArgs,
@@ -23,6 +25,7 @@ from gdb_mcp.mcp.schemas import (
     RunUntilFailureCaptureArgs,
     RunUntilFailureFailureArgs,
     RunArgs,
+    StartSessionArgs,
 )
 
 
@@ -178,6 +181,14 @@ class TestBatchArgs:
 
         assert "unexpected" in str(exc_info.value)
 
+    def test_batch_step_accepts_inferior_and_fork_tools(self):
+        """Batch steps should allow the new inferior and fork workflow tools."""
+
+        step = BatchStepArgs(tool="gdb_select_inferior", arguments={"inferior_id": 2})
+
+        assert step.tool == "gdb_select_inferior"
+        assert step.arguments == {"inferior_id": 2}
+
 
 class TestCaptureBundleArgs:
     """Test cases for bundle capture requests."""
@@ -244,6 +255,40 @@ class TestRunUntilFailureArgs:
             RunUntilFailureArgs(iterations=5)
 
         assert "iterations" in str(exc_info.value)
+
+
+class TestInferiorWorkflowArgs:
+    """Test cases for multi-inferior and fork workflow schemas."""
+
+    def test_inferior_select_args(self):
+        """Inferior selection should require a positive inferior ID."""
+
+        args = InferiorSelectArgs(session_id=1, inferior_id=2)
+
+        assert args.session_id == 1
+        assert args.inferior_id == 2
+
+    def test_follow_fork_mode_args(self):
+        """Follow-fork-mode should only accept the supported enum values."""
+
+        args = FollowForkModeArgs(session_id=1, mode="child")
+
+        assert args.session_id == 1
+        assert args.mode == "child"
+
+    def test_follow_fork_mode_rejects_unknown_value(self):
+        """Unexpected follow-fork-mode values should fail validation."""
+
+        with pytest.raises(ValidationError):
+            FollowForkModeArgs(session_id=1, mode="both")
+
+    def test_detach_on_fork_args(self):
+        """Detach-on-fork should accept an explicit boolean value."""
+
+        args = DetachOnForkArgs(session_id=1, enabled=False)
+
+        assert args.session_id == 1
+        assert args.enabled is False
 
 
 class TestGetBacktraceArgs:

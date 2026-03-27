@@ -60,6 +60,59 @@ class TestThreadAndStackInspectionApi:
         assert result["new_thread_id"] == "2"
         assert controller.io_manager.stdin.writes[0].decode().endswith("-thread-select 2\n")
 
+    def test_list_inferiors(self, scripted_running_session, mi_console, mi_result):
+        """Inferior inventory should parse the CLI table into structured records."""
+
+        session, controller = scripted_running_session(
+            [
+                mi_console("  Num  Description       Connection           Executable        \n"),
+                mi_console("* 1    <null>                                 /tmp/app \n"),
+                mi_console("  2    <null>                                                   \n"),
+                mi_result(),
+            ]
+        )
+
+        result = result_to_mapping(session.list_inferiors())
+
+        assert result["status"] == "success"
+        assert result["count"] == 2
+        assert result["current_inferior_id"] == 1
+        assert result["inferiors"][0]["inferior_id"] == 1
+        assert result["inferiors"][0]["is_current"] is True
+        assert result["inferiors"][0]["executable"] == "/tmp/app"
+        assert result["inferiors"][1]["inferior_id"] == 2
+        assert controller.io_manager.stdin.writes[0].decode().endswith(
+            '-interpreter-exec console "info inferiors"\n'
+        )
+
+    def test_select_inferior(self, scripted_running_session, mi_console, mi_result):
+        """Inferior selection should refresh inventory and update runtime state."""
+
+        session, controller = scripted_running_session(
+            [
+                mi_console("[Switching to inferior 2 [<null>] (<noexec>)]\n"),
+                mi_result(),
+            ],
+            [
+                mi_console("  Num  Description       Connection           Executable        \n"),
+                mi_console("  1    <null>                                 /tmp/app \n"),
+                mi_console("* 2    <null>                                                   \n"),
+                mi_result(),
+            ],
+        )
+
+        result = result_to_mapping(session.select_inferior(2))
+
+        assert result["status"] == "success"
+        assert result["inferior_id"] == 2
+        assert result["is_current"] is True
+        assert session.runtime.current_inferior_id == 2
+        assert session.runtime.current_thread_id is None
+        assert session.runtime.current_frame is None
+        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert written[0].endswith('-interpreter-exec console "inferior 2"\n')
+        assert written[1].endswith('-interpreter-exec console "info inferiors"\n')
+
     def test_get_backtrace_default(self, scripted_running_session, mi_result):
         """Backtrace requests should return frame count for the current thread."""
 

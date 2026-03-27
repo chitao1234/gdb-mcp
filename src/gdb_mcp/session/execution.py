@@ -9,6 +9,9 @@ from typing import Optional, cast
 from ..domain import (
     CommandTranscriptEntry,
     CommandExecutionInfo,
+    DetachOnForkInfo,
+    FollowForkMode,
+    FollowForkModeInfo,
     FunctionCallInfo,
     MessageResult,
     OperationError,
@@ -78,6 +81,47 @@ class SessionExecutionService:
             self._runtime.mark_inferior_paused("attached")
 
         return result
+
+    def set_follow_fork_mode(
+        self, mode: FollowForkMode
+    ) -> OperationSuccess[FollowForkModeInfo] | OperationError:
+        """Set whether GDB follows the parent or child after fork/vfork."""
+
+        result = self._command_runner.execute_command_result(
+            f"set follow-fork-mode {mode}",
+            timeout_sec=DEFAULT_TIMEOUT_SEC,
+        )
+        if isinstance(result, OperationError):
+            return result
+
+        self._runtime.mark_follow_fork_mode(mode)
+        return OperationSuccess(
+            FollowForkModeInfo(
+                mode=mode,
+                message=f"follow-fork-mode set to {mode}",
+            )
+        )
+
+    def set_detach_on_fork(
+        self, enabled: bool
+    ) -> OperationSuccess[DetachOnForkInfo] | OperationError:
+        """Set whether GDB detaches from the non-followed fork."""
+
+        detach_on_fork = "on" if enabled else "off"
+        result = self._command_runner.execute_command_result(
+            f"set detach-on-fork {detach_on_fork}",
+            timeout_sec=DEFAULT_TIMEOUT_SEC,
+        )
+        if isinstance(result, OperationError):
+            return result
+
+        self._runtime.mark_detach_on_fork(enabled)
+        return OperationSuccess(
+            DetachOnForkInfo(
+                enabled=enabled,
+                message=f"detach-on-fork set to {detach_on_fork}",
+            )
+        )
 
     def continue_execution(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Continue execution of the program."""

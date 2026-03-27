@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
+import re
 from typing import Optional
 
 from ..domain import (
@@ -11,6 +12,9 @@ from ..domain import (
     ExpressionValueInfo,
     FrameInfo,
     FrameSelectionInfo,
+    InferiorListInfo,
+    InferiorRecord,
+    InferiorSelectionInfo,
     OperationError,
     OperationSuccess,
     RegistersInfo,
@@ -32,6 +36,9 @@ from .result_utils import command_result_payload
 from .runtime import SessionRuntime
 
 logger = logging.getLogger(__name__)
+
+_INFERIOR_ROW_RE = re.compile(r"^(?P<current>\*)?\s*(?P<inferior_id>\d+)\s+(?P<columns>.*)$")
+_INFERIOR_COLUMN_SPLIT_RE = re.compile(r"\s{2,}")
 
 
 @dataclass(frozen=True)
@@ -78,6 +85,68 @@ class SessionInspectionService:
         logger.debug("get_threads: threads data: %s", payload.threads)
 
         return OperationSuccess(payload)
+
+    def list_inferiors(self) -> OperationSuccess[InferiorListInfo] | OperationError:
+        """List the inferiors currently managed by this GDB session."""
+
+        result = self._command_runner.execute_command_result(
+            "info inferiors", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
+        if isinstance(result, OperationError):
+            return result
+
+        payload = self._parse_inferiors_output(result.value.output or "")
+        self._runtime.update_inferior_inventory(
+            current_inferior_id=payload.current_inferior_id,
+            count=payload.count,
+        )
+        return OperationSuccess(payload)
+
+    def select_inferior(
+        self, inferior_id: int
+    ) -> OperationSuccess[InferiorSelectionInfo] | OperationError:
+        """Select a specific inferior to make it the current debugger context."""
+
+        result = self._command_runner.execute_command_result(
+            f"inferior {inferior_id}", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
+        if isinstance(result, OperationError):
+            return result
+
+        self._runtime.mark_inferior_selected(inferior_id)
+        inventory_result = self.list_inferiors()
+        if isinstance(inventory_result, OperationError):
+            return OperationSuccess(
+                InferiorSelectionInfo(
+                    inferior_id=inferior_id,
+                    message=f"Inferior {inferior_id} selected",
+                ),
+                warnings=(
+                    "Inferior selection succeeded, but refreshing inferior inventory failed: "
+                    f"{inventory_result.message}",
+                ),
+            )
+
+        selected_record = next(
+            (
+                record
+                for record in inventory_result.value.inferiors
+                if record.get("inferior_id") == inferior_id
+            ),
+            None,
+        )
+        if selected_record is None:
+            return OperationSuccess(
+                InferiorSelectionInfo(
+                    inferior_id=inferior_id,
+                    message=f"Inferior {inferior_id} selected",
+                ),
+                warnings=(
+                    f"GDB selected inferior {inferior_id}, but it was missing from the refreshed inventory.",
+                ),
+            )
+
+        return OperationSuccess(self._inferior_selection_info(selected_record))
 
     def select_thread(
         self, thread_id: int
@@ -414,3 +483,86 @@ class SessionInspectionService:
         if isinstance(value, str) and value.isdigit():
             return int(value)
         return None
+
+    def _parse_inferiors_output(self, output: str) -> InferiorListInfo:
+        """Parse `info inferiors` CLI output into a structured inferior list."""
+
+        inferiors: list[InferiorRecord] = []
+        current_inferior_id = self._runtime.current_inferior_id
+
+        for raw_line in output.splitlines():
+            line = raw_line.rstrip()
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith("Num ") or stripped.startswith("Num\t"):
+                continue
+
+            match = _INFERIOR_ROW_RE.match(line)
+            if match is None:
+                continue
+
+            inferior_id = int(match.group("inferior_id"))
+            is_current = match.group("current") == "*"
+            display = match.group("columns").strip()
+            columns = [
+                part.strip()
+                for part in _INFERIOR_COLUMN_SPLIT_RE.split(display)
+                if part.strip()
+            ]
+
+            record: InferiorRecord = {
+                "inferior_id": inferior_id,
+                "is_current": is_current,
+                "display": display,
+            }
+            if columns:
+                record["description"] = columns[0]
+            if len(columns) == 2:
+                if self._looks_like_connection(columns[1]):
+                    record["connection"] = columns[1]
+                else:
+                    record["executable"] = columns[1]
+            elif len(columns) >= 3:
+                record["connection"] = columns[1]
+                record["executable"] = columns[2]
+
+            inferiors.append(record)
+            if is_current:
+                current_inferior_id = inferior_id
+
+        return InferiorListInfo(
+            inferiors=inferiors,
+            count=len(inferiors),
+            current_inferior_id=current_inferior_id,
+        )
+
+    @staticmethod
+    def _looks_like_connection(value: str) -> bool:
+        """Heuristically identify a connection column from `info inferiors` output."""
+
+        return value.startswith(("target:", "process ", "remote ", "extended-remote")) or value in {
+            "native",
+        }
+
+    @staticmethod
+    def _inferior_selection_info(record: InferiorRecord) -> InferiorSelectionInfo:
+        """Convert one inferior record into a selection response."""
+
+        inferior_id = record["inferior_id"] if "inferior_id" in record else 0
+        display = record["display"] if "display" in record else None
+        description = record["description"] if "description" in record else None
+        connection = record["connection"] if "connection" in record else None
+        executable = record["executable"] if "executable" in record else None
+
+        return InferiorSelectionInfo(
+            inferior_id=inferior_id,
+            is_current=bool(record.get("is_current", False)),
+            display=display,
+            description=description,
+            connection=connection,
+            executable=executable,
+            message=(
+                f"Inferior {inferior_id} selected" if inferior_id > 0 else "Inferior selected"
+            ),
+        )

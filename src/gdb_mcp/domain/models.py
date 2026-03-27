@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TypedDict, TypeAlias
+from typing import Literal, TypedDict, TypeAlias
 
 JsonScalar: TypeAlias = str | int | float | bool | None
 JsonObject: TypeAlias = dict[str, "JsonValue"]
 JsonArray: TypeAlias = list["JsonValue"]
 JsonValue: TypeAlias = JsonScalar | JsonObject | JsonArray
 StructuredPayload: TypeAlias = JsonObject
+FollowForkMode: TypeAlias = Literal["parent", "child"]
 
 
 class FrameRecord(TypedDict, total=False):
@@ -67,6 +68,17 @@ class RegisterRecord(TypedDict, total=False):
     value: str
 
 
+class InferiorRecord(TypedDict, total=False):
+    """Structured inferior payload returned by GDB."""
+
+    inferior_id: int
+    is_current: bool
+    display: str
+    description: str
+    connection: str
+    executable: str
+
+
 @dataclass(slots=True, frozen=True)
 class SessionStatusSnapshot:
     """Serializable snapshot of the externally visible session status."""
@@ -77,6 +89,10 @@ class SessionStatusSnapshot:
     execution_state: str = "unknown"
     stop_reason: str | None = None
     exit_code: int | None = None
+    current_inferior_id: int | None = None
+    inferior_count: int | None = None
+    follow_fork_mode: FollowForkMode | None = None
+    detach_on_fork: bool | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -96,6 +112,10 @@ class SessionSummary:
     current_frame: int | None = None
     stop_reason: str | None = None
     exit_code: int | None = None
+    current_inferior_id: int | None = None
+    inferior_count: int | None = None
+    follow_fork_mode: FollowForkMode | None = None
+    detach_on_fork: bool | None = None
     last_failure_message: str | None = None
 
 
@@ -241,6 +261,44 @@ class RunUntilFailureInfo:
     capture_error: str | None = None
     last_result: StructuredPayload | None = None
     iterations: list[RunUntilFailureIterationInfo] | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class InferiorListInfo:
+    """Structured inferior inventory for one debugger session."""
+
+    inferiors: list[InferiorRecord]
+    count: int
+    current_inferior_id: int | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class InferiorSelectionInfo:
+    """Structured response for inferior selection."""
+
+    inferior_id: int
+    is_current: bool = True
+    display: str | None = None
+    description: str | None = None
+    connection: str | None = None
+    executable: str | None = None
+    message: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class FollowForkModeInfo:
+    """Structured response for follow-fork-mode changes."""
+
+    mode: FollowForkMode
+    message: str
+
+
+@dataclass(slots=True, frozen=True)
+class DetachOnForkInfo:
+    """Structured response for detach-on-fork changes."""
+
+    enabled: bool
+    message: str
 
 
 @dataclass(slots=True, frozen=True)

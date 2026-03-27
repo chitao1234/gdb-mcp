@@ -12,10 +12,15 @@ from ..domain import (
     CaptureBundleInfo,
     CommandTranscriptEntry,
     CommandExecutionInfo,
+    DetachOnForkInfo,
     ExpressionValueInfo,
     FrameInfo,
     FrameSelectionInfo,
+    FollowForkMode,
+    FollowForkModeInfo,
     FunctionCallInfo,
+    InferiorListInfo,
+    InferiorSelectionInfo,
     MessageResult,
     OperationError,
     OperationSuccess,
@@ -194,6 +199,22 @@ class SessionService:
 
         return self._execution.attach_process(pid=pid, timeout_sec=timeout_sec)
 
+    def set_follow_fork_mode(
+        self,
+        mode: FollowForkMode,
+    ) -> OperationSuccess[FollowForkModeInfo] | OperationError:
+        """Delegate follow-fork-mode changes to the execution service."""
+
+        return self._execution.set_follow_fork_mode(mode)
+
+    def set_detach_on_fork(
+        self,
+        enabled: bool,
+    ) -> OperationSuccess[DetachOnForkInfo] | OperationError:
+        """Delegate detach-on-fork changes to the execution service."""
+
+        return self._execution.set_detach_on_fork(enabled)
+
     def continue_execution(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate continue to the execution service."""
 
@@ -290,6 +311,18 @@ class SessionService:
         """Delegate thread inspection to the inspection service."""
 
         return self._inspection.get_threads()
+
+    def list_inferiors(self) -> OperationSuccess[InferiorListInfo] | OperationError:
+        """Delegate inferior inventory inspection to the inspection service."""
+
+        return self._inspection.list_inferiors()
+
+    def select_inferior(
+        self, inferior_id: int
+    ) -> OperationSuccess[InferiorSelectionInfo] | OperationError:
+        """Delegate inferior selection to the inspection service."""
+
+        return self._inspection.select_inferior(inferior_id)
 
     def select_thread(
         self, thread_id: int

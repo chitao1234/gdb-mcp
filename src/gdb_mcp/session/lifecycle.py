@@ -274,6 +274,10 @@ class SessionLifecycleService:
             execution_state=self._runtime.execution_state,
             stop_reason=self._runtime.stop_reason,
             exit_code=self._runtime.exit_code,
+            current_inferior_id=self._runtime.current_inferior_id,
+            inferior_count=self._runtime.inferior_count,
+            follow_fork_mode=self._runtime.follow_fork_mode,
+            detach_on_fork=self._runtime.detach_on_fork,
         )
         return OperationSuccess(snapshot)
 

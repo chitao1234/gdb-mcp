@@ -157,6 +157,10 @@ class SessionRegistry:
                     current_frame=session.runtime.current_frame,
                     stop_reason=status.stop_reason,
                     exit_code=status.exit_code,
+                    current_inferior_id=session.runtime.current_inferior_id,
+                    inferior_count=session.runtime.inferior_count,
+                    follow_fork_mode=session.runtime.follow_fork_mode,
+                    detach_on_fork=session.runtime.detach_on_fork,
                     last_failure_message=session.runtime.last_failure_message,
                 )
             )

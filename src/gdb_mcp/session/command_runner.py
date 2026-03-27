@@ -9,6 +9,7 @@ from typing import cast
 from ..domain import (
     CommandExecutionInfo,
     CommandTranscriptEntry,
+    FollowForkMode,
     FrameRecord,
     OperationError,
     OperationSuccess,
@@ -234,6 +235,16 @@ class SessionCommandRunner:
                 self._runtime.mark_inferior_paused("attached")
         elif normalized_command == "detach" and not parsed.is_error_result():
             self._runtime.clear_attached_pid()
+        elif normalized_command.startswith("inferior ") and not parsed.is_error_result():
+            inferior_id = self._parse_inferior_id(normalized_command)
+            if inferior_id is not None:
+                self._runtime.mark_inferior_selected(inferior_id)
+        elif normalized_command.startswith("set follow-fork-mode ") and not parsed.is_error_result():
+            follow_fork_mode = self._parse_follow_fork_mode(normalized_command)
+            self._runtime.mark_follow_fork_mode(follow_fork_mode)
+        elif normalized_command.startswith("set detach-on-fork ") and not parsed.is_error_result():
+            detach_on_fork = self._parse_detach_on_fork(normalized_command)
+            self._runtime.mark_detach_on_fork(detach_on_fork)
 
     @staticmethod
     def _loads_target(command: str) -> bool:
@@ -273,6 +284,44 @@ class SessionCommandRunner:
             return None
         pid_text = parts[1].strip()
         return int(pid_text) if pid_text.isdigit() else None
+
+    @staticmethod
+    def _parse_inferior_id(command: str) -> int | None:
+        """Parse an inferior-selection command and return the selected inferior ID."""
+
+        parts = command.split(maxsplit=1)
+        if len(parts) != 2:
+            return None
+        inferior_id = parts[1].strip()
+        return int(inferior_id) if inferior_id.isdigit() else None
+
+    @staticmethod
+    def _parse_follow_fork_mode(command: str) -> FollowForkMode | None:
+        """Parse the configured follow-fork-mode from a normalized CLI command."""
+
+        parts = command.split()
+        if len(parts) != 3:
+            return None
+        mode = parts[2]
+        if mode == "parent":
+            return "parent"
+        if mode == "child":
+            return "child"
+        return None
+
+    @staticmethod
+    def _parse_detach_on_fork(command: str) -> bool | None:
+        """Parse the configured detach-on-fork value from a normalized CLI command."""
+
+        parts = command.split()
+        if len(parts) != 3:
+            return None
+        value = parts[2]
+        if value == "on":
+            return True
+        if value == "off":
+            return False
+        return None
 
     def _build_stop_event(
         self,

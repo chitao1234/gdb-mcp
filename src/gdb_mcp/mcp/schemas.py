@@ -18,6 +18,10 @@ BATCH_STEP_TOOL_NAMES = (
     "gdb_execute_command",
     "gdb_run",
     "gdb_attach_process",
+    "gdb_list_inferiors",
+    "gdb_select_inferior",
+    "gdb_set_follow_fork_mode",
+    "gdb_set_detach_on_fork",
     "gdb_get_status",
     "gdb_get_threads",
     "gdb_capture_bundle",
@@ -43,6 +47,10 @@ BatchStepToolName: TypeAlias = Literal[
     "gdb_execute_command",
     "gdb_run",
     "gdb_attach_process",
+    "gdb_list_inferiors",
+    "gdb_select_inferior",
+    "gdb_set_follow_fork_mode",
+    "gdb_set_detach_on_fork",
     "gdb_get_status",
     "gdb_get_threads",
     "gdb_capture_bundle",
@@ -190,6 +198,37 @@ class SessionIdArgs(StrictArgsModel):
     """Arguments for tools that only need session_id."""
 
     session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+
+
+class InferiorSelectArgs(StrictArgsModel):
+    """Arguments for selecting one inferior by its GDB-visible numeric ID."""
+
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    inferior_id: int = Field(
+        ...,
+        gt=0,
+        description="Inferior ID from gdb_list_inferiors",
+    )
+
+
+class FollowForkModeArgs(StrictArgsModel):
+    """Arguments for configuring follow-fork-mode."""
+
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    mode: Literal["parent", "child"] = Field(
+        ...,
+        description="Whether GDB should follow the parent or child after fork/vfork.",
+    )
+
+
+class DetachOnForkArgs(StrictArgsModel):
+    """Arguments for configuring detach-on-fork."""
+
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    enabled: bool = Field(
+        ...,
+        description="Whether GDB should detach from the non-followed side of a fork.",
+    )
 
 
 class ListSessionsArgs(StrictArgsModel):
@@ -413,6 +452,42 @@ def build_tool_definitions() -> list[Tool]:
                 "Requires session_id parameter (obtained from gdb_start_session)."
             ),
             inputSchema=AttachProcessArgs.model_json_schema(),
+        ),
+        Tool(
+            name="gdb_list_inferiors",
+            description=(
+                "List the inferiors currently managed inside this GDB session. "
+                "Use this for fork-heavy or daemon/test scenarios where one debugger instance "
+                "needs to reason about multiple inferiors explicitly."
+            ),
+            inputSchema=SessionIdArgs.model_json_schema(),
+        ),
+        Tool(
+            name="gdb_select_inferior",
+            description=(
+                "Select a specific inferior by its numeric inferior ID from gdb_list_inferiors. "
+                "This changes the current debugger context for later thread, frame, and "
+                "expression inspection commands."
+            ),
+            inputSchema=InferiorSelectArgs.model_json_schema(),
+        ),
+        Tool(
+            name="gdb_set_follow_fork_mode",
+            description=(
+                "Set whether GDB follows the parent or the child after a fork or vfork. "
+                "Use this instead of raw 'set follow-fork-mode ...' strings when building "
+                "repeatable multi-process workflows."
+            ),
+            inputSchema=FollowForkModeArgs.model_json_schema(),
+        ),
+        Tool(
+            name="gdb_set_detach_on_fork",
+            description=(
+                "Set whether GDB detaches from the non-followed side of a fork. "
+                "Use this together with gdb_set_follow_fork_mode to build explicit "
+                "multi-inferior fork workflows without raw CLI commands."
+            ),
+            inputSchema=DetachOnForkArgs.model_json_schema(),
         ),
         Tool(
             name="gdb_batch",

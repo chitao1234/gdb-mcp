@@ -34,12 +34,15 @@ from .schemas import (
     BreakpointNumberArgs,
     CallFunctionArgs,
     CaptureBundleArgs,
+    DetachOnForkArgs,
     EvaluateExpressionArgs,
     ExecuteCommandArgs,
+    FollowForkModeArgs,
     FrameSelectArgs,
     GetBacktraceArgs,
     GetRegistersArgs,
     GetVariablesArgs,
+    InferiorSelectArgs,
     ListSessionsArgs,
     RunUntilFailureArgs,
     RunArgs,
@@ -102,6 +105,25 @@ def _handle_run(session: SessionService, args: RunArgs) -> ToolResult:
 
 def _handle_attach_process(session: SessionService, args: AttachProcessArgs) -> ToolResult:
     return session.attach_process(pid=args.pid, timeout_sec=args.timeout_sec)
+
+
+def _handle_list_inferiors(session: SessionService, args: SessionIdArgs) -> ToolResult:
+    del args
+    return session.list_inferiors()
+
+
+def _handle_select_inferior(session: SessionService, args: InferiorSelectArgs) -> ToolResult:
+    return session.select_inferior(inferior_id=args.inferior_id)
+
+
+def _handle_set_follow_fork_mode(
+    session: SessionService, args: FollowForkModeArgs
+) -> ToolResult:
+    return session.set_follow_fork_mode(mode=args.mode)
+
+
+def _handle_set_detach_on_fork(session: SessionService, args: DetachOnForkArgs) -> ToolResult:
+    return session.set_detach_on_fork(enabled=args.enabled)
 
 
 def _handle_get_status(session: SessionService, args: SessionIdArgs) -> ToolResult:
@@ -402,6 +424,12 @@ SESSION_TOOL_SPECS: dict[str, SessionToolSpec] = {
     "gdb_execute_command": session_tool_spec(ExecuteCommandArgs, _handle_execute_command),
     "gdb_run": session_tool_spec(RunArgs, _handle_run),
     "gdb_attach_process": session_tool_spec(AttachProcessArgs, _handle_attach_process),
+    "gdb_list_inferiors": session_tool_spec(SessionIdArgs, _handle_list_inferiors),
+    "gdb_select_inferior": session_tool_spec(InferiorSelectArgs, _handle_select_inferior),
+    "gdb_set_follow_fork_mode": session_tool_spec(
+        FollowForkModeArgs, _handle_set_follow_fork_mode
+    ),
+    "gdb_set_detach_on_fork": session_tool_spec(DetachOnForkArgs, _handle_set_detach_on_fork),
     "gdb_batch": session_tool_spec(BatchArgs, _handle_batch),
     "gdb_capture_bundle": session_tool_spec(CaptureBundleArgs, _handle_capture_bundle),
     "gdb_get_status": session_tool_spec(SessionIdArgs, _handle_get_status),

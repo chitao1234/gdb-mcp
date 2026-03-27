@@ -326,6 +326,64 @@ def test_run_until_failure_matches_signal_and_writes_bundle(compile_program, tmp
 
 
 @pytest.mark.integration
+def test_multi_inferior_and_fork_tools_update_status_metadata(session_id):
+    """Multi-inferior and fork helpers should expose stable status metadata."""
+
+    status = call_gdb_tool("gdb_get_status", {"session_id": session_id})
+    assert status["current_inferior_id"] == 1
+    assert status["inferior_count"] == 1
+    assert status["follow_fork_mode"] == "parent"
+    assert status["detach_on_fork"] is True
+
+    add_result = call_gdb_tool(
+        "gdb_execute_command",
+        {"session_id": session_id, "command": "add-inferior"},
+    )
+    assert add_result["status"] == "success"
+
+    inferiors = call_gdb_tool("gdb_list_inferiors", {"session_id": session_id})
+    assert inferiors["status"] == "success"
+    assert inferiors["count"] == 2
+    assert inferiors["current_inferior_id"] == 1
+
+    select_result = call_gdb_tool(
+        "gdb_select_inferior",
+        {"session_id": session_id, "inferior_id": 2},
+    )
+    assert select_result["status"] == "success"
+    assert select_result["inferior_id"] == 2
+    assert select_result["is_current"] is True
+
+    follow_result = call_gdb_tool(
+        "gdb_set_follow_fork_mode",
+        {"session_id": session_id, "mode": "child"},
+    )
+    assert follow_result["status"] == "success"
+    assert follow_result["mode"] == "child"
+
+    detach_result = call_gdb_tool(
+        "gdb_set_detach_on_fork",
+        {"session_id": session_id, "enabled": False},
+    )
+    assert detach_result["status"] == "success"
+    assert detach_result["enabled"] is False
+
+    updated_status = call_gdb_tool("gdb_get_status", {"session_id": session_id})
+    assert updated_status["current_inferior_id"] == 2
+    assert updated_status["inferior_count"] == 2
+    assert updated_status["follow_fork_mode"] == "child"
+    assert updated_status["detach_on_fork"] is False
+
+    sessions = call_gdb_tool("gdb_list_sessions", {})
+    assert sessions["status"] == "success"
+    summary = next(item for item in sessions["sessions"] if item["session_id"] == session_id)
+    assert summary["current_inferior_id"] == 2
+    assert summary["inferior_count"] == 2
+    assert summary["follow_fork_mode"] == "child"
+    assert summary["detach_on_fork"] is False
+
+
+@pytest.mark.integration
 def test_step_through_functions(session_id):
     """Test stepping through function calls."""
     # Set breakpoint at main
