@@ -1,0 +1,4 @@
+interface:
+  display_name: "Debug with gdb-mcp"
+  short_description: "Run reliable GDB sessions through MCP tools"
+  default_prompt: "Use $debug-with-gdb-mcp to diagnose this program issue with a reproducible GDB-MI workflow."
