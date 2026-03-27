@@ -48,6 +48,15 @@ int main() {
 }
 """
 
+CRASHING_C_PROGRAM = """
+#include <signal.h>
+
+int main(void) {
+    raise(SIGABRT);
+    return 0;
+}
+"""
+
 
 @pytest.fixture
 def compiled_program(compile_program):
@@ -65,6 +74,17 @@ def session_id(compiled_program, start_session):
     """Start one integration session and return its ID."""
 
     return start_session(compiled_program)
+
+
+@pytest.fixture
+def compiled_program_and_core(compile_program_with_core):
+    """Compile a crashing program and return its executable/core-dump paths."""
+
+    return compile_program_with_core(
+        CRASHING_C_PROGRAM,
+        filename="crash.c",
+        compiler="gcc",
+    )
 
 
 # Integration tests that run GDB with a real program
@@ -457,6 +477,38 @@ def test_start_session_with_file_init_command_reports_target_loaded(compiled_pro
     session_id = result["session_id"]
     status = call_gdb_tool("gdb_get_status", {"session_id": session_id})
     assert status["target_loaded"] is True
+
+    stop_session(session_id)
+
+
+@pytest.mark.integration
+def test_start_session_with_core_file_init_command_reports_target_loaded(
+    compiled_program_and_core, stop_session
+):
+    """Startup should expose target_loaded when init commands load a core dump."""
+
+    executable, core_file = compiled_program_and_core
+
+    result = call_gdb_tool(
+        "gdb_start_session",
+        {
+            "init_commands": [
+                f"file {executable}",
+                f"core-file {core_file}",
+            ]
+        },
+    )
+
+    assert result["status"] == "success"
+    assert result["target_loaded"] is True
+
+    session_id = result["session_id"]
+    status = call_gdb_tool("gdb_get_status", {"session_id": session_id})
+    assert status["target_loaded"] is True
+
+    threads = call_gdb_tool("gdb_get_threads", {"session_id": session_id})
+    assert threads["status"] == "success"
+    assert threads["count"] >= 1
 
     stop_session(session_id)
 

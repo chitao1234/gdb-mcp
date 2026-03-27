@@ -7,6 +7,7 @@ from gdb_mcp.domain import OperationError, OperationSuccess, SessionMessage, Ses
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.registry import SessionRegistry
 from gdb_mcp.session.service import SessionService
+from gdb_mcp.session.state import SessionState
 
 
 class TestSessionRegistry:
@@ -128,6 +129,23 @@ class TestSessionRegistry:
         assert "inconsistent" in result.message.lower()
         assert manager.get_session(session_id) is session
 
+    def test_close_session_removes_failed_dead_session_without_stop(self):
+        """Dead failed sessions should be removable without another stop attempt."""
+
+        session = Mock(spec=SessionService)
+        session.controller = None
+        session.is_running = False
+        session.state = SessionState.FAILED
+        manager = SessionRegistry(session_factory=lambda: session)
+
+        session_id = manager.create_session()
+        result = manager.close_session(session_id)
+
+        assert isinstance(result, OperationSuccess)
+        assert result.value.message == "Session removed"
+        session.stop.assert_not_called()
+        assert manager.get_session(session_id) is None
+
     def test_concurrent_create_session_thread_safe(self):
         """Test that concurrent create_session calls produce unique IDs."""
         manager = SessionRegistry()
@@ -203,6 +221,23 @@ class TestSessionRegistry:
         assert isinstance(results[session_id_2], OperationSuccess)
         assert manager.get_session(session_id_1) is None
         assert manager.get_session(session_id_2) is None
+
+    def test_shutdown_all_removes_failed_dead_sessions_without_stop(self):
+        """Shutdown should not try to stop sessions whose transport has already died."""
+
+        session = Mock(spec=SessionService)
+        session.controller = None
+        session.is_running = False
+        session.state = SessionState.FAILED
+        manager = SessionRegistry(session_factory=lambda: session)
+
+        session_id = manager.create_session()
+        results = manager.shutdown_all()
+
+        assert isinstance(results[session_id], OperationSuccess)
+        assert results[session_id].value.message == "Session removed"
+        session.stop.assert_not_called()
+        assert manager.get_session(session_id) is None
 
     def test_default_factory_returns_session_service(self):
         """The default registry factory should construct SessionService directly."""

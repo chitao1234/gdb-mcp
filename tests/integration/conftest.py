@@ -104,6 +104,72 @@ def compile_program():
 
 
 @pytest.fixture
+def compile_program_with_core():
+    """Compile a program, run it with core dumps enabled, and return executable/core paths."""
+
+    temp_dirs: list[Path] = []
+
+    def build(
+        source: str,
+        *,
+        filename: str,
+        compiler: str,
+        compiler_args: list[str] | None = None,
+    ) -> tuple[str, str]:
+        tmpdir = Path(tempfile.mkdtemp(prefix="gdb-mcp-core-tests-"))
+        temp_dirs.append(tmpdir)
+
+        source_file = tmpdir / filename
+        executable_file = tmpdir / Path(filename).stem
+        source_file.write_text(source)
+
+        compile_result = subprocess.run(
+            [
+                compiler,
+                *(compiler_args or ["-g", "-O0"]),
+                "-o",
+                str(executable_file),
+                str(source_file),
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        if compile_result.returncode != 0:
+            pytest.fail(f"Failed to compile crashing test program: {compile_result.stderr}")
+
+        run_result = subprocess.run(
+            [
+                "bash",
+                "-lc",
+                'ulimit -c unlimited; cd "$1"; shift; "$@" >/dev/null 2>&1',
+                "_",
+                str(tmpdir),
+                f"./{executable_file.name}",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        core_files = sorted(
+            tmpdir.glob("core*"), key=lambda path: path.stat().st_mtime, reverse=True
+        )
+        if not core_files:
+            pytest.fail(
+                "Expected a core dump but none was produced. "
+                f"stdout={run_result.stdout!r} stderr={run_result.stderr!r}"
+            )
+
+        return str(executable_file), str(core_files[0])
+
+    yield build
+
+    for tmpdir in temp_dirs:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.fixture
 def default_init_commands():
     """Return the standard init commands used by most integration sessions."""
 
