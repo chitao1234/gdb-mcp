@@ -113,6 +113,21 @@ class TestSessionRegistry:
         assert result.message == "stop failed"
         assert manager.get_session(session_id) is session
 
+    def test_close_session_rejects_inconsistent_running_session_without_controller(self):
+        """close_session should not silently drop a logically running session."""
+
+        session = Mock(spec=SessionService)
+        session.controller = None
+        session.is_running = True
+        manager = SessionRegistry(session_factory=lambda: session)
+
+        session_id = manager.create_session()
+        result = manager.close_session(session_id)
+
+        assert isinstance(result, OperationError)
+        assert "inconsistent" in result.message.lower()
+        assert manager.get_session(session_id) is session
+
     def test_concurrent_create_session_thread_safe(self):
         """Test that concurrent create_session calls produce unique IDs."""
         manager = SessionRegistry()

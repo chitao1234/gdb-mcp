@@ -29,6 +29,7 @@ class MiClient:
         self._controller: Any = None
         self._command_token = initial_command_token
         self._poll_timeout_sec = poll_timeout_sec
+        # One lock guards serialized MI access and controller teardown.
         self._command_lock = threading.Lock()
 
     @property
@@ -66,6 +67,12 @@ class MiClient:
 
     def exit(self) -> None:
         """Stop the current controller if one exists."""
+
+        with self._command_lock:
+            self._exit_unlocked()
+
+    def _exit_unlocked(self) -> None:
+        """Stop the current controller while the command lock is already held."""
 
         if self._controller is None:
             return
@@ -110,6 +117,8 @@ class MiClient:
             return MiTransportResponse(timed_out=True, error="No active GDB session")
 
         with self._command_lock:
+            if self._controller is None:
+                return MiTransportResponse(timed_out=True, error="No active GDB session")
             token = self._command_token
             self._command_token += 1
 
@@ -142,7 +151,9 @@ class MiClient:
                             if exit_code == -9:
                                 error_details += " (exit code -9: killed, likely out of memory)"
                             elif exit_code == -6:
-                                error_details += " (exit code -6: aborted, possibly assertion failure)"
+                                error_details += (
+                                    " (exit code -6: aborted, possibly assertion failure)"
+                                )
                             elif exit_code == -11:
                                 error_details += " (exit code -11: segmentation fault)"
                             else:
@@ -200,7 +211,7 @@ class MiClient:
                     payload = response.get("payload", "")
                     if response_type in ("console", "log") and self._is_fatal_payload(payload):
                         logger.error("GDB internal fatal error detected: %s", payload)
-                        self.exit()
+                        self._exit_unlocked()
                         return MiTransportResponse(
                             command_responses=command_responses,
                             async_notifications=async_notifications,
@@ -211,7 +222,9 @@ class MiClient:
                     if response_type == "result" and response_token == token:
                         command_responses.append(response)
                         result_class = (
-                            response.get("message") if isinstance(response.get("message"), str) else None
+                            response.get("message")
+                            if isinstance(response.get("message"), str)
+                            else None
                         )
                         saw_result_record = True
                         logger.debug(
@@ -264,7 +277,9 @@ class MiClient:
 
         acquired = self._command_lock.acquire(blocking=False)
         if not acquired:
-            return MiTransportResponse(error="Cannot interrupt while another command is in progress")
+            return MiTransportResponse(
+                error="Cannot interrupt while another command is in progress"
+            )
 
         try:
             send_interrupt()
@@ -279,7 +294,9 @@ class MiClient:
                         raise_error_on_timeout=False,
                     )
                 except (BrokenPipeError, OSError) as exc:
-                    logger.error("Communication error while waiting for interrupt response: %s", exc)
+                    logger.error(
+                        "Communication error while waiting for interrupt response: %s", exc
+                    )
                     return MiTransportResponse(
                         command_responses=command_responses,
                         error=f"Communication error: {exc}",
@@ -294,8 +311,10 @@ class MiClient:
                     payload = response.get("payload", "")
 
                     if response_type in ("console", "log") and self._is_fatal_payload(payload):
-                        logger.error("GDB internal fatal error detected during interrupt: %s", payload)
-                        self.exit()
+                        logger.error(
+                            "GDB internal fatal error detected during interrupt: %s", payload
+                        )
+                        self._exit_unlocked()
                         return MiTransportResponse(
                             command_responses=command_responses,
                             error=f"GDB internal fatal error: {str(payload).strip()}",

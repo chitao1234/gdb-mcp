@@ -259,3 +259,17 @@ class TestLifecycleApi:
         assert result["status"] == "success"
         assert running_session.controller is None
         assert running_session.is_running is False
+
+    def test_stop_failure_marks_session_failed_and_not_running(self, running_session):
+        """Shutdown failures should not leave the session marked as running."""
+
+        running_session.controller.exit.side_effect = RuntimeError("exit failed")
+
+        result = result_to_mapping(running_session.stop())
+
+        assert result["status"] == "error"
+        assert "exit failed" in result["message"]
+        assert running_session.controller is None
+        assert running_session.is_running is False
+        assert running_session.state.value == "failed"
+        assert running_session.runtime.last_failure_message is not None

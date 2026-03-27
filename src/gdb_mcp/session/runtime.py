@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import threading
 from typing import Any
 
 from ..transport import MiClient
@@ -18,6 +19,7 @@ class SessionRuntime:
     transport: MiClient
     os_module: OsModuleProtocol
     time_module: TimeModuleProtocol
+    lifecycle_lock: Any = field(default_factory=threading.RLock, repr=False)
     config: SessionConfig | None = None
     state: SessionState = SessionState.CREATED
     is_running: bool = False
@@ -91,4 +93,3 @@ class SessionRuntime:
         """Track the currently selected frame."""
 
         self.current_frame = frame_number
-

@@ -1,8 +1,10 @@
 """Unit tests for the extracted SessionService layer."""
 
+import threading
+import time
 from unittest.mock import MagicMock, patch
 
-from gdb_mcp.domain import OperationSuccess, SessionStartInfo
+from gdb_mcp.domain import OperationError, OperationSuccess, SessionStartInfo
 from gdb_mcp.session.service import SessionService, SessionState
 
 
@@ -89,3 +91,57 @@ class TestSessionService:
             cwd="/tmp/work",
         )
         fake_os.chdir.assert_not_called()
+
+    def test_start_serializes_concurrent_calls(self):
+        """Concurrent start attempts should not create multiple controllers."""
+
+        controller_factory_calls = 0
+        controller_factory_lock = threading.Lock()
+        start_barrier = threading.Barrier(3)
+
+        def controller_factory(**kwargs):
+            del kwargs
+            nonlocal controller_factory_calls
+            with controller_factory_lock:
+                controller_factory_calls += 1
+            time.sleep(0.05)
+            return MagicMock()
+
+        fake_os = MagicMock()
+        fake_os.environ.get.return_value = "gdb"
+
+        service = SessionService(
+            controller_factory=controller_factory,
+            os_module=fake_os,
+            time_module=MagicMock(),
+        )
+        results: list[OperationSuccess[SessionStartInfo] | OperationError] = []
+
+        def run_start() -> None:
+            start_barrier.wait()
+            results.append(service.start(program="/bin/ls"))
+
+        with patch.object(
+            service._command_runner,
+            "send_command_and_wait_for_prompt",
+            return_value={
+                "command_responses": [{"type": "result", "message": "done", "token": 1000}],
+                "async_notifications": [],
+                "timed_out": False,
+            },
+        ):
+            thread_1 = threading.Thread(target=run_start)
+            thread_2 = threading.Thread(target=run_start)
+            thread_1.start()
+            thread_2.start()
+            start_barrier.wait()
+            thread_1.join()
+            thread_2.join()
+
+        assert controller_factory_calls == 1
+        assert len(results) == 2
+        assert sum(isinstance(result, OperationSuccess) for result in results) == 1
+        assert sum(isinstance(result, OperationError) for result in results) == 1
+        errors = [result for result in results if isinstance(result, OperationError)]
+        assert len(errors) == 1
+        assert "already running" in errors[0].message.lower()

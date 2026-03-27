@@ -152,7 +152,9 @@ class TestMiClient:
         assert controller.io_manager.stdin.flush_count == 1
         assert result.command_responses[0]["type"] == "console"
         assert result.command_responses[-1]["type"] == "result"
-        assert result.async_notifications == [{"type": "notify", "token": 999, "payload": {"msg": "old-command"}}]
+        assert result.async_notifications == [
+            {"type": "notify", "token": 999, "payload": {"msg": "old-command"}}
+        ]
 
     def test_send_command_waits_for_stop_after_running_result(self):
         """Execution commands should not return until the later stopped notification drains."""
@@ -237,6 +239,56 @@ class TestMiClient:
             client._command_lock.release()
 
         assert result.error == "Cannot interrupt while another command is in progress"
+
+    def test_exit_waits_for_inflight_command_before_clearing_controller(self):
+        """Controller teardown should block until the active command finishes reading."""
+
+        class BlockingController:
+            def __init__(self):
+                self.io_manager = MagicMock()
+                self.io_manager.stdin = _FakeStdin()
+                self.gdb_process = MagicMock()
+                self._release_response = threading.Event()
+                self._returned_result = False
+                self.exit_called = False
+
+            def get_gdb_response(self, *, timeout_sec: float, raise_error_on_timeout: bool):
+                del timeout_sec, raise_error_on_timeout
+                if not self._returned_result:
+                    self._release_response.wait(timeout=1.0)
+                    self._returned_result = True
+                    return [{"type": "result", "token": 1000, "message": "done", "payload": None}]
+                return []
+
+            def exit(self) -> None:
+                self.exit_called = True
+
+        controller = BlockingController()
+        client = self._make_client(controller)
+        command_thread = threading.Thread(
+            target=client.send_command_and_wait_for_prompt,
+            args=("-thread-info",),
+            kwargs={"timeout_sec": 1.0},
+        )
+        command_thread.start()
+
+        while len(controller.io_manager.stdin.writes) < 1:
+            time.sleep(0.01)
+
+        exit_thread = threading.Thread(target=client.exit)
+        exit_thread.start()
+
+        time.sleep(0.05)
+        assert exit_thread.is_alive() is True
+        assert controller.exit_called is False
+        assert client.controller is controller
+
+        controller._release_response.set()
+        command_thread.join()
+        exit_thread.join()
+
+        assert controller.exit_called is True
+        assert client.controller is None
 
     def test_send_command_serializes_same_session_calls(self):
         """Concurrent commands on one client should not interleave writes."""

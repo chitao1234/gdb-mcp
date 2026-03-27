@@ -95,6 +95,13 @@ class SessionRegistry:
             )
 
         if session.controller is None:
+            if session.is_running:
+                return OperationError(
+                    message=(
+                        "Session state is inconsistent: session reports running "
+                        "without an active controller."
+                    )
+                )
             with self._lock:
                 current = self._sessions.get(session_id)
                 if current is session:
