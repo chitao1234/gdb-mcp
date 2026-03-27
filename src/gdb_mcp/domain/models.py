@@ -11,6 +11,19 @@ JsonArray: TypeAlias = list["JsonValue"]
 JsonValue: TypeAlias = JsonScalar | JsonObject | JsonArray
 StructuredPayload: TypeAlias = JsonObject
 FollowForkMode: TypeAlias = Literal["parent", "child"]
+WatchpointAccessType: TypeAlias = Literal["write", "read", "access"]
+CatchpointType: TypeAlias = Literal[
+    "throw",
+    "rethrow",
+    "catch",
+    "exec",
+    "fork",
+    "vfork",
+    "load",
+    "unload",
+    "signal",
+    "syscall",
+]
 
 
 class FrameRecord(TypedDict, total=False):
@@ -49,6 +62,8 @@ class BreakpointRecord(TypedDict, total=False):
     fullname: str
     line: str
     times: str
+    exp: str
+    what: str
     original_location: str
 
 
@@ -66,6 +81,15 @@ class RegisterRecord(TypedDict, total=False):
 
     number: str
     value: str
+
+
+class MemoryBlockRecord(TypedDict, total=False):
+    """Structured memory block payload returned by GDB."""
+
+    begin: str
+    end: str
+    offset: str
+    contents: str
 
 
 class InferiorRecord(TypedDict, total=False):
@@ -299,6 +323,32 @@ class DetachOnForkInfo:
 
     enabled: bool
     message: str
+
+
+@dataclass(slots=True, frozen=True)
+class MemoryReadInfo:
+    """Structured response for one memory-read request."""
+
+    address: str
+    count: int
+    offset: int = 0
+    blocks: list[MemoryBlockRecord] = field(default_factory=list)
+    block_count: int = 0
+    captured_bytes: int = 0
+
+
+@dataclass(slots=True, frozen=True)
+class WaitForStopInfo:
+    """Structured response for waiting on the next or current stop event."""
+
+    message: str
+    matched: bool
+    timed_out: bool = False
+    source: str = "waited"
+    execution_state: str | None = None
+    stop_reason: str | None = None
+    reason_filter: list[str] | None = None
+    last_stop_event: StopEvent | None = None
 
 
 @dataclass(slots=True, frozen=True)

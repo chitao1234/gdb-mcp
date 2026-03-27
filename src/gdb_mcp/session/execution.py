@@ -17,6 +17,7 @@ from ..domain import (
     OperationError,
     OperationSuccess,
     StructuredPayload,
+    WaitForStopInfo,
 )
 from ..transport import (
     build_exec_arguments_command,
@@ -127,6 +128,128 @@ class SessionExecutionService:
         """Continue execution of the program."""
         return self._command_runner.execute_command_result(
             "-exec-continue", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
+
+    def wait_for_stop(
+        self,
+        *,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        stop_reasons: tuple[str, ...] = (),
+    ) -> OperationSuccess[WaitForStopInfo] | OperationError:
+        """Wait for the inferior to stop, optionally matching one of several reasons."""
+
+        if not self._runtime.has_controller:
+            return OperationError(message="No active GDB session")
+
+        if not self._command_runner.is_gdb_alive():
+            message = "GDB process has exited - session is no longer active"
+            self._command_runner.handle_dead_transport(message)
+            return OperationError(message=message)
+
+        reason_filter = list(stop_reasons) or None
+        if self._runtime.execution_state != "running":
+            matched = not stop_reasons or self._runtime.stop_reason in stop_reasons
+            self._runtime.record_command_transcript(
+                CommandTranscriptEntry(
+                    command="wait_for_stop",
+                    status="success",
+                    execution_state=self._runtime.execution_state,
+                    stop_reason=self._runtime.stop_reason,
+                    timestamp=self._runtime.time_module.time(),
+                )
+            )
+            return OperationSuccess(
+                WaitForStopInfo(
+                    message=self._wait_result_message(
+                        matched=matched,
+                        timed_out=False,
+                        stop_reason=self._runtime.stop_reason,
+                        source="existing",
+                    ),
+                    matched=matched,
+                    source="existing",
+                    execution_state=self._runtime.execution_state,
+                    stop_reason=self._runtime.stop_reason,
+                    reason_filter=reason_filter,
+                    last_stop_event=self._runtime.last_stop_event,
+                )
+            )
+
+        result = self._command_runner.wait_for_stop(timeout_sec)
+        if "error" in result:
+            self._runtime.record_command_transcript(
+                CommandTranscriptEntry(
+                    command="wait_for_stop",
+                    status="error",
+                    fatal=bool(result.get("fatal", False)),
+                    error=str(result["error"]),
+                    execution_state=self._runtime.execution_state,
+                    stop_reason=self._runtime.stop_reason,
+                    timestamp=self._runtime.time_module.time(),
+                )
+            )
+            return OperationError(message=str(result["error"]))
+
+        raw_responses = result.get("command_responses", [])
+        command_responses = raw_responses if isinstance(raw_responses, list) else []
+        parsed = parse_mi_responses(command_responses)
+        self._command_runner.update_runtime_after_command("wait_for_stop", parsed)
+
+        if result.get("timed_out"):
+            self._runtime.record_command_transcript(
+                CommandTranscriptEntry(
+                    command="wait_for_stop",
+                    status="timeout",
+                    timed_out=True,
+                    error=f"Timeout waiting for stop after {timeout_sec}s",
+                    execution_state=self._runtime.execution_state,
+                    stop_reason=self._runtime.stop_reason,
+                    timestamp=self._runtime.time_module.time(),
+                )
+            )
+            return OperationSuccess(
+                WaitForStopInfo(
+                    message=self._wait_result_message(
+                        matched=False,
+                        timed_out=True,
+                        stop_reason=self._runtime.stop_reason,
+                        source="waited",
+                    ),
+                    matched=False,
+                    timed_out=True,
+                    source="waited",
+                    execution_state=self._runtime.execution_state,
+                    stop_reason=self._runtime.stop_reason,
+                    reason_filter=reason_filter,
+                    last_stop_event=self._runtime.last_stop_event,
+                )
+            )
+
+        matched = not stop_reasons or self._runtime.stop_reason in stop_reasons
+        self._runtime.record_command_transcript(
+            CommandTranscriptEntry(
+                command="wait_for_stop",
+                status="success",
+                execution_state=self._runtime.execution_state,
+                stop_reason=self._runtime.stop_reason,
+                timestamp=self._runtime.time_module.time(),
+            )
+        )
+        return OperationSuccess(
+            WaitForStopInfo(
+                message=self._wait_result_message(
+                    matched=matched,
+                    timed_out=False,
+                    stop_reason=self._runtime.stop_reason,
+                    source="waited",
+                ),
+                matched=matched,
+                source="waited",
+                execution_state=self._runtime.execution_state,
+                stop_reason=self._runtime.stop_reason,
+                reason_filter=reason_filter,
+                last_stop_event=self._runtime.last_stop_event,
+            )
         )
 
     def step(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
@@ -335,3 +458,29 @@ class SessionExecutionService:
                 if isinstance(reason, str):
                     return reason
         return None
+
+    @staticmethod
+    def _wait_result_message(
+        *,
+        matched: bool,
+        timed_out: bool,
+        stop_reason: str | None,
+        source: str,
+    ) -> str:
+        """Build a human-readable wait result message."""
+
+        if timed_out:
+            return "Timed out waiting for the inferior to stop"
+        if matched:
+            if stop_reason:
+                return (
+                    f"Inferior stopped for reason {stop_reason}"
+                    if source == "waited"
+                    else f"Inferior is already stopped for reason {stop_reason}"
+                )
+            return "Inferior stopped"
+        if stop_reason:
+            return (
+                f"Inferior stopped for reason {stop_reason}, but it did not match the requested filter"
+            )
+        return "Inferior is not running and no matching stop reason is available"

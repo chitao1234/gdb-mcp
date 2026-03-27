@@ -51,6 +51,13 @@ def build_exec_arguments_command(args: Sequence[str]) -> str:
     return f"-exec-arguments {encoded_args}" if encoded_args else "-exec-arguments"
 
 
+def build_read_memory_command(address: str, count: int, *, offset: int = 0) -> str:
+    """Build a safe `-data-read-memory-bytes` command."""
+
+    offset_args = f"-o {offset} " if offset else ""
+    return f"-data-read-memory-bytes {offset_args}{quote_mi_string(address)} {count}"
+
+
 def wrap_cli_command(command: str) -> str:
     """Wrap a CLI command in `-interpreter-exec` for structured MI transport."""
 

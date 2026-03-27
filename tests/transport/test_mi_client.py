@@ -7,7 +7,12 @@ import time
 from unittest.mock import MagicMock, patch
 
 from gdb_mcp.transport.mi_client import MiClient
-from gdb_mcp.transport.mi_commands import escape_mi_string, is_cli_command, wrap_cli_command
+from gdb_mcp.transport.mi_commands import (
+    build_read_memory_command,
+    escape_mi_string,
+    is_cli_command,
+    wrap_cli_command,
+)
 
 
 class _FakeStdin:
@@ -69,6 +74,12 @@ class TestMiCommands:
 
         wrapped = wrap_cli_command('print "hello"\nshow version\r')
         assert wrapped == '-interpreter-exec console "print \\"hello\\"\\nshow version\\r"'
+
+    def test_build_read_memory_command(self):
+        """Structured memory reads should quote the address expression safely."""
+
+        command = build_read_memory_command("&value + 4", 16, offset=2)
+        assert command == '-data-read-memory-bytes -o 2 "&value + 4" 16'
 
 
 class TestMiClient:
@@ -338,6 +349,34 @@ class TestMiClient:
             client._command_lock.release()
 
         assert result.error == "Cannot interrupt while another command is in progress"
+
+    def test_wait_for_stop_returns_stopped_notification(self):
+        """Passive stop waits should return once a stopped notification arrives."""
+
+        controller = _FakeController(
+            [[{"type": "notify", "message": "stopped", "payload": {"reason": "fork"}}]]
+        )
+        client = self._make_client(controller)
+
+        result = client.wait_for_stop(timeout_sec=1.0)
+
+        assert result.error is None
+        assert result.timed_out is False
+        assert result.command_responses[0]["message"] == "stopped"
+
+    def test_wait_for_stop_rejects_when_command_is_in_progress(self):
+        """Passive stop waits should not race another in-flight command."""
+
+        controller = _FakeController([])
+        client = self._make_client(controller)
+
+        assert client._command_lock.acquire(blocking=False) is True
+        try:
+            result = client.wait_for_stop(timeout_sec=1.0)
+        finally:
+            client._command_lock.release()
+
+        assert result.error == "Cannot wait for stop while another command is in progress"
 
     def test_exit_waits_for_inflight_command_before_clearing_controller(self):
         """Controller teardown should block until the active command finishes reading."""

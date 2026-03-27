@@ -15,6 +15,7 @@ from ..domain import (
     InferiorListInfo,
     InferiorRecord,
     InferiorSelectionInfo,
+    MemoryReadInfo,
     OperationError,
     OperationSuccess,
     RegistersInfo,
@@ -24,12 +25,17 @@ from ..domain import (
     backtrace_info_from_payload,
     frame_info_from_payload,
     frame_selection_info_from_payload,
+    memory_block_records,
     registers_info_from_payload,
     thread_list_info_from_payload,
     thread_selection_info_from_payload,
     variables_info_from_payload,
 )
-from ..transport import build_evaluate_expression_command, extract_mi_result_payload
+from ..transport import (
+    build_evaluate_expression_command,
+    build_read_memory_command,
+    extract_mi_result_payload,
+)
 from .command_runner import SessionCommandRunner
 from .constants import DEFAULT_MAX_BACKTRACE_FRAMES, DEFAULT_TIMEOUT_SEC
 from .result_utils import command_result_payload
@@ -300,6 +306,37 @@ class SessionInspectionService:
                 return restore_error
 
         return OperationSuccess(ExpressionValueInfo(expression=expression, value=value))
+
+    def read_memory(
+        self,
+        address: str,
+        count: int,
+        *,
+        offset: int = 0,
+    ) -> OperationSuccess[MemoryReadInfo] | OperationError:
+        """Read raw target memory bytes from one address expression."""
+
+        result = self._command_runner.execute_command_result(
+            build_read_memory_command(address, count, offset=offset),
+            timeout_sec=DEFAULT_TIMEOUT_SEC,
+        )
+
+        if isinstance(result, OperationError):
+            return result
+
+        payload = extract_mi_result_payload(command_result_payload(result))
+        blocks = memory_block_records(payload)
+        captured_bytes = sum(len(block.get("contents", "")) // 2 for block in blocks)
+        return OperationSuccess(
+            MemoryReadInfo(
+                address=address,
+                count=count,
+                offset=offset,
+                blocks=blocks,
+                block_count=len(blocks),
+                captured_bytes=captured_bytes,
+            )
+        )
 
     def get_variables(
         self, thread_id: Optional[int] = None, frame: int = 0

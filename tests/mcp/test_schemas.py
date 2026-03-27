@@ -14,10 +14,13 @@ from gdb_mcp.mcp.schemas import (
     FollowForkModeArgs,
     FrameSelectArgs,
     GetBacktraceArgs,
+    ReadMemoryArgs,
     GetRegistersArgs,
     ThreadSelectArgs,
     InferiorSelectArgs,
+    SetCatchpointArgs,
     SetBreakpointArgs,
+    SetWatchpointArgs,
     EvaluateExpressionArgs,
     GetVariablesArgs,
     ListSessionsArgs,
@@ -26,6 +29,7 @@ from gdb_mcp.mcp.schemas import (
     RunUntilFailureFailureArgs,
     RunArgs,
     StartSessionArgs,
+    WaitForStopArgs,
 )
 
 
@@ -189,6 +193,14 @@ class TestBatchArgs:
         assert step.tool == "gdb_select_inferior"
         assert step.arguments == {"inferior_id": 2}
 
+    def test_batch_step_accepts_phase_6_tools(self):
+        """Batch steps should allow watchpoint, memory, and wait workflow tools."""
+
+        step = BatchStepArgs(tool="gdb_wait_for_stop", arguments={"timeout_sec": 5})
+
+        assert step.tool == "gdb_wait_for_stop"
+        assert step.arguments == {"timeout_sec": 5}
+
 
 class TestCaptureBundleArgs:
     """Test cases for bundle capture requests."""
@@ -289,6 +301,46 @@ class TestInferiorWorkflowArgs:
 
         assert args.session_id == 1
         assert args.enabled is False
+
+
+class TestPhaseSixArgs:
+    """Test cases for watchpoint, catchpoint, memory, and wait helpers."""
+
+    def test_set_watchpoint_args_defaults(self):
+        """Watchpoints should default to write access."""
+
+        args = SetWatchpointArgs(session_id=1, expression="value")
+
+        assert args.session_id == 1
+        assert args.expression == "value"
+        assert args.access == "write"
+
+    def test_set_catchpoint_args(self):
+        """Catchpoints should accept validated kinds plus an optional argument."""
+
+        args = SetCatchpointArgs(session_id=1, kind="syscall", argument="open")
+
+        assert args.session_id == 1
+        assert args.kind == "syscall"
+        assert args.argument == "open"
+        assert args.temporary is False
+
+    def test_read_memory_args(self):
+        """Memory reads should require a positive count and default offset zero."""
+
+        args = ReadMemoryArgs(session_id=1, address="&value", count=16)
+
+        assert args.address == "&value"
+        assert args.count == 16
+        assert args.offset == 0
+
+    def test_wait_for_stop_args(self):
+        """Wait-for-stop requests should default to no reason filter."""
+
+        args = WaitForStopArgs(session_id=1)
+
+        assert args.timeout_sec == 30
+        assert args.stop_reasons == []
 
 
 class TestGetBacktraceArgs:

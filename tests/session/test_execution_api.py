@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from gdb_mcp.domain import result_to_mapping
+from gdb_mcp.domain import StopEvent, result_to_mapping
 
 
 class TestExecutionApi:
@@ -93,6 +93,78 @@ class TestExecutionApi:
 
         assert result["status"] == "success"
         assert controller.io_manager.stdin.writes[0].decode().endswith("-exec-next\n")
+
+    def test_wait_for_stop_returns_existing_stop_immediately(self, session_service):
+        """Waiting on an already paused inferior should return the current stop state."""
+
+        session_service.runtime.controller = object()
+        session_service.runtime.mark_ready()
+        session_service.runtime.mark_inferior_paused("breakpoint-hit")
+        session_service.runtime.record_stop_event(
+            StopEvent(
+                execution_state="paused",
+                reason="breakpoint-hit",
+                command="-exec-run",
+            )
+        )
+
+        result = result_to_mapping(session_service.wait_for_stop(stop_reasons=("breakpoint-hit",)))
+
+        assert result["status"] == "success"
+        assert result["matched"] is True
+        assert result["source"] == "existing"
+        assert result["stop_reason"] == "breakpoint-hit"
+
+    def test_wait_for_stop_waits_for_notification(self, running_session):
+        """Waiting should update runtime state from the next stopped notification."""
+
+        running_session.runtime.mark_inferior_running()
+        with patch.object(
+            running_session._command_runner,
+            "wait_for_stop",
+            return_value={
+                "command_responses": [
+                    {
+                        "type": "notify",
+                        "message": "stopped",
+                        "payload": {
+                            "reason": "signal-received",
+                            "thread-id": "2",
+                            "frame": {"level": "0", "func": "main"},
+                        },
+                    }
+                ],
+                "timed_out": False,
+            },
+        ):
+            result = result_to_mapping(
+                running_session.wait_for_stop(timeout_sec=5, stop_reasons=("signal-received",))
+            )
+
+        assert result["status"] == "success"
+        assert result["matched"] is True
+        assert result["source"] == "waited"
+        assert result["stop_reason"] == "signal-received"
+        assert running_session.runtime.execution_state == "paused"
+        assert running_session.last_stop_event is not None
+        assert running_session.last_stop_event.command == "wait_for_stop"
+        assert running_session.last_stop_event.breakpoint_number is None
+
+    def test_wait_for_stop_times_out(self, running_session):
+        """Timeouts should be reported as structured non-matching wait results."""
+
+        running_session.runtime.mark_inferior_running()
+        with patch.object(
+            running_session._command_runner,
+            "wait_for_stop",
+            return_value={"command_responses": [], "timed_out": True},
+        ):
+            result = result_to_mapping(running_session.wait_for_stop(timeout_sec=2))
+
+        assert result["status"] == "success"
+        assert result["matched"] is False
+        assert result["timed_out"] is True
+        assert running_session.runtime.execution_state == "running"
 
     def test_interrupt_no_controller(self, session_service):
         """Interrupt without a controller should return a clear error."""

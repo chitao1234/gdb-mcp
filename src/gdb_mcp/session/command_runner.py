@@ -69,6 +69,17 @@ class SessionCommandRunner:
 
         return result.to_dict()
 
+    def wait_for_stop(self, timeout_sec: float) -> dict[str, object]:
+        """Wait for a stopped notification without sending a debugger command."""
+
+        result = self._runtime.transport.wait_for_stop(timeout_sec=timeout_sec)
+
+        if result.fatal:
+            failure_message = result.error or "GDB transport failed"
+            self._runtime.mark_transport_terminated(failure_message)
+
+        return result.to_dict()
+
     def handle_dead_transport(self, message: str) -> None:
         """Transition the session into a terminal state after GDB has exited."""
 
@@ -340,7 +351,7 @@ class SessionCommandRunner:
         frame = self._frame_record(payload_mapping.get("frame"))
         signal_name = self._str_or_none(payload_mapping.get("signal-name"))
         signal_meaning = self._str_or_none(payload_mapping.get("signal-meaning"))
-        breakpoint_number = self._str_or_none(payload_mapping.get("bkptno"))
+        breakpoint_number = self._extract_breakpoint_number(payload_mapping)
         execution_state = (
             "exited"
             if stopped_reason in {"exited", "exited-normally", "exited-signalled"}
@@ -394,6 +405,23 @@ class SessionCommandRunner:
         """Normalize an MI frame mapping into the structured frame record type."""
 
         return cast(FrameRecord, value) if isinstance(value, dict) else None
+
+    @classmethod
+    def _extract_breakpoint_number(cls, payload: StructuredPayload) -> str | None:
+        """Extract a breakpoint or watchpoint number from one stop payload."""
+
+        breakpoint_number = cls._str_or_none(payload.get("bkptno"))
+        if breakpoint_number is not None:
+            return breakpoint_number
+
+        for key in ("wpt", "awpt", "hw-awpt"):
+            nested = payload.get(key)
+            if isinstance(nested, dict):
+                nested_number = cls._str_or_none(nested.get("number"))
+                if nested_number is not None:
+                    return nested_number
+
+        return None
 
     @staticmethod
     def _str_or_none(value: object) -> str | None:

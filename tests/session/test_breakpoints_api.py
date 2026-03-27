@@ -88,3 +88,79 @@ class TestBreakpointApi:
         assert result["count"] == 2
         assert len(result["breakpoints"]) == 2
         assert controller.io_manager.stdin.writes[0].decode().endswith("-break-list\n")
+
+    def test_set_watchpoint(self, scripted_running_session, mi_result):
+        """Watchpoint creation should list the resulting watchpoint record."""
+
+        session, controller = scripted_running_session(
+            [mi_result({"wpt": {"number": "2", "exp": "value"}})],
+            [
+                mi_result(
+                    {
+                        "BreakpointTable": {
+                            "body": [
+                                {
+                                    "number": "2",
+                                    "type": "hw watchpoint",
+                                    "what": "value",
+                                }
+                            ]
+                        }
+                    }
+                )
+            ],
+        )
+
+        result = result_to_mapping(session.set_watchpoint("value", access="access"))
+
+        assert result["status"] == "success"
+        assert result["breakpoint"]["number"] == "2"
+        assert result["breakpoint"]["type"] == "hw watchpoint"
+        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert written[0].endswith('-break-watch -a "value"\n')
+        assert written[1].endswith("-break-list\n")
+
+    def test_delete_watchpoint(self, scripted_running_session, mi_result):
+        """Watchpoint deletion should reuse GDB's shared breakpoint namespace."""
+
+        session, controller = scripted_running_session([mi_result()])
+
+        result = result_to_mapping(session.delete_watchpoint(4))
+
+        assert result["status"] == "success"
+        assert "Watchpoint 4 deleted" in result["message"]
+        assert controller.io_manager.stdin.writes[0].decode().endswith("-break-delete 4\n")
+
+    def test_set_catchpoint(self, scripted_running_session, mi_console, mi_result):
+        """Catchpoint creation should parse the CLI catchpoint number and refresh details."""
+
+        session, controller = scripted_running_session(
+            [
+                mi_console("Catchpoint 3 (fork)\n"),
+                mi_result(),
+            ],
+            [
+                mi_result(
+                    {
+                        "BreakpointTable": {
+                            "body": [
+                                {
+                                    "number": "3",
+                                    "type": "catchpoint",
+                                    "catch-type": "fork",
+                                }
+                            ]
+                        }
+                    }
+                )
+            ],
+        )
+
+        result = result_to_mapping(session.set_catchpoint("fork", temporary=True))
+
+        assert result["status"] == "success"
+        assert result["breakpoint"]["number"] == "3"
+        assert result["breakpoint"]["type"] == "catchpoint"
+        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert written[0].endswith('-interpreter-exec console "tcatch fork"\n')
+        assert written[1].endswith("-break-list\n")

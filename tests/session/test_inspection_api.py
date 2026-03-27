@@ -326,3 +326,37 @@ class TestDataInspectionApi:
         assert any("-stack-select-frame 1" in command for command in written)
         assert written[-2].endswith("-thread-select 1\n")
         assert written[-1].endswith("-stack-select-frame 0\n")
+
+    def test_read_memory(self, scripted_running_session, mi_result):
+        """Memory reads should surface captured blocks and byte counts."""
+
+        session, controller = scripted_running_session(
+            [
+                mi_result(
+                    {
+                        "memory": [
+                            {
+                                "begin": "0x1000",
+                                "offset": "0x0",
+                                "end": "0x1004",
+                                "contents": "01020304",
+                            }
+                        ]
+                    }
+                )
+            ]
+        )
+
+        result = result_to_mapping(session.read_memory("&value", 4, offset=1))
+
+        assert result["status"] == "success"
+        assert result["address"] == "&value"
+        assert result["count"] == 4
+        assert result["offset"] == 1
+        assert result["block_count"] == 1
+        assert result["captured_bytes"] == 4
+        assert (
+            controller.io_manager.stdin.writes[0]
+            .decode()
+            .endswith('-data-read-memory-bytes -o 1 "&value" 4\n')
+        )

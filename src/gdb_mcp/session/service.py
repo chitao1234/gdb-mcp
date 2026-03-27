@@ -9,6 +9,7 @@ from ..domain import (
     BatchExecutionInfo,
     BreakpointInfo,
     BreakpointListInfo,
+    CatchpointType,
     CaptureBundleInfo,
     CommandTranscriptEntry,
     CommandExecutionInfo,
@@ -21,6 +22,7 @@ from ..domain import (
     FunctionCallInfo,
     InferiorListInfo,
     InferiorSelectionInfo,
+    MemoryReadInfo,
     MessageResult,
     OperationError,
     OperationSuccess,
@@ -32,6 +34,8 @@ from ..domain import (
     ThreadListInfo,
     ThreadSelectionInfo,
     VariablesInfo,
+    WaitForStopInfo,
+    WatchpointAccessType,
 )
 from ..transport import MiClient
 from ..transport.protocols import GdbControllerFactoryProtocol, GdbControllerProtocol
@@ -220,6 +224,19 @@ class SessionService:
 
         return self._execution.continue_execution()
 
+    def wait_for_stop(
+        self,
+        *,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        stop_reasons: tuple[str, ...] = (),
+    ) -> OperationSuccess[WaitForStopInfo] | OperationError:
+        """Delegate stop waiting to the execution service."""
+
+        return self._execution.wait_for_stop(
+            timeout_sec=timeout_sec,
+            stop_reasons=stop_reasons,
+        )
+
     def step(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate single-step to the execution service."""
 
@@ -360,6 +377,17 @@ class SessionService:
 
         return self._inspection.evaluate_expression(expression, thread_id=thread_id, frame=frame)
 
+    def read_memory(
+        self,
+        address: str,
+        count: int,
+        *,
+        offset: int = 0,
+    ) -> OperationSuccess[MemoryReadInfo] | OperationError:
+        """Delegate memory reads to the inspection service."""
+
+        return self._inspection.read_memory(address, count, offset=offset)
+
     def get_variables(
         self, thread_id: int | None = None, frame: int = 0
     ) -> OperationSuccess[VariablesInfo] | OperationError:
@@ -382,6 +410,36 @@ class SessionService:
         """Delegate breakpoint creation to the breakpoint service."""
 
         return self._breakpoints.set_breakpoint(location, condition, temporary)
+
+    def set_watchpoint(
+        self,
+        expression: str,
+        *,
+        access: WatchpointAccessType = "write",
+    ) -> OperationSuccess[BreakpointInfo] | OperationError:
+        """Delegate watchpoint creation to the breakpoint service."""
+
+        return self._breakpoints.set_watchpoint(expression, access=access)
+
+    def delete_watchpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
+        """Delegate watchpoint deletion to the breakpoint service."""
+
+        return self._breakpoints.delete_watchpoint(number)
+
+    def set_catchpoint(
+        self,
+        kind: CatchpointType,
+        *,
+        argument: str | None = None,
+        temporary: bool = False,
+    ) -> OperationSuccess[BreakpointInfo] | OperationError:
+        """Delegate catchpoint creation to the breakpoint service."""
+
+        return self._breakpoints.set_catchpoint(
+            kind,
+            argument=argument,
+            temporary=temporary,
+        )
 
     def list_breakpoints(self) -> OperationSuccess[BreakpointListInfo] | OperationError:
         """Delegate breakpoint listing to the breakpoint service."""

@@ -4,6 +4,7 @@ from .mi_client import MiClient
 from .mi_commands import (
     build_evaluate_expression_command,
     build_exec_arguments_command,
+    build_read_memory_command,
     escape_mi_string,
     is_cli_command,
     quote_mi_string,
@@ -18,6 +19,7 @@ __all__ = [
     "ParsedMiResponse",
     "build_evaluate_expression_command",
     "build_exec_arguments_command",
+    "build_read_memory_command",
     "escape_mi_string",
     "extract_mi_result_payload",
     "is_cli_command",

@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Optional
 
 from ..domain import (
     BreakpointInfo,
     BreakpointListInfo,
+    BreakpointRecord,
+    CatchpointType,
     OperationError,
     OperationSuccess,
     SessionMessage,
+    WatchpointAccessType,
     breakpoint_list_info_from_payload,
     breakpoint_record,
     payload_to_mapping,
@@ -21,6 +25,7 @@ from .constants import DEFAULT_TIMEOUT_SEC
 from .result_utils import command_result_payload
 
 logger = logging.getLogger(__name__)
+_CATCHPOINT_NUMBER_RE = re.compile(r"Catchpoint\s+(?P<number>\d+)")
 
 
 class SessionBreakpointService:
@@ -71,6 +76,82 @@ class SessionBreakpointService:
 
         return OperationSuccess(BreakpointInfo(breakpoint=bp))
 
+    def set_watchpoint(
+        self,
+        expression: str,
+        *,
+        access: WatchpointAccessType = "write",
+    ) -> OperationSuccess[BreakpointInfo] | OperationError:
+        """Set a watchpoint and return the normalized breakpoint record."""
+
+        cmd_parts = ["-break-watch"]
+        if access == "read":
+            cmd_parts.append("-r")
+        elif access == "access":
+            cmd_parts.append("-a")
+        cmd_parts.append(quote_mi_string(expression))
+
+        result = self._command_runner.execute_command_result(
+            " ".join(cmd_parts), timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
+        if isinstance(result, OperationError):
+            return result
+
+        payload = extract_mi_result_payload(command_result_payload(result))
+        number = self._extract_created_breakpoint_number(payload)
+        if number is None:
+            return OperationError(
+                message=f"Watchpoint set for {expression}, but GDB did not report its number",
+                details={"raw_result": payload_to_mapping(result.value)},
+            )
+
+        return self._breakpoint_info_for_number(
+            number,
+            fallback_record={"number": str(number), "exp": expression},
+        )
+
+    def delete_watchpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
+        """Delete a watchpoint by its breakpoint number."""
+
+        result = self._command_runner.execute_command_result(
+            f"-break-delete {number}", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
+
+        if isinstance(result, OperationError):
+            return result
+
+        return OperationSuccess(SessionMessage(message=f"Watchpoint {number} deleted"))
+
+    def set_catchpoint(
+        self,
+        kind: CatchpointType,
+        *,
+        argument: str | None = None,
+        temporary: bool = False,
+    ) -> OperationSuccess[BreakpointInfo] | OperationError:
+        """Set a catchpoint for a validated debugger event."""
+
+        prefix = "tcatch" if temporary else "catch"
+        command = f"{prefix} {kind}"
+        if argument:
+            command = f"{command} {argument}"
+
+        result = self._command_runner.execute_command_result(command, timeout_sec=DEFAULT_TIMEOUT_SEC)
+        if isinstance(result, OperationError):
+            return result
+
+        number = self._extract_catchpoint_number(result.value.output or "")
+        if number is None:
+            return OperationError(
+                message=f"Catchpoint {kind} set, but GDB did not report its number",
+                details={"output": result.value.output or ""},
+            )
+
+        return self._breakpoint_info_for_number(
+            number,
+            fallback_record={"number": str(number), "type": "catchpoint"},
+        )
+
     def list_breakpoints(self) -> OperationSuccess[BreakpointListInfo] | OperationError:
         """List all breakpoints with structured data."""
         result = self._command_runner.execute_command_result(
@@ -118,3 +199,69 @@ class SessionBreakpointService:
             return result
 
         return OperationSuccess(SessionMessage(message=f"Breakpoint {number} disabled"))
+
+    def _breakpoint_info_for_number(
+        self,
+        number: int,
+        *,
+        fallback_record: BreakpointRecord,
+    ) -> OperationSuccess[BreakpointInfo] | OperationError:
+        """Resolve one breakpoint number from the current breakpoint inventory."""
+
+        list_result = self.list_breakpoints()
+        if isinstance(list_result, OperationError):
+            return OperationSuccess(BreakpointInfo(breakpoint=fallback_record))
+
+        breakpoint_info = self._find_breakpoint_record(list_result.value.breakpoints, number)
+        if breakpoint_info is None:
+            return OperationSuccess(BreakpointInfo(breakpoint=fallback_record))
+
+        return OperationSuccess(BreakpointInfo(breakpoint=breakpoint_info))
+
+    @staticmethod
+    def _find_breakpoint_record(
+        breakpoints: list[BreakpointRecord],
+        number: int,
+    ) -> BreakpointRecord | None:
+        """Find one breakpoint record by its numeric number field."""
+
+        for breakpoint_info in breakpoints:
+            if SessionBreakpointService._extract_breakpoint_number(breakpoint_info) == number:
+                return breakpoint_info
+        return None
+
+    @staticmethod
+    def _extract_breakpoint_number(payload: object) -> int | None:
+        """Extract a breakpoint number from a raw breakpoint-like payload."""
+
+        raw_number = breakpoint_record(payload).get("number")
+        if isinstance(raw_number, int):
+            return raw_number
+        if isinstance(raw_number, str) and raw_number.isdigit():
+            return int(raw_number)
+        return None
+
+    @classmethod
+    def _extract_created_breakpoint_number(cls, payload: object) -> int | None:
+        """Extract the created breakpoint number from MI result payloads."""
+
+        raw_mapping = breakpoint_record(payload)
+        number = cls._extract_breakpoint_number(raw_mapping)
+        if number is not None:
+            return number
+
+        if isinstance(payload, dict):
+            watchpoint = payload.get("wpt")
+            if isinstance(watchpoint, dict):
+                return cls._extract_breakpoint_number(watchpoint)
+
+        return None
+
+    @staticmethod
+    def _extract_catchpoint_number(output: str) -> int | None:
+        """Parse a catchpoint number from CLI catch/tcatch output."""
+
+        match = _CATCHPOINT_NUMBER_RE.search(output)
+        if match is None:
+            return None
+        return int(match.group("number"))

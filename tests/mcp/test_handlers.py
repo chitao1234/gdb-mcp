@@ -264,6 +264,105 @@ class TestHandlerDispatch:
         manager.resolve_session.assert_called_once_with(3)
         session.attach_process.assert_called_once_with(pid=42, timeout_sec=9)
 
+    def test_set_watchpoint_routes_to_correct_session(self):
+        """Watchpoint requests should forward expression and access mode."""
+
+        manager = Mock()
+        session = Mock()
+        session.set_watchpoint.return_value = OperationSuccess(
+            BreakpointInfo(breakpoint={"number": "2", "type": "hw watchpoint"})
+        )
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_set_watchpoint",
+            {"session_id": 3, "expression": "value", "access": "access"},
+            manager,
+        )
+
+        manager.resolve_session.assert_called_once_with(3)
+        session.set_watchpoint.assert_called_once_with(expression="value", access="access")
+
+    def test_delete_watchpoint_routes_to_correct_session(self):
+        """Watchpoint deletion should forward the shared breakpoint number."""
+
+        manager = Mock()
+        session = Mock()
+        session.delete_watchpoint.return_value = OperationSuccess(
+            SessionMessage(message="Watchpoint 2 deleted")
+        )
+        manager.resolve_session.return_value = session
+
+        dispatch("gdb_delete_watchpoint", {"session_id": 3, "number": 2}, manager)
+
+        manager.resolve_session.assert_called_once_with(3)
+        session.delete_watchpoint.assert_called_once_with(number=2)
+
+    def test_set_catchpoint_routes_to_correct_session(self):
+        """Catchpoint requests should forward kind, argument, and temporary flag."""
+
+        manager = Mock()
+        session = Mock()
+        session.set_catchpoint.return_value = OperationSuccess(
+            BreakpointInfo(breakpoint={"number": "3", "type": "catchpoint"})
+        )
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_set_catchpoint",
+            {
+                "session_id": 3,
+                "kind": "syscall",
+                "argument": "open",
+                "temporary": True,
+            },
+            manager,
+        )
+
+        manager.resolve_session.assert_called_once_with(3)
+        session.set_catchpoint.assert_called_once_with(
+            "syscall",
+            argument="open",
+            temporary=True,
+        )
+
+    def test_wait_for_stop_routes_to_correct_session(self):
+        """Wait requests should forward timeout and optional reason filters."""
+
+        manager = Mock()
+        session = Mock()
+        session.wait_for_stop.return_value = OperationSuccess({"matched": True})
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_wait_for_stop",
+            {"session_id": 3, "timeout_sec": 5, "stop_reasons": ["fork"]},
+            manager,
+        )
+
+        manager.resolve_session.assert_called_once_with(3)
+        session.wait_for_stop.assert_called_once_with(
+            timeout_sec=5,
+            stop_reasons=("fork",),
+        )
+
+    def test_read_memory_routes_to_correct_session(self):
+        """Memory read requests should forward address, count, and offset."""
+
+        manager = Mock()
+        session = Mock()
+        session.read_memory.return_value = OperationSuccess({"captured_bytes": 4})
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_read_memory",
+            {"session_id": 3, "address": "&value", "count": 4, "offset": 1},
+            manager,
+        )
+
+        manager.resolve_session.assert_called_once_with(3)
+        session.read_memory.assert_called_once_with(address="&value", count=4, offset=1)
+
     def test_list_inferiors_routes_to_correct_session(self):
         """Inferior inventory requests should route to the resolved session."""
 

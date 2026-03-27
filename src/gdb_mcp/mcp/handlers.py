@@ -40,6 +40,7 @@ from .schemas import (
     FollowForkModeArgs,
     FrameSelectArgs,
     GetBacktraceArgs,
+    ReadMemoryArgs,
     GetRegistersArgs,
     GetVariablesArgs,
     InferiorSelectArgs,
@@ -47,9 +48,12 @@ from .schemas import (
     RunUntilFailureArgs,
     RunArgs,
     SessionIdArgs,
+    SetCatchpointArgs,
     SetBreakpointArgs,
+    SetWatchpointArgs,
     StartSessionArgs,
     ThreadSelectArgs,
+    WaitForStopArgs,
 )
 from .serializer import serialize_exception, serialize_result
 
@@ -161,6 +165,22 @@ def _handle_set_breakpoint(session: SessionService, args: SetBreakpointArgs) -> 
     )
 
 
+def _handle_set_watchpoint(session: SessionService, args: SetWatchpointArgs) -> ToolResult:
+    return session.set_watchpoint(expression=args.expression, access=args.access)
+
+
+def _handle_delete_watchpoint(session: SessionService, args: BreakpointNumberArgs) -> ToolResult:
+    return session.delete_watchpoint(number=args.number)
+
+
+def _handle_set_catchpoint(session: SessionService, args: SetCatchpointArgs) -> ToolResult:
+    return session.set_catchpoint(
+        args.kind,
+        argument=args.argument,
+        temporary=args.temporary,
+    )
+
+
 def _handle_list_breakpoints(session: SessionService, args: SessionIdArgs) -> ToolResult:
     del args
     return session.list_breakpoints()
@@ -181,6 +201,13 @@ def _handle_disable_breakpoint(session: SessionService, args: BreakpointNumberAr
 def _handle_continue(session: SessionService, args: SessionIdArgs) -> ToolResult:
     del args
     return session.continue_execution()
+
+
+def _handle_wait_for_stop(session: SessionService, args: WaitForStopArgs) -> ToolResult:
+    return session.wait_for_stop(
+        timeout_sec=args.timeout_sec,
+        stop_reasons=tuple(args.stop_reasons),
+    )
 
 
 def _handle_step(session: SessionService, args: SessionIdArgs) -> ToolResult:
@@ -205,6 +232,14 @@ def _handle_evaluate_expression(
         args.expression,
         thread_id=args.thread_id,
         frame=args.frame,
+    )
+
+
+def _handle_read_memory(session: SessionService, args: ReadMemoryArgs) -> ToolResult:
+    return session.read_memory(
+        address=args.address,
+        count=args.count,
+        offset=args.offset,
     )
 
 
@@ -439,17 +474,24 @@ SESSION_TOOL_SPECS: dict[str, SessionToolSpec] = {
     "gdb_select_frame": session_tool_spec(FrameSelectArgs, _handle_select_frame),
     "gdb_get_frame_info": session_tool_spec(SessionIdArgs, _handle_get_frame_info),
     "gdb_set_breakpoint": session_tool_spec(SetBreakpointArgs, _handle_set_breakpoint),
+    "gdb_set_watchpoint": session_tool_spec(SetWatchpointArgs, _handle_set_watchpoint),
+    "gdb_delete_watchpoint": session_tool_spec(
+        BreakpointNumberArgs, _handle_delete_watchpoint
+    ),
+    "gdb_set_catchpoint": session_tool_spec(SetCatchpointArgs, _handle_set_catchpoint),
     "gdb_list_breakpoints": session_tool_spec(SessionIdArgs, _handle_list_breakpoints),
     "gdb_delete_breakpoint": session_tool_spec(BreakpointNumberArgs, _handle_delete_breakpoint),
     "gdb_enable_breakpoint": session_tool_spec(BreakpointNumberArgs, _handle_enable_breakpoint),
     "gdb_disable_breakpoint": session_tool_spec(BreakpointNumberArgs, _handle_disable_breakpoint),
     "gdb_continue": session_tool_spec(SessionIdArgs, _handle_continue),
+    "gdb_wait_for_stop": session_tool_spec(WaitForStopArgs, _handle_wait_for_stop),
     "gdb_step": session_tool_spec(SessionIdArgs, _handle_step),
     "gdb_next": session_tool_spec(SessionIdArgs, _handle_next),
     "gdb_interrupt": session_tool_spec(SessionIdArgs, _handle_interrupt),
     "gdb_evaluate_expression": session_tool_spec(
         EvaluateExpressionArgs, _handle_evaluate_expression
     ),
+    "gdb_read_memory": session_tool_spec(ReadMemoryArgs, _handle_read_memory),
     "gdb_get_variables": session_tool_spec(GetVariablesArgs, _handle_get_variables),
     "gdb_get_registers": session_tool_spec(GetRegistersArgs, _handle_get_registers),
     "gdb_call_function": session_tool_spec(CallFunctionArgs, _handle_call_function),

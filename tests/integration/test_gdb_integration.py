@@ -58,6 +58,39 @@ int main(void) {
 }
 """
 
+WATCH_MEMORY_C_PROGRAM = """
+int watched = 0x12345678;
+
+int main(void) {
+    watched = 0x12345679;
+    return watched;
+}
+"""
+
+FORKING_C_PROGRAM = """
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+int main(void) {
+    pid_t pid = fork();
+    if (pid == 0) {
+        _exit(0);
+    }
+    waitpid(pid, 0, 0);
+    return 0;
+}
+"""
+
+DELAY_EXIT_C_PROGRAM = """
+#include <unistd.h>
+
+int main(void) {
+    sleep(3);
+    return 0;
+}
+"""
+
 ATTACHABLE_C_PROGRAM = """
 #include <unistd.h>
 
@@ -323,6 +356,126 @@ def test_run_until_failure_matches_signal_and_writes_bundle(compile_program, tmp
     assert manifest["execution_state"] == "paused"
     assert manifest["stop_reason"] == "signal-received"
     assert manifest["last_stop_event"]["reason"] == "signal-received"
+
+
+@pytest.mark.integration
+def test_watchpoint_tool_stops_on_write(compile_program, start_session, stop_session):
+    """Watchpoint workflows should stop when the watched variable changes."""
+
+    program = compile_program(
+        WATCH_MEMORY_C_PROGRAM,
+        filename="watch_memory.c",
+        compiler="gcc",
+    )
+    session_id = start_session(program)
+    try:
+        watch_result = call_gdb_tool(
+            "gdb_set_watchpoint",
+            {"session_id": session_id, "expression": "watched"},
+        )
+        assert watch_result["status"] == "success"
+        assert watch_result["breakpoint"]["number"] is not None
+
+        run_result = call_gdb_tool("gdb_run", {"session_id": session_id})
+        assert run_result["status"] == "success"
+
+        status = call_gdb_tool("gdb_get_status", {"session_id": session_id})
+        assert status["execution_state"] == "paused"
+        assert status["stop_reason"] == "watchpoint-trigger"
+    finally:
+        stop_session(session_id, ignore_errors=True)
+
+
+@pytest.mark.integration
+def test_catchpoint_tool_stops_on_fork(compile_program, start_session, stop_session):
+    """Catchpoint workflows should expose fork stops without raw catch commands."""
+
+    program = compile_program(
+        FORKING_C_PROGRAM,
+        filename="forking.c",
+        compiler="gcc",
+    )
+    session_id = start_session(program)
+    try:
+        catch_result = call_gdb_tool(
+            "gdb_set_catchpoint",
+            {"session_id": session_id, "kind": "fork"},
+        )
+        assert catch_result["status"] == "success"
+        assert catch_result["breakpoint"]["type"] == "catchpoint"
+
+        run_result = call_gdb_tool("gdb_run", {"session_id": session_id})
+        assert run_result["status"] == "success"
+
+        status = call_gdb_tool("gdb_get_status", {"session_id": session_id})
+        assert status["execution_state"] == "paused"
+        assert status["stop_reason"] == "fork"
+    finally:
+        stop_session(session_id, ignore_errors=True)
+
+
+@pytest.mark.integration
+def test_read_memory_tool_reads_global_bytes(compile_program, start_session, stop_session):
+    """Memory read helpers should return raw bytes for readable target memory."""
+
+    program = compile_program(
+        WATCH_MEMORY_C_PROGRAM,
+        filename="memory_read.c",
+        compiler="gcc",
+    )
+    session_id = start_session(program)
+    try:
+        call_gdb_tool("gdb_set_breakpoint", {"session_id": session_id, "location": "main"})
+        run_result = call_gdb_tool("gdb_run", {"session_id": session_id})
+        assert run_result["status"] == "success"
+
+        memory_result = call_gdb_tool(
+            "gdb_read_memory",
+            {"session_id": session_id, "address": "&watched", "count": 4},
+        )
+        assert memory_result["status"] == "success"
+        assert memory_result["captured_bytes"] == 4
+        assert memory_result["block_count"] >= 1
+        assert memory_result["blocks"][0]["contents"] == "78563412"
+    finally:
+        stop_session(session_id, ignore_errors=True)
+
+
+@pytest.mark.integration
+def test_wait_for_stop_tool_observes_background_exit(
+    compile_program, start_session, stop_session
+):
+    """Wait helpers should observe a later stop after a background run command."""
+
+    program = compile_program(
+        DELAY_EXIT_C_PROGRAM,
+        filename="delay_exit.c",
+        compiler="gcc",
+    )
+    session_id = start_session(program)
+    try:
+        background_run = call_gdb_tool(
+            "gdb_execute_command",
+            {"session_id": session_id, "command": "run&", "timeout_sec": 1},
+        )
+        assert background_run["status"] == "error"
+        assert "Timeout" in background_run["message"]
+
+        wait_result = call_gdb_tool(
+            "gdb_wait_for_stop",
+            {
+                "session_id": session_id,
+                "timeout_sec": 5,
+                "stop_reasons": ["exited-normally"],
+            },
+        )
+        assert wait_result["status"] == "success"
+        assert wait_result["matched"] is True
+        assert wait_result["source"] == "waited"
+        assert wait_result["execution_state"] == "exited"
+        assert wait_result["stop_reason"] == "exited-normally"
+    finally:
+        stop_session(session_id, ignore_errors=True)
 
 
 @pytest.mark.integration

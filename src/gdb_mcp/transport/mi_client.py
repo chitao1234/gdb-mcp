@@ -331,53 +331,33 @@ class MiClient:
 
         try:
             send_interrupt()
-
-            command_responses: list[MiRecord] = []
-            start_time = time.monotonic()
-
-            while time.monotonic() - start_time < timeout_sec:
-                try:
-                    responses = self._controller.get_gdb_response(
-                        timeout_sec=self._poll_timeout_sec,
-                        raise_error_on_timeout=False,
-                    )
-                except (BrokenPipeError, OSError) as exc:
-                    logger.error(
-                        "Communication error while waiting for interrupt response: %s", exc
-                    )
-                    self._exit_unlocked()
-                    return MiTransportResponse(
-                        command_responses=command_responses,
-                        error=f"Communication error: {exc}",
-                        fatal=True,
-                    )
-
-                if not responses:
-                    continue
-
-                for response in responses:
-                    command_responses.append(response)
-                    response_type = response.get("type")
-                    payload = response.get("payload", "")
-
-                    if response_type in ("console", "log") and self._is_fatal_payload(payload):
-                        logger.error(
-                            "GDB internal fatal error detected during interrupt: %s", payload
-                        )
-                        self._exit_unlocked()
-                        return MiTransportResponse(
-                            command_responses=command_responses,
-                            error=f"GDB internal fatal error: {str(payload).strip()}",
-                            fatal=True,
-                        )
-
-                    if response_type == "notify" and response.get("message") == "stopped":
-                        return MiTransportResponse(command_responses=command_responses)
-
-            return MiTransportResponse(command_responses=command_responses, timed_out=True)
+            return self._wait_for_stopped_notification(
+                timeout_sec=timeout_sec,
+                fatal_context="during interrupt",
+            )
         except Exception as exc:
             logger.error("Failed to interrupt program: %s", exc)
             return MiTransportResponse(error=f"Failed to interrupt: {exc}")
+        finally:
+            self._command_lock.release()
+
+    def wait_for_stop(self, *, timeout_sec: float) -> MiTransportResponse:
+        """Wait for the inferior to emit a stopped notification without sending a command."""
+
+        if not self._controller:
+            return MiTransportResponse(error="No active GDB session")
+
+        acquired = self._command_lock.acquire(blocking=False)
+        if not acquired:
+            return MiTransportResponse(
+                error="Cannot wait for stop while another command is in progress"
+            )
+
+        try:
+            return self._wait_for_stopped_notification(
+                timeout_sec=timeout_sec,
+                fatal_context="while waiting for stop",
+            )
         finally:
             self._command_lock.release()
 
@@ -396,6 +376,57 @@ class MiClient:
             return poll_result if isinstance(poll_result, int) else None
         except Exception:
             return None
+
+    def _wait_for_stopped_notification(
+        self,
+        *,
+        timeout_sec: float,
+        fatal_context: str,
+    ) -> MiTransportResponse:
+        """Read controller output until a stopped notification arrives or timeout expires."""
+
+        if self._controller is None:
+            return MiTransportResponse(error="No active GDB session")
+
+        command_responses: list[MiRecord] = []
+        start_time = time.monotonic()
+
+        while time.monotonic() - start_time < timeout_sec:
+            try:
+                responses = self._controller.get_gdb_response(
+                    timeout_sec=self._poll_timeout_sec,
+                    raise_error_on_timeout=False,
+                )
+            except (BrokenPipeError, OSError) as exc:
+                logger.error("Communication error %s: %s", fatal_context, exc)
+                self._exit_unlocked()
+                return MiTransportResponse(
+                    command_responses=command_responses,
+                    error=f"Communication error: {exc}",
+                    fatal=True,
+                )
+
+            if not responses:
+                continue
+
+            for response in responses:
+                command_responses.append(response)
+                response_type = response.get("type")
+                payload = response.get("payload", "")
+
+                if response_type in ("console", "log") and self._is_fatal_payload(payload):
+                    logger.error("GDB internal fatal error detected %s: %s", fatal_context, payload)
+                    self._exit_unlocked()
+                    return MiTransportResponse(
+                        command_responses=command_responses,
+                        error=f"GDB internal fatal error: {str(payload).strip()}",
+                        fatal=True,
+                    )
+
+                if response_type == "notify" and response.get("message") == "stopped":
+                    return MiTransportResponse(command_responses=command_responses)
+
+        return MiTransportResponse(command_responses=command_responses, timed_out=True)
 
     @staticmethod
     def _is_fatal_payload(payload: object) -> bool:

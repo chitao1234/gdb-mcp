@@ -30,15 +30,20 @@ BATCH_STEP_TOOL_NAMES = (
     "gdb_select_frame",
     "gdb_get_frame_info",
     "gdb_set_breakpoint",
+    "gdb_set_watchpoint",
+    "gdb_delete_watchpoint",
+    "gdb_set_catchpoint",
     "gdb_list_breakpoints",
     "gdb_delete_breakpoint",
     "gdb_enable_breakpoint",
     "gdb_disable_breakpoint",
     "gdb_continue",
+    "gdb_wait_for_stop",
     "gdb_step",
     "gdb_next",
     "gdb_interrupt",
     "gdb_evaluate_expression",
+    "gdb_read_memory",
     "gdb_get_variables",
     "gdb_get_registers",
     "gdb_call_function",
@@ -59,15 +64,20 @@ BatchStepToolName: TypeAlias = Literal[
     "gdb_select_frame",
     "gdb_get_frame_info",
     "gdb_set_breakpoint",
+    "gdb_set_watchpoint",
+    "gdb_delete_watchpoint",
+    "gdb_set_catchpoint",
     "gdb_list_breakpoints",
     "gdb_delete_breakpoint",
     "gdb_enable_breakpoint",
     "gdb_disable_breakpoint",
     "gdb_continue",
+    "gdb_wait_for_stop",
     "gdb_step",
     "gdb_next",
     "gdb_interrupt",
     "gdb_evaluate_expression",
+    "gdb_read_memory",
     "gdb_get_variables",
     "gdb_get_registers",
     "gdb_call_function",
@@ -151,6 +161,39 @@ class SetBreakpointArgs(StrictArgsModel):
     temporary: bool = Field(False, description="Whether breakpoint is temporary")
 
 
+class SetWatchpointArgs(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    expression: str = Field(..., description="Expression to watch for memory access")
+    access: Literal["write", "read", "access"] = Field(
+        "write",
+        description="Whether to stop on writes only, reads only, or any access",
+    )
+
+
+class SetCatchpointArgs(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    kind: Literal[
+        "throw",
+        "rethrow",
+        "catch",
+        "exec",
+        "fork",
+        "vfork",
+        "load",
+        "unload",
+        "signal",
+        "syscall",
+    ] = Field(..., description="Debugger event kind to catch")
+    argument: Optional[str] = Field(
+        None,
+        description=(
+            "Optional event argument such as an exception regex, syscall name or group, "
+            "signal name, or shared library regex."
+        ),
+    )
+    temporary: bool = Field(False, description="Use a temporary catchpoint (tcatch)")
+
+
 class EvaluateExpressionArgs(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
     expression: str = Field(..., description="C/C++ expression to evaluate")
@@ -194,6 +237,13 @@ class GetRegistersArgs(StrictArgsModel):
     frame: Optional[int] = Field(None, ge=0, description="Frame number override")
 
 
+class ReadMemoryArgs(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    address: str = Field(..., description="Address expression to read from")
+    count: int = Field(..., gt=0, description="Number of addressable memory units to read")
+    offset: int = Field(0, ge=0, description="Optional offset relative to address")
+
+
 class SessionIdArgs(StrictArgsModel):
     """Arguments for tools that only need session_id."""
 
@@ -228,6 +278,17 @@ class DetachOnForkArgs(StrictArgsModel):
     enabled: bool = Field(
         ...,
         description="Whether GDB should detach from the non-followed side of a fork.",
+    )
+
+
+class WaitForStopArgs(StrictArgsModel):
+    """Arguments for waiting on the next stop notification."""
+
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    timeout_sec: int = Field(30, gt=0, description="Maximum time to wait for a stop event")
+    stop_reasons: list[str] = Field(
+        default_factory=list,
+        description="Optional stop reasons that should count as a match",
     )
 
 
@@ -614,6 +675,35 @@ def build_tool_definitions() -> list[Tool]:
             inputSchema=SetBreakpointArgs.model_json_schema(),
         ),
         Tool(
+            name="gdb_set_watchpoint",
+            description=(
+                "Set a watchpoint on an expression and stop when the watched memory is written, "
+                "read, or accessed. "
+                "Use access='write' for ordinary watchpoints, 'read' for rwatch, and "
+                "'access' for awatch-style behavior."
+            ),
+            inputSchema=SetWatchpointArgs.model_json_schema(),
+        ),
+        Tool(
+            name="gdb_delete_watchpoint",
+            description=(
+                "Delete a watchpoint by its breakpoint number. "
+                "Watchpoints share the same numeric namespace as breakpoints in GDB, but this "
+                "tool makes the intent explicit for clients building watchpoint workflows."
+            ),
+            inputSchema=BreakpointNumberArgs.model_json_schema(),
+        ),
+        Tool(
+            name="gdb_set_catchpoint",
+            description=(
+                "Set a catchpoint for debugger events such as fork, vfork, exec, syscall, "
+                "C++ exception throw/catch, shared-library load/unload, or signals. "
+                "Use argument when the selected kind supports an extra filter such as a syscall "
+                "name, signal name, shared-library regex, or exception type regex."
+            ),
+            inputSchema=SetCatchpointArgs.model_json_schema(),
+        ),
+        Tool(
             name="gdb_list_breakpoints",
             description=(
                 "List all breakpoints as structured data with detailed information. "
@@ -667,6 +757,17 @@ def build_tool_definitions() -> list[Tool]:
             inputSchema=SessionIdArgs.model_json_schema(),
         ),
         Tool(
+            name="gdb_wait_for_stop",
+            description=(
+                "Wait for the inferior to stop without forcing the client to poll. "
+                "If the inferior is already stopped, the current stop state is returned immediately. "
+                "Optional stop_reasons let callers check whether the observed stop matched a "
+                "specific reason such as fork, exec, signal-received, syscall-entry, or "
+                "watchpoint-trigger."
+            ),
+            inputSchema=WaitForStopArgs.model_json_schema(),
+        ),
+        Tool(
             name="gdb_step",
             description=(
                 "Step into the next instruction (enters function calls). "
@@ -709,6 +810,16 @@ def build_tool_definitions() -> list[Tool]:
                 "Requires session_id parameter (obtained from gdb_start_session)."
             ),
             inputSchema=EvaluateExpressionArgs.model_json_schema(),
+        ),
+        Tool(
+            name="gdb_read_memory",
+            description=(
+                "Read raw target memory bytes from an address expression using GDB's structured "
+                "MI memory-read command. "
+                "Returns one or more readable memory blocks, including gaps when parts of the "
+                "requested range are unreadable."
+            ),
+            inputSchema=ReadMemoryArgs.model_json_schema(),
         ),
         Tool(
             name="gdb_get_variables",

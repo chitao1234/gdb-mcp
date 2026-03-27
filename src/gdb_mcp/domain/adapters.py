@@ -11,6 +11,7 @@ from .models import (
     FrameRecord,
     FrameInfo,
     FrameSelectionInfo,
+    MemoryBlockRecord,
     RegisterRecord,
     RegistersInfo,
     StructuredPayload,
@@ -86,6 +87,13 @@ def register_records(payload: object) -> list[RegisterRecord]:
 
     value = payload_mapping(payload).get("register-values", [])
     return cast(list[RegisterRecord], value) if isinstance(value, list) else []
+
+
+def memory_block_records(payload: object) -> list[MemoryBlockRecord]:
+    """Normalize a list of memory blocks."""
+
+    value = payload_mapping(payload).get("memory", [])
+    return cast(list[MemoryBlockRecord], value) if isinstance(value, list) else []
 
 
 def thread_list_info_from_payload(payload: object) -> ThreadListInfo:
