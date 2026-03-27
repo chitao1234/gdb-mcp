@@ -26,6 +26,7 @@ class OperationError:
 
 
 OperationResult = OperationSuccess[PayloadT] | OperationError
+_RESERVED_ERROR_KEYS = {"status", "message", "fatal"}
 
 
 def payload_to_mapping(value: Any) -> Any:
@@ -60,5 +61,9 @@ def result_to_mapping(result: OperationResult[Any]) -> dict[str, Any]:
     }
     if result.fatal:
         error_payload["fatal"] = True
-    error_payload.update(payload_to_mapping(result.details))
+    details_payload = payload_to_mapping(result.details)
+    if isinstance(details_payload, dict):
+        for key, value in details_payload.items():
+            if key not in _RESERVED_ERROR_KEYS:
+                error_payload[key] = value
     return error_payload

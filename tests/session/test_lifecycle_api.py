@@ -31,7 +31,7 @@ class TestLifecycleApi:
     def test_start_session_already_running(self, session_service):
         """Starting twice should be rejected before touching transport."""
 
-        session_service.controller = Mock()
+        session_service.runtime.controller = Mock()
 
         result = result_to_mapping(session_service.start(program="/bin/ls"))
 

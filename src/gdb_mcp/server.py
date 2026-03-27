@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from typing import Any
 
 from .mcp import (
@@ -31,6 +32,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 _runtime = None
+_runtime_lock = threading.Lock()
 
 
 def create_default_runtime():
@@ -45,7 +47,9 @@ def get_runtime():
 
     global _runtime
     if _runtime is None:
-        _runtime = create_default_runtime()
+        with _runtime_lock:
+            if _runtime is None:
+                _runtime = create_default_runtime()
     return _runtime
 
 

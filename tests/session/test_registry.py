@@ -98,6 +98,21 @@ class TestSessionRegistry:
         session.stop.assert_called_once()
         assert manager.get_session(session_id) is None
 
+    def test_close_session_keeps_session_when_stop_fails(self):
+        """Failed close operations should retain registry ownership for retry/inspection."""
+
+        session = Mock(spec=SessionService)
+        session.controller = object()
+        session.stop.return_value = OperationError(message="stop failed")
+        manager = SessionRegistry(session_factory=lambda: session)
+
+        session_id = manager.create_session()
+        result = manager.close_session(session_id)
+
+        assert isinstance(result, OperationError)
+        assert result.message == "stop failed"
+        assert manager.get_session(session_id) is session
+
     def test_concurrent_create_session_thread_safe(self):
         """Test that concurrent create_session calls produce unique IDs."""
         manager = SessionRegistry()

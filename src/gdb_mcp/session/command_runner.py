@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from ..domain import CommandExecutionInfo, OperationError, OperationSuccess
 from ..transport import is_cli_command, parse_mi_responses, wrap_cli_command
@@ -30,6 +31,25 @@ class SessionCommandRunner:
 
         result = self._runtime.transport.send_command_and_wait_for_prompt(
             command, timeout_sec=timeout_sec
+        )
+
+        if result.fatal:
+            failure_message = result.error or "GDB transport failed"
+            self._runtime.mark_failed(failure_message)
+
+        return result.to_dict()
+
+    def interrupt_and_wait_for_stop(
+        self,
+        *,
+        send_interrupt: Callable[[], None],
+        timeout_sec: float,
+    ) -> dict[str, object]:
+        """Interrupt the inferior while reusing transport serialization rules."""
+
+        result = self._runtime.transport.interrupt_and_wait_for_stop(
+            send_interrupt=send_interrupt,
+            timeout_sec=timeout_sec,
         )
 
         if result.fatal:

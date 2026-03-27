@@ -93,3 +93,21 @@ class TestDomainResults:
             "status": "error",
             "message": "boom",
         }
+
+    def test_result_to_mapping_preserves_reserved_error_envelope_keys(self):
+        """Error details should not overwrite reserved top-level error fields."""
+
+        payload = result_to_mapping(
+            OperationError(
+                message="boom",
+                fatal=True,
+                details={"status": "success", "message": "shadowed", "fatal": False, "tool": "x"},
+            )
+        )
+
+        assert payload == {
+            "status": "error",
+            "message": "boom",
+            "fatal": True,
+            "tool": "x",
+        }

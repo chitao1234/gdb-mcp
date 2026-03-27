@@ -221,6 +221,23 @@ class TestMiClient:
         assert result.command_responses == []
         assert len(result.async_notifications) >= 1
 
+    def test_interrupt_rejects_when_command_is_in_progress(self):
+        """Interrupt should fail fast instead of racing another in-flight command."""
+
+        controller = _FakeController([])
+        client = self._make_client(controller)
+
+        assert client._command_lock.acquire(blocking=False) is True
+        try:
+            result = client.interrupt_and_wait_for_stop(
+                send_interrupt=MagicMock(),
+                timeout_sec=1.0,
+            )
+        finally:
+            client._command_lock.release()
+
+        assert result.error == "Cannot interrupt while another command is in progress"
+
     def test_send_command_serializes_same_session_calls(self):
         """Concurrent commands on one client should not interleave writes."""
 

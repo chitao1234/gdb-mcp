@@ -126,9 +126,8 @@ class TestSessionState:
         """Stopping an active session should move it to STOPPED."""
 
         session = create_default_session_service()
-        session.controller = MagicMock()
-        session.is_running = True
-        session.state = SessionState.READY
+        session.runtime.controller = MagicMock()
+        session.runtime.mark_ready()
 
         result = result_to_mapping(session.stop())
 

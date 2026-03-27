@@ -87,7 +87,7 @@ class SessionRegistry:
         """Stop and remove a session in one explicit lifecycle operation."""
 
         with self._lock:
-            session = self._sessions.pop(session_id, None)
+            session = self._sessions.get(session_id)
 
         if session is None:
             return OperationError(
@@ -95,12 +95,26 @@ class SessionRegistry:
             )
 
         if session.controller is None:
+            with self._lock:
+                current = self._sessions.get(session_id)
+                if current is session:
+                    del self._sessions[session_id]
             return OperationSuccess(SessionMessage(message="Session removed"))
 
         try:
-            return session.stop()
+            result = session.stop()
         except Exception as exc:
             return OperationError(message=str(exc))
+
+        if isinstance(result, OperationError):
+            return result
+
+        with self._lock:
+            current = self._sessions.get(session_id)
+            if current is session:
+                del self._sessions[session_id]
+
+        return result
 
     def shutdown_all(self) -> dict[int, OperationResult[Any]]:
         """Stop and remove all registered sessions."""

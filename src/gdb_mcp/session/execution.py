@@ -19,7 +19,7 @@ from ..transport import (
     wrap_cli_command,
 )
 from .command_runner import SessionCommandRunner
-from .constants import DEFAULT_TIMEOUT_SEC, INTERRUPT_RESPONSE_TIMEOUT_SEC, POLL_TIMEOUT_SEC
+from .constants import DEFAULT_TIMEOUT_SEC, INTERRUPT_RESPONSE_TIMEOUT_SEC
 from .runtime import SessionRuntime
 
 logger = logging.getLogger(__name__)
@@ -76,45 +76,30 @@ class SessionExecutionService:
         if not getattr(controller, "gdb_process", None):
             return OperationError(message="No GDB process running")
 
-        try:
-            self._runtime.os_module.kill(controller.gdb_process.pid, signal.SIGINT)
+        result = self._command_runner.interrupt_and_wait_for_stop(
+            send_interrupt=lambda: self._runtime.os_module.kill(
+                controller.gdb_process.pid, signal.SIGINT
+            ),
+            timeout_sec=INTERRUPT_RESPONSE_TIMEOUT_SEC,
+        )
 
-            start_time = self._runtime.time_module.time()
-            all_responses: list[dict[str, object]] = []
-            stopped_received = False
+        if "error" in result:
+            return OperationError(message=str(result["error"]))
 
-            while self._runtime.time_module.time() - start_time < INTERRUPT_RESPONSE_TIMEOUT_SEC:
-                responses = controller.get_gdb_response(
-                    timeout_sec=POLL_TIMEOUT_SEC, raise_error_on_timeout=False
-                )
+        raw_responses = result.get("command_responses", [])
+        command_responses = raw_responses if isinstance(raw_responses, list) else []
+        parsed_result = parse_mi_responses(command_responses).to_dict()
 
-                if responses:
-                    all_responses.extend(responses)
-                    for resp in responses:
-                        if resp.get("type") == "notify" and resp.get("message") == "stopped":
-                            stopped_received = True
-                            break
-
-                if stopped_received:
-                    break
-
-            result = parse_mi_responses(all_responses).to_dict()
-
-            if not stopped_received:
-                return OperationSuccess(
-                    MessageResult(
-                        message="Interrupt sent but no stopped notification received",
-                        result=result,
-                        status="warning",
-                    )
-                )
-
+        if result.get("timed_out"):
             return OperationSuccess(
-                MessageResult(message="Program interrupted (paused)", result=result)
+                MessageResult(
+                    message="Interrupt sent but no stopped notification received",
+                    result=parsed_result,
+                    status="warning",
+                )
             )
-        except Exception as exc:
-            logger.error("Failed to interrupt program: %s", exc)
-            return OperationError(message=f"Failed to interrupt: {str(exc)}")
+
+        return OperationSuccess(MessageResult(message="Program interrupted (paused)", result=parsed_result))
 
     def call_function(
         self, function_call: str, timeout_sec: int = DEFAULT_TIMEOUT_SEC

@@ -22,8 +22,8 @@ def session_service():
 def running_session(session_service):
     """Create a session with a controller attached and marked running."""
 
-    session_service.controller = MagicMock()
-    session_service.is_running = True
+    session_service.runtime.controller = MagicMock()
+    session_service.runtime.mark_ready()
     return session_service
 
 
@@ -124,8 +124,8 @@ def scripted_running_session(session_service):
 
     def build(*response_batches: list[dict[str, object]]):
         controller = ScriptedController(list(response_batches))
-        session_service.controller = controller
-        session_service.is_running = True
+        session_service.runtime.controller = controller
+        session_service.runtime.mark_ready()
         return session_service, controller
 
     return build

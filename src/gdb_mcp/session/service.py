@@ -79,21 +79,11 @@ class SessionService:
 
         return self.runtime.controller
 
-    @controller.setter
-    def controller(self, value: Any) -> None:
-        """Allow tests to replace the underlying controller."""
-
-        self.runtime.controller = value
-
     @property
     def state(self) -> SessionState:
         """Expose the session lifecycle state."""
 
         return self.runtime.state
-
-    @state.setter
-    def state(self, value: SessionState) -> None:
-        self.runtime.state = value
 
     @property
     def config(self) -> SessionConfig | None:
@@ -101,29 +91,17 @@ class SessionService:
 
         return self.runtime.config
 
-    @config.setter
-    def config(self, value: SessionConfig | None) -> None:
-        self.runtime.config = value
-
     @property
     def is_running(self) -> bool:
         """Expose whether the session is active."""
 
         return self.runtime.is_running
 
-    @is_running.setter
-    def is_running(self, value: bool) -> None:
-        self.runtime.is_running = value
-
     @property
     def target_loaded(self) -> bool:
         """Expose whether a debug target is currently loaded."""
 
         return self.runtime.target_loaded
-
-    @target_loaded.setter
-    def target_loaded(self, value: bool) -> None:
-        self.runtime.target_loaded = value
 
     def start(self, *args: Any, **kwargs: Any) -> OperationSuccess[Any] | OperationError:
         """Delegate session startup to the lifecycle service."""

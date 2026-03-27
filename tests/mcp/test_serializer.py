@@ -34,6 +34,24 @@ class TestMcpSerializer:
             "tool": "gdb_get_status",
         }
 
+    def test_result_to_payload_preserves_reserved_error_fields(self):
+        """Error details should not overwrite the standard error envelope."""
+
+        payload = result_to_payload(
+            OperationError(
+                message="boom",
+                fatal=True,
+                details={"status": "success", "message": "shadowed", "fatal": False, "tool": "x"},
+            )
+        )
+
+        assert payload == {
+            "status": "error",
+            "message": "boom",
+            "fatal": True,
+            "tool": "x",
+        }
+
     def test_serialize_exception_includes_tool_name(self):
         """Unexpected exceptions should still include the originating tool name."""
 

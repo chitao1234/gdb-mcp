@@ -1,5 +1,16 @@
 """Domain types for the GDB MCP server."""
 
+from .adapters import (
+    backtrace_info_from_payload,
+    breakpoint_list_info_from_payload,
+    breakpoint_record,
+    frame_info_from_payload,
+    frame_selection_info_from_payload,
+    registers_info_from_payload,
+    thread_list_info_from_payload,
+    thread_selection_info_from_payload,
+    variables_info_from_payload,
+)
 from .errors import FatalTransportError, GdbMcpError, TransportError, ValidationFailure
 from .models import (
     BacktraceInfo,
@@ -35,15 +46,20 @@ from .results import (
 
 __all__ = [
     "BacktraceInfo",
+    "backtrace_info_from_payload",
     "BreakpointInfo",
     "BreakpointListInfo",
+    "breakpoint_list_info_from_payload",
     "BreakpointRecord",
+    "breakpoint_record",
     "CommandExecutionInfo",
     "ExpressionValueInfo",
     "FrameRecord",
     "FatalTransportError",
     "FrameInfo",
+    "frame_info_from_payload",
     "FrameSelectionInfo",
+    "frame_selection_info_from_payload",
     "FunctionCallInfo",
     "MessageResult",
     "GdbMcpError",
@@ -53,6 +69,7 @@ __all__ = [
     "payload_to_mapping",
     "RegistersInfo",
     "RegisterRecord",
+    "registers_info_from_payload",
     "result_to_mapping",
     "SessionMessage",
     "SessionStartInfo",
@@ -60,9 +77,12 @@ __all__ = [
     "StructuredPayload",
     "ThreadListInfo",
     "ThreadRecord",
+    "thread_list_info_from_payload",
     "ThreadSelectionInfo",
+    "thread_selection_info_from_payload",
     "TransportError",
     "ValidationFailure",
     "VariableRecord",
+    "variables_info_from_payload",
     "VariablesInfo",
 ]

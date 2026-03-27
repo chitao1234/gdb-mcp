@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 from typing import Any, Callable, Protocol, TypeVar, cast
 
@@ -37,6 +38,26 @@ class SessionArgsProtocol(Protocol):
 
 
 SessionArgsT = TypeVar("SessionArgsT", bound=SessionArgsProtocol)
+
+
+@dataclass(frozen=True)
+class SessionToolSpec:
+    """Declarative definition for one session-scoped MCP tool."""
+
+    model: type[BaseModel]
+    handler: Callable[[SessionService, BaseModel], OperationResult[Any]]
+
+
+def session_tool_spec(
+    model: type[BaseModel],
+    handler: Callable[[SessionService, SessionArgsT], OperationResult[Any]],
+) -> SessionToolSpec:
+    """Wrap a typed handler for storage in the session tool registry."""
+
+    def invoke(session: SessionService, args: BaseModel) -> OperationResult[Any]:
+        return handler(session, cast(SessionArgsT, args))
+
+    return SessionToolSpec(model=model, handler=invoke)
 
 
 def _normalize_arguments(arguments: Any) -> dict[str, Any]:
@@ -198,16 +219,39 @@ def _handle_start_session(
 def _dispatch_session_tool(
     arguments: dict[str, Any],
     session_manager: SessionRegistry,
-    model: type[BaseModel],
-    handler: Callable[[SessionService, SessionArgsT], OperationResult[Any]],
+    tool_spec: SessionToolSpec,
 ) -> OperationResult[Any]:
     """Validate one session-scoped request and invoke its handler."""
 
-    args = cast(SessionArgsT, model.model_validate(arguments))
+    args = cast(SessionArgsProtocol, tool_spec.model.model_validate(arguments))
     session = session_manager.get_session(args.session_id)
     if session is None:
         return _invalid_session_result(args.session_id)
-    return handler(session, args)
+    return tool_spec.handler(session, cast(BaseModel, args))
+
+
+SESSION_TOOL_SPECS: dict[str, SessionToolSpec] = {
+    "gdb_execute_command": session_tool_spec(ExecuteCommandArgs, _handle_execute_command),
+    "gdb_get_status": session_tool_spec(SessionIdArgs, _handle_get_status),
+    "gdb_get_threads": session_tool_spec(SessionIdArgs, _handle_get_threads),
+    "gdb_select_thread": session_tool_spec(ThreadSelectArgs, _handle_select_thread),
+    "gdb_get_backtrace": session_tool_spec(GetBacktraceArgs, _handle_get_backtrace),
+    "gdb_select_frame": session_tool_spec(FrameSelectArgs, _handle_select_frame),
+    "gdb_get_frame_info": session_tool_spec(SessionIdArgs, _handle_get_frame_info),
+    "gdb_set_breakpoint": session_tool_spec(SetBreakpointArgs, _handle_set_breakpoint),
+    "gdb_list_breakpoints": session_tool_spec(SessionIdArgs, _handle_list_breakpoints),
+    "gdb_delete_breakpoint": session_tool_spec(BreakpointNumberArgs, _handle_delete_breakpoint),
+    "gdb_enable_breakpoint": session_tool_spec(BreakpointNumberArgs, _handle_enable_breakpoint),
+    "gdb_disable_breakpoint": session_tool_spec(BreakpointNumberArgs, _handle_disable_breakpoint),
+    "gdb_continue": session_tool_spec(SessionIdArgs, _handle_continue),
+    "gdb_step": session_tool_spec(SessionIdArgs, _handle_step),
+    "gdb_next": session_tool_spec(SessionIdArgs, _handle_next),
+    "gdb_interrupt": session_tool_spec(SessionIdArgs, _handle_interrupt),
+    "gdb_evaluate_expression": session_tool_spec(EvaluateExpressionArgs, _handle_evaluate_expression),
+    "gdb_get_variables": session_tool_spec(GetVariablesArgs, _handle_get_variables),
+    "gdb_get_registers": session_tool_spec(SessionIdArgs, _handle_get_registers),
+    "gdb_call_function": session_tool_spec(CallFunctionArgs, _handle_call_function),
+}
 
 
 async def dispatch_tool_call(
@@ -224,101 +268,15 @@ async def dispatch_tool_call(
 
         if name == "gdb_start_session":
             return serialize_result(_handle_start_session(normalized_args, session_manager))
-        if name == "gdb_execute_command":
-            return serialize_result(
-                _dispatch_session_tool(
-                    normalized_args, session_manager, ExecuteCommandArgs, _handle_execute_command
-                )
-            )
-        if name == "gdb_get_status":
-            return serialize_result(
-                _dispatch_session_tool(normalized_args, session_manager, SessionIdArgs, _handle_get_status)
-            )
-        if name == "gdb_get_threads":
-            return serialize_result(
-                _dispatch_session_tool(normalized_args, session_manager, SessionIdArgs, _handle_get_threads)
-            )
-        if name == "gdb_select_thread":
-            return serialize_result(
-                _dispatch_session_tool(normalized_args, session_manager, ThreadSelectArgs, _handle_select_thread)
-            )
-        if name == "gdb_get_backtrace":
-            return serialize_result(
-                _dispatch_session_tool(normalized_args, session_manager, GetBacktraceArgs, _handle_get_backtrace)
-            )
-        if name == "gdb_select_frame":
-            return serialize_result(
-                _dispatch_session_tool(normalized_args, session_manager, FrameSelectArgs, _handle_select_frame)
-            )
-        if name == "gdb_get_frame_info":
-            return serialize_result(
-                _dispatch_session_tool(normalized_args, session_manager, SessionIdArgs, _handle_get_frame_info)
-            )
-        if name == "gdb_set_breakpoint":
-            return serialize_result(
-                _dispatch_session_tool(normalized_args, session_manager, SetBreakpointArgs, _handle_set_breakpoint)
-            )
-        if name == "gdb_list_breakpoints":
-            return serialize_result(
-                _dispatch_session_tool(normalized_args, session_manager, SessionIdArgs, _handle_list_breakpoints)
-            )
-        if name == "gdb_delete_breakpoint":
-            return serialize_result(
-                _dispatch_session_tool(
-                    normalized_args, session_manager, BreakpointNumberArgs, _handle_delete_breakpoint
-                )
-            )
-        if name == "gdb_enable_breakpoint":
-            return serialize_result(
-                _dispatch_session_tool(
-                    normalized_args, session_manager, BreakpointNumberArgs, _handle_enable_breakpoint
-                )
-            )
-        if name == "gdb_disable_breakpoint":
-            return serialize_result(
-                _dispatch_session_tool(
-                    normalized_args, session_manager, BreakpointNumberArgs, _handle_disable_breakpoint
-                )
-            )
-        if name == "gdb_continue":
-            return serialize_result(
-                _dispatch_session_tool(normalized_args, session_manager, SessionIdArgs, _handle_continue)
-            )
-        if name == "gdb_step":
-            return serialize_result(
-                _dispatch_session_tool(normalized_args, session_manager, SessionIdArgs, _handle_step)
-            )
-        if name == "gdb_next":
-            return serialize_result(
-                _dispatch_session_tool(normalized_args, session_manager, SessionIdArgs, _handle_next)
-            )
-        if name == "gdb_interrupt":
-            return serialize_result(
-                _dispatch_session_tool(normalized_args, session_manager, SessionIdArgs, _handle_interrupt)
-            )
-        if name == "gdb_evaluate_expression":
-            return serialize_result(
-                _dispatch_session_tool(
-                    normalized_args, session_manager, EvaluateExpressionArgs, _handle_evaluate_expression
-                )
-            )
-        if name == "gdb_get_variables":
-            return serialize_result(
-                _dispatch_session_tool(normalized_args, session_manager, GetVariablesArgs, _handle_get_variables)
-            )
-        if name == "gdb_get_registers":
-            return serialize_result(
-                _dispatch_session_tool(normalized_args, session_manager, SessionIdArgs, _handle_get_registers)
-            )
         if name == "gdb_stop_session":
             args = SessionIdArgs.model_validate(normalized_args)
             return serialize_result(session_manager.close_session(args.session_id))
-        if name == "gdb_call_function":
-            return serialize_result(
-                _dispatch_session_tool(normalized_args, session_manager, CallFunctionArgs, _handle_call_function)
-            )
 
-        return serialize_result(OperationError(message=f"Unknown tool: {name}", code="unknown_tool"))
+        tool_spec = SESSION_TOOL_SPECS.get(name)
+        if tool_spec is None:
+            return serialize_result(OperationError(message=f"Unknown tool: {name}", code="unknown_tool"))
+
+        return serialize_result(_dispatch_session_tool(normalized_args, session_manager, tool_spec))
 
     except Exception as exc:
         logger.error("Error executing tool %s: %s", name, exc, exc_info=True)

@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional, cast
+from typing import Optional
 
 from ..domain import (
     BreakpointInfo,
     BreakpointListInfo,
-    BreakpointRecord,
     OperationError,
     OperationSuccess,
     SessionMessage,
+    breakpoint_list_info_from_payload,
+    breakpoint_record,
 )
 from ..transport import extract_mi_result_payload, quote_mi_string
 from .command_runner import SessionCommandRunner
@@ -48,28 +49,26 @@ class SessionBreakpointService:
         if isinstance(result, OperationError):
             return result
 
-        mi_result = extract_mi_result_payload(command_result_payload(result))
-        logger.debug("Breakpoint MI result: %s", mi_result)
+        payload = extract_mi_result_payload(command_result_payload(result))
+        logger.debug("Breakpoint MI result: %s", payload)
 
-        if mi_result is None:
+        if payload is None:
             logger.warning("No MI result for breakpoint at %s", location)
             return OperationError(
                 message=f"Failed to set breakpoint at {location}: no result from GDB",
                 details={"raw_result": result.value},
             )
 
-        bp_info = mi_result if isinstance(mi_result, dict) else {}
-        raw_breakpoint = bp_info.get("bkpt", bp_info)
-        breakpoint = raw_breakpoint if isinstance(raw_breakpoint, dict) else {}
+        bp = breakpoint_record(payload)
 
-        if not breakpoint:
-            logger.warning("Empty breakpoint result for %s: %s", location, mi_result)
+        if not bp:
+            logger.warning("Empty breakpoint result for %s: %s", location, payload)
             return OperationError(
                 message=f"Breakpoint set but no info returned for {location}",
                 details={"raw_result": result.value},
             )
 
-        return OperationSuccess(BreakpointInfo(breakpoint=cast(BreakpointRecord, breakpoint)))
+        return OperationSuccess(BreakpointInfo(breakpoint=bp))
 
     def list_breakpoints(self) -> OperationSuccess[BreakpointListInfo] | OperationError:
         """List all breakpoints with structured data."""
@@ -78,17 +77,9 @@ class SessionBreakpointService:
         if isinstance(result, OperationError):
             return result
 
-        raw_payload = extract_mi_result_payload(command_result_payload(result)) or {}
-        mi_result = raw_payload if isinstance(raw_payload, dict) else {}
-        raw_bp_table = mi_result.get("BreakpointTable", {})
-        bp_table = raw_bp_table if isinstance(raw_bp_table, dict) else {}
-        raw_breakpoints = bp_table.get("body", [])
-        breakpoints = raw_breakpoints if isinstance(raw_breakpoints, list) else []
-
         return OperationSuccess(
-            BreakpointListInfo(
-                breakpoints=cast(list[BreakpointRecord], breakpoints),
-                count=len(breakpoints),
+            breakpoint_list_info_from_payload(
+                extract_mi_result_payload(command_result_payload(result))
             )
         )
 
