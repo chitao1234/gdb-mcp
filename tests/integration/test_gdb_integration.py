@@ -14,6 +14,7 @@ with GDB process state transitions. This is expected behavior for integration
 tests that interact with external processes.
 """
 
+import json
 import subprocess
 import tempfile
 from pathlib import Path
@@ -230,6 +231,54 @@ def test_batch_can_set_breakpoint_run_and_capture_backtrace(session_id):
     assert batch_result["steps"][1]["stop_event"]["reason"] == "breakpoint-hit"
     assert batch_result["steps"][2]["tool"] == "gdb_get_backtrace"
     assert batch_result["steps"][2]["result"]["count"] > 0
+
+
+@pytest.mark.integration
+def test_capture_bundle_writes_manifest_and_artifacts(session_id, tmp_path):
+    """Capture bundle should write a manifest plus forensic artifacts to disk."""
+
+    call_gdb_tool("gdb_set_breakpoint", {"session_id": session_id, "location": "add"})
+    call_gdb_tool("gdb_run", {"session_id": session_id})
+
+    capture_result = call_gdb_tool(
+        "gdb_capture_bundle",
+        {
+            "session_id": session_id,
+            "output_dir": str(tmp_path),
+            "bundle_name": "capture-case",
+            "expressions": ["a", "b"],
+            "max_frames": 20,
+        },
+    )
+
+    assert capture_result["status"] == "success"
+    assert capture_result["bundle_name"] == "capture-case"
+    bundle_dir = Path(str(capture_result["bundle_dir"]))
+    manifest_path = Path(str(capture_result["manifest_path"]))
+    assert bundle_dir.is_dir()
+    assert manifest_path.is_file()
+    assert manifest_path.parent == bundle_dir
+
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest["bundle_name"] == "capture-case"
+    assert manifest["execution_state"] == "paused"
+    assert manifest["stop_reason"] == "breakpoint-hit"
+    assert manifest["last_stop_event"]["reason"] == "breakpoint-hit"
+
+    artifact_names = {artifact["name"] for artifact in manifest["artifacts"]}
+    assert "session-status" in artifact_names
+    assert "threads" in artifact_names
+    assert "thread-backtraces" in artifact_names
+    assert "current-frame" in artifact_names
+    assert "current-variables" in artifact_names
+    assert "current-registers" in artifact_names
+    assert "command-transcript" in artifact_names
+    assert "expressions" in artifact_names
+
+    expressions_payload = json.loads((bundle_dir / "expressions.json").read_text())
+    expressions = {entry["expression"]: entry for entry in expressions_payload}
+    assert expressions["a"]["status"] == "success"
+    assert expressions["b"]["status"] == "success"
 
 
 @pytest.mark.integration

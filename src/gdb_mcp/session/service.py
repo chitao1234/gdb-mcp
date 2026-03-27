@@ -9,6 +9,7 @@ from ..domain import (
     BatchExecutionInfo,
     BreakpointInfo,
     BreakpointListInfo,
+    CaptureBundleInfo,
     CommandTranscriptEntry,
     CommandExecutionInfo,
     ExpressionValueInfo,
@@ -30,6 +31,7 @@ from ..domain import (
 from ..transport import MiClient
 from ..transport.protocols import GdbControllerFactoryProtocol, GdbControllerProtocol
 from .breakpoints import SessionBreakpointService
+from .capture import SessionCaptureService
 from .command_runner import SessionCommandRunner
 from .config import SessionConfig
 from .constants import (
@@ -78,6 +80,7 @@ class SessionService:
         self._execution = SessionExecutionService(self.runtime, self._command_runner)
         self._breakpoints = SessionBreakpointService(self._command_runner)
         self._inspection = SessionInspectionService(self.runtime, self._command_runner)
+        self._capture = SessionCaptureService(self.runtime, self._lifecycle, self._inspection)
         self._workflow = SessionWorkflowService(self.runtime)
 
     @property
@@ -231,6 +234,37 @@ class SessionService:
             steps,
             fail_fast=fail_fast,
             capture_stop_events=capture_stop_events,
+        )
+
+    def capture_bundle(
+        self,
+        *,
+        output_dir: str | None = None,
+        bundle_name: str | None = None,
+        expressions: list[str] | None = None,
+        max_frames: int = 100,
+        include_threads: bool = True,
+        include_backtraces: bool = True,
+        include_frame: bool = True,
+        include_variables: bool = True,
+        include_registers: bool = True,
+        include_transcript: bool = True,
+        include_stop_history: bool = True,
+    ) -> OperationSuccess[CaptureBundleInfo] | OperationError:
+        """Capture a file-oriented forensic bundle for the current session."""
+
+        return self._capture.capture_bundle(
+            output_dir=output_dir,
+            bundle_name=bundle_name,
+            expressions=expressions,
+            max_frames=max_frames,
+            include_threads=include_threads,
+            include_backtraces=include_backtraces,
+            include_frame=include_frame,
+            include_variables=include_variables,
+            include_registers=include_registers,
+            include_transcript=include_transcript,
+            include_stop_history=include_stop_history,
         )
 
     def get_threads(self) -> OperationSuccess[ThreadListInfo] | OperationError:

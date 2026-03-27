@@ -423,6 +423,43 @@ class TestHandlerDispatch:
         assert result_data["status"] == "error"
         assert "must not include session_id" in result_data["message"]
 
+    def test_capture_bundle_routes_to_session(self):
+        """Capture requests should forward the bundle options to the resolved session."""
+
+        manager = Mock()
+        session = Mock()
+        session.capture_bundle.return_value = OperationSuccess(
+            SessionMessage(message="bundle written")
+        )
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_capture_bundle",
+            {
+                "session_id": 5,
+                "output_dir": "/tmp/bundles",
+                "bundle_name": "case-1",
+                "expressions": ["value", "result"],
+                "max_frames": 50,
+                "include_transcript": False,
+            },
+            manager,
+        )
+
+        session.capture_bundle.assert_called_once_with(
+            output_dir="/tmp/bundles",
+            bundle_name="case-1",
+            expressions=["value", "result"],
+            max_frames=50,
+            include_threads=True,
+            include_backtraces=True,
+            include_frame=True,
+            include_variables=True,
+            include_registers=True,
+            include_transcript=False,
+            include_stop_history=True,
+        )
+
     def test_multiple_tools_use_different_sessions(self):
         """Separate session IDs should be routed independently."""
 

@@ -26,6 +26,7 @@ from .schemas import (
     BatchArgs,
     BreakpointNumberArgs,
     CallFunctionArgs,
+    CaptureBundleArgs,
     EvaluateExpressionArgs,
     ExecuteCommandArgs,
     FrameSelectArgs,
@@ -243,6 +244,24 @@ def _handle_batch(session: SessionService, args: BatchArgs) -> ToolResult:
     )
 
 
+def _handle_capture_bundle(session: SessionService, args: CaptureBundleArgs) -> ToolResult:
+    """Write a file-oriented forensic bundle for the current session."""
+
+    return session.capture_bundle(
+        output_dir=args.output_dir,
+        bundle_name=args.bundle_name,
+        expressions=args.expressions,
+        max_frames=args.max_frames,
+        include_threads=args.include_threads,
+        include_backtraces=args.include_backtraces,
+        include_frame=args.include_frame,
+        include_variables=args.include_variables,
+        include_registers=args.include_registers,
+        include_transcript=args.include_transcript,
+        include_stop_history=args.include_stop_history,
+    )
+
+
 def _invalid_session_result(session_id: object) -> OperationError:
     """Return the standard invalid-session error response."""
 
@@ -311,6 +330,7 @@ SESSION_TOOL_SPECS: dict[str, SessionToolSpec] = {
     "gdb_run": session_tool_spec(RunArgs, _handle_run),
     "gdb_attach_process": session_tool_spec(AttachProcessArgs, _handle_attach_process),
     "gdb_batch": session_tool_spec(BatchArgs, _handle_batch),
+    "gdb_capture_bundle": session_tool_spec(CaptureBundleArgs, _handle_capture_bundle),
     "gdb_get_status": session_tool_spec(SessionIdArgs, _handle_get_status),
     "gdb_get_threads": session_tool_spec(SessionIdArgs, _handle_get_threads),
     "gdb_select_thread": session_tool_spec(ThreadSelectArgs, _handle_select_thread),

@@ -20,6 +20,7 @@ BATCH_STEP_TOOL_NAMES = (
     "gdb_attach_process",
     "gdb_get_status",
     "gdb_get_threads",
+    "gdb_capture_bundle",
     "gdb_select_thread",
     "gdb_get_backtrace",
     "gdb_select_frame",
@@ -44,6 +45,7 @@ BatchStepToolName: TypeAlias = Literal[
     "gdb_attach_process",
     "gdb_get_status",
     "gdb_get_threads",
+    "gdb_capture_bundle",
     "gdb_select_thread",
     "gdb_get_backtrace",
     "gdb_select_frame",
@@ -223,6 +225,42 @@ class BatchArgs(StrictArgsModel):
     )
 
 
+class CaptureBundleArgs(StrictArgsModel):
+    """Arguments for writing a structured capture bundle to disk."""
+
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    output_dir: Optional[str] = Field(
+        None,
+        description="Directory in which to create the capture bundle. Defaults to artifact_root or the system temp directory.",
+    )
+    bundle_name: Optional[str] = Field(
+        None,
+        description="Optional deterministic subdirectory name for the bundle.",
+    )
+    expressions: list[str] = Field(
+        default_factory=list,
+        description="Expressions to evaluate and include in the bundle.",
+    )
+    max_frames: int = Field(
+        100,
+        gt=0,
+        description="Maximum number of frames to include per thread backtrace.",
+    )
+    include_threads: bool = Field(True, description="Capture thread inventory.")
+    include_backtraces: bool = Field(
+        True, description="Capture backtraces for all enumerated threads."
+    )
+    include_frame: bool = Field(True, description="Capture the currently selected frame.")
+    include_variables: bool = Field(
+        True, description="Capture local variables for the current selection."
+    )
+    include_registers: bool = Field(
+        True, description="Capture registers for the current selection."
+    )
+    include_transcript: bool = Field(True, description="Capture the bounded command transcript.")
+    include_stop_history: bool = Field(True, description="Capture the bounded stop-event history.")
+
+
 def build_tool_definitions() -> list[Tool]:
     """Build the MCP tool definitions exposed by this server."""
 
@@ -302,6 +340,18 @@ def build_tool_definitions() -> list[Tool]:
                 "Supports optional fail_fast behavior and optional per-step stop-event capture."
             ),
             inputSchema=BatchArgs.model_json_schema(),
+        ),
+        Tool(
+            name="gdb_capture_bundle",
+            description=(
+                "Write a structured forensic capture bundle to disk for the current session. "
+                "The bundle includes a manifest plus JSON artifacts such as session status, "
+                "last stop event, optional stop history, optional command transcript, thread "
+                "inventory, thread backtraces, current frame, variables, registers, and "
+                "requested expression evaluations. "
+                "Use output_dir and bundle_name when you need deterministic artifact paths."
+            ),
+            inputSchema=CaptureBundleArgs.model_json_schema(),
         ),
         Tool(
             name="gdb_get_status",

@@ -8,6 +8,7 @@ from gdb_mcp.mcp.schemas import (
     BatchStepArgs,
     BreakpointNumberArgs,
     CallFunctionArgs,
+    CaptureBundleArgs,
     StartSessionArgs,
     ExecuteCommandArgs,
     FrameSelectArgs,
@@ -173,6 +174,36 @@ class TestBatchArgs:
             BatchStepArgs(tool="gdb_get_status", arguments={}, unexpected=True)
 
         assert "unexpected" in str(exc_info.value)
+
+
+class TestCaptureBundleArgs:
+    """Test cases for bundle capture requests."""
+
+    def test_capture_bundle_defaults(self):
+        """Capture requests should provide sensible defaults."""
+
+        args = CaptureBundleArgs(session_id=1)
+
+        assert args.session_id == 1
+        assert args.output_dir is None
+        assert args.bundle_name is None
+        assert args.expressions == []
+        assert args.max_frames == 100
+        assert args.include_threads is True
+        assert args.include_backtraces is True
+        assert args.include_frame is True
+        assert args.include_variables is True
+        assert args.include_registers is True
+        assert args.include_transcript is True
+        assert args.include_stop_history is True
+
+    def test_capture_bundle_rejects_unknown_field(self):
+        """Capture requests should reject unexpected keys."""
+
+        with pytest.raises(ValidationError) as exc_info:
+            CaptureBundleArgs(session_id=1, output="/tmp/out")
+
+        assert "output" in str(exc_info.value)
 
 
 class TestGetBacktraceArgs:

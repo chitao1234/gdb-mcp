@@ -185,6 +185,32 @@ class BatchExecutionInfo:
 
 
 @dataclass(slots=True, frozen=True)
+class CaptureArtifactInfo:
+    """One file artifact produced by a capture bundle."""
+
+    name: str
+    path: str
+    status: str
+    kind: str = "json"
+
+
+@dataclass(slots=True, frozen=True)
+class CaptureBundleInfo:
+    """Structured result for one on-disk forensic capture bundle."""
+
+    message: str
+    bundle_dir: str
+    bundle_name: str
+    manifest_path: str
+    artifacts: list[CaptureArtifactInfo]
+    artifact_count: int
+    failed_sections: list[str] | None = None
+    execution_state: str | None = None
+    stop_reason: str | None = None
+    last_stop_event: StopEvent | None = None
+
+
+@dataclass(slots=True, frozen=True)
 class SessionMessage:
     """Simple message payload."""
 
