@@ -5,10 +5,16 @@ from __future__ import annotations
 from typing import Optional
 
 from mcp.types import Tool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class StartSessionArgs(BaseModel):
+class StrictArgsModel(BaseModel):
+    """Base model for MCP request validation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class StartSessionArgs(StrictArgsModel):
     program: Optional[str] = Field(None, description="Path to executable to debug")
     args: Optional[list[str]] = Field(
         None,
@@ -54,51 +60,51 @@ class StartSessionArgs(BaseModel):
     )
 
 
-class ExecuteCommandArgs(BaseModel):
+class ExecuteCommandArgs(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
     command: str = Field(..., description="GDB command to execute")
 
 
-class GetBacktraceArgs(BaseModel):
+class GetBacktraceArgs(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
     thread_id: Optional[int] = Field(None, gt=0, description="Thread ID (None for current thread)")
     max_frames: int = Field(100, gt=0, description="Maximum number of frames to retrieve")
 
 
-class SetBreakpointArgs(BaseModel):
+class SetBreakpointArgs(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
     location: str = Field(..., description="Breakpoint location (function, file:line, or *address)")
     condition: Optional[str] = Field(None, description="Conditional expression")
     temporary: bool = Field(False, description="Whether breakpoint is temporary")
 
 
-class EvaluateExpressionArgs(BaseModel):
+class EvaluateExpressionArgs(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
     expression: str = Field(..., description="C/C++ expression to evaluate")
 
 
-class GetVariablesArgs(BaseModel):
+class GetVariablesArgs(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
     thread_id: Optional[int] = Field(None, gt=0, description="Thread ID (None for current)")
     frame: int = Field(0, ge=0, description="Frame number (0 is current)")
 
 
-class ThreadSelectArgs(BaseModel):
+class ThreadSelectArgs(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
     thread_id: int = Field(..., gt=0, description="Thread ID to select")
 
 
-class BreakpointNumberArgs(BaseModel):
+class BreakpointNumberArgs(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
     number: int = Field(..., gt=0, description="Breakpoint number")
 
 
-class FrameSelectArgs(BaseModel):
+class FrameSelectArgs(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
     frame_number: int = Field(..., ge=0, description="Frame number (0 is current/innermost frame)")
 
 
-class CallFunctionArgs(BaseModel):
+class CallFunctionArgs(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
     function_call: str = Field(
         ...,
@@ -106,7 +112,7 @@ class CallFunctionArgs(BaseModel):
     )
 
 
-class SessionIdArgs(BaseModel):
+class SessionIdArgs(StrictArgsModel):
     """Arguments for tools that only need session_id."""
 
     session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")

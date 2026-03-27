@@ -52,6 +52,14 @@ class TestStartSessionArgs:
 
         assert args.env == {"VAR1": "value1", "VAR2": "value2"}
 
+    def test_unknown_field_is_rejected(self):
+        """Unexpected request keys should fail validation instead of being ignored."""
+
+        with pytest.raises(ValidationError) as exc_info:
+            StartSessionArgs(program="/bin/ls", workingdir="/tmp/work")
+
+        assert "workingdir" in str(exc_info.value)
+
 
 class TestExecuteCommandArgs:
     """Test cases for ExecuteCommandArgs model."""
@@ -66,6 +74,14 @@ class TestExecuteCommandArgs:
         args = ExecuteCommandArgs(session_id=1, command="info threads")
         assert args.session_id == 1
         assert args.command == "info threads"
+
+    def test_unknown_field_is_rejected(self):
+        """Extra command fields should not be silently dropped."""
+
+        with pytest.raises(ValidationError) as exc_info:
+            ExecuteCommandArgs(session_id=1, command="info threads", timeout_sec=10)
+
+        assert "timeout_sec" in str(exc_info.value)
 
 
 class TestGetBacktraceArgs:

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
+import logging
 import threading
 import time
 from unittest.mock import AsyncMock, Mock, patch
@@ -58,3 +60,32 @@ class TestServerEntrypoint:
             assert results[0] is results[1]
         finally:
             server._runtime = original_runtime
+
+    def test_import_does_not_configure_logging(self):
+        """Importing the compatibility module should not mutate host logging setup."""
+
+        import gdb_mcp.server as server
+
+        with patch.object(logging, "basicConfig") as mock_basic_config:
+            importlib.reload(server)
+
+        assert mock_basic_config.call_count == 0
+
+    @patch("gdb_mcp.server.get_runtime")
+    @patch("gdb_mcp.server.configure_logging")
+    def test_run_server_configures_logging_before_starting_runtime(
+        self,
+        mock_configure_logging,
+        mock_get_runtime,
+    ):
+        """CLI startup should configure logging explicitly at launch time."""
+
+        from gdb_mcp.server import run_server
+
+        runtime = Mock()
+        mock_get_runtime.return_value = runtime
+
+        run_server()
+
+        mock_configure_logging.assert_called_once_with()
+        runtime.run_server.assert_called_once_with()

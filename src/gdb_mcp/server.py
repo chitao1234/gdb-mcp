@@ -23,12 +23,6 @@ from .mcp import (
 )
 from .session.registry import SessionRegistry
 
-# Set up logging - use GDB_MCP_LOG_LEVEL environment variable
-log_level = os.environ.get("GDB_MCP_LOG_LEVEL", "INFO").upper()
-logging.basicConfig(
-    level=getattr(logging, log_level, logging.INFO),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 _runtime = None
@@ -84,7 +78,18 @@ async def main():
 def run_server():
     """Synchronous entry point for the MCP server (for script entry point)."""
 
+    configure_logging()
     get_runtime().run_server()
+
+
+def configure_logging() -> None:
+    """Configure process logging for the standalone server entrypoint."""
+
+    log_level = os.environ.get("GDB_MCP_LOG_LEVEL", "INFO").upper()
+    logging.basicConfig(
+        level=getattr(logging, log_level, logging.INFO),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
 
 
 if __name__ == "__main__":

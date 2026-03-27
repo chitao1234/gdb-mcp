@@ -15,7 +15,8 @@ from gdb_mcp.domain import (
     SessionMessage,
     SessionStatusSnapshot,
 )
-from gdb_mcp.mcp.handlers import dispatch_tool_call
+from gdb_mcp.mcp.handlers import SESSION_TOOL_SPECS, dispatch_tool_call
+from gdb_mcp.mcp.schemas import build_tool_definitions
 
 
 def dispatch(name: str, arguments, session_manager) -> dict[str, object]:
@@ -120,6 +121,17 @@ class TestHandlerDispatch:
         assert result_data["tool"] == "gdb_get_status"
         manager.get_session.assert_not_called()
 
+    def test_tool_with_unknown_argument_returns_validation_error(self):
+        """Unexpected tool arguments should be rejected at the MCP boundary."""
+
+        manager = Mock()
+
+        result_data = dispatch("gdb_get_status", {"session_id": 1, "unexpected": True}, manager)
+
+        assert result_data["status"] == "error"
+        assert "unexpected" in result_data["message"]
+        manager.get_session.assert_not_called()
+
     def test_stop_session_uses_registry_close(self):
         """Successful stop should go through the registry lifecycle API."""
 
@@ -205,3 +217,11 @@ class TestHandlerDispatch:
         session_2.get_status.assert_called_once()
         assert result_1["is_running"] is False
         assert result_2["is_running"] is True
+
+    def test_tool_definitions_match_dispatch_registry(self):
+        """Every exported tool should have a matching dispatch path and vice versa."""
+
+        exported_tools = {tool.name for tool in build_tool_definitions()}
+        dispatched_tools = set(SESSION_TOOL_SPECS) | {"gdb_start_session", "gdb_stop_session"}
+
+        assert exported_tools == dispatched_tools
