@@ -32,7 +32,8 @@ Prefer dedicated tools over raw CLI text commands, check startup health immediat
 
 ## State Discipline
 
-- Treat `execution_state` as authoritative.
+- Treat `execution_state` as authoritative for the currently selected inferior.
+- In fork or multi-inferior workflows, also inspect `inferior_states` from `gdb_get_status` or `gdb_list_sessions` for full process state.
 - Run `gdb_continue` only from a paused state.
 - Run `gdb_run` only when target startup has completed and execution is not already running.
 - For core dumps, expect `execution_state=paused` at startup.
@@ -42,6 +43,7 @@ Prefer dedicated tools over raw CLI text commands, check startup health immediat
 
 - Configure policy before running: `gdb_set_follow_fork_mode` and `gdb_set_detach_on_fork`.
 - Catch process events with `gdb_set_catchpoint` (`fork`, `vfork`, `exec`).
+- After fork/exit stops, use `gdb_get_status` to confirm `current_inferior_id` plus `inferior_states` before resuming.
 - Inspect process inventory with `gdb_list_inferiors`.
 - Switch target process explicitly with `gdb_select_inferior`.
 

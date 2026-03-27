@@ -8,7 +8,7 @@
 | Core dump analysis | `gdb_start_session` with `core` | `gdb_get_threads`, `gdb_get_backtrace`, `gdb_evaluate_expression` |
 | Program appears stuck | `gdb_get_status`, `gdb_interrupt` | `gdb_get_threads`, per-thread `gdb_get_backtrace` |
 | Flaky crash reproduction | `gdb_run_until_failure` | `capture` bundle plus expression and memory snapshots |
-| Fork-heavy behavior | `gdb_set_follow_fork_mode`, `gdb_set_detach_on_fork`, `gdb_set_catchpoint` | `gdb_list_inferiors`, `gdb_select_inferior` |
+| Fork-heavy behavior | `gdb_set_follow_fork_mode`, `gdb_set_detach_on_fork`, `gdb_set_catchpoint` | `gdb_get_status` (`inferior_states`), `gdb_list_inferiors`, `gdb_select_inferior` |
 
 ## Startup Checklist
 
@@ -66,7 +66,16 @@ Treat these outcomes as hard gates:
 - `gdb_get_threads`
 - `gdb_get_backtrace` for current thread
 - `gdb_get_variables` frame 0
-- `gdb_get_registers`
+- `gdb_get_registers` with focused selectors for lighter payloads:
+
+```json
+{
+  "session_id": 1,
+  "register_names": ["rip", "rsp", "rbp"],
+  "include_vector_registers": false,
+  "value_format": "natural"
+}
+```
 
 6. Persist evidence:
 
@@ -109,6 +118,7 @@ Constraints:
 
 - Do not pass `args` when using `core`.
 - Expect startup to be `paused`.
+- Prefer `program + core` together for best symbol/locals fidelity; core-only sessions can have weaker symbol resolution.
 
 ## Playbook 3: Hang Investigation
 
@@ -164,8 +174,13 @@ Useful capture expressions:
 - `gdb_continue`
 - `gdb_wait_for_stop` with optional `stop_reasons`
 
-4. Enumerate inferiors with `gdb_list_inferiors`.
-5. Switch with `gdb_select_inferior` before thread/frame inspection.
+4. Read multi-inferior runtime state from `gdb_get_status`:
+
+- Confirm `current_inferior_id`.
+- Inspect `inferior_states` to see running/paused/exited transitions for each inferior.
+
+5. Enumerate inferiors with `gdb_list_inferiors`.
+6. Switch with `gdb_select_inferior` before thread/frame inspection.
 
 ## Playbook 5: Flaky Failure Campaign
 
@@ -196,6 +211,23 @@ Use `gdb_run_until_failure` to avoid ad-hoc loops:
     "include_threads": true,
     "include_backtraces": true,
     "include_variables": true
+  }
+}
+```
+
+When you need a deterministic single output directory name (no iteration suffix), use `capture.bundle_name` instead of `bundle_name_prefix`:
+
+```json
+{
+  "startup": {
+    "program": "/path/to/app"
+  },
+  "max_iterations": 20,
+  "failure": {
+    "stop_reasons": ["signal-received"]
+  },
+  "capture": {
+    "bundle_name": "latest-signal-failure"
   }
 }
 ```
@@ -237,6 +269,18 @@ Use `gdb_batch` when strict ordering and one-shot orchestration are needed:
 }
 ```
 
+For lightweight one-off batches, `steps` also accepts shorthand strings:
+
+```json
+{
+  "session_id": 1,
+  "steps": [
+    "gdb_get_status",
+    "gdb_get_threads"
+  ]
+}
+```
+
 ## Common Failure Modes
 
 - Calling `gdb_continue` while already running.
@@ -244,4 +288,3 @@ Use `gdb_batch` when strict ordering and one-shot orchestration are needed:
 - Ignoring startup `warnings` and then trusting variable output.
 - Using only raw `gdb_execute_command` and losing structured outputs.
 - Forgetting `gdb_stop_session` and leaking debugger sessions.
-
