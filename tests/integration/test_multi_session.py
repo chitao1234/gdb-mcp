@@ -292,9 +292,9 @@ def test_concurrent_debugging_different_programs(
         # double_value call site; session 2 should still stop at triple_value.
         final_bt1 = call_gdb_tool("gdb_get_backtrace", {"session_id": session_id_1})
         session_1_reasons = [
-            notify.get("reason")
+            notify.get("payload", {}).get("reason")
             for notify in cont_result1.get("result", {}).get("notify", [])
-            if isinstance(notify, dict)
+            if isinstance(notify, dict) and isinstance(notify.get("payload"), dict)
         ]
         if "breakpoint-hit" in session_1_reasons:
             assert final_bt1["status"] == "success"

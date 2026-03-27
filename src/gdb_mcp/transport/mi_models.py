@@ -2,7 +2,14 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypedDict
+
+
+class MiNotifyRecord(TypedDict):
+    """Normalized async notification record."""
+
+    message: str | None
+    payload: Any
 
 
 @dataclass(slots=True)
@@ -14,7 +21,7 @@ class ParsedMiResponse:
     output: list[Any] = field(default_factory=list)
     result: Any = None
     result_class: str | None = None
-    notify: list[dict[str, Any]] = field(default_factory=list)
+    notify: list[MiNotifyRecord] = field(default_factory=list)
 
     def is_error_result(self) -> bool:
         """Return True when the MI result record reported an error."""
