@@ -506,6 +506,27 @@ Get CPU register values for the current frame.
 - `register_numbers` and `register_names` can be combined; duplicates are removed
 - `max_registers` is applied after any vector-register filtering
 
+**Examples:**
+- Lightweight status-focused read:
+```json
+{
+  "session_id": 3,
+  "register_names": ["rip", "rsp", "rbp"],
+  "include_vector_registers": false,
+  "value_format": "natural"
+}
+```
+- Full forensic dump for one frame:
+```json
+{
+  "session_id": 3,
+  "thread_id": 5,
+  "frame": 0,
+  "include_vector_registers": true,
+  "value_format": "hex"
+}
+```
+
 ### `gdb_read_memory`
 Read raw target memory bytes from an address expression.
 
