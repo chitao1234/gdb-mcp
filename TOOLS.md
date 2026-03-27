@@ -72,6 +72,9 @@ If using `core-file` in init_commands instead of the `core` parameter, ensure it
 
 `args` and `core` cannot be used together in the same startup request. Use `args` for live launches, or `core` for post-mortem analysis.
 
+For best symbol and locals fidelity in post-mortem debugging, prefer supplying both `program` and `core`.
+Core-only startup remains supported, but symbol resolution quality depends on what binaries and debug info GDB can infer from the core and environment. If frames show `??`, load the executable explicitly with `file /path/to/executable`.
+
 **Example with custom GDB path:**
 ```json
 {

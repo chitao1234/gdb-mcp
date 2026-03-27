@@ -237,6 +237,8 @@ If you provide `env`, those environment variables are applied before any `init_c
 
 `args` and `core` are intentionally mutually exclusive in one startup request: use `args` for a live program launch, or `core` for post-mortem analysis. `args` accepts either an explicit list (`["--mode","fast"]`) or a shell-style string (`"--mode fast"`).
 
+For post-mortem sessions, prefer providing both `program` and `core` for better symbol and locals resolution. Core-only mode is supported, but debug fidelity depends on what symbol files GDB can discover from the core and environment.
+
 By default, startup applies `set confirm off` so CLI commands stay non-interactive in automation workflows.
 
 ### Python Initialization Scripts
