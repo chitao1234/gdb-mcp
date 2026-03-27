@@ -147,6 +147,17 @@ Call a function in the target process.
 ### `gdb_get_status`
 Get the current status of the GDB session.
 
+**Returns:**
+- `is_running`: Whether the GDB session is still alive and usable
+- `target_loaded`: Whether GDB successfully loaded an executable or core file
+- `has_controller`: Whether the session still has an active GDB controller
+
+**Notes:**
+- If the GDB process has exited unexpectedly, `is_running` becomes `false`
+  and `has_controller` becomes `false`
+- If startup succeeded but the requested executable or core file did not load,
+  `target_loaded` remains `false`
+
 ### `gdb_stop_session`
 Stop the current GDB session.
 
@@ -165,7 +176,11 @@ Get stack backtrace for a thread.
 
 **Parameters:**
 - `thread_id` (optional): Thread ID (None for current thread)
-- `max_frames`: Maximum frames to retrieve (default: 100)
+- `max_frames`: Maximum number of frames to retrieve (default: 100)
+
+**Notes:**
+- `max_frames` is a true upper bound on returned frame count
+- Supplying `thread_id` does not change the selected thread after the call
 
 ## Breakpoints and Execution Control
 
@@ -180,6 +195,7 @@ Set a breakpoint at a location.
 **Examples:**
 - `location: "main"` - Break at main function
 - `location: "foo.c:42"` - Break at line 42 of foo.c
+- `location: "/tmp/my project/foo.c:42"` - Break at a source path containing spaces
 - `location: "*0x12345678"` - Break at memory address
 - `condition: "x > 10"` - Only break when x > 10
 
@@ -277,6 +293,12 @@ Get local variables for a stack frame.
 **Parameters:**
 - `thread_id` (optional): Thread ID
 - `frame`: Frame number (0 is current, default: 0)
+
+**Notes:**
+- This call inspects the requested thread/frame and then restores the prior
+  selection
+- Use `gdb_select_thread` or `gdb_select_frame` when you want to change the
+  debugger context for later commands
 
 ### `gdb_get_registers`
 Get CPU register values for the current frame.

@@ -80,6 +80,11 @@ class SessionExecutionService:
         if not self._runtime.has_controller:
             return OperationError(message="No active GDB session")
 
+        if not self._command_runner.is_gdb_alive():
+            message = "GDB process has exited - session is no longer active"
+            self._command_runner.handle_dead_transport(message)
+            return OperationError(message=message)
+
         controller = self._runtime.controller
         if not getattr(controller, "gdb_process", None):
             return OperationError(message="No GDB process running")
@@ -119,7 +124,9 @@ class SessionExecutionService:
             return OperationError(message="No active GDB session")
 
         if not self._command_runner.is_gdb_alive():
-            return OperationError(message="GDB process has exited - cannot execute call")
+            message = "GDB process has exited - session is no longer active"
+            self._command_runner.handle_dead_transport(message)
+            return OperationError(message=message)
 
         command = f"call {function_call}"
         mi_command = wrap_cli_command(command)

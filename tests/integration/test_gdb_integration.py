@@ -14,6 +14,10 @@ with GDB process state transitions. This is expected behavior for integration
 tests that interact with external processes.
 """
 
+import subprocess
+import tempfile
+from pathlib import Path
+
 import pytest
 
 # Simple C++ program with function calls for testing
@@ -410,6 +414,27 @@ def test_execute_command_before_run(session_id):
 
 
 @pytest.mark.integration
+def test_start_session_with_missing_program_reports_target_unloaded(stop_session):
+    """Missing startup targets should not be reported as loaded."""
+
+    result = call_gdb_tool(
+        "gdb_start_session",
+        {"program": "/definitely/not/here", "init_commands": []},
+    )
+
+    assert result["status"] == "success"
+    assert "session_id" in result
+    assert "Program file not found" in result.get("warnings", [])
+
+    session_id = result["session_id"]
+    status = call_gdb_tool("gdb_get_status", {"session_id": session_id})
+    assert status["is_running"] is True
+    assert status["target_loaded"] is False
+
+    stop_session(session_id)
+
+
+@pytest.mark.integration
 def test_multiple_breakpoints_same_location(session_id):
     """Test setting multiple breakpoints at the same location."""
 
@@ -630,6 +655,40 @@ def test_select_frame(session_id):
 
 
 @pytest.mark.integration
+def test_get_variables_preserves_current_frame(session_id):
+    """Read-only variable inspection should not leave the debugger on a new frame."""
+
+    call_gdb_tool("gdb_set_breakpoint", {"session_id": session_id, "location": "add"})
+    call_gdb_tool("gdb_execute_command", {"session_id": session_id, "command": "run"})
+
+    before = call_gdb_tool("gdb_get_frame_info", {"session_id": session_id})
+    assert before["status"] == "success"
+    assert before["frame"]["level"] == "0"
+
+    vars_result = call_gdb_tool("gdb_get_variables", {"session_id": session_id, "frame": 1})
+    assert vars_result["status"] == "success"
+    assert vars_result["frame"] == 1
+
+    after = call_gdb_tool("gdb_get_frame_info", {"session_id": session_id})
+    assert after["status"] == "success"
+    assert after["frame"]["level"] == before["frame"]["level"]
+    assert after["frame"]["func"] == before["frame"]["func"]
+
+
+@pytest.mark.integration
+def test_get_backtrace_max_frames_is_an_upper_bound(session_id):
+    """Backtrace limits should cap the returned frame count."""
+
+    call_gdb_tool("gdb_set_breakpoint", {"session_id": session_id, "location": "add"})
+    call_gdb_tool("gdb_execute_command", {"session_id": session_id, "command": "run"})
+
+    backtrace = call_gdb_tool("gdb_get_backtrace", {"session_id": session_id, "max_frames": 1})
+
+    assert backtrace["status"] == "success"
+    assert backtrace["count"] == 1
+
+
+@pytest.mark.integration
 def test_frame_selection_and_variables(session_id):
     """Test that frame selection affects variable inspection."""
 
@@ -659,3 +718,42 @@ def test_frame_selection_and_variables(session_id):
         assert vars_frame1["status"] == "success"
         assert vars_frame1["frame"] == 1
         assert vars_frame1["variables"] != vars_frame0["variables"]
+
+
+@pytest.mark.integration
+def test_set_breakpoint_with_source_path_containing_spaces(stop_session):
+    """Breakpoint locations with spaces should be passed to GDB intact."""
+
+    with tempfile.TemporaryDirectory(prefix="gdb mcp tests ") as tmpdir:
+        tmp_path = Path(tmpdir)
+        source = tmp_path / "sample source.c"
+        program = tmp_path / "sample program"
+        source.write_text("int main(void) { return 0; }\n")
+
+        compile_result = subprocess.run(
+            ["gcc", "-g", "-O0", "-o", str(program), str(source)],
+            capture_output=True,
+            text=True,
+        )
+        assert compile_result.returncode == 0, compile_result.stderr
+
+        start_result = call_gdb_tool(
+            "gdb_start_session",
+            {
+                "program": str(program),
+                "init_commands": [
+                    "set disable-randomization on",
+                    "set startup-with-shell off",
+                ],
+            },
+        )
+        assert start_result["status"] == "success"
+        session_id = start_result["session_id"]
+
+        bp_result = call_gdb_tool(
+            "gdb_set_breakpoint",
+            {"session_id": session_id, "location": f"{source}:1"},
+        )
+        assert bp_result["status"] == "success"
+
+        stop_session(session_id)

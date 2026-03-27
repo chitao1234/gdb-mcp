@@ -72,22 +72,46 @@ class TestThreadAndStackInspectionApi:
         assert result["status"] == "success"
         assert result["count"] == 1
         assert result["thread_id"] is None
-        assert controller.io_manager.stdin.writes[0].decode().endswith("-stack-list-frames 0 100\n")
+        assert controller.io_manager.stdin.writes[0].decode().endswith("-stack-list-frames 0 99\n")
 
     def test_get_backtrace_specific_thread(self, scripted_running_session, mi_result):
-        """Backtrace requests for a specific thread should switch threads first."""
+        """Backtrace requests for a specific thread should restore the original selection."""
 
         session, controller = scripted_running_session(
+            [mi_result({"threads": [{"id": "1"}, {"id": "3"}], "current-thread-id": "1"})],
+            [mi_result({"frame": {"level": "0", "func": "main"}})],
             [mi_result()],
             [mi_result({"stack": []})],
+            [mi_result()],
+            [mi_result()],
         )
 
         result = result_to_mapping(session.get_backtrace(thread_id=3))
 
         assert result["status"] == "success"
         written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert written[0].endswith("-thread-info\n")
+        assert written[1].endswith("-stack-info-frame\n")
         assert any("-thread-select 3" in command for command in written)
-        assert any("-stack-list-frames 0 100" in command for command in written)
+        assert any("-stack-list-frames 0 99" in command for command in written)
+        assert written[-2].endswith("-thread-select 1\n")
+        assert written[-1].endswith("-stack-select-frame 0\n")
+
+    def test_get_backtrace_max_frames_is_an_upper_bound(
+        self,
+        scripted_running_session,
+        mi_result,
+    ):
+        """The requested max_frames count should not become an inclusive upper index."""
+
+        session, controller = scripted_running_session(
+            [mi_result({"stack": [{"level": "0", "func": "main"}]})]
+        )
+
+        result = result_to_mapping(session.get_backtrace(max_frames=1))
+
+        assert result["status"] == "success"
+        assert controller.io_manager.stdin.writes[0].decode().endswith("-stack-list-frames 0 0\n")
 
 
 class TestDataInspectionApi:
@@ -128,9 +152,11 @@ class TestDataInspectionApi:
         )
 
     def test_get_variables(self, scripted_running_session, mi_result):
-        """Variable inspection should surface thread, frame, and values."""
+        """Variable inspection should restore the original thread/frame selection."""
 
         session, controller = scripted_running_session(
+            [mi_result({"threads": [{"id": "1"}, {"id": "2"}], "current-thread-id": "1"})],
+            [mi_result({"frame": {"level": "0", "func": "main"}})],
             [mi_result()],
             [mi_result()],
             [
@@ -143,6 +169,8 @@ class TestDataInspectionApi:
                     }
                 )
             ],
+            [mi_result()],
+            [mi_result()],
         )
 
         result = result_to_mapping(session.get_variables(thread_id=2, frame=1))
@@ -152,9 +180,15 @@ class TestDataInspectionApi:
         assert result["frame"] == 1
         assert len(result["variables"]) == 2
         written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert written[0].endswith("-thread-info\n")
+        assert written[1].endswith("-stack-info-frame\n")
         assert any("-thread-select 2" in command for command in written)
         assert any("-stack-select-frame 1" in command for command in written)
         assert any("-stack-list-variables --simple-values" in command for command in written)
+        assert written[-2].endswith("-thread-select 1\n")
+        assert written[-1].endswith("-stack-select-frame 0\n")
+        assert session.runtime.current_thread_id == 1
+        assert session.runtime.current_frame == 0
 
     def test_get_registers(self, scripted_running_session, mi_result):
         """Register inspection should surface all returned register values."""

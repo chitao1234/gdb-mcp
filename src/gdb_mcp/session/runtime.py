@@ -74,6 +74,12 @@ class SessionRuntime:
         self.current_thread_id = None
         self.current_frame = None
 
+    def mark_transport_terminated(self, message: str) -> None:
+        """Record that the debugger transport has died and clear its controller."""
+
+        self.controller = None
+        self.mark_failed(message)
+
     def mark_stopped(self) -> None:
         """Record a clean stop of the current session."""
 

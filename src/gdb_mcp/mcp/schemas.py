@@ -164,6 +164,8 @@ def build_tool_definitions() -> list[Tool]:
             name="gdb_get_status",
             description=(
                 "Get the current status of the GDB session. "
+                "Reports whether the GDB process is still alive, whether a target was "
+                "successfully loaded, and whether the session still has an active controller. "
                 "Requires session_id parameter (obtained from gdb_start_session)."
             ),
             inputSchema=SessionIdArgs.model_json_schema(),
@@ -193,6 +195,8 @@ def build_tool_definitions() -> list[Tool]:
             description=(
                 "Get the stack backtrace for a specific thread or the current thread. "
                 "Shows function calls, file locations, and line numbers. "
+                "If thread_id is provided, the original thread/frame selection is restored after the call. "
+                "The max_frames parameter is an upper bound on the number of frames returned. "
                 "Requires session_id parameter (obtained from gdb_start_session)."
             ),
             inputSchema=GetBacktraceArgs.model_json_schema(),
@@ -225,6 +229,7 @@ def build_tool_definitions() -> list[Tool]:
             description=(
                 "Set a breakpoint at a function, file:line, or address. "
                 "Supports conditional breakpoints and temporary breakpoints. "
+                "Source file paths containing spaces are supported. "
                 "Returns breakpoint details including number, address, and location. "
                 "Use gdb_list_breakpoints to verify breakpoints were set correctly. "
                 "Requires session_id parameter (obtained from gdb_start_session)."
@@ -330,6 +335,8 @@ def build_tool_definitions() -> list[Tool]:
             name="gdb_get_variables",
             description=(
                 "Get local variables for a specific stack frame in a thread. "
+                "This is a read-only inspection call: the original thread/frame selection "
+                "is restored after the variables are collected. "
                 "Requires session_id parameter (obtained from gdb_start_session)."
             ),
             inputSchema=GetVariablesArgs.model_json_schema(),

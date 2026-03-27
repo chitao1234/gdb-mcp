@@ -40,7 +40,7 @@ class SessionBreakpointService:
         if condition:
             cmd_parts.extend(["-c", quote_mi_string(condition)])
 
-        cmd_parts.append(location)
+        cmd_parts.append(quote_mi_string(location))
 
         result = self._command_runner.execute_command_result(
             " ".join(cmd_parts), timeout_sec=DEFAULT_TIMEOUT_SEC

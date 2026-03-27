@@ -129,6 +129,20 @@ class TestMiClient:
             cwd="/tmp/work",
         )
 
+    def test_read_initial_output_drains_startup_records(self):
+        """Startup output emitted before the first command should be retrievable."""
+
+        controller = _FakeController(
+            [[{"type": "log", "payload": "/missing/program: No such file or directory.\n"}], []]
+        )
+        client = self._make_client(controller)
+
+        result = client.read_initial_output(timeout_sec=0.1)
+
+        assert result == [
+            {"type": "log", "payload": "/missing/program: No such file or directory.\n"}
+        ]
+
     def test_send_command_collects_result_and_async_notifications(self):
         """A matching result record should end the read loop and retain async output."""
 
@@ -255,6 +269,24 @@ class TestMiClient:
 
         assert result.fatal is True
         assert "fatal error" in result.error.lower()
+        assert client.controller is None
+        assert controller.exit_called is True
+
+    def test_send_command_cleans_up_when_gdb_process_exits(self):
+        """Unexpected child exit should be treated as a terminal transport failure."""
+
+        controller = _FakeController([[]])
+        client = self._make_client(controller)
+
+        with patch("gdb_mcp.transport.mi_client._LIVENESS_CHECK_INTERVAL_SEC", 0.0):
+            with patch.object(client, "is_alive", return_value=False):
+                with patch.object(client, "_extract_exit_code", return_value=-9):
+                    result = client.send_command_and_wait_for_prompt(
+                        "-gdb-version", timeout_sec=0.1
+                    )
+
+        assert result.fatal is True
+        assert "exited unexpectedly" in result.error
         assert client.controller is None
         assert controller.exit_called is True
 

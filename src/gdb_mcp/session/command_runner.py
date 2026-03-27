@@ -35,7 +35,7 @@ class SessionCommandRunner:
 
         if result.fatal:
             failure_message = result.error or "GDB transport failed"
-            self._runtime.mark_failed(failure_message)
+            self._runtime.mark_transport_terminated(failure_message)
 
         return result.to_dict()
 
@@ -54,9 +54,14 @@ class SessionCommandRunner:
 
         if result.fatal:
             failure_message = result.error or "GDB transport failed"
-            self._runtime.mark_failed(failure_message)
+            self._runtime.mark_transport_terminated(failure_message)
 
         return result.to_dict()
+
+    def handle_dead_transport(self, message: str) -> None:
+        """Transition the session into a terminal state after GDB has exited."""
+
+        self._runtime.mark_transport_terminated(message)
 
     def execute_command_result(
         self, command: str, timeout_sec: int = DEFAULT_TIMEOUT_SEC
@@ -68,8 +73,10 @@ class SessionCommandRunner:
 
         if not self.is_gdb_alive():
             logger.error("GDB process is not running when trying to execute: %s", command)
+            message = "GDB process has exited - session is no longer active"
+            self.handle_dead_transport(message)
             return OperationError(
-                message="GDB process has exited - cannot execute command",
+                message=message,
                 details={"command": command},
             )
 

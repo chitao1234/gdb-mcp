@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 from typing import Optional
 
@@ -31,6 +32,14 @@ from .result_utils import command_result_payload
 from .runtime import SessionRuntime
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _SelectionSnapshot:
+    """Current thread/frame selection captured for temporary inspection changes."""
+
+    thread_id: int | None
+    frame_number: int | None
 
 
 class SessionInspectionService:
@@ -81,12 +90,17 @@ class SessionInspectionService:
         if isinstance(result, OperationError):
             return result
 
+        raw_payload = extract_mi_result_payload(command_result_payload(result))
+        if isinstance(raw_payload, dict):
+            frame_payload = raw_payload.get("frame")
+            if isinstance(frame_payload, dict):
+                self._runtime.mark_frame_selected(self._int_or_none(frame_payload.get("level")))
         self._runtime.mark_thread_selected(thread_id)
 
         return OperationSuccess(
             thread_selection_info_from_payload(
                 thread_id,
-                extract_mi_result_payload(command_result_payload(result)),
+                raw_payload,
             )
         )
 
@@ -94,27 +108,39 @@ class SessionInspectionService:
         self, thread_id: Optional[int] = None, max_frames: int = DEFAULT_MAX_BACKTRACE_FRAMES
     ) -> OperationSuccess[BacktraceInfo] | OperationError:
         """Get the stack backtrace for a specific thread or the current thread."""
-        if thread_id is not None:
+        selection = self._capture_selection() if thread_id is not None else None
+        if isinstance(selection, OperationError):
+            return selection
+
+        if thread_id is not None and (selection is None or selection.thread_id != thread_id):
             switch_result = self._command_runner.execute_command_result(
                 f"-thread-select {thread_id}", timeout_sec=DEFAULT_TIMEOUT_SEC
             )
             if isinstance(switch_result, OperationError):
                 return switch_result
-            self._runtime.mark_thread_selected(thread_id)
 
         result = self._command_runner.execute_command_result(
-            f"-stack-list-frames 0 {max_frames}", timeout_sec=DEFAULT_TIMEOUT_SEC
+            f"-stack-list-frames 0 {max_frames - 1}", timeout_sec=DEFAULT_TIMEOUT_SEC
         )
 
         if isinstance(result, OperationError):
+            if selection is not None and selection.thread_id != thread_id:
+                restore_error = self._restore_selection(selection)
+                if restore_error is not None:
+                    return restore_error
             return result
 
-        return OperationSuccess(
-            backtrace_info_from_payload(
-                thread_id,
-                extract_mi_result_payload(command_result_payload(result)),
-            )
+        payload = backtrace_info_from_payload(
+            thread_id,
+            extract_mi_result_payload(command_result_payload(result)),
         )
+
+        if selection is not None and selection.thread_id != thread_id:
+            restore_error = self._restore_selection(selection)
+            if restore_error is not None:
+                return restore_error
+
+        return OperationSuccess(payload)
 
     def get_frame_info(self) -> OperationSuccess[FrameInfo] | OperationError:
         """Get information about the current stack frame."""
@@ -125,9 +151,13 @@ class SessionInspectionService:
         if isinstance(result, OperationError):
             return result
 
-        return OperationSuccess(
-            frame_info_from_payload(extract_mi_result_payload(command_result_payload(result)))
+        frame_info = frame_info_from_payload(
+            extract_mi_result_payload(command_result_payload(result))
         )
+        level = frame_info.frame.get("level")
+        self._runtime.mark_frame_selected(self._int_or_none(level))
+
+        return OperationSuccess(frame_info)
 
     def select_frame(
         self, frame_number: int
@@ -181,35 +211,44 @@ class SessionInspectionService:
         self, thread_id: Optional[int] = None, frame: int = 0
     ) -> OperationSuccess[VariablesInfo] | OperationError:
         """Get local variables for a specific frame."""
-        if thread_id is not None:
+        selection = self._capture_selection()
+        if isinstance(selection, OperationError):
+            return selection
+
+        if thread_id is not None and selection.thread_id != thread_id:
             thread_result = self._command_runner.execute_command_result(
                 f"-thread-select {thread_id}", timeout_sec=DEFAULT_TIMEOUT_SEC
             )
             if isinstance(thread_result, OperationError):
                 return thread_result
-            self._runtime.mark_thread_selected(thread_id)
 
-        frame_result = self._command_runner.execute_command_result(
-            f"-stack-select-frame {frame}", timeout_sec=DEFAULT_TIMEOUT_SEC
-        )
-        if isinstance(frame_result, OperationError):
-            return frame_result
-        self._runtime.mark_frame_selected(frame)
+        if selection.frame_number != frame:
+            frame_result = self._command_runner.execute_command_result(
+                f"-stack-select-frame {frame}", timeout_sec=DEFAULT_TIMEOUT_SEC
+            )
+            if isinstance(frame_result, OperationError):
+                return frame_result
 
         result = self._command_runner.execute_command_result(
             "-stack-list-variables --simple-values", timeout_sec=DEFAULT_TIMEOUT_SEC
         )
 
         if isinstance(result, OperationError):
+            restore_error = self._restore_selection(selection)
+            if restore_error is not None:
+                return restore_error
             return result
 
-        return OperationSuccess(
-            variables_info_from_payload(
-                thread_id,
-                frame,
-                extract_mi_result_payload(command_result_payload(result)),
-            )
+        payload = variables_info_from_payload(
+            thread_id,
+            frame,
+            extract_mi_result_payload(command_result_payload(result)),
         )
+        restore_error = self._restore_selection(selection)
+        if restore_error is not None:
+            return restore_error
+
+        return OperationSuccess(payload)
 
     def get_registers(self) -> OperationSuccess[RegistersInfo] | OperationError:
         """Get register values for current frame."""
@@ -223,3 +262,77 @@ class SessionInspectionService:
         return OperationSuccess(
             registers_info_from_payload(extract_mi_result_payload(command_result_payload(result)))
         )
+
+    def _capture_selection(self) -> _SelectionSnapshot | OperationError:
+        """Capture the currently selected thread and frame for later restoration."""
+
+        thread_result = self._command_runner.execute_command_result(
+            "-thread-info", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
+        if isinstance(thread_result, OperationError):
+            return thread_result
+
+        thread_payload = extract_mi_result_payload(command_result_payload(thread_result))
+        current_thread = None
+        if isinstance(thread_payload, dict):
+            current_thread = self._int_or_none(thread_payload.get("current-thread-id"))
+
+        frame_result = self._command_runner.execute_command_result(
+            "-stack-info-frame", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
+        if isinstance(frame_result, OperationError):
+            return frame_result
+
+        frame_payload = extract_mi_result_payload(command_result_payload(frame_result))
+        current_frame = None
+        if isinstance(frame_payload, dict):
+            current_frame_payload = frame_payload.get("frame")
+            if isinstance(current_frame_payload, dict):
+                current_frame = self._int_or_none(current_frame_payload.get("level"))
+
+        self._runtime.mark_thread_selected(current_thread)
+        self._runtime.mark_frame_selected(current_frame)
+
+        return _SelectionSnapshot(thread_id=current_thread, frame_number=current_frame)
+
+    def _restore_selection(self, selection: _SelectionSnapshot) -> OperationError | None:
+        """Restore a previously captured debugger selection."""
+
+        if selection.thread_id is not None:
+            thread_restore = self._command_runner.execute_command_result(
+                f"-thread-select {selection.thread_id}", timeout_sec=DEFAULT_TIMEOUT_SEC
+            )
+            if isinstance(thread_restore, OperationError):
+                return OperationError(
+                    message=(
+                        "Inspection completed but failed to restore the original thread selection: "
+                        f"{thread_restore.message}"
+                    )
+                )
+
+        if selection.frame_number is not None:
+            frame_restore = self._command_runner.execute_command_result(
+                f"-stack-select-frame {selection.frame_number}",
+                timeout_sec=DEFAULT_TIMEOUT_SEC,
+            )
+            if isinstance(frame_restore, OperationError):
+                return OperationError(
+                    message=(
+                        "Inspection completed but failed to restore the original frame selection: "
+                        f"{frame_restore.message}"
+                    )
+                )
+
+        self._runtime.mark_thread_selected(selection.thread_id)
+        self._runtime.mark_frame_selected(selection.frame_number)
+        return None
+
+    @staticmethod
+    def _int_or_none(value: object) -> int | None:
+        """Parse a GDB string/integer field into an integer when possible."""
+
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+        return None

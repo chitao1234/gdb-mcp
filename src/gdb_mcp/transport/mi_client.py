@@ -65,6 +65,50 @@ class MiClient:
         )
         return self._controller
 
+    def read_initial_output(self, *, timeout_sec: float) -> list[dict[str, Any]]:
+        """Drain startup records emitted before the first explicit command."""
+
+        if not self._controller:
+            return []
+
+        records: list[dict[str, Any]] = []
+        deadline = time.monotonic() + timeout_sec
+
+        with self._command_lock:
+            while self._controller is not None and time.monotonic() < deadline:
+                remaining = max(0.0, deadline - time.monotonic())
+                poll_timeout = min(self._poll_timeout_sec, remaining)
+                if poll_timeout <= 0:
+                    break
+
+                try:
+                    responses = self._controller.get_gdb_response(
+                        timeout_sec=poll_timeout,
+                        raise_error_on_timeout=False,
+                    )
+                except (BrokenPipeError, OSError) as exc:
+                    logger.error("Communication error while reading startup output: %s", exc)
+                    self._exit_unlocked()
+                    raise RuntimeError(f"Communication error while reading startup output: {exc}")
+
+                if not isinstance(responses, list) or not responses:
+                    break
+
+                for response in responses:
+                    payload = response.get("payload", "")
+                    if response.get("type") in ("console", "log") and self._is_fatal_payload(
+                        payload
+                    ):
+                        logger.error(
+                            "GDB internal fatal error detected during startup: %s", payload
+                        )
+                        self._exit_unlocked()
+                        raise RuntimeError(f"GDB internal fatal error: {str(payload).strip()}")
+
+                records.extend(responses)
+
+        return records
+
     def exit(self) -> None:
         """Stop the current controller if one exists."""
 
@@ -130,7 +174,8 @@ class MiClient:
                 self._controller.io_manager.stdin.flush()
             except (BrokenPipeError, OSError) as exc:
                 logger.error("Failed to send command: %s", exc)
-                return MiTransportResponse(error=f"Failed to send command: {exc}")
+                self._exit_unlocked()
+                return MiTransportResponse(error=f"Failed to send command: {exc}", fatal=True)
 
             command_responses: list[dict[str, Any]] = []
             async_notifications: list[dict[str, Any]] = []
@@ -160,10 +205,12 @@ class MiClient:
                                 error_details += f" (exit code {exit_code})"
 
                         logger.error(error_details)
+                        self._exit_unlocked()
                         return MiTransportResponse(
                             command_responses=command_responses,
                             async_notifications=async_notifications,
                             error=error_details,
+                            fatal=True,
                         )
 
                     last_alive_check = elapsed
@@ -181,10 +228,12 @@ class MiClient:
                     )
                 except (BrokenPipeError, OSError) as exc:
                     logger.error("Communication error while reading responses: %s", exc)
+                    self._exit_unlocked()
                     return MiTransportResponse(
                         command_responses=command_responses,
                         async_notifications=async_notifications,
                         error=f"Communication error: {exc}",
+                        fatal=True,
                     )
 
                 if not responses:
@@ -300,9 +349,11 @@ class MiClient:
                     logger.error(
                         "Communication error while waiting for interrupt response: %s", exc
                     )
+                    self._exit_unlocked()
                     return MiTransportResponse(
                         command_responses=command_responses,
                         error=f"Communication error: {exc}",
+                        fatal=True,
                     )
 
                 if not responses:

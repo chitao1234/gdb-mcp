@@ -106,18 +106,18 @@ The GDB MCP Server provides 22 tools for controlling GDB debugging sessions:
 - `gdb_start_session` - Start a new GDB session with optional initialization
 - `gdb_execute_command` - Execute GDB commands (CLI or MI format)
 - `gdb_call_function` - Call a function in the target process (dedicated tool for separate permissioning)
-- `gdb_get_status` - Get current session status
+- `gdb_get_status` - Get current session status, including whether the target actually loaded
 - `gdb_stop_session` - Stop the current session
 
 **Thread & Frame Navigation:**
 - `gdb_get_threads` - List all threads
 - `gdb_select_thread` - Select a specific thread
-- `gdb_get_backtrace` - Get stack trace for a thread
+- `gdb_get_backtrace` - Get stack trace for a thread without changing the selected thread
 - `gdb_select_frame` - Select a specific stack frame
 - `gdb_get_frame_info` - Get information about the current frame
 
 **Breakpoint Management:**
-- `gdb_set_breakpoint` - Set breakpoints with optional conditions
+- `gdb_set_breakpoint` - Set breakpoints with optional conditions, including source paths with spaces
 - `gdb_list_breakpoints` - List all breakpoints with structured data
 - `gdb_delete_breakpoint` - Delete a breakpoint by number
 - `gdb_enable_breakpoint` - Enable a breakpoint
@@ -131,10 +131,14 @@ The GDB MCP Server provides 22 tools for controlling GDB debugging sessions:
 
 **Data Inspection:**
 - `gdb_evaluate_expression` - Evaluate expressions
-- `gdb_get_variables` - Get local variables
+- `gdb_get_variables` - Get local variables without changing the selected thread/frame
 - `gdb_get_registers` - Get CPU registers
 
 **For detailed documentation of each tool including parameters, return values, and examples, see [TOOLS.md](TOOLS.md).**
+
+`gdb_get_status` reports `target_loaded=false` when GDB started but the requested
+executable or core file did not load successfully. If the underlying GDB process
+dies unexpectedly, later status checks report the session as no longer running.
 
 ## Usage Examples
 

@@ -143,6 +143,18 @@ class TestExecutionApi:
         assert "Thread ID 999 not known" in result["message"]
         assert controller.io_manager.stdin.writes[0].decode().endswith("-thread-select 999\n")
 
+    def test_execute_command_marks_dead_transport_inactive(self, running_session):
+        """Dead GDB children should transition the session out of running state."""
+
+        with patch.object(running_session._command_runner, "is_gdb_alive", return_value=False):
+            result = result_to_mapping(running_session.execute_command("info threads"))
+
+        assert result["status"] == "error"
+        assert "session is no longer active" in result["message"]
+        assert running_session.controller is None
+        assert running_session.is_running is False
+        assert running_session.target_loaded is False
+
     def test_run_with_args_preserves_argument_boundaries(
         self,
         scripted_running_session,
@@ -220,3 +232,13 @@ class TestCallFunctionApi:
 
         assert result["status"] == "error"
         assert "No symbol table" in result["message"]
+
+    def test_call_function_marks_dead_transport_inactive(self, running_session):
+        """Dead GDB children should invalidate later function calls too."""
+
+        with patch.object(running_session._command_runner, "is_gdb_alive", return_value=False):
+            result = result_to_mapping(running_session.call_function("some_func()"))
+
+        assert result["status"] == "error"
+        assert "session is no longer active" in result["message"]
+        assert running_session.controller is None

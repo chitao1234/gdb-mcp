@@ -20,6 +20,19 @@ class TestLifecycleApi:
         assert status["target_loaded"] is False
         assert status["has_controller"] is False
 
+    def test_get_status_marks_dead_gdb_process_inactive(self, running_session):
+        """Status should reconcile against a dead GDB child process."""
+
+        with patch.object(running_session._command_runner, "is_gdb_alive", return_value=False):
+            status = result_to_mapping(running_session.get_status())
+
+        assert status["status"] == "success"
+        assert status["is_running"] is False
+        assert status["target_loaded"] is False
+        assert status["has_controller"] is False
+        assert running_session.controller is None
+        assert running_session.state.value == "failed"
+
     def test_stop_no_session(self, session_service):
         """Stopping without a controller should return a user-facing error."""
 
@@ -340,6 +353,38 @@ class TestLifecycleApi:
         assert result["status"] == "success"
         assert "warnings" in result
         assert any("not compiled with -g" in warning for warning in result["warnings"])
+
+    @patch("gdb_mcp.session.factory.GdbController")
+    def test_start_session_missing_program_leaves_target_unloaded(
+        self,
+        mock_controller_class,
+        session_service,
+        prompt_response,
+    ):
+        """Missing startup targets should not report target_loaded=true."""
+
+        mock_controller_class.return_value = MagicMock()
+
+        with patch.object(
+            session_service.runtime.transport,
+            "read_initial_output",
+            return_value=[{"type": "log", "payload": "/missing/app: No such file or directory.\n"}],
+        ):
+            with patch.object(
+                session_service._command_runner,
+                "send_command_and_wait_for_prompt",
+                return_value=prompt_response(
+                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
+                ),
+            ):
+                result = result_to_mapping(session_service.start(program="/missing/app"))
+
+        status = result_to_mapping(session_service.get_status())
+
+        assert result["status"] == "success"
+        assert "warnings" in result
+        assert "Program file not found" in result["warnings"]
+        assert status["target_loaded"] is False
 
     def test_stop_active_session(self, running_session):
         """Stopping an active session should clear the controller and running flag."""
