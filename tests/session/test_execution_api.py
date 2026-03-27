@@ -64,6 +64,34 @@ class TestExecutionApi:
         assert transcript_entry.stop_reason == "breakpoint-hit"
         assert controller.io_manager.stdin.writes[0].decode().endswith("-exec-continue\n")
 
+    def test_continue_execution_returns_running_when_no_stop_before_timeout(
+        self,
+        running_session,
+        mi_result,
+        prompt_response,
+    ):
+        """Continue should return a running success when no stop arrives before timeout."""
+
+        with patch.object(
+            running_session._command_runner,
+            "send_command_and_wait_for_prompt",
+            return_value=prompt_response(
+                command_responses=[mi_result(message="running")],
+                timed_out=True,
+            ),
+        ):
+            result = result_to_mapping(running_session.continue_execution())
+
+        assert result["status"] == "success"
+        assert result["result"]["result_class"] == "running"
+        assert "warnings" in result
+        status = result_to_mapping(running_session.get_status())
+        assert status["execution_state"] == "running"
+        transcript_entry = running_session.command_transcript[-1]
+        assert transcript_entry.command == "-exec-continue"
+        assert transcript_entry.status == "success"
+        assert transcript_entry.timed_out is True
+
     def test_step(self, scripted_running_session, mi_result, mi_notify):
         """Step should emit the MI exec-step command."""
 
@@ -323,6 +351,32 @@ class TestExecutionApi:
         written = [command.decode() for command in controller.io_manager.stdin.writes]
         assert '-exec-arguments "--name" "hello world" "quote\\"value"\n' in written[0]
         assert written[1].endswith("-exec-run\n")
+
+    def test_run_parses_zero_padded_exit_code(self, scripted_running_session, mi_result, mi_notify):
+        """Exit-code parsing should preserve decimal values from zero-padded fields."""
+
+        session, _controller = scripted_running_session(
+            [
+                mi_result(message="running"),
+                mi_notify(
+                    "stopped",
+                    {
+                        "reason": "exited",
+                        "exit-code": "07",
+                    },
+                ),
+            ]
+        )
+
+        result = result_to_mapping(session.run(timeout_sec=5))
+
+        assert result["status"] == "success"
+        status = result_to_mapping(session.get_status())
+        assert status["execution_state"] == "exited"
+        assert status["stop_reason"] == "exited"
+        assert status["exit_code"] == 7
+        assert session.last_stop_event is not None
+        assert session.last_stop_event.exit_code == 7
 
     def test_attach_process(self, scripted_running_session, mi_console, mi_result, mi_notify):
         """Attach should route through the CLI attach command and mark the target loaded."""

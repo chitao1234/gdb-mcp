@@ -152,7 +152,9 @@ structured output and can be separately permissioned.
 Run the currently loaded target in a structured way.
 
 **Parameters:**
-- `args` (optional): Override inferior arguments for this run
+- `args` (optional): Override inferior arguments for this run. Accepts either:
+  - list form: `["--mode", "fast"]`
+  - shell-style string form: `"--mode fast"`
 - `timeout_sec`: Timeout in seconds (default: 30)
 
 **Use this when:**
@@ -175,6 +177,73 @@ when possible.
 
 **Typical result:**
 - The process becomes paused and inspectable after attach succeeds
+
+### `gdb_list_inferiors`
+List inferiors currently known to this GDB session.
+
+**Parameters:**
+- none beyond `session_id`
+
+**Returns:**
+- `inferiors`: Array of inferiors with fields such as `inferior_id`, `is_current`, `description`, and optional `executable`
+- `count`: Number of inferiors
+- `current_inferior_id`: Active inferior ID when known
+
+### `gdb_select_inferior`
+Select the active inferior by ID.
+
+**Parameters:**
+- `inferior_id`: Inferior ID from `gdb_list_inferiors`
+
+### `gdb_set_follow_fork_mode`
+Set fork-follow behavior for multi-process debugging.
+
+**Parameters:**
+- `mode`: `"parent"` or `"child"`
+
+### `gdb_set_detach_on_fork`
+Configure whether GDB detaches from the non-followed side after fork.
+
+**Parameters:**
+- `enabled`: `true` or `false`
+
+### `gdb_batch`
+Execute a structured sequence of session-scoped tools under one session workflow lock.
+
+**Parameters:**
+- `steps`: Ordered list of steps. Each step can be:
+  - full object form: `{"tool":"gdb_get_status","arguments":{},"label":"optional"}`
+  - shorthand form: `"gdb_get_status"`
+- `fail_fast`: Stop after first failed step (default: `true`)
+- `capture_stop_events`: Include per-step stop events when available (default: `true`)
+
+### `gdb_capture_bundle`
+Write a structured forensic bundle to disk.
+
+**Parameters:**
+- `output_dir` (optional): Parent directory for bundle output
+- `bundle_name` (optional): Deterministic bundle directory name
+- `expressions` (optional): Expressions to evaluate into bundle
+- `memory_ranges` (optional): Explicit memory ranges, each entry either:
+  - object form: `{"address":"&value","count":16,"offset":0,"name":"label"}`
+  - shorthand form: `"&value:16"` or `"&value:16@4"`
+- `max_frames`: Frames per backtrace (default: `100`)
+- `include_threads`, `include_backtraces`, `include_frame`, `include_variables`, `include_registers`, `include_transcript`, `include_stop_history`
+
+### `gdb_run_until_failure`
+Run fresh sessions repeatedly until a failure predicate matches.
+
+**Parameters:**
+- `startup`: Session startup settings for each iteration
+- `setup_steps` (optional): Same step forms as `gdb_batch.steps`
+- `run_args` (optional): List form or shell-style string form, same as `gdb_run.args`
+- `run_timeout_sec`: Timeout for each run attempt
+- `max_iterations`: Maximum attempts
+- `failure`: Matching predicates (stop reasons, exit codes, regex, etc.)
+- `capture`: Bundle options for the matching iteration, including:
+  - `bundle_name_prefix` for iteration-suffixed naming
+  - `bundle_name` for an exact fixed bundle name (mutually exclusive with prefix)
+  - `memory_ranges` in object or shorthand string form
 
 ### `gdb_call_function`
 Call a function in the target process.
@@ -262,6 +331,27 @@ Set a breakpoint at a location.
 - `location: "*0x12345678"` - Break at memory address
 - `condition: "x > 10"` - Only break when x > 10
 
+### `gdb_set_watchpoint`
+Set a watchpoint on an expression.
+
+**Parameters:**
+- `expression`: Expression to watch
+- `access`: Access mode
+  - `"write"`: break on writes
+  - `"read"`: break on reads
+  - `"access"`: break on read or write
+
+### `gdb_delete_watchpoint`
+Delete a watchpoint by number.
+
+### `gdb_set_catchpoint`
+Set a catchpoint for debugger events.
+
+**Parameters:**
+- `kind`: Event kind (`fork`, `vfork`, `exec`, `signal`, `syscall`, `throw`, `catch`, etc.)
+- `argument` (optional): Kind-specific argument (for example syscall name)
+- `temporary` (optional): Use `tcatch` semantics
+
 ### `gdb_list_breakpoints`
 List all breakpoints with structured data.
 
@@ -313,8 +403,24 @@ List all breakpoints with structured data.
 ### `gdb_continue`
 Continue execution until next breakpoint.
 
-**IMPORTANT:** Only use when program is PAUSED (at a breakpoint). If program hasn't started, use `gdb_execute_command` with "run" instead.
-**IMPORTANT:** If program hasn't started yet, prefer `gdb_run`.
+If no stop event occurs before timeout, this tool can still return success with the inferior in `running` state.
+
+**Recommended flow:**
+- use `gdb_continue` to resume execution
+- use `gdb_wait_for_stop` to block for a stop event
+- use `gdb_interrupt` if you need to force a pause
+
+### `gdb_wait_for_stop`
+Wait for the inferior to stop without polling loops.
+
+**Parameters:**
+- `timeout_sec`: Maximum wait time
+- `stop_reasons` (optional): Restrict what counts as a match
+
+**Returns:**
+- `matched`: Whether observed stop matched optional reason filter
+- `timed_out`: Whether wait timed out without a matching stop
+- `execution_state`, `stop_reason`, and `last_stop_event`
 
 ### `gdb_step`
 Step into next instruction (enters functions).
@@ -376,3 +482,15 @@ Get CPU register values for the current frame.
 **Notes:**
 - Like `gdb_evaluate_expression`, this can inspect a specific thread/frame
   without changing the selected debugger context permanently
+
+### `gdb_read_memory`
+Read raw target memory bytes from an address expression.
+
+**Parameters:**
+- `address`: Address expression
+- `count`: Number of addressable units to read
+- `offset` (optional): Offset relative to `address`
+
+**Returns:**
+- `blocks`: Readable memory blocks (with gaps represented as separate blocks)
+- `captured_bytes`: Total successfully captured bytes

@@ -5,6 +5,8 @@ from __future__ import annotations
 from contextlib import nullcontext
 from dataclasses import dataclass
 import logging
+import re
+import shlex
 from collections.abc import Callable, Sequence
 from typing import ContextManager, Protocol, TypeAlias, TypeVar, cast
 
@@ -77,6 +79,7 @@ class MemoryRangeArgsProtocol(Protocol):
 SessionArgsT = TypeVar("SessionArgsT", bound=SessionArgsProtocol)
 ToolArguments: TypeAlias = StructuredPayload
 ToolResult: TypeAlias = OperationResult[object]
+_MEMORY_RANGE_SHORTHAND_RE = re.compile(r"^(?P<address>.+):(?P<count>\d+)(?:@(?P<offset>\d+))?$")
 
 
 @dataclass(frozen=True)
@@ -114,7 +117,10 @@ def _handle_execute_command(session: SessionService, args: ExecuteCommandArgs) -
 
 
 def _handle_run(session: SessionService, args: RunArgs) -> ToolResult:
-    return session.run(args=args.args, timeout_sec=args.timeout_sec)
+    run_args = _normalize_run_args(args.args)
+    if isinstance(run_args, OperationError):
+        return run_args
+    return session.run(args=run_args, timeout_sec=args.timeout_sec)
 
 
 def _handle_attach_process(session: SessionService, args: AttachProcessArgs) -> ToolResult:
@@ -282,11 +288,15 @@ def _handle_batch(session: SessionService, args: BatchArgs) -> ToolResult:
 def _handle_capture_bundle(session: SessionService, args: CaptureBundleArgs) -> ToolResult:
     """Write a file-oriented forensic bundle for the current session."""
 
+    memory_ranges = _memory_capture_ranges(args.memory_ranges)
+    if isinstance(memory_ranges, OperationError):
+        return memory_ranges
+
     return session.capture_bundle(
         output_dir=args.output_dir,
         bundle_name=args.bundle_name,
         expressions=args.expressions,
-        memory_ranges=_memory_capture_ranges(args.memory_ranges),
+        memory_ranges=memory_ranges,
         max_frames=args.max_frames,
         include_threads=args.include_threads,
         include_backtraces=args.include_backtraces,
@@ -309,6 +319,14 @@ def _handle_run_until_failure(
     if isinstance(step_templates, OperationError):
         return step_templates
 
+    run_args = _normalize_run_args(args.run_args)
+    if isinstance(run_args, OperationError):
+        return run_args
+
+    capture_memory_ranges = _memory_capture_ranges(args.capture.memory_ranges)
+    if isinstance(capture_memory_ranges, OperationError):
+        return capture_memory_ranges
+
     runner = RunUntilFailureService(session_manager.create_untracked_session)
     return runner.run_until_failure(
         RunUntilFailureRequest(
@@ -320,7 +338,7 @@ def _handle_run_until_failure(
             working_dir=args.startup.working_dir,
             core=args.startup.core,
             setup_steps=tuple(step_templates.value),
-            run_args=tuple(args.run_args or ()),
+            run_args=tuple(run_args or ()),
             run_timeout_sec=args.run_timeout_sec,
             max_iterations=args.max_iterations,
             failure=RunUntilFailureCriteria(
@@ -335,8 +353,9 @@ def _handle_run_until_failure(
                 enabled=args.capture.enabled,
                 output_dir=args.capture.output_dir,
                 bundle_name_prefix=args.capture.bundle_name_prefix,
+                bundle_name=args.capture.bundle_name,
                 expressions=tuple(args.capture.expressions),
-                memory_ranges=tuple(_memory_capture_ranges(args.capture.memory_ranges)),
+                memory_ranges=tuple(capture_memory_ranges),
                 max_frames=args.capture.max_frames,
                 include_threads=args.capture.include_threads,
                 include_backtraces=args.capture.include_backtraces,
@@ -351,19 +370,78 @@ def _handle_run_until_failure(
 
 
 def _memory_capture_ranges(
-    memory_ranges: Sequence[MemoryRangeArgsProtocol],
-) -> list[MemoryCaptureRange]:
+    memory_ranges: Sequence[MemoryRangeArgsProtocol | str],
+) -> list[MemoryCaptureRange] | OperationError:
     """Convert validated memory-range models into typed internal requests."""
 
-    return [
-        MemoryCaptureRange(
-            address=str(memory_range.address),
-            count=int(memory_range.count),
-            offset=int(memory_range.offset),
-            name=str(memory_range.name) if memory_range.name is not None else None,
+    normalized: list[MemoryCaptureRange] = []
+    for index, memory_range in enumerate(memory_ranges):
+        if isinstance(memory_range, str):
+            parsed = _parse_memory_range_shorthand(memory_range, index=index)
+            if isinstance(parsed, OperationError):
+                return parsed
+            normalized.append(parsed)
+            continue
+
+        normalized.append(
+            MemoryCaptureRange(
+                address=str(memory_range.address),
+                count=int(memory_range.count),
+                offset=int(memory_range.offset),
+                name=str(memory_range.name) if memory_range.name is not None else None,
+            )
         )
-        for memory_range in memory_ranges
-    ]
+
+    return normalized
+
+
+def _parse_memory_range_shorthand(value: str, *, index: int) -> MemoryCaptureRange | OperationError:
+    """Parse '<address>:<count>' (optional '@<offset>') memory-range shorthand."""
+
+    text = value.strip()
+    if not text:
+        return OperationError(
+            message=f"Invalid memory_ranges[{index}]: empty shorthand string",
+            code="validation_error",
+        )
+
+    match = _MEMORY_RANGE_SHORTHAND_RE.match(text)
+    if match is None:
+        return OperationError(
+            message=(
+                f"Invalid memory_ranges[{index}] shorthand: {value!r}. "
+                "Expected '<address>:<count>' or '<address>:<count>@<offset>'."
+            ),
+            code="validation_error",
+        )
+
+    address = match.group("address").strip()
+    if not address:
+        return OperationError(
+            message=f"Invalid memory_ranges[{index}] shorthand: missing address expression",
+            code="validation_error",
+        )
+
+    count = int(match.group("count"))
+    offset_text = match.group("offset")
+    offset = int(offset_text) if offset_text is not None else 0
+    return MemoryCaptureRange(address=address, count=count, offset=offset)
+
+
+def _normalize_run_args(args: list[str] | str | None) -> list[str] | None | OperationError:
+    """Normalize run-argument input into argv list form."""
+
+    if args is None:
+        return None
+    if isinstance(args, str):
+        try:
+            return shlex.split(args)
+        except ValueError as exc:
+            return OperationError(
+                message=f"Invalid args string: {exc}",
+                code="validation_error",
+            )
+    return list(args)
 
 
 def _invalid_session_result(session_id: object) -> OperationError:
@@ -431,13 +509,18 @@ def _session_workflow_context(session: SessionService) -> ContextManager[object]
 
 def _build_batch_step_templates(
     session_id: int,
-    steps: list[BatchStepArgs],
+    steps: Sequence[BatchStepArgs | str],
 ) -> OperationSuccess[list[BatchStepTemplate]] | OperationError:
     """Validate batch-like step definitions into reusable execution templates."""
 
     templates: list[BatchStepTemplate] = []
 
-    for index, step in enumerate(steps):
+    for index, raw_step in enumerate(steps):
+        step = (
+            BatchStepArgs.model_validate({"tool": raw_step})
+            if isinstance(raw_step, str)
+            else raw_step
+        )
         if "session_id" in step.arguments:
             return OperationError(
                 message=(

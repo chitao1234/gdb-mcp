@@ -251,9 +251,12 @@ class SessionBreakpointService:
             return number
 
         if isinstance(payload, dict):
-            watchpoint = payload.get("wpt")
-            if isinstance(watchpoint, dict):
-                return cls._extract_breakpoint_number(watchpoint)
+            for key in ("wpt", "awpt", "hw-awpt", "hw-rwpt"):
+                watchpoint = payload.get(key)
+                if isinstance(watchpoint, dict):
+                    number = cls._extract_breakpoint_number(watchpoint)
+                    if number is not None:
+                        return number
 
         return None
 

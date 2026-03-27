@@ -893,6 +893,33 @@ def test_start_session_with_core_file_init_command_reports_target_loaded(
 
 
 @pytest.mark.integration
+def test_start_session_with_program_and_core_resolves_symbols(compiled_program_and_core, stop_session):
+    """Program+core startup should preserve symbolized backtraces."""
+
+    executable, core_file = compiled_program_and_core
+
+    result = call_gdb_tool(
+        "gdb_start_session",
+        {
+            "program": executable,
+            "core": core_file,
+            "init_commands": [],
+        },
+    )
+
+    assert result["status"] == "success"
+    assert result["target_loaded"] is True
+
+    session_id = result["session_id"]
+    backtrace = call_gdb_tool("gdb_get_backtrace", {"session_id": session_id, "max_frames": 8})
+    assert backtrace["status"] == "success"
+    assert backtrace["count"] >= 1
+    assert any(frame.get("func") == "main" for frame in backtrace["frames"])
+
+    stop_session(session_id)
+
+
+@pytest.mark.integration
 def test_get_status_reports_exited_state_after_continue(session_id):
     """Status should expose the inferior execution state after it exits."""
 

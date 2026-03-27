@@ -43,6 +43,7 @@ class RunUntilFailureCaptureRequest:
     enabled: bool = True
     output_dir: str | None = None
     bundle_name_prefix: str | None = None
+    bundle_name: str | None = None
     expressions: tuple[str, ...] = ()
     memory_ranges: tuple[MemoryCaptureRange, ...] = ()
     max_frames: int = 100
@@ -198,7 +199,9 @@ class RunUntilFailureService:
                     capture_result = session.capture_bundle(
                         output_dir=request.capture.output_dir,
                         bundle_name=self._bundle_name(
-                            request.capture.bundle_name_prefix, iteration
+                            request.capture.bundle_name,
+                            request.capture.bundle_name_prefix,
+                            iteration,
                         ),
                         expressions=list(request.capture.expressions),
                         memory_ranges=list(request.capture.memory_ranges),
@@ -354,9 +357,15 @@ class RunUntilFailureService:
         return value if isinstance(value, str) else None
 
     @staticmethod
-    def _bundle_name(prefix: str | None, iteration: int) -> str | None:
+    def _bundle_name(
+        bundle_name: str | None,
+        prefix: str | None,
+        iteration: int,
+    ) -> str | None:
         """Return the capture bundle name for a matching iteration when requested."""
 
+        if bundle_name is not None:
+            return bundle_name
         if prefix is None:
             return None
         return f"{prefix}-iter-{iteration:04d}"

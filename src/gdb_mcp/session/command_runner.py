@@ -91,7 +91,11 @@ class SessionCommandRunner:
         self._update_runtime_after_command(command, parsed)
 
     def execute_command_result(
-        self, command: str, timeout_sec: int = DEFAULT_TIMEOUT_SEC
+        self,
+        command: str,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        *,
+        allow_running_timeout: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Execute a GDB command and normalize CLI vs MI results."""
 
@@ -141,16 +145,36 @@ class SessionCommandRunner:
 
         if result.get("timed_out"):
             self._update_runtime_after_command(command, parsed)
+            timeout_message = f"Timeout waiting for command response after {timeout_sec}s"
+            if allow_running_timeout and parsed.result_class == "running":
+                self._record_command_transcript(
+                    command=command,
+                    sent_command=actual_command,
+                    status="success",
+                    parsed=parsed,
+                    timed_out=True,
+                    error=timeout_message,
+                )
+                return OperationSuccess(
+                    CommandExecutionInfo(
+                        command=command,
+                        result=cast(StructuredPayload, parsed.to_dict()),
+                    ),
+                    warnings=(
+                        "Command acknowledged and inferior is still running. "
+                        "Use gdb_wait_for_stop or gdb_interrupt to observe a stop event.",
+                    ),
+                )
             self._record_command_transcript(
                 command=command,
                 sent_command=actual_command,
                 status="timeout",
                 parsed=parsed,
                 timed_out=True,
-                error=f"Timeout waiting for command response after {timeout_sec}s",
+                error=timeout_message,
             )
             return OperationError(
-                message=f"Timeout waiting for command response after {timeout_sec}s",
+                message=timeout_message,
                 details={"command": command},
             )
 
@@ -280,8 +304,24 @@ class SessionCommandRunner:
         if isinstance(value, int):
             return value
         if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return None
+            if text.startswith(("0x", "0X", "-0x", "-0X")):
+                try:
+                    return int(text, 16)
+                except ValueError:
+                    return None
+            if text.startswith(("-", "+")):
+                sign = -1 if text[0] == "-" else 1
+                digits = text[1:]
+                if digits.isdigit():
+                    return sign * int(digits, 10)
+                return None
+            if text.isdigit():
+                return int(text, 10)
             try:
-                return int(value, 0)
+                return int(text, 10)
             except ValueError:
                 return None
         return None

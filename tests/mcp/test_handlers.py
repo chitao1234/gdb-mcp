@@ -246,6 +246,22 @@ class TestHandlerDispatch:
         manager.resolve_session.assert_called_once_with(5)
         session.run.assert_called_once_with(args=["--flag", "value"], timeout_sec=7)
 
+    def test_run_accepts_shell_style_string_args(self):
+        """String-form run args should be shell-split before forwarding."""
+
+        manager = Mock()
+        session = Mock()
+        session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_run",
+            {"session_id": 5, "args": '--flag "hello world"', "timeout_sec": 7},
+            manager,
+        )
+
+        session.run.assert_called_once_with(args=["--flag", "hello world"], timeout_sec=7)
+
     def test_attach_process_routes_to_correct_session(self):
         """Attach requests should forward pid and timeout."""
 
@@ -544,6 +560,32 @@ class TestHandlerDispatch:
         session.execute_command.assert_called_once_with(command="info threads", timeout_sec=30)
         session.get_status.assert_not_called()
 
+    def test_batch_accepts_string_step_shorthand(self):
+        """Batch requests should allow shorthand step strings."""
+
+        manager = Mock()
+        session = create_default_session_service()
+        session.get_status = Mock(
+            return_value=OperationSuccess(
+                SessionStatusSnapshot(is_running=True, target_loaded=True, has_controller=True)
+            )
+        )
+        manager.resolve_session.return_value = session
+
+        result_data = dispatch(
+            "gdb_batch",
+            {
+                "session_id": 9,
+                "steps": ["gdb_get_status"],
+            },
+            manager,
+        )
+
+        assert result_data["status"] == "success"
+        assert result_data["completed_steps"] == 1
+        assert result_data["steps"][0]["tool"] == "gdb_get_status"
+        session.get_status.assert_called_once_with()
+
     def test_session_tool_dispatch_uses_workflow_lock(self):
         """Session-scoped tools should serialize through the workflow lock."""
 
@@ -630,6 +672,28 @@ class TestHandlerDispatch:
             include_stop_history=True,
         )
 
+    def test_capture_bundle_accepts_memory_range_shorthand(self):
+        """Capture requests should parse shorthand memory-range strings."""
+
+        manager = Mock()
+        session = Mock()
+        session.capture_bundle.return_value = OperationSuccess(SessionMessage(message="bundle written"))
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_capture_bundle",
+            {
+                "session_id": 5,
+                "memory_ranges": ["&value:4@1"],
+            },
+            manager,
+        )
+
+        session.capture_bundle.assert_called_once()
+        assert session.capture_bundle.call_args.kwargs["memory_ranges"] == [
+            MemoryCaptureRange(address="&value", count=4, offset=1, name=None)
+        ]
+
     def test_run_until_failure_capture_forwards_memory_ranges(self):
         """Campaign capture settings should forward explicit memory ranges to bundle capture."""
 
@@ -670,6 +734,43 @@ class TestHandlerDispatch:
         assert session.capture_bundle.call_args.kwargs["memory_ranges"] == [
             MemoryCaptureRange(address="&value", count=8, offset=0, name="value-bytes")
         ]
+
+    def test_run_until_failure_capture_accepts_exact_bundle_name(self):
+        """Campaign capture should accept bundle_name alias for deterministic naming."""
+
+        manager = Mock()
+        session = Mock()
+        session.start.return_value = OperationSuccess(SessionMessage(message="started"))
+        session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
+        session.get_status.return_value = OperationSuccess(
+            SessionStatusSnapshot(
+                is_running=True,
+                target_loaded=True,
+                has_controller=True,
+                execution_state="paused",
+                stop_reason="signal-received",
+            )
+        )
+        session.last_stop_event = StopEvent(execution_state="paused", reason="signal-received")
+        session.capture_bundle.return_value = OperationSuccess(SessionMessage(message="bundle"))
+        session.controller = object()
+        session.stop.return_value = OperationSuccess(SessionMessage(message="stopped"))
+        manager.create_untracked_session.return_value = session
+
+        dispatch(
+            "gdb_run_until_failure",
+            {
+                "startup": {"program": "/tmp/a.out"},
+                "capture": {
+                    "enabled": True,
+                    "bundle_name": "exact-bundle",
+                },
+            },
+            manager,
+        )
+
+        session.capture_bundle.assert_called_once()
+        assert session.capture_bundle.call_args.kwargs["bundle_name"] == "exact-bundle"
 
     def test_run_until_failure_uses_untracked_sessions(self):
         """Campaign requests should create fresh untracked sessions and return campaign data."""

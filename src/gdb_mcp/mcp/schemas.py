@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Literal, Optional, TypeAlias
 
 from mcp.types import Tool
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StrictArgsModel(BaseModel):
@@ -138,7 +138,13 @@ class ExecuteCommandArgs(StrictArgsModel):
 
 class RunArgs(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
-    args: Optional[list[str]] = Field(None, description="Override inferior arguments for this run")
+    args: Optional[list[str] | str] = Field(
+        None,
+        description=(
+            "Override inferior arguments for this run. "
+            "Accepts either an explicit argv list or one shell-style string."
+        ),
+    )
     timeout_sec: int = Field(30, gt=0, description="Timeout in seconds")
 
 
@@ -322,11 +328,23 @@ class BatchStepArgs(StrictArgsModel):
     )
 
 
+BatchStepInput: TypeAlias = BatchStepArgs | BatchStepToolName
+
+
 class BatchArgs(StrictArgsModel):
     """Arguments for executing a structured batch against one live session."""
 
     session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
-    steps: list[BatchStepArgs] = Field(..., min_length=1, description="Ordered step list")
+    steps: list[BatchStepInput] = Field(
+        ...,
+        min_length=1,
+        description=(
+            "Ordered step list. "
+            "Each entry can be either a full object "
+            "({'tool': ..., 'arguments': {...}, 'label': ...}) "
+            "or a shorthand tool-name string."
+        ),
+    )
     fail_fast: bool = Field(
         True,
         description="Stop executing later steps after the first error result",
@@ -353,11 +371,13 @@ class CaptureBundleArgs(StrictArgsModel):
         default_factory=list,
         description="Expressions to evaluate and include in the bundle.",
     )
-    memory_ranges: list[CaptureMemoryRangeArgs] = Field(
+    memory_ranges: list[CaptureMemoryRangeArgs | str] = Field(
         default_factory=list,
         description=(
-            "Explicit memory ranges to capture. Each range is opt-in and bounded by "
-            "server-side size limits."
+            "Explicit memory ranges to capture. "
+            "Each entry can be either a structured object or shorthand "
+            "string '<address>:<count>' (optional offset: '<address>:<count>@<offset>'). "
+            "Each range is opt-in and bounded by server-side size limits."
         ),
     )
     max_frames: int = Field(
@@ -421,13 +441,24 @@ class RunUntilFailureCaptureArgs(StrictArgsModel):
         None,
         description="Deterministic bundle name prefix. The iteration number is appended automatically.",
     )
+    bundle_name: Optional[str] = Field(
+        None,
+        description=(
+            "Optional exact bundle name to use for the matching iteration. "
+            "Cannot be combined with bundle_name_prefix."
+        ),
+    )
     expressions: list[str] = Field(
         default_factory=list,
         description="Expressions to evaluate and include in the capture bundle.",
     )
-    memory_ranges: list[CaptureMemoryRangeArgs] = Field(
+    memory_ranges: list[CaptureMemoryRangeArgs | str] = Field(
         default_factory=list,
-        description="Explicit memory ranges to capture when a failure matches.",
+        description=(
+            "Explicit memory ranges to capture when a failure matches. "
+            "Each entry can be either a structured object or shorthand "
+            "string '<address>:<count>' (optional offset: '<address>:<count>@<offset>')."
+        ),
     )
     max_frames: int = Field(100, gt=0, description="Maximum frames per thread backtrace.")
     include_threads: bool = Field(True, description="Capture thread inventory.")
@@ -442,6 +473,14 @@ class RunUntilFailureCaptureArgs(StrictArgsModel):
     include_transcript: bool = Field(True, description="Capture the bounded command transcript.")
     include_stop_history: bool = Field(True, description="Capture the bounded stop-event history.")
 
+    @model_validator(mode="after")
+    def validate_bundle_naming(self) -> "RunUntilFailureCaptureArgs":
+        """Reject ambiguous capture naming configuration."""
+
+        if self.bundle_name is not None and self.bundle_name_prefix is not None:
+            raise ValueError("capture.bundle_name and capture.bundle_name_prefix are mutually exclusive")
+        return self
+
 
 class RunUntilFailureArgs(StrictArgsModel):
     """Arguments for repeating fresh-session runs until one failure matches."""
@@ -450,13 +489,16 @@ class RunUntilFailureArgs(StrictArgsModel):
         default_factory=lambda: StartSessionArgs.model_validate({}),
         description="Session startup configuration used for every iteration.",
     )
-    setup_steps: list[BatchStepArgs] = Field(
+    setup_steps: list[BatchStepInput] = Field(
         default_factory=list,
         description="Optional structured setup steps run after startup and before gdb_run.",
     )
-    run_args: Optional[list[str]] = Field(
+    run_args: Optional[list[str] | str] = Field(
         None,
-        description="Arguments passed to gdb_run for each iteration.",
+        description=(
+            "Arguments passed to gdb_run for each iteration. "
+            "Accepts either an explicit argv list or one shell-style string."
+        ),
     )
     run_timeout_sec: int = Field(30, gt=0, description="Timeout for each gdb_run attempt.")
     max_iterations: int = Field(1, gt=0, description="Maximum number of iterations to attempt.")

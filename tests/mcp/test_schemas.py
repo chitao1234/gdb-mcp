@@ -114,6 +114,12 @@ class TestRunArgs:
         assert args.args is None
         assert args.timeout_sec == 30
 
+    def test_accepts_shell_style_string_args(self):
+        """RunArgs should accept a single shell-style argument string."""
+
+        args = RunArgs(session_id=1, args='--flag "hello world"')
+        assert args.args == '--flag "hello world"'
+
 
 class TestAttachProcessArgs:
     """Test cases for AttachProcessArgs model."""
@@ -202,6 +208,12 @@ class TestBatchArgs:
         assert step.tool == "gdb_wait_for_stop"
         assert step.arguments == {"timeout_sec": 5}
 
+    def test_batch_allows_string_step_shorthand(self):
+        """Batch steps should allow shorthand tool-name strings."""
+
+        args = BatchArgs(session_id=1, steps=["gdb_get_status"])
+        assert args.steps == ["gdb_get_status"]
+
 
 class TestCaptureBundleArgs:
     """Test cases for bundle capture requests."""
@@ -233,6 +245,12 @@ class TestCaptureBundleArgs:
 
         assert "output" in str(exc_info.value)
 
+    def test_capture_bundle_allows_memory_range_shorthand(self):
+        """Capture requests should allow shorthand memory-range strings."""
+
+        args = CaptureBundleArgs(session_id=1, memory_ranges=["&value:16@2"])
+        assert args.memory_ranges == ["&value:16@2"]
+
 
 class TestRunUntilFailureArgs:
     """Test cases for repeat-until-failure campaigns."""
@@ -260,8 +278,17 @@ class TestRunUntilFailureArgs:
         assert args.enabled is True
         assert args.output_dir is None
         assert args.bundle_name_prefix is None
+        assert args.bundle_name is None
         assert args.expressions == []
         assert args.memory_ranges == []
+
+    def test_run_until_failure_capture_rejects_conflicting_bundle_fields(self):
+        """Capture naming should reject bundle_name and bundle_name_prefix together."""
+
+        with pytest.raises(ValidationError) as exc_info:
+            RunUntilFailureCaptureArgs(bundle_name="exact", bundle_name_prefix="prefix")
+
+        assert "mutually exclusive" in str(exc_info.value)
 
     def test_run_until_failure_rejects_unknown_field(self):
         """Campaign requests should reject unexpected top-level keys."""
@@ -270,6 +297,18 @@ class TestRunUntilFailureArgs:
             RunUntilFailureArgs(iterations=5)
 
         assert "iterations" in str(exc_info.value)
+
+    def test_run_until_failure_accepts_shorthand_steps_and_string_run_args(self):
+        """Campaign requests should allow step shorthand and shell-style run args."""
+
+        args = RunUntilFailureArgs(
+            setup_steps=["gdb_get_status"],
+            run_args='--mode "fast path"',
+            capture={"memory_ranges": ["&value:8"]},
+        )
+        assert args.setup_steps == ["gdb_get_status"]
+        assert args.run_args == '--mode "fast path"'
+        assert args.capture.memory_ranges == ["&value:8"]
 
 
 class TestInferiorWorkflowArgs:

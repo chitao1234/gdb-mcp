@@ -100,7 +100,7 @@ gdb-mcp-server
 
 ## Available Tools
 
-The GDB MCP Server provides 26 tools for controlling GDB debugging sessions:
+The GDB MCP Server provides 37 tools for controlling GDB debugging sessions:
 
 **Session Management:**
 - `gdb_start_session` - Start a new GDB session with optional initialization
@@ -108,6 +108,13 @@ The GDB MCP Server provides 26 tools for controlling GDB debugging sessions:
 - `gdb_execute_command` - Execute GDB commands (CLI or MI format)
 - `gdb_run` - Start the loaded program with optional argv overrides
 - `gdb_attach_process` - Attach GDB to a running process by PID
+- `gdb_list_inferiors` - List inferiors in the current debugger session
+- `gdb_select_inferior` - Select the active inferior
+- `gdb_set_follow_fork_mode` - Configure fork-follow behavior (`parent`/`child`)
+- `gdb_set_detach_on_fork` - Configure detach-on-fork behavior
+- `gdb_batch` - Execute a structured sequence of session-scoped tools
+- `gdb_capture_bundle` - Capture structured forensic artifacts to disk
+- `gdb_run_until_failure` - Repeat fresh runs until failure criteria match
 - `gdb_call_function` - Call a function in the target process (dedicated tool for separate permissioning)
 - `gdb_get_status` - Get current session status, including whether the target actually loaded and whether execution is running, paused, or exited
 - `gdb_stop_session` - Stop the current session
@@ -121,6 +128,9 @@ The GDB MCP Server provides 26 tools for controlling GDB debugging sessions:
 
 **Breakpoint Management:**
 - `gdb_set_breakpoint` - Set breakpoints with optional conditions, including source paths with spaces
+- `gdb_set_watchpoint` - Set write/read/access watchpoints
+- `gdb_delete_watchpoint` - Delete watchpoints by number
+- `gdb_set_catchpoint` - Set catchpoints for debugger events (fork, signal, syscall, etc.)
 - `gdb_list_breakpoints` - List all breakpoints with structured data
 - `gdb_delete_breakpoint` - Delete a breakpoint by number
 - `gdb_enable_breakpoint` - Enable a breakpoint
@@ -128,12 +138,14 @@ The GDB MCP Server provides 26 tools for controlling GDB debugging sessions:
 
 **Execution Control:**
 - `gdb_continue` - Continue execution
+- `gdb_wait_for_stop` - Wait for the next stop event without polling
 - `gdb_step` - Step into functions
 - `gdb_next` - Step over functions
 - `gdb_interrupt` - Pause a running program
 
 **Data Inspection:**
 - `gdb_evaluate_expression` - Evaluate expressions, optionally in a specific thread/frame
+- `gdb_read_memory` - Read raw memory bytes using MI memory-read
 - `gdb_get_variables` - Get local variables without changing the selected thread/frame
 - `gdb_get_registers` - Get CPU registers, optionally in a specific thread/frame
 
@@ -274,7 +286,7 @@ The program is likely still running! When a program is running, GDB is busy and 
 
 **Program States:**
 - **Not started**: Use `gdb_run`
-- **Running**: Program is executing - use `gdb_interrupt` to pause it
+- **Running**: Program is executing. `gdb_continue` may return success with a running state if no stop event occurred yet; use `gdb_wait_for_stop` to block for the next stop, or `gdb_interrupt` to force a pause.
 - **Paused** (at breakpoint): Use `gdb_continue`, `gdb_step`, `gdb_next`, inspect variables
 - **Finished**: Program has exited - restart with "run" if needed
 
@@ -295,7 +307,22 @@ Always check the `warnings` field in `gdb_start_session` response! Compile your 
    - Execute commands with proper parameters
    - Interpret structured responses
 
-4. **Session Management**: A single GDB session is maintained per server instance, allowing stateful debugging across multiple tool calls.
+4. **Session Management**: The registry supports multiple concurrent GDB sessions per server instance. Each tool call uses an explicit `session_id` for isolation.
+
+## MCP Client Contract
+
+This server currently exposes MCP context to clients via:
+
+- `list_tools`: Returns tool name, description, and input JSON schema.
+- `call_tool`: Returns one JSON payload encoded in MCP `TextContent`.
+
+The response payload always contains:
+
+- `status`: `"success"` or `"error"`
+- `message`: Present on errors and many success payloads
+- Tool-specific fields for structured results
+
+The server does not currently publish MCP `outputSchema`, resource endpoints, or event streams. Clients should treat tool responses as the authoritative runtime state and keep track of `session_id` explicitly.
 
 ## Contributing
 

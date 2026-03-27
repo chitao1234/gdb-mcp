@@ -127,7 +127,9 @@ class SessionExecutionService:
     def continue_execution(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Continue execution of the program."""
         return self._command_runner.execute_command_result(
-            "-exec-continue", timeout_sec=DEFAULT_TIMEOUT_SEC
+            "-exec-continue",
+            timeout_sec=DEFAULT_TIMEOUT_SEC,
+            allow_running_timeout=True,
         )
 
     def wait_for_stop(

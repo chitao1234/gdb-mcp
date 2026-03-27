@@ -120,6 +120,34 @@ class TestBreakpointApi:
         assert written[0].endswith('-break-watch -a "value"\n')
         assert written[1].endswith("-break-list\n")
 
+    def test_set_watchpoint_handles_hw_awpt_payload(self, scripted_running_session, mi_result):
+        """Access watchpoints should accept the hw-awpt result payload shape."""
+
+        session, _controller = scripted_running_session(
+            [mi_result({"hw-awpt": {"number": "2", "exp": "value"}})],
+            [
+                mi_result(
+                    {
+                        "BreakpointTable": {
+                            "body": [
+                                {
+                                    "number": "2",
+                                    "type": "acc watchpoint",
+                                    "what": "value",
+                                }
+                            ]
+                        }
+                    }
+                )
+            ],
+        )
+
+        result = result_to_mapping(session.set_watchpoint("value", access="access"))
+
+        assert result["status"] == "success"
+        assert result["breakpoint"]["number"] == "2"
+        assert result["breakpoint"]["type"] == "acc watchpoint"
+
     def test_delete_watchpoint(self, scripted_running_session, mi_result):
         """Watchpoint deletion should reuse GDB's shared breakpoint namespace."""
 

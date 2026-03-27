@@ -143,7 +143,7 @@ class TestLifecycleApi:
 
         assert result["status"] == "success"
         assert result["execution_state"] == "paused"
-        assert "--exec=/bin/ls" in command
+        assert "--se=/bin/ls" in command
         assert "--core=/tmp/core.123" in command
         assert "--args" not in command
 

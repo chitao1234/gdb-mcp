@@ -304,7 +304,9 @@ class SessionLifecycleService:
         command = [gdb_path, "--quiet", "--interpreter=mi"]
         if core:
             if program:
-                command.append(f"--exec={program}")
+                # `--se` preserves symbol resolution for core analysis more reliably
+                # than `--exec` with some GDB builds and target/core combinations.
+                command.append(f"--se={program}")
             command.append(f"--core={core}")
             return command
 
