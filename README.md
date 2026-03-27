@@ -146,9 +146,9 @@ The GDB MCP Server provides 22 tools for controlling GDB debugging sessions:
 1. Start session with init commands:
 ```json
 {
+  "program": "/path/to/executable",
+  "core": "/tmp/core.12345",
   "init_commands": [
-    "file /path/to/executable",
-    "core-file /tmp/core.12345",
     "set sysroot /opt/sysroot"
   ]
 }
@@ -200,6 +200,10 @@ Then use it:
   "init_commands": ["source setup.gdb"]
 }
 ```
+
+If you provide `env`, those environment variables are applied before any `init_commands` run.
+
+`args` and `core` are intentionally mutually exclusive in one startup request: use `args` for a live program launch, or `core` for post-mortem analysis.
 
 ### Python Initialization Scripts
 

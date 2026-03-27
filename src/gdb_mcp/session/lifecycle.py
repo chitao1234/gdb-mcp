@@ -59,23 +59,30 @@ class SessionLifecycleService:
             self._runtime.begin_startup(config)
 
             try:
+                if args and core:
+                    self._runtime.mark_failed(
+                        "Cannot combine program arguments with core dump analysis in one startup request."
+                    )
+                    return OperationError(
+                        message=(
+                            "Cannot combine 'args' with 'core'. "
+                            "Use either a live program launch with args or a core-dump session."
+                        )
+                    )
+
                 if working_dir and not self._runtime.os_module.path.isdir(working_dir):
                     self._runtime.mark_failed(f"Working directory does not exist: {working_dir}")
                     return OperationError(
                         message=f"Working directory does not exist: {working_dir}"
                     )
 
-                gdb_command = [gdb_path, "--quiet", "--interpreter=mi"]
-
-                if program:
-                    if args:
-                        gdb_command.extend(["--args", program])
-                        gdb_command.extend(args)
-                    else:
-                        gdb_command.append(program)
-
+                gdb_command = self._build_start_command(
+                    gdb_path=gdb_path,
+                    program=program,
+                    args=args,
+                    core=core,
+                )
                 if core:
-                    gdb_command.extend(["--core", core])
                     logger.info("Loading core dump: %s", core)
 
                 self._runtime.transport.start(
@@ -123,13 +130,17 @@ class SessionLifecycleService:
                 if "no such file" in startup_console.lower():
                     warnings.append("Program file not found")
 
+                env_output = self._apply_environment(env)
+                if isinstance(env_output, OperationError):
+                    return env_output
+
                 init_output: list[dict[str, Any]] = []
                 if init_commands:
                     for cmd in init_commands:
                         try:
                             logger.info("Executing init command: %s", cmd)
-
-                            if "core-file" in cmd.lower() or cmd.lower().startswith("file "):
+                            cmd_lower = cmd.lower().strip()
+                            if self._loads_target(cmd_lower):
                                 timeout = FILE_LOAD_TIMEOUT_SEC
                                 logger.info(
                                     "Using extended timeout (%ss) for file loading command", timeout
@@ -142,7 +153,6 @@ class SessionLifecycleService:
                             )
                             init_output.append(result_to_mapping(result))
 
-                            cmd_lower = cmd.lower().strip()
                             if cmd_lower.startswith("core-file "):
                                 self._runtime.time_module.sleep(INIT_COMMAND_DELAY_SEC)
                                 logger.debug("Waiting for GDB to stabilize after core-file command")
@@ -166,7 +176,7 @@ class SessionLifecycleService:
                                     details={"init_output": init_output},
                                 )
 
-                            if cmd_lower.startswith("file ") or cmd_lower.startswith("core-file "):
+                            if self._loads_target(cmd_lower):
                                 logger.debug(
                                     "Setting target_loaded=True after file-related command: %s", cmd
                                 )
@@ -187,26 +197,6 @@ class SessionLifecycleService:
                             return OperationError(
                                 message=f"Init command '{cmd}' raised an exception: {str(exc)}",
                                 details={"init_output": init_output},
-                            )
-
-                env_output: list[dict[str, Any]] = []
-                if env:
-                    for var_name, var_value in env.items():
-                        escaped_value = var_value.replace("\\", "\\\\").replace('"', '\\"')
-                        env_cmd = f"set environment {var_name} {escaped_value}"
-                        result = self._command_runner.execute_command_result(
-                            env_cmd, timeout_sec=DEFAULT_TIMEOUT_SEC
-                        )
-                        env_output.append(result_to_mapping(result))
-
-                        if isinstance(result, OperationError):
-                            self._cleanup_failed_start(
-                                f"Failed to set environment variable {var_name}: {result.message}"
-                            )
-                            return OperationError(
-                                message=f"Failed to set environment variable {var_name}: {result.message}",
-                                fatal=result.fatal,
-                                details={"env_output": env_output},
                             )
 
                 if program or core:
@@ -266,3 +256,63 @@ class SessionLifecycleService:
             except Exception:
                 pass
         self._runtime.mark_failed(message)
+
+    @staticmethod
+    def _build_start_command(
+        *,
+        gdb_path: str,
+        program: str | None,
+        args: list[str] | None,
+        core: str | None,
+    ) -> list[str]:
+        """Build a GDB startup argv for the supported launch modes."""
+
+        command = [gdb_path, "--quiet", "--interpreter=mi"]
+        if core:
+            if program:
+                command.append(f"--exec={program}")
+            command.append(f"--core={core}")
+            return command
+
+        if program:
+            if args:
+                command.extend(["--args", program, *args])
+            else:
+                command.append(program)
+
+        return command
+
+    def _apply_environment(
+        self, env: dict[str, str] | None
+    ) -> list[dict[str, Any]] | OperationError:
+        """Apply inferior environment variables before startup commands run."""
+
+        env_output: list[dict[str, Any]] = []
+        if not env:
+            return env_output
+
+        for var_name, var_value in env.items():
+            escaped_value = var_value.replace("\\", "\\\\").replace('"', '\\"')
+            env_cmd = f"set environment {var_name} {escaped_value}"
+            result = self._command_runner.execute_command_result(
+                env_cmd, timeout_sec=DEFAULT_TIMEOUT_SEC
+            )
+            env_output.append(result_to_mapping(result))
+
+            if isinstance(result, OperationError):
+                self._cleanup_failed_start(
+                    f"Failed to set environment variable {var_name}: {result.message}"
+                )
+                return OperationError(
+                    message=f"Failed to set environment variable {var_name}: {result.message}",
+                    fatal=result.fatal,
+                    details={"env_output": env_output},
+                )
+
+        return env_output
+
+    @staticmethod
+    def _loads_target(command: str) -> bool:
+        """Return whether a startup command explicitly loads an executable or core."""
+
+        return command.startswith("file ") or command.startswith("core-file ")

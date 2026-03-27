@@ -90,6 +90,35 @@ class TestLifecycleApi:
         assert result["status"] == "success"
 
     @patch("gdb_mcp.session.factory.GdbController")
+    def test_start_session_with_program_and_core_uses_explicit_exec_and_core_flags(
+        self,
+        mock_controller_class,
+        session_service,
+        prompt_response,
+    ):
+        """Core-dump startup should use explicit GDB options instead of argv passthrough."""
+
+        mock_controller_class.return_value = MagicMock()
+
+        with patch.object(
+            session_service._command_runner,
+            "send_command_and_wait_for_prompt",
+            return_value=prompt_response(
+                command_responses=[{"type": "result", "message": "done", "token": 1000}]
+            ),
+        ):
+            result = result_to_mapping(
+                session_service.start(program="/bin/ls", core="/tmp/core.123")
+            )
+
+        command = mock_controller_class.call_args[1]["command"]
+
+        assert result["status"] == "success"
+        assert "--exec=/bin/ls" in command
+        assert "--core=/tmp/core.123" in command
+        assert "--args" not in command
+
+    @patch("gdb_mcp.session.factory.GdbController")
     @patch.dict(os.environ, {"GDB_PATH": "/custom/path/to/gdb"})
     def test_start_session_with_gdb_path_env_var(
         self,
@@ -189,6 +218,49 @@ class TestLifecycleApi:
         assert any("LOG_LEVEL" in command for command in env_commands)
 
     @patch("gdb_mcp.session.factory.GdbController")
+    def test_start_session_applies_environment_before_init_commands(
+        self,
+        mock_controller_class,
+        session_service,
+        prompt_response,
+        command_result,
+    ):
+        """Inferior environment should be set before init commands can run the target."""
+
+        del mock_controller_class
+        executed_commands: list[str] = []
+
+        def mock_execute(command, **kwargs):
+            del kwargs
+            executed_commands.append(command)
+            return command_result(command, output="")
+
+        with patch.object(
+            session_service._command_runner,
+            "send_command_and_wait_for_prompt",
+            return_value=prompt_response(
+                command_responses=[{"type": "result", "message": "done", "token": 1000}]
+            ),
+        ):
+            with patch.object(
+                session_service._command_runner, "execute_command_result", side_effect=mock_execute
+            ):
+                result = result_to_mapping(
+                    session_service.start(
+                        program="/bin/ls",
+                        env={"DEBUG_MODE": "1"},
+                        init_commands=["set pagination off", "run"],
+                    )
+                )
+
+        assert result["status"] == "success"
+        assert executed_commands == [
+            "set environment DEBUG_MODE 1",
+            "set pagination off",
+            "run",
+        ]
+
+    @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_fails_when_env_setup_fails(
         self,
         mock_controller_class,
@@ -222,6 +294,24 @@ class TestLifecycleApi:
 
         assert result["status"] == "error"
         assert "environment" in result["message"].lower()
+
+    def test_start_session_rejects_args_with_core(self, session_service):
+        """Core analysis and inferior argv are mutually exclusive at startup."""
+
+        result = result_to_mapping(
+            session_service.start(
+                program="/bin/ls",
+                args=["-l"],
+                core="/tmp/core.123",
+            )
+        )
+
+        assert result["status"] == "error"
+        assert "cannot combine 'args' with 'core'" in result["message"].lower()
+        assert session_service.state.value == "failed"
+        assert session_service.config is not None
+        assert session_service.config.args == ("-l",)
+        assert session_service.config.core == "/tmp/core.123"
 
     @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_detects_missing_debug_symbols(

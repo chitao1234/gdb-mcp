@@ -9,10 +9,10 @@ Start a new GDB debugging session.
 
 **Parameters:**
 - `program` (optional): Path to executable to debug
-- `args` (optional): Command-line arguments for the program
+- `args` (optional): Command-line arguments for the program. Only valid for live program launches, not core-dump analysis.
 - `core` (optional): Path to core dump file (uses --core flag for proper symbol resolution)
-- `init_commands` (optional): List of GDB commands to run on startup
-- `env` (optional): Environment variables to set for the debugged program (dictionary of name-value pairs)
+- `init_commands` (optional): List of GDB commands to run on startup after environment variables have been applied
+- `env` (optional): Environment variables to set for the debugged program before any init command can run the inferior (dictionary of name-value pairs)
 - `gdb_path` (optional): Path to GDB executable (default: "gdb")
 - `working_dir` (optional): Working directory to use when starting GDB
 
@@ -55,6 +55,8 @@ If using `core-file` in init_commands instead of the `core` parameter, ensure it
 ]
 ```
 
+`args` and `core` cannot be used together in the same startup request. Use `args` for live launches, or `core` for post-mortem analysis.
+
 **Example with custom GDB path:**
 ```json
 {
@@ -77,7 +79,7 @@ Use `gdb_path` when you need to use a specific GDB version or when GDB is not in
 }
 ```
 
-Environment variables are set for the debugged program before execution. This is useful for:
+Environment variables are applied before any `init_commands` run. This is useful for:
 - Setting library search paths (LD_LIBRARY_PATH, DYLD_LIBRARY_PATH)
 - Configuring application behavior (DEBUG_MODE, LOG_LEVEL, etc.)
 - Testing with different environment configurations

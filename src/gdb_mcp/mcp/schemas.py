@@ -10,14 +10,23 @@ from pydantic import BaseModel, Field
 
 class StartSessionArgs(BaseModel):
     program: Optional[str] = Field(None, description="Path to executable to debug")
-    args: Optional[list[str]] = Field(None, description="Command-line arguments for the program")
+    args: Optional[list[str]] = Field(
+        None,
+        description="Command-line arguments for the program. Cannot be combined with core.",
+    )
     init_commands: Optional[list[str]] = Field(
         None,
-        description="GDB commands to run on startup (e.g., 'core-file /path/to/core', 'set sysroot /path')",
+        description=(
+            "GDB commands to run on startup after environment variables have been applied "
+            "(e.g., 'core-file /path/to/core', 'set sysroot /path')"
+        ),
     )
     env: Optional[dict[str, str]] = Field(
         None,
-        description="Environment variables to set for the debugged program (e.g., {'LD_LIBRARY_PATH': '/custom/libs'})",
+        description=(
+            "Environment variables to set for the debugged program before init_commands run "
+            "(e.g., {'LD_LIBRARY_PATH': '/custom/libs'})"
+        ),
     )
     gdb_path: Optional[str] = Field(
         None,
@@ -38,6 +47,7 @@ class StartSessionArgs(BaseModel):
         description=(
             "Path to core dump file for post-mortem debugging. "
             "When specified, GDB is started with --core flag which properly initializes symbol resolution. "
+            "Cannot be combined with args. "
             "IMPORTANT: When using a sysroot with core dumps, set sysroot AFTER the core is loaded "
             "(either via this parameter or core-file command) for symbols to resolve correctly."
         ),
@@ -116,9 +126,10 @@ def build_tool_definitions() -> list[Tool]:
                 "Check the 'warnings' field in the response for critical issues that may affect debugging. "
                 "Available parameters: program (executable path), args (program arguments), "
                 "core (core dump path - uses --core flag for proper symbol resolution), "
-                "init_commands (GDB commands to run after loading), "
-                "env (environment variables), gdb_path (GDB binary path), "
+                "init_commands (GDB commands to run after environment setup), "
+                "env (environment variables applied before init_commands), gdb_path (GDB binary path), "
                 "working_dir (directory to run program from). "
+                "NOTE: 'args' and 'core' are mutually exclusive in one startup request. "
                 "IMPORTANT for core dump debugging: Set 'sysroot' and 'solib-search-path' AFTER "
                 "loading the core (either via 'core' parameter or 'core-file' init_command) "
                 "for symbols to resolve correctly. "
