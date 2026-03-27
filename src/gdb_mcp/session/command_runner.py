@@ -266,7 +266,7 @@ class SessionCommandRunner:
             attached_pid = self._parse_attached_pid(normalized_command)
             if attached_pid is not None:
                 self._runtime.mark_attached(attached_pid)
-            if self._runtime.execution_state == "unknown":
+            if self._runtime.execution_state != "paused" or self._runtime.stop_reason is None:
                 self._runtime.mark_inferior_paused("attached")
         elif normalized_command == "detach" and not parsed.is_error_result():
             self._runtime.clear_attached_pid()

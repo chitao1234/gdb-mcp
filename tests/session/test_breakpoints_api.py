@@ -164,6 +164,15 @@ class TestBreakpointApi:
 
         session, controller = scripted_running_session(
             [
+                mi_result(
+                    {
+                        "BreakpointTable": {
+                            "body": [],
+                        }
+                    }
+                )
+            ],
+            [
                 mi_console("Catchpoint 3 (fork)\n"),
                 mi_result(),
             ],
@@ -190,5 +199,51 @@ class TestBreakpointApi:
         assert result["breakpoint"]["number"] == "3"
         assert result["breakpoint"]["type"] == "catchpoint"
         written = [command.decode() for command in controller.io_manager.stdin.writes]
-        assert written[0].endswith('-interpreter-exec console "tcatch fork"\n')
-        assert written[1].endswith("-break-list\n")
+        assert written[0].endswith("-break-list\n")
+        assert written[1].endswith('-interpreter-exec console "tcatch fork"\n')
+        assert written[2].endswith("-break-list\n")
+
+    def test_set_temporary_catchpoint_parses_temporary_prefix(
+        self, scripted_running_session, mi_console, mi_result
+    ):
+        """Temporary catchpoint output should parse correctly without false errors."""
+
+        session, controller = scripted_running_session(
+            [
+                mi_result(
+                    {
+                        "BreakpointTable": {
+                            "body": [],
+                        }
+                    }
+                )
+            ],
+            [
+                mi_console("Temporary catchpoint  4 (throw)\n"),
+                mi_result(),
+            ],
+            [
+                mi_result(
+                    {
+                        "BreakpointTable": {
+                            "body": [
+                                {
+                                    "number": "4",
+                                    "type": "catchpoint",
+                                    "catch-type": "throw",
+                                }
+                            ]
+                        }
+                    }
+                )
+            ],
+        )
+
+        result = result_to_mapping(session.set_catchpoint("throw", temporary=True))
+
+        assert result["status"] == "success"
+        assert result["breakpoint"]["number"] == "4"
+        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert written[0].endswith("-break-list\n")
+        assert written[1].endswith('-interpreter-exec console "tcatch throw"\n')
+        assert written[2].endswith("-break-list\n")

@@ -92,6 +92,19 @@ class TestExecutionApi:
         assert transcript_entry.status == "success"
         assert transcript_entry.timed_out is True
 
+    def test_continue_execution_when_already_running_returns_deterministic_error(
+        self,
+        running_session,
+    ):
+        """Continuing an already-running inferior should fail immediately and clearly."""
+
+        running_session.runtime.mark_inferior_running()
+
+        result = result_to_mapping(running_session.continue_execution())
+
+        assert result["status"] == "error"
+        assert "already running" in result["message"].lower()
+
     def test_step(self, scripted_running_session, mi_result, mi_notify):
         """Step should emit the MI exec-step command."""
 
@@ -399,6 +412,27 @@ class TestExecutionApi:
         status = result_to_mapping(session.get_status())
         assert status["target_loaded"] is True
         assert status["execution_state"] == "paused"
+
+    def test_attach_process_overrides_not_started_state(
+        self, scripted_running_session, mi_console, mi_result
+    ):
+        """Attach should transition not_started state to paused after success."""
+
+        session, _controller = scripted_running_session(
+            [
+                mi_console("Attaching to process 1234\n"),
+                mi_result(),
+            ]
+        )
+        session.runtime.mark_inferior_not_started()
+
+        result = result_to_mapping(session.attach_process(pid=1234, timeout_sec=8))
+
+        assert result["status"] == "success"
+        status = result_to_mapping(session.get_status())
+        assert status["target_loaded"] is True
+        assert status["execution_state"] == "paused"
+        assert status["stop_reason"] == "attached"
 
     def test_set_follow_fork_mode(self, scripted_running_session, mi_result):
         """Follow-fork-mode should execute the expected CLI command and update runtime state."""

@@ -56,6 +56,31 @@ class TestHandlerDispatch:
         assert result_data["status"] == "success"
         assert result_data["session_id"] == 42
 
+    def test_start_session_normalizes_shell_style_string_args(self):
+        """Startup args in shell-string form should be normalized before session creation."""
+
+        manager = Mock()
+        manager.start_session.return_value = (
+            7,
+            OperationSuccess(SessionMessage(message="Session started")),
+        )
+
+        dispatch(
+            "gdb_start_session",
+            {"program": "/bin/echo", "args": '--flag "hello world"'},
+            manager,
+        )
+
+        manager.start_session.assert_called_once_with(
+            program="/bin/echo",
+            args=["--flag", "hello world"],
+            init_commands=None,
+            env=None,
+            gdb_path=None,
+            working_dir=None,
+            core=None,
+        )
+
     def test_start_session_failure_does_not_expose_session_id(self):
         """Failed startup should not expose a session ID."""
 
@@ -872,6 +897,24 @@ class TestHandlerDispatch:
 
         session.evaluate_expression.assert_called_once_with("x", thread_id=2, frame=1)
 
+    def test_evaluate_expression_accepts_numeric_string_overrides(self):
+        """Expression context overrides should accept numeric-string values."""
+
+        manager = Mock()
+        session = Mock()
+        session.evaluate_expression.return_value = OperationSuccess(
+            CommandExecutionInfo(command="-data-evaluate-expression")
+        )
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_evaluate_expression",
+            {"session_id": 1, "expression": "x", "thread_id": "2", "frame": "1"},
+            manager,
+        )
+
+        session.evaluate_expression.assert_called_once_with("x", thread_id=2, frame=1)
+
     def test_get_registers_routes_thread_and_frame_overrides(self):
         """Register requests should forward optional context overrides."""
 
@@ -889,6 +932,58 @@ class TestHandlerDispatch:
         )
 
         session.get_registers.assert_called_once_with(thread_id=2, frame=3)
+
+    def test_get_registers_accepts_numeric_string_overrides(self):
+        """Register context overrides should accept numeric-string values."""
+
+        manager = Mock()
+        session = Mock()
+        session.get_registers.return_value = OperationSuccess(
+            CommandExecutionInfo(command="-data-list-register-values x")
+        )
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_get_registers",
+            {"session_id": 1, "thread_id": "2", "frame": "3"},
+            manager,
+        )
+
+        session.get_registers.assert_called_once_with(thread_id=2, frame=3)
+
+    def test_get_backtrace_accepts_numeric_string_thread_id(self):
+        """Backtrace requests should accept numeric-string thread IDs."""
+
+        manager = Mock()
+        session = Mock()
+        session.get_backtrace.return_value = OperationSuccess(
+            CommandExecutionInfo(command="-stack-list-frames")
+        )
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_get_backtrace",
+            {"session_id": 1, "thread_id": "2", "max_frames": 5},
+            manager,
+        )
+
+        session.get_backtrace.assert_called_once_with(thread_id=2, max_frames=5)
+
+    def test_get_variables_accepts_numeric_string_context(self):
+        """Variable requests should accept numeric-string thread/frame selectors."""
+
+        manager = Mock()
+        session = Mock()
+        session.get_variables.return_value = OperationSuccess({"variables": []})
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_get_variables",
+            {"session_id": 1, "thread_id": "2", "frame": "3"},
+            manager,
+        )
+
+        session.get_variables.assert_called_once_with(thread_id=2, frame=3)
 
     def test_tool_definitions_match_dispatch_registry(self):
         """Every exported tool should have a matching dispatch path and vice versa."""

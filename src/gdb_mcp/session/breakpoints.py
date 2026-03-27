@@ -25,7 +25,10 @@ from .constants import DEFAULT_TIMEOUT_SEC
 from .result_utils import command_result_payload
 
 logger = logging.getLogger(__name__)
-_CATCHPOINT_NUMBER_RE = re.compile(r"Catchpoint\s+(?P<number>\d+)")
+_CATCHPOINT_NUMBER_RE = re.compile(
+    r"(?:Temporary\s+)?catchpoint\s+(?P<number>\d+)",
+    re.IGNORECASE,
+)
 
 
 class SessionBreakpointService:
@@ -131,6 +134,7 @@ class SessionBreakpointService:
     ) -> OperationSuccess[BreakpointInfo] | OperationError:
         """Set a catchpoint for a validated debugger event."""
 
+        previous_catchpoints = self._catchpoint_numbers()
         prefix = "tcatch" if temporary else "catch"
         command = f"{prefix} {kind}"
         if argument:
@@ -141,6 +145,8 @@ class SessionBreakpointService:
             return result
 
         number = self._extract_catchpoint_number(result.value.output or "")
+        if number is None:
+            number = self._infer_new_catchpoint_number(previous_catchpoints)
         if number is None:
             return OperationError(
                 message=f"Catchpoint {kind} set, but GDB did not report its number",
@@ -217,6 +223,38 @@ class SessionBreakpointService:
             return OperationSuccess(BreakpointInfo(breakpoint=fallback_record))
 
         return OperationSuccess(BreakpointInfo(breakpoint=breakpoint_info))
+
+    def _catchpoint_numbers(self) -> set[int] | None:
+        """Return the current catchpoint-number set when breakpoint inventory is available."""
+
+        list_result = self.list_breakpoints()
+        if isinstance(list_result, OperationError):
+            return None
+
+        numbers: set[int] = set()
+        for breakpoint_info in list_result.value.breakpoints:
+            breakpoint_type = str(breakpoint_info.get("type", "")).lower()
+            if "catch" not in breakpoint_type:
+                continue
+            number = self._extract_breakpoint_number(breakpoint_info)
+            if number is not None:
+                numbers.add(number)
+        return numbers
+
+    def _infer_new_catchpoint_number(self, previous: set[int] | None) -> int | None:
+        """Infer the created catchpoint by diffing catchpoint inventory before/after creation."""
+
+        current = self._catchpoint_numbers()
+        if current is None:
+            return None
+
+        if previous is None:
+            return max(current) if current else None
+
+        created = sorted(current - previous)
+        if created:
+            return created[-1]
+        return None
 
     @staticmethod
     def _find_breakpoint_record(

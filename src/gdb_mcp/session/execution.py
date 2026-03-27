@@ -78,7 +78,8 @@ class SessionExecutionService:
             return result
 
         self._runtime.target_loaded = True
-        if self._runtime.execution_state == "unknown":
+        self._runtime.mark_attached(pid)
+        if self._runtime.execution_state != "paused" or self._runtime.stop_reason is None:
             self._runtime.mark_inferior_paused("attached")
 
         return result
@@ -126,6 +127,15 @@ class SessionExecutionService:
 
     def continue_execution(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Continue execution of the program."""
+        if not self._runtime.has_controller:
+            return OperationError(message="No active GDB session")
+        if self._runtime.execution_state == "running":
+            return OperationError(
+                message=(
+                    "Inferior is already running. Use gdb_wait_for_stop to wait for the next "
+                    "stop event or gdb_interrupt to force a pause."
+                )
+            )
         return self._command_runner.execute_command_result(
             "-exec-continue",
             timeout_sec=DEFAULT_TIMEOUT_SEC,

@@ -296,6 +296,7 @@ class TestLifecycleApi:
 
         assert result["status"] == "success"
         assert executed_commands == [
+            "set confirm off",
             "set environment DEBUG_MODE 1",
             "set pagination off",
             "run",
@@ -463,7 +464,7 @@ class TestLifecycleApi:
 
         assert result["status"] == "success"
         assert result["target_loaded"] is True
-        assert executed_commands == ["source setup.gdb"]
+        assert executed_commands == ["set confirm off", "source setup.gdb"]
 
     def test_stop_active_session(self, running_session):
         """Stopping an active session should clear the controller and running flag."""

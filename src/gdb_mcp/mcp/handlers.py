@@ -161,7 +161,10 @@ def _handle_select_thread(session: SessionService, args: ThreadSelectArgs) -> To
 
 
 def _handle_get_backtrace(session: SessionService, args: GetBacktraceArgs) -> ToolResult:
-    return session.get_backtrace(thread_id=args.thread_id, max_frames=args.max_frames)
+    thread_id = _normalize_int_argument(args.thread_id, field_name="thread_id", minimum=1)
+    if isinstance(thread_id, OperationError):
+        return thread_id
+    return session.get_backtrace(thread_id=thread_id, max_frames=args.max_frames)
 
 
 def _handle_select_frame(session: SessionService, args: FrameSelectArgs) -> ToolResult:
@@ -244,10 +247,18 @@ def _handle_interrupt(session: SessionService, args: SessionIdArgs) -> ToolResul
 def _handle_evaluate_expression(
     session: SessionService, args: EvaluateExpressionArgs
 ) -> ToolResult:
+    thread_id = _normalize_int_argument(args.thread_id, field_name="thread_id", minimum=1)
+    if isinstance(thread_id, OperationError):
+        return thread_id
+
+    frame = _normalize_int_argument(args.frame, field_name="frame", minimum=0)
+    if isinstance(frame, OperationError):
+        return frame
+
     return session.evaluate_expression(
         args.expression,
-        thread_id=args.thread_id,
-        frame=args.frame,
+        thread_id=thread_id,
+        frame=frame,
     )
 
 
@@ -260,11 +271,29 @@ def _handle_read_memory(session: SessionService, args: ReadMemoryArgs) -> ToolRe
 
 
 def _handle_get_variables(session: SessionService, args: GetVariablesArgs) -> ToolResult:
-    return session.get_variables(thread_id=args.thread_id, frame=args.frame)
+    thread_id = _normalize_int_argument(args.thread_id, field_name="thread_id", minimum=1)
+    if isinstance(thread_id, OperationError):
+        return thread_id
+
+    frame_value = _normalize_int_argument(args.frame, field_name="frame", minimum=0)
+    if isinstance(frame_value, OperationError):
+        return frame_value
+    if frame_value is None:
+        return OperationError(message="Invalid frame: value is required", code="validation_error")
+
+    return session.get_variables(thread_id=thread_id, frame=frame_value)
 
 
 def _handle_get_registers(session: SessionService, args: GetRegistersArgs) -> ToolResult:
-    return session.get_registers(thread_id=args.thread_id, frame=args.frame)
+    thread_id = _normalize_int_argument(args.thread_id, field_name="thread_id", minimum=1)
+    if isinstance(thread_id, OperationError):
+        return thread_id
+
+    frame = _normalize_int_argument(args.frame, field_name="frame", minimum=0)
+    if isinstance(frame, OperationError):
+        return frame
+
+    return session.get_registers(thread_id=thread_id, frame=frame)
 
 
 def _handle_call_function(session: SessionService, args: CallFunctionArgs) -> ToolResult:
@@ -444,6 +473,57 @@ def _normalize_run_args(args: list[str] | str | None) -> list[str] | None | Oper
     return list(args)
 
 
+def _normalize_int_argument(
+    value: int | str | None,
+    *,
+    field_name: str,
+    minimum: int,
+) -> int | None | OperationError:
+    """Normalize an integer-like argument from int or numeric-string input."""
+
+    if value is None:
+        return None
+
+    if isinstance(value, int):
+        parsed = value
+    elif isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return OperationError(
+                message=f"Invalid {field_name}: expected an integer value",
+                code="validation_error",
+            )
+        if text.startswith(("+", "-")):
+            sign = text[0]
+            digits = text[1:]
+            if not digits.isdigit():
+                return OperationError(
+                    message=f"Invalid {field_name}: expected an integer value, got {value!r}",
+                    code="validation_error",
+                )
+            parsed = int(f"{sign}{digits}", 10)
+        elif text.isdigit():
+            parsed = int(text, 10)
+        else:
+            return OperationError(
+                message=f"Invalid {field_name}: expected an integer value, got {value!r}",
+                code="validation_error",
+            )
+    else:
+        return OperationError(
+            message=f"Invalid {field_name}: expected an integer value",
+            code="validation_error",
+        )
+
+    if parsed < minimum:
+        qualifier = "positive integer" if minimum == 1 else f"integer >= {minimum}"
+        return OperationError(
+            message=f"Invalid {field_name}: expected {qualifier}, got {parsed}",
+            code="validation_error",
+        )
+    return parsed
+
+
 def _invalid_session_result(session_id: object) -> OperationError:
     """Return the standard invalid-session error response."""
 
@@ -459,9 +539,13 @@ def _handle_start_session(
     """Validate and start a new debugger session."""
 
     args = StartSessionArgs.model_validate(arguments)
+    normalized_args = _normalize_run_args(args.args)
+    if isinstance(normalized_args, OperationError):
+        return normalized_args
+
     session_id, result = session_manager.start_session(
         program=args.program,
-        args=args.args,
+        args=normalized_args,
         init_commands=args.init_commands,
         env=args.env,
         gdb_path=args.gdb_path,

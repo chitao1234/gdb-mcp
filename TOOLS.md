@@ -9,7 +9,10 @@ Start a new GDB debugging session.
 
 **Parameters:**
 - `program` (optional): Path to executable to debug
-- `args` (optional): Command-line arguments for the program. Only valid for live program launches, not core-dump analysis.
+- `args` (optional): Command-line arguments for the program. Accepts either:
+  - list form: `["--mode", "fast"]`
+  - shell-style string form: `"--mode fast"`
+  Only valid for live program launches, not core-dump analysis.
 - `core` (optional): Path to core dump file (uses --core flag for proper symbol resolution)
 - `init_commands` (optional): List of GDB commands to run on startup after environment variables have been applied
 - `env` (optional): Environment variables to set for the debugged program before any init command can run the inferior (dictionary of name-value pairs)
@@ -35,6 +38,7 @@ Start a new GDB debugging session.
 
 **Important:** Always check the `warnings` field! Missing debug symbols will prevent breakpoints from working and variable inspection from showing useful information.
 Also check `target_loaded`: GDB itself can start successfully while the requested executable or core file still fails to load.
+By default, sessions apply `set confirm off` during startup so CLI commands remain non-interactive for automation.
 
 **Core Dump Debugging:**
 
@@ -307,7 +311,7 @@ Get information about all threads in the debugged process.
 Get stack backtrace for a thread.
 
 **Parameters:**
-- `thread_id` (optional): Thread ID (None for current thread)
+- `thread_id` (optional): Thread ID as an integer or numeric string (`None` for current thread)
 - `max_frames`: Maximum number of frames to retrieve (default: 100)
 
 **Notes:**
@@ -450,8 +454,8 @@ Evaluate a C/C++ expression in the current context.
 
 **Parameters:**
 - `expression`: Expression to evaluate
-- `thread_id` (optional): Thread ID override
-- `frame` (optional): Frame override
+- `thread_id` (optional): Thread ID override (integer or numeric string)
+- `frame` (optional): Frame override (integer or numeric string)
 
 **Examples:**
 - `"x"` - Get value of variable x
@@ -463,8 +467,8 @@ Evaluate a C/C++ expression in the current context.
 Get local variables for a stack frame.
 
 **Parameters:**
-- `thread_id` (optional): Thread ID
-- `frame`: Frame number (0 is current, default: 0)
+- `thread_id` (optional): Thread ID (integer or numeric string)
+- `frame`: Frame number (integer or numeric string, 0 is current, default: 0)
 
 **Notes:**
 - This call inspects the requested thread/frame and then restores the prior
@@ -476,8 +480,8 @@ Get local variables for a stack frame.
 Get CPU register values for the current frame.
 
 **Parameters:**
-- `thread_id` (optional): Thread ID override
-- `frame` (optional): Frame override
+- `thread_id` (optional): Thread ID override (integer or numeric string)
+- `frame` (optional): Frame override (integer or numeric string)
 
 **Notes:**
 - Like `gdb_evaluate_expression`, this can inspect a specific thread/frame

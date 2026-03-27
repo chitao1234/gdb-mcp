@@ -137,6 +137,17 @@ class SessionLifecycleService:
                 if "no such file" in startup_output_lower:
                     warnings.append("Program file not found")
 
+                # Keep CLI commands non-interactive by default for automation clients.
+                confirm_result = self._command_runner.execute_command_result(
+                    "set confirm off",
+                    timeout_sec=DEFAULT_TIMEOUT_SEC,
+                )
+                if isinstance(confirm_result, OperationError):
+                    warnings.append(
+                        "Failed to disable interactive confirmations by default: "
+                        f"{confirm_result.message}"
+                    )
+
                 self._runtime.target_loaded = self._startup_target_loaded(
                     program=program,
                     core=core,

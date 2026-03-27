@@ -64,6 +64,12 @@ class TestStartSessionArgs:
         assert args.env == {"DEBUG": "1"}
         assert args.gdb_path == "/usr/local/bin/gdb"
 
+    def test_start_session_accepts_shell_style_string_args(self):
+        """Startup args should accept a shell-style string for parity with gdb_run."""
+
+        args = StartSessionArgs(program="/bin/ls", args='--mode "fast path"')
+        assert args.args == '--mode "fast path"'
+
     def test_env_dict_validation(self):
         """Test that env accepts dictionary of strings."""
         args = StartSessionArgs(program="/bin/ls", env={"VAR1": "value1", "VAR2": "value2"})
@@ -412,6 +418,12 @@ class TestGetBacktraceArgs:
         assert args.thread_id == 5
         assert args.max_frames == 50
 
+    def test_with_numeric_string_thread_id(self):
+        """Thread ID should accept numeric strings for client compatibility."""
+
+        args = GetBacktraceArgs(session_id=2, thread_id="5", max_frames=50)
+        assert args.thread_id == 5
+
 
 class TestSetBreakpointArgs:
     """Test cases for SetBreakpointArgs model."""
@@ -456,6 +468,13 @@ class TestEvaluateExpressionArgs:
         assert args.thread_id == 2
         assert args.frame == 1
 
+    def test_expression_accepts_numeric_string_context_overrides(self):
+        """Thread/frame overrides should accept numeric strings."""
+
+        args = EvaluateExpressionArgs(session_id=1, expression="x + y", thread_id="2", frame="1")
+        assert args.thread_id == 2
+        assert args.frame == 1
+
 
 class TestGetVariablesArgs:
     """Test cases for GetVariablesArgs model."""
@@ -471,6 +490,13 @@ class TestGetVariablesArgs:
         """Test with specific values."""
         args = GetVariablesArgs(session_id=2, thread_id=3, frame=2)
         assert args.session_id == 2
+        assert args.thread_id == 3
+        assert args.frame == 2
+
+    def test_with_numeric_string_values(self):
+        """Thread/frame selectors should accept numeric strings."""
+
+        args = GetVariablesArgs(session_id=2, thread_id="3", frame="2")
         assert args.thread_id == 3
         assert args.frame == 2
 
@@ -587,6 +613,14 @@ class TestSessionIdRequired:
         assert args4.session_id == 4
         assert args4.thread_id == 2
         assert args4.frame == 1
+
+    def test_get_registers_accepts_numeric_string_context(self):
+        """Register context overrides should accept numeric strings."""
+
+        args = GetRegistersArgs(session_id=4, thread_id="2", frame="1")
+        assert args.session_id == 4
+        assert args.thread_id == 2
+        assert args.frame == 1
 
 
 class TestArgumentBounds:

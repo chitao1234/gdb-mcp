@@ -5,13 +5,53 @@ from __future__ import annotations
 from typing import Literal, Optional, TypeAlias
 
 from mcp.types import Tool
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class StrictArgsModel(BaseModel):
     """Base model for MCP request validation."""
 
     model_config = ConfigDict(extra="forbid")
+
+
+def _coerce_int_like(
+    value: object,
+    *,
+    field_name: str,
+    minimum: int,
+    allow_none: bool = False,
+) -> int | None:
+    """Normalize integer-like fields while accepting numeric strings."""
+
+    if value is None:
+        if allow_none:
+            return None
+        raise ValueError(f"{field_name} is required")
+
+    if isinstance(value, int):
+        parsed = value
+    elif isinstance(value, str):
+        text = value.strip()
+        if not text:
+            raise ValueError(f"{field_name} must be an integer")
+        if text.startswith(("+", "-")):
+            sign = text[0]
+            digits = text[1:]
+            if not digits.isdigit():
+                raise ValueError(f"{field_name} must be an integer")
+            parsed = int(f"{sign}{digits}", 10)
+        elif text.isdigit():
+            parsed = int(text, 10)
+        else:
+            raise ValueError(f"{field_name} must be an integer")
+    else:
+        raise ValueError(f"{field_name} must be an integer")
+
+    if parsed < minimum:
+        if minimum == 1:
+            raise ValueError(f"{field_name} must be > 0")
+        raise ValueError(f"{field_name} must be >= {minimum}")
+    return parsed
 
 
 BATCH_STEP_TOOL_NAMES = (
@@ -86,9 +126,13 @@ BatchStepToolName: TypeAlias = Literal[
 
 class StartSessionArgs(StrictArgsModel):
     program: Optional[str] = Field(None, description="Path to executable to debug")
-    args: Optional[list[str]] = Field(
+    args: Optional[list[str] | str] = Field(
         None,
-        description="Command-line arguments for the program. Cannot be combined with core.",
+        description=(
+            "Command-line arguments for the program. "
+            "Accepts either an explicit argv list or one shell-style string. "
+            "Cannot be combined with core."
+        ),
     )
     init_commands: Optional[list[str]] = Field(
         None,
@@ -156,8 +200,18 @@ class AttachProcessArgs(StrictArgsModel):
 
 class GetBacktraceArgs(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
-    thread_id: Optional[int] = Field(None, gt=0, description="Thread ID (None for current thread)")
+    thread_id: Optional[int | str] = Field(
+        None,
+        description="Thread ID as an integer or numeric string (None for current thread)",
+    )
     max_frames: int = Field(100, gt=0, description="Maximum number of frames to retrieve")
+
+    @field_validator("thread_id")
+    @classmethod
+    def validate_thread_id(cls, value: int | str | None) -> int | None:
+        """Accept numeric strings while enforcing positive thread IDs."""
+
+        return _coerce_int_like(value, field_name="thread_id", minimum=1, allow_none=True)
 
 
 class SetBreakpointArgs(StrictArgsModel):
@@ -203,14 +257,57 @@ class SetCatchpointArgs(StrictArgsModel):
 class EvaluateExpressionArgs(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
     expression: str = Field(..., description="C/C++ expression to evaluate")
-    thread_id: Optional[int] = Field(None, gt=0, description="Thread ID override")
-    frame: Optional[int] = Field(None, ge=0, description="Frame number override")
+    thread_id: Optional[int | str] = Field(
+        None,
+        description="Thread ID override as an integer or numeric string",
+    )
+    frame: Optional[int | str] = Field(
+        None,
+        description="Frame number override as an integer or numeric string",
+    )
+
+    @field_validator("thread_id")
+    @classmethod
+    def validate_thread_id(cls, value: int | str | None) -> int | None:
+        """Accept numeric strings while enforcing positive thread IDs."""
+
+        return _coerce_int_like(value, field_name="thread_id", minimum=1, allow_none=True)
+
+    @field_validator("frame")
+    @classmethod
+    def validate_frame(cls, value: int | str | None) -> int | None:
+        """Accept numeric strings while enforcing non-negative frame indices."""
+
+        return _coerce_int_like(value, field_name="frame", minimum=0, allow_none=True)
 
 
 class GetVariablesArgs(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
-    thread_id: Optional[int] = Field(None, gt=0, description="Thread ID (None for current)")
-    frame: int = Field(0, ge=0, description="Frame number (0 is current)")
+    thread_id: Optional[int | str] = Field(
+        None,
+        description="Thread ID as an integer or numeric string (None for current)",
+    )
+    frame: int | str = Field(
+        0,
+        description="Frame number as an integer or numeric string (0 is current)",
+    )
+
+    @field_validator("thread_id")
+    @classmethod
+    def validate_thread_id(cls, value: int | str | None) -> int | None:
+        """Accept numeric strings while enforcing positive thread IDs."""
+
+        return _coerce_int_like(value, field_name="thread_id", minimum=1, allow_none=True)
+
+    @field_validator("frame")
+    @classmethod
+    def validate_frame(cls, value: int | str) -> int:
+        """Accept numeric strings while enforcing non-negative frame indices."""
+
+        normalized = _coerce_int_like(value, field_name="frame", minimum=0, allow_none=False)
+        if normalized is None:
+            raise ValueError("frame is required")
+        return normalized
 
 
 class ThreadSelectArgs(StrictArgsModel):
@@ -239,8 +336,28 @@ class CallFunctionArgs(StrictArgsModel):
 
 class GetRegistersArgs(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
-    thread_id: Optional[int] = Field(None, gt=0, description="Thread ID override")
-    frame: Optional[int] = Field(None, ge=0, description="Frame number override")
+    thread_id: Optional[int | str] = Field(
+        None,
+        description="Thread ID override as an integer or numeric string",
+    )
+    frame: Optional[int | str] = Field(
+        None,
+        description="Frame number override as an integer or numeric string",
+    )
+
+    @field_validator("thread_id")
+    @classmethod
+    def validate_thread_id(cls, value: int | str | None) -> int | None:
+        """Accept numeric strings while enforcing positive thread IDs."""
+
+        return _coerce_int_like(value, field_name="thread_id", minimum=1, allow_none=True)
+
+    @field_validator("frame")
+    @classmethod
+    def validate_frame(cls, value: int | str | None) -> int | None:
+        """Accept numeric strings while enforcing non-negative frame indices."""
+
+        return _coerce_int_like(value, field_name="frame", minimum=0, allow_none=True)
 
 
 class ReadMemoryArgs(StrictArgsModel):

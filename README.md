@@ -233,7 +233,9 @@ Then use it:
 
 If you provide `env`, those environment variables are applied before any `init_commands` run.
 
-`args` and `core` are intentionally mutually exclusive in one startup request: use `args` for a live program launch, or `core` for post-mortem analysis.
+`args` and `core` are intentionally mutually exclusive in one startup request: use `args` for a live program launch, or `core` for post-mortem analysis. `args` accepts either an explicit list (`["--mode","fast"]`) or a shell-style string (`"--mode fast"`).
+
+By default, startup applies `set confirm off` so CLI commands stay non-interactive in automation workflows.
 
 ### Python Initialization Scripts
 
