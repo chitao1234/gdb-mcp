@@ -11,6 +11,7 @@ from typing import cast
 from ..domain import (
     CaptureArtifactInfo,
     CaptureBundleInfo,
+    MemoryCaptureRange,
     OperationError,
     OperationResult,
     OperationSuccess,
@@ -23,6 +24,9 @@ from .inspection import SessionInspectionService
 from .lifecycle import SessionLifecycleService
 from .runtime import SessionRuntime
 
+DEFAULT_CAPTURE_MEMORY_MAX_RANGE_BYTES = 4 * 1024
+DEFAULT_CAPTURE_MEMORY_MAX_TOTAL_BYTES = 64 * 1024
+
 
 @dataclass(slots=True, frozen=True)
 class CaptureBundleRequest:
@@ -31,6 +35,7 @@ class CaptureBundleRequest:
     output_dir: str | None = None
     bundle_name: str | None = None
     expressions: tuple[str, ...] = ()
+    memory_ranges: tuple[MemoryCaptureRange, ...] = ()
     max_frames: int = 100
     include_threads: bool = True
     include_backtraces: bool = True
@@ -60,6 +65,7 @@ class SessionCaptureService:
         output_dir: str | None = None,
         bundle_name: str | None = None,
         expressions: list[str] | None = None,
+        memory_ranges: list[MemoryCaptureRange] | None = None,
         max_frames: int = 100,
         include_threads: bool = True,
         include_backtraces: bool = True,
@@ -75,6 +81,7 @@ class SessionCaptureService:
             output_dir=output_dir,
             bundle_name=bundle_name,
             expressions=tuple(expressions or ()),
+            memory_ranges=tuple(memory_ranges or ()),
             max_frames=max_frames,
             include_threads=include_threads,
             include_backtraces=include_backtraces,
@@ -84,6 +91,10 @@ class SessionCaptureService:
             include_transcript=include_transcript,
             include_stop_history=include_stop_history,
         )
+
+        request_error = self._validate_request(request)
+        if request_error is not None:
+            return request_error
 
         try:
             bundle_dir = self._prepare_bundle_dir(request)
@@ -233,6 +244,26 @@ class SessionCaptureService:
                 self._write_payload_artifact(bundle_dir, "expressions", expression_payloads)
             )
 
+        if request.memory_ranges:
+            memory_range_payloads: list[StructuredPayload] = []
+            for memory_range in request.memory_ranges:
+                memory_result = self._inspection.read_memory(
+                    memory_range.address,
+                    memory_range.count,
+                    offset=memory_range.offset,
+                )
+                payload = result_to_mapping(memory_result)
+                payload["requested_range"] = payload_to_mapping(memory_range)
+                if memory_range.name is not None:
+                    payload["name"] = memory_range.name
+                memory_range_payloads.append(payload)
+                if payload.get("status") == "error":
+                    failed_sections.append(self._memory_range_section_name(memory_range))
+
+            artifacts.append(
+                self._write_payload_artifact(bundle_dir, "memory-ranges", memory_range_payloads)
+            )
+
         manifest_payload: StructuredPayload = {
             "bundle_name": bundle_dir.name,
             "bundle_dir": str(bundle_dir),
@@ -240,6 +271,7 @@ class SessionCaptureService:
             "execution_state": status_execution_state,
             "stop_reason": status_stop_reason,
             "last_stop_event": payload_to_mapping(self._runtime.last_stop_event),
+            "requested_memory_ranges": payload_to_mapping(request.memory_ranges),
             "artifacts": payload_to_mapping(artifacts),
             "failed_sections": payload_to_mapping(sorted(set(failed_sections))),
             "session": {
@@ -299,6 +331,49 @@ class SessionCaptureService:
 
         return Path(tempfile.mkdtemp(prefix="gdb-mcp-bundle-", dir=base_dir)).resolve()
 
+    def _validate_request(self, request: CaptureBundleRequest) -> OperationError | None:
+        """Validate bounded capture options before creating a bundle directory."""
+
+        total_memory_bytes = 0
+        memory_range_names: set[str] = set()
+        for index, memory_range in enumerate(request.memory_ranges):
+            if memory_range.count < 1:
+                return OperationError(
+                    message=f"Memory range {index} must request at least one byte",
+                )
+            if memory_range.offset < 0:
+                return OperationError(
+                    message=f"Memory range {index} must not use a negative offset",
+                )
+            if memory_range.count > DEFAULT_CAPTURE_MEMORY_MAX_RANGE_BYTES:
+                return OperationError(
+                    message=(
+                        f"Memory range {index} requests {memory_range.count} bytes, "
+                        f"which exceeds the per-range limit of {DEFAULT_CAPTURE_MEMORY_MAX_RANGE_BYTES}"
+                    ),
+                )
+
+            total_memory_bytes += memory_range.count
+            if total_memory_bytes > DEFAULT_CAPTURE_MEMORY_MAX_TOTAL_BYTES:
+                return OperationError(
+                    message=(
+                        "Requested memory capture exceeds the total limit of "
+                        f"{DEFAULT_CAPTURE_MEMORY_MAX_TOTAL_BYTES} bytes"
+                    ),
+                )
+
+            if memory_range.name is None:
+                continue
+            if not memory_range.name.strip():
+                return OperationError(message=f"Memory range {index} name must not be blank")
+            if memory_range.name in memory_range_names:
+                return OperationError(
+                    message=f"Duplicate memory range name: {memory_range.name}"
+                )
+            memory_range_names.add(memory_range.name)
+
+        return None
+
     def _write_result_artifact(
         self,
         bundle_dir: Path,
@@ -336,6 +411,14 @@ class SessionCaptureService:
             path=str(artifact_path.resolve()),
             status=status,
         )
+
+    @staticmethod
+    def _memory_range_section_name(memory_range: MemoryCaptureRange) -> str:
+        """Build a stable failed-section name for one memory-range capture request."""
+
+        if memory_range.name is not None:
+            return f"memory-range:{memory_range.name}"
+        return f"memory-range:{memory_range.address}"
 
     @staticmethod
     def _status_field(

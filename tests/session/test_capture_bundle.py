@@ -9,6 +9,8 @@ from gdb_mcp.domain import (
     CommandTranscriptEntry,
     ExpressionValueInfo,
     FrameInfo,
+    MemoryCaptureRange,
+    MemoryReadInfo,
     OperationError,
     OperationSuccess,
     RegistersInfo,
@@ -17,6 +19,7 @@ from gdb_mcp.domain import (
     ThreadListInfo,
     VariablesInfo,
 )
+from gdb_mcp.session.capture import DEFAULT_CAPTURE_MEMORY_MAX_RANGE_BYTES
 
 
 class TestCaptureBundle:
@@ -86,11 +89,31 @@ class TestCaptureBundle:
                 ExpressionValueInfo(expression=expression, value="5")
             )
         )
+        session_service._inspection.read_memory = (
+            lambda address, count, offset=0: OperationSuccess(
+                MemoryReadInfo(
+                    address=address,
+                    count=count,
+                    offset=offset,
+                    blocks=[
+                        {
+                            "begin": "0x1000",
+                            "offset": "0x0",
+                            "end": "0x1004",
+                            "contents": "01020304",
+                        }
+                    ],
+                    block_count=1,
+                    captured_bytes=4,
+                )
+            )
+        )
 
         result = session_service.capture_bundle(
             output_dir=str(tmp_path),
             bundle_name="bundle",
             expressions=["value"],
+            memory_ranges=[MemoryCaptureRange(address="&value", count=4, name="value-bytes")],
         )
 
         assert isinstance(result, OperationSuccess)
@@ -110,6 +133,11 @@ class TestCaptureBundle:
         assert "thread-backtraces" in artifact_names
         assert "command-transcript" in artifact_names
         assert "expressions" in artifact_names
+        assert "memory-ranges" in artifact_names
+
+        memory_ranges = json.loads((tmp_path / "bundle" / "memory-ranges.json").read_text())
+        assert memory_ranges[0]["requested_range"]["name"] == "value-bytes"
+        assert memory_ranges[0]["captured_bytes"] == 4
 
     def test_capture_bundle_returns_success_with_warnings_for_partial_failures(
         self, session_service, tmp_path
@@ -141,3 +169,22 @@ class TestCaptureBundle:
         assert "thread-backtraces" in result.value.failed_sections
         manifest = json.loads((tmp_path / "partial" / "manifest.json").read_text())
         assert "threads" in manifest["failed_sections"]
+
+    def test_capture_bundle_rejects_memory_ranges_that_exceed_size_limits(
+        self, session_service, tmp_path
+    ):
+        """Explicit memory captures should fail fast when a single range is too large."""
+
+        result = session_service.capture_bundle(
+            output_dir=str(tmp_path),
+            bundle_name="too-large",
+            memory_ranges=[
+                MemoryCaptureRange(
+                    address="&value",
+                    count=DEFAULT_CAPTURE_MEMORY_MAX_RANGE_BYTES + 1,
+                )
+            ],
+        )
+
+        assert isinstance(result, OperationError)
+        assert "per-range limit" in result.message

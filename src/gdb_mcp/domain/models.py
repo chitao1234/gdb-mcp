@@ -352,6 +352,16 @@ class WaitForStopInfo:
 
 
 @dataclass(slots=True, frozen=True)
+class MemoryCaptureRange:
+    """One explicit memory range requested for bundle capture."""
+
+    address: str
+    count: int
+    offset: int = 0
+    name: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
 class SessionMessage:
     """Simple message payload."""
 

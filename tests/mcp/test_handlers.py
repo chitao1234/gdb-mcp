@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, Mock
 from gdb_mcp.domain import (
     BreakpointInfo,
     CommandExecutionInfo,
+    MemoryCaptureRange,
     OperationError,
     OperationSuccess,
     StopEvent,
@@ -603,6 +604,9 @@ class TestHandlerDispatch:
                 "output_dir": "/tmp/bundles",
                 "bundle_name": "case-1",
                 "expressions": ["value", "result"],
+                "memory_ranges": [
+                    {"address": "&value", "count": 4, "name": "value-bytes"},
+                ],
                 "max_frames": 50,
                 "include_transcript": False,
             },
@@ -613,6 +617,9 @@ class TestHandlerDispatch:
             output_dir="/tmp/bundles",
             bundle_name="case-1",
             expressions=["value", "result"],
+            memory_ranges=[
+                MemoryCaptureRange(address="&value", count=4, offset=0, name="value-bytes")
+            ],
             max_frames=50,
             include_threads=True,
             include_backtraces=True,
@@ -622,6 +629,47 @@ class TestHandlerDispatch:
             include_transcript=False,
             include_stop_history=True,
         )
+
+    def test_run_until_failure_capture_forwards_memory_ranges(self):
+        """Campaign capture settings should forward explicit memory ranges to bundle capture."""
+
+        manager = Mock()
+        session = Mock()
+        session.start.return_value = OperationSuccess(SessionMessage(message="started"))
+        session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
+        session.get_status.return_value = OperationSuccess(
+            SessionStatusSnapshot(
+                is_running=True,
+                target_loaded=True,
+                has_controller=True,
+                execution_state="paused",
+                stop_reason="signal-received",
+            )
+        )
+        session.last_stop_event = StopEvent(execution_state="paused", reason="signal-received")
+        session.capture_bundle.return_value = OperationSuccess(SessionMessage(message="bundle"))
+        session.controller = object()
+        session.stop.return_value = OperationSuccess(SessionMessage(message="stopped"))
+        manager.create_untracked_session.return_value = session
+
+        dispatch(
+            "gdb_run_until_failure",
+            {
+                "startup": {"program": "/tmp/a.out"},
+                "capture": {
+                    "enabled": True,
+                    "memory_ranges": [
+                        {"address": "&value", "count": 8, "name": "value-bytes"}
+                    ],
+                },
+            },
+            manager,
+        )
+
+        session.capture_bundle.assert_called_once()
+        assert session.capture_bundle.call_args.kwargs["memory_ranges"] == [
+            MemoryCaptureRange(address="&value", count=8, offset=0, name="value-bytes")
+        ]
 
     def test_run_until_failure_uses_untracked_sessions(self):
         """Campaign requests should create fresh untracked sessions and return campaign data."""

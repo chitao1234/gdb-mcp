@@ -292,6 +292,18 @@ class WaitForStopArgs(StrictArgsModel):
     )
 
 
+class CaptureMemoryRangeArgs(StrictArgsModel):
+    """One explicit memory range to include in a capture bundle."""
+
+    address: str = Field(..., description="Address expression to read from")
+    count: int = Field(..., gt=0, description="Number of bytes to capture for this range")
+    offset: int = Field(0, ge=0, description="Optional offset relative to address")
+    name: Optional[str] = Field(
+        None,
+        description="Optional stable label used in reports and failed-sections output",
+    )
+
+
 class ListSessionsArgs(StrictArgsModel):
     """Arguments for tools that do not require any parameters."""
 
@@ -340,6 +352,13 @@ class CaptureBundleArgs(StrictArgsModel):
     expressions: list[str] = Field(
         default_factory=list,
         description="Expressions to evaluate and include in the bundle.",
+    )
+    memory_ranges: list[CaptureMemoryRangeArgs] = Field(
+        default_factory=list,
+        description=(
+            "Explicit memory ranges to capture. Each range is opt-in and bounded by "
+            "server-side size limits."
+        ),
     )
     max_frames: int = Field(
         100,
@@ -405,6 +424,10 @@ class RunUntilFailureCaptureArgs(StrictArgsModel):
     expressions: list[str] = Field(
         default_factory=list,
         description="Expressions to evaluate and include in the capture bundle.",
+    )
+    memory_ranges: list[CaptureMemoryRangeArgs] = Field(
+        default_factory=list,
+        description="Explicit memory ranges to capture when a failure matches.",
     )
     max_frames: int = Field(100, gt=0, description="Maximum frames per thread backtrace.")
     include_threads: bool = Field(True, description="Capture thread inventory.")
@@ -569,8 +592,8 @@ def build_tool_definitions() -> list[Tool]:
                 "Write a structured forensic capture bundle to disk for the current session. "
                 "The bundle includes a manifest plus JSON artifacts such as session status, "
                 "last stop event, optional stop history, optional command transcript, thread "
-                "inventory, thread backtraces, current frame, variables, registers, and "
-                "requested expression evaluations. "
+                "inventory, thread backtraces, current frame, variables, registers, requested "
+                "expression evaluations, and any explicitly requested memory ranges. "
                 "Use output_dir and bundle_name when you need deterministic artifact paths."
             ),
             inputSchema=CaptureBundleArgs.model_json_schema(),
@@ -583,7 +606,8 @@ def build_tool_definitions() -> list[Tool]:
                 "Each iteration uses the same startup configuration, optional structured setup "
                 "steps, and one gdb_run invocation. "
                 "When a failure matches, the tool can automatically write a capture bundle to "
-                "disk and return the bundle metadata."
+                "disk and return the bundle metadata, including any explicitly requested memory "
+                "ranges."
             ),
             inputSchema=RunUntilFailureArgs.model_json_schema(),
         ),

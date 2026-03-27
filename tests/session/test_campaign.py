@@ -8,6 +8,7 @@ from gdb_mcp.domain import (
     BatchExecutionInfo,
     CaptureBundleInfo,
     CommandExecutionInfo,
+    MemoryCaptureRange,
     OperationSuccess,
     RunUntilFailureInfo,
     SessionMessage,
@@ -67,6 +68,7 @@ class TestRunUntilFailureService:
                 capture=RunUntilFailureCaptureRequest(
                     output_dir="/tmp",
                     bundle_name_prefix="failure",
+                    memory_ranges=(MemoryCaptureRange(address="&value", count=4),),
                 ),
             )
         )
@@ -79,6 +81,9 @@ class TestRunUntilFailureService:
         assert result.value.capture_bundle is not None
         assert result.value.capture_bundle.bundle_name == "bundle"
         session.capture_bundle.assert_called_once()
+        assert session.capture_bundle.call_args.kwargs["memory_ranges"] == [
+            MemoryCaptureRange(address="&value", count=4)
+        ]
         session.stop.assert_called_once()
 
     def test_returns_success_when_no_failure_matches(self):

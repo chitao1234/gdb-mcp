@@ -10,6 +10,7 @@ from typing import Pattern
 
 from ..domain import (
     CaptureBundleInfo,
+    MemoryCaptureRange,
     OperationError,
     OperationSuccess,
     RunUntilFailureInfo,
@@ -43,6 +44,7 @@ class RunUntilFailureCaptureRequest:
     output_dir: str | None = None
     bundle_name_prefix: str | None = None
     expressions: tuple[str, ...] = ()
+    memory_ranges: tuple[MemoryCaptureRange, ...] = ()
     max_frames: int = 100
     include_threads: bool = True
     include_backtraces: bool = True
@@ -199,6 +201,7 @@ class RunUntilFailureService:
                             request.capture.bundle_name_prefix, iteration
                         ),
                         expressions=list(request.capture.expressions),
+                        memory_ranges=list(request.capture.memory_ranges),
                         max_frames=request.capture.max_frames,
                         include_threads=request.capture.include_threads,
                         include_backtraces=request.capture.include_backtraces,

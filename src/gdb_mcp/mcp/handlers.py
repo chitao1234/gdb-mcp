@@ -5,13 +5,14 @@ from __future__ import annotations
 from contextlib import nullcontext
 from dataclasses import dataclass
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import ContextManager, Protocol, TypeAlias, TypeVar, cast
 
 from pydantic import BaseModel
 from mcp.types import TextContent
 
 from ..domain import (
+    MemoryCaptureRange,
     OperationError,
     OperationResult,
     OperationSuccess,
@@ -62,6 +63,15 @@ class SessionArgsProtocol(Protocol):
     """Validated MCP argument models that carry a session_id."""
 
     session_id: int
+
+
+class MemoryRangeArgsProtocol(Protocol):
+    """Validated MCP range models used for bundle memory capture."""
+
+    address: str
+    count: int
+    offset: int
+    name: str | None
 
 
 SessionArgsT = TypeVar("SessionArgsT", bound=SessionArgsProtocol)
@@ -276,6 +286,7 @@ def _handle_capture_bundle(session: SessionService, args: CaptureBundleArgs) -> 
         output_dir=args.output_dir,
         bundle_name=args.bundle_name,
         expressions=args.expressions,
+        memory_ranges=_memory_capture_ranges(args.memory_ranges),
         max_frames=args.max_frames,
         include_threads=args.include_threads,
         include_backtraces=args.include_backtraces,
@@ -325,6 +336,7 @@ def _handle_run_until_failure(
                 output_dir=args.capture.output_dir,
                 bundle_name_prefix=args.capture.bundle_name_prefix,
                 expressions=tuple(args.capture.expressions),
+                memory_ranges=tuple(_memory_capture_ranges(args.capture.memory_ranges)),
                 max_frames=args.capture.max_frames,
                 include_threads=args.capture.include_threads,
                 include_backtraces=args.capture.include_backtraces,
@@ -336,6 +348,22 @@ def _handle_run_until_failure(
             ),
         )
     )
+
+
+def _memory_capture_ranges(
+    memory_ranges: Sequence[MemoryRangeArgsProtocol],
+) -> list[MemoryCaptureRange]:
+    """Convert validated memory-range models into typed internal requests."""
+
+    return [
+        MemoryCaptureRange(
+            address=str(memory_range.address),
+            count=int(memory_range.count),
+            offset=int(memory_range.offset),
+            name=str(memory_range.name) if memory_range.name is not None else None,
+        )
+        for memory_range in memory_ranges
+    ]
 
 
 def _invalid_session_result(session_id: object) -> OperationError:

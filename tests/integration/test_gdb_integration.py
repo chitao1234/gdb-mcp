@@ -280,6 +280,7 @@ def test_capture_bundle_writes_manifest_and_artifacts(session_id, tmp_path):
             "output_dir": str(tmp_path),
             "bundle_name": "capture-case",
             "expressions": ["a", "b"],
+            "memory_ranges": [{"address": "&a", "count": 4, "name": "arg-a"}],
             "max_frames": 20,
         },
     )
@@ -307,11 +308,16 @@ def test_capture_bundle_writes_manifest_and_artifacts(session_id, tmp_path):
     assert "current-registers" in artifact_names
     assert "command-transcript" in artifact_names
     assert "expressions" in artifact_names
+    assert "memory-ranges" in artifact_names
 
     expressions_payload = json.loads((bundle_dir / "expressions.json").read_text())
     expressions = {entry["expression"]: entry for entry in expressions_payload}
     assert expressions["a"]["status"] == "success"
     assert expressions["b"]["status"] == "success"
+
+    memory_ranges_payload = json.loads((bundle_dir / "memory-ranges.json").read_text())
+    assert memory_ranges_payload[0]["requested_range"]["name"] == "arg-a"
+    assert memory_ranges_payload[0]["captured_bytes"] == 4
 
 
 @pytest.mark.integration

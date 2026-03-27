@@ -8,6 +8,7 @@ from gdb_mcp.mcp.schemas import (
     BatchStepArgs,
     BreakpointNumberArgs,
     CallFunctionArgs,
+    CaptureMemoryRangeArgs,
     CaptureBundleArgs,
     DetachOnForkArgs,
     ExecuteCommandArgs,
@@ -214,6 +215,7 @@ class TestCaptureBundleArgs:
         assert args.output_dir is None
         assert args.bundle_name is None
         assert args.expressions == []
+        assert args.memory_ranges == []
         assert args.max_frames == 100
         assert args.include_threads is True
         assert args.include_backtraces is True
@@ -259,6 +261,7 @@ class TestRunUntilFailureArgs:
         assert args.output_dir is None
         assert args.bundle_name_prefix is None
         assert args.expressions == []
+        assert args.memory_ranges == []
 
     def test_run_until_failure_rejects_unknown_field(self):
         """Campaign requests should reject unexpected top-level keys."""
@@ -341,6 +344,16 @@ class TestPhaseSixArgs:
 
         assert args.timeout_sec == 30
         assert args.stop_reasons == []
+
+    def test_capture_memory_range_args(self):
+        """Capture memory ranges should accept address, count, offset, and optional name."""
+
+        args = CaptureMemoryRangeArgs(address="&value", count=16, offset=2, name="snapshot")
+
+        assert args.address == "&value"
+        assert args.count == 16
+        assert args.offset == 2
+        assert args.name == "snapshot"
 
 
 class TestGetBacktraceArgs:
