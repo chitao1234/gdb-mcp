@@ -103,8 +103,10 @@ class TestDataInspectionApi:
         assert result["status"] == "success"
         assert result["expression"] == "x + y"
         assert result["value"] == "42"
-        assert controller.io_manager.stdin.writes[0].decode().endswith(
-            '-data-evaluate-expression "x + y"\n'
+        assert (
+            controller.io_manager.stdin.writes[0]
+            .decode()
+            .endswith('-data-evaluate-expression "x + y"\n')
         )
 
     def test_evaluate_expression_escapes_quotes_and_backslashes(
@@ -119,8 +121,10 @@ class TestDataInspectionApi:
         result = result_to_mapping(session.evaluate_expression('strlen("a\\\\b")'))
 
         assert result["status"] == "success"
-        assert controller.io_manager.stdin.writes[0].decode().endswith(
-            '-data-evaluate-expression "strlen(\\"a\\\\\\\\b\\")"\n'
+        assert (
+            controller.io_manager.stdin.writes[0]
+            .decode()
+            .endswith('-data-evaluate-expression "strlen(\\"a\\\\\\\\b\\")"\n')
         )
 
     def test_get_variables(self, scripted_running_session, mi_result):
@@ -172,6 +176,8 @@ class TestDataInspectionApi:
 
         assert result["status"] == "success"
         assert len(result["registers"]) == 2
-        assert controller.io_manager.stdin.writes[0].decode().endswith(
-            "-data-list-register-values x\n"
+        assert (
+            controller.io_manager.stdin.writes[0]
+            .decode()
+            .endswith("-data-list-register-values x\n")
         )

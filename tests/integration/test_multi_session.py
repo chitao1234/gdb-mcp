@@ -13,7 +13,6 @@ All tests use real GDB processes via the MCP server interface.
 
 import pytest
 
-
 # Simple C program for testing - different from main test suite
 TEST_PROGRAM_1 = """
 #include <stdio.h>
@@ -73,7 +72,9 @@ def compiled_program_2(compile_program):
 
 
 @pytest.mark.integration
-def test_create_multiple_sessions(compiled_program_1, compiled_program_2, start_session, stop_session):
+def test_create_multiple_sessions(
+    compiled_program_1, compiled_program_2, start_session, stop_session
+):
     """Test creating multiple GDB sessions and verify they have different session IDs."""
     session_id_1 = start_session(
         compiled_program_1,
@@ -102,7 +103,9 @@ def test_create_multiple_sessions(compiled_program_1, compiled_program_2, start_
 
 
 @pytest.mark.integration
-def test_session_isolation_breakpoints(compiled_program_1, compiled_program_2, start_session, stop_session):
+def test_session_isolation_breakpoints(
+    compiled_program_1, compiled_program_2, start_session, stop_session
+):
     """Test that breakpoints in one session don't affect another session."""
     session_id_1 = start_session(
         compiled_program_1,

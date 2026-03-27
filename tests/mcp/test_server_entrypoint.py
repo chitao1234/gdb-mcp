@@ -44,7 +44,10 @@ class TestServerEntrypoint:
         results: list[object] = []
 
         with patch.object(server, "create_default_runtime", side_effect=make_runtime):
-            threads = [threading.Thread(target=lambda: results.append(server.get_runtime())) for _ in range(2)]
+            threads = [
+                threading.Thread(target=lambda: results.append(server.get_runtime()))
+                for _ in range(2)
+            ]
             for thread in threads:
                 thread.start()
             for thread in threads:

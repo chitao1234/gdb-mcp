@@ -48,7 +48,7 @@ class TestBreakpointApi:
 
         assert result["status"] == "success"
         command = controller.io_manager.stdin.writes[0].decode()
-        assert "-break-insert -t -c \"x > 10\" foo.c:42" in command
+        assert '-break-insert -t -c "x > 10" foo.c:42' in command
 
     def test_list_breakpoints(self, scripted_running_session, mi_result):
         """Listing breakpoints should surface the breakpoint table body."""

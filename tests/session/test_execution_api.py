@@ -113,7 +113,10 @@ class TestExecutionApi:
 
         assert result["status"] == "success"
         assert "Thread 1" in result["output"]
-        assert '-interpreter-exec console "info threads"' in controller.io_manager.stdin.writes[0].decode()
+        assert (
+            '-interpreter-exec console "info threads"'
+            in controller.io_manager.stdin.writes[0].decode()
+        )
 
     def test_execute_command_mi(self, scripted_running_session, mi_result):
         """MI commands should surface parsed result payloads."""

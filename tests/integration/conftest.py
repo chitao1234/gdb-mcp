@@ -144,9 +144,9 @@ def start_session_result(call_gdb_tool, default_init_commands):
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "program": program,
-            "init_commands": list(default_init_commands)
-            if init_commands is None
-            else init_commands,
+            "init_commands": (
+                list(default_init_commands) if init_commands is None else init_commands
+            ),
         }
         payload.update(kwargs)
 

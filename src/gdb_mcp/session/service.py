@@ -164,7 +164,9 @@ class SessionService:
 
         return self._inspection.get_threads()
 
-    def select_thread(self, thread_id: int) -> OperationSuccess[ThreadSelectionInfo] | OperationError:
+    def select_thread(
+        self, thread_id: int
+    ) -> OperationSuccess[ThreadSelectionInfo] | OperationError:
         """Delegate thread selection to the inspection service."""
 
         return self._inspection.select_thread(thread_id)
@@ -181,12 +183,16 @@ class SessionService:
 
         return self._inspection.get_frame_info()
 
-    def select_frame(self, frame_number: int) -> OperationSuccess[FrameSelectionInfo] | OperationError:
+    def select_frame(
+        self, frame_number: int
+    ) -> OperationSuccess[FrameSelectionInfo] | OperationError:
         """Delegate frame selection to the inspection service."""
 
         return self._inspection.select_frame(frame_number)
 
-    def evaluate_expression(self, expression: str) -> OperationSuccess[ExpressionValueInfo] | OperationError:
+    def evaluate_expression(
+        self, expression: str
+    ) -> OperationSuccess[ExpressionValueInfo] | OperationError:
         """Delegate expression evaluation to the inspection service."""
 
         return self._inspection.evaluate_expression(expression)

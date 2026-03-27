@@ -115,7 +115,9 @@ class TestSessionState:
 
         session = create_default_session_service()
 
-        result = result_to_mapping(session.start(program="/bin/ls", working_dir="/definitely/missing"))
+        result = result_to_mapping(
+            session.start(program="/bin/ls", working_dir="/definitely/missing")
+        )
 
         assert result["status"] == "error"
         assert session.state is SessionState.FAILED

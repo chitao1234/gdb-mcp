@@ -31,6 +31,7 @@ from .schemas import (
 )
 from .serializer import serialize_exception, serialize_result
 
+
 class SessionArgsProtocol(Protocol):
     """Validated MCP argument models that carry a session_id."""
 
@@ -86,21 +87,15 @@ def _handle_get_threads(session: SessionService, args: SessionIdArgs) -> Operati
     return session.get_threads()
 
 
-def _handle_select_thread(
-    session: SessionService, args: ThreadSelectArgs
-) -> OperationResult[Any]:
+def _handle_select_thread(session: SessionService, args: ThreadSelectArgs) -> OperationResult[Any]:
     return session.select_thread(thread_id=args.thread_id)
 
 
-def _handle_get_backtrace(
-    session: SessionService, args: GetBacktraceArgs
-) -> OperationResult[Any]:
+def _handle_get_backtrace(session: SessionService, args: GetBacktraceArgs) -> OperationResult[Any]:
     return session.get_backtrace(thread_id=args.thread_id, max_frames=args.max_frames)
 
 
-def _handle_select_frame(
-    session: SessionService, args: FrameSelectArgs
-) -> OperationResult[Any]:
+def _handle_select_frame(session: SessionService, args: FrameSelectArgs) -> OperationResult[Any]:
     return session.select_frame(frame_number=args.frame_number)
 
 
@@ -168,9 +163,7 @@ def _handle_evaluate_expression(
     return session.evaluate_expression(args.expression)
 
 
-def _handle_get_variables(
-    session: SessionService, args: GetVariablesArgs
-) -> OperationResult[Any]:
+def _handle_get_variables(session: SessionService, args: GetVariablesArgs) -> OperationResult[Any]:
     return session.get_variables(thread_id=args.thread_id, frame=args.frame)
 
 
@@ -179,9 +172,7 @@ def _handle_get_registers(session: SessionService, args: SessionIdArgs) -> Opera
     return session.get_registers()
 
 
-def _handle_call_function(
-    session: SessionService, args: CallFunctionArgs
-) -> OperationResult[Any]:
+def _handle_call_function(session: SessionService, args: CallFunctionArgs) -> OperationResult[Any]:
     return session.call_function(function_call=args.function_call)
 
 
@@ -247,7 +238,9 @@ SESSION_TOOL_SPECS: dict[str, SessionToolSpec] = {
     "gdb_step": session_tool_spec(SessionIdArgs, _handle_step),
     "gdb_next": session_tool_spec(SessionIdArgs, _handle_next),
     "gdb_interrupt": session_tool_spec(SessionIdArgs, _handle_interrupt),
-    "gdb_evaluate_expression": session_tool_spec(EvaluateExpressionArgs, _handle_evaluate_expression),
+    "gdb_evaluate_expression": session_tool_spec(
+        EvaluateExpressionArgs, _handle_evaluate_expression
+    ),
     "gdb_get_variables": session_tool_spec(GetVariablesArgs, _handle_get_variables),
     "gdb_get_registers": session_tool_spec(SessionIdArgs, _handle_get_registers),
     "gdb_call_function": session_tool_spec(CallFunctionArgs, _handle_call_function),
@@ -274,7 +267,9 @@ async def dispatch_tool_call(
 
         tool_spec = SESSION_TOOL_SPECS.get(name)
         if tool_spec is None:
-            return serialize_result(OperationError(message=f"Unknown tool: {name}", code="unknown_tool"))
+            return serialize_result(
+                OperationError(message=f"Unknown tool: {name}", code="unknown_tool")
+            )
 
         return serialize_result(_dispatch_session_tool(normalized_args, session_manager, tool_spec))
 

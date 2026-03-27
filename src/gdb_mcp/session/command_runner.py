@@ -105,9 +105,7 @@ class SessionCommandRunner:
             )
 
         if cli_command:
-            console_output = "".join(
-                item for item in parsed.console if isinstance(item, str)
-            )
+            console_output = "".join(item for item in parsed.console if isinstance(item, str))
             return OperationSuccess(
                 CommandExecutionInfo(
                     command=command,

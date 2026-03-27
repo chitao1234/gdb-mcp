@@ -53,19 +53,27 @@ class SessionExecutionService:
             if isinstance(result, OperationError):
                 return result
 
-        return self._command_runner.execute_command_result("-exec-run", timeout_sec=DEFAULT_TIMEOUT_SEC)
+        return self._command_runner.execute_command_result(
+            "-exec-run", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
 
     def continue_execution(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Continue execution of the program."""
-        return self._command_runner.execute_command_result("-exec-continue", timeout_sec=DEFAULT_TIMEOUT_SEC)
+        return self._command_runner.execute_command_result(
+            "-exec-continue", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
 
     def step(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Step into the next source line."""
-        return self._command_runner.execute_command_result("-exec-step", timeout_sec=DEFAULT_TIMEOUT_SEC)
+        return self._command_runner.execute_command_result(
+            "-exec-step", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
 
     def next(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Step over the next source line."""
-        return self._command_runner.execute_command_result("-exec-next", timeout_sec=DEFAULT_TIMEOUT_SEC)
+        return self._command_runner.execute_command_result(
+            "-exec-next", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
 
     def interrupt(self) -> OperationSuccess[MessageResult] | OperationError:
         """Interrupt (pause) a running program."""
@@ -99,7 +107,9 @@ class SessionExecutionService:
                 )
             )
 
-        return OperationSuccess(MessageResult(message="Program interrupted (paused)", result=parsed_result))
+        return OperationSuccess(
+            MessageResult(message="Program interrupted (paused)", result=parsed_result)
+        )
 
     def call_function(
         self, function_call: str, timeout_sec: int = DEFAULT_TIMEOUT_SEC

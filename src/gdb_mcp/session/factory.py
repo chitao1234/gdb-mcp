@@ -42,7 +42,7 @@ class _WorkingDirGdbController(GdbController):
             logger.debug("Killing current gdb subprocess (pid %d)", self.gdb_process.pid)
             self.exit()
 
-        logger.debug('Launching gdb: %s', " ".join(self.command))
+        logger.debug("Launching gdb: %s", " ".join(self.command))
 
         self.gdb_process = subprocess.Popen(
             self.command,

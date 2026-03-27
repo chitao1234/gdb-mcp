@@ -16,7 +16,6 @@ tests that interact with external processes.
 
 import pytest
 
-
 # Simple C++ program with function calls for testing
 TEST_CPP_PROGRAM = """
 #include <iostream>

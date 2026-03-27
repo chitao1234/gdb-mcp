@@ -73,7 +73,11 @@ class ScriptedController:
         batch = []
         for response in self._response_batches.pop(0):
             normalized = dict(response)
-            if normalized.get("type") == "result" and "token" not in normalized and token is not None:
+            if (
+                normalized.get("type") == "result"
+                and "token" not in normalized
+                and token is not None
+            ):
                 normalized["token"] = token
             batch.append(normalized)
 

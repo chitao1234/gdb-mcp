@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 from typing import TypedDict, TypeAlias
 
-
 StructuredPayload: TypeAlias = dict[str, object]
 
 

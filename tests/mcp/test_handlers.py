@@ -124,7 +124,9 @@ class TestHandlerDispatch:
         """Successful stop should go through the registry lifecycle API."""
 
         manager = Mock()
-        manager.close_session.return_value = OperationSuccess(SessionMessage(message="Session stopped"))
+        manager.close_session.return_value = OperationSuccess(
+            SessionMessage(message="Session stopped")
+        )
 
         result_data = dispatch("gdb_stop_session", {"session_id": 1}, manager)
 

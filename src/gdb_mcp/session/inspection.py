@@ -43,7 +43,9 @@ class SessionInspectionService:
     def get_threads(self) -> OperationSuccess[ThreadListInfo] | OperationError:
         """Get information about all threads in the debugged process."""
         logger.debug("get_threads() called")
-        result = self._command_runner.execute_command_result("-thread-info", timeout_sec=DEFAULT_TIMEOUT_SEC)
+        result = self._command_runner.execute_command_result(
+            "-thread-info", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
         logger.debug("get_threads: execute_command returned: %s", result)
 
         if isinstance(result, OperationError):
@@ -68,7 +70,9 @@ class SessionInspectionService:
 
         return OperationSuccess(payload)
 
-    def select_thread(self, thread_id: int) -> OperationSuccess[ThreadSelectionInfo] | OperationError:
+    def select_thread(
+        self, thread_id: int
+    ) -> OperationSuccess[ThreadSelectionInfo] | OperationError:
         """Select a specific thread to make it the current thread."""
         result = self._command_runner.execute_command_result(
             f"-thread-select {thread_id}", timeout_sec=DEFAULT_TIMEOUT_SEC
@@ -125,7 +129,9 @@ class SessionInspectionService:
             frame_info_from_payload(extract_mi_result_payload(command_result_payload(result)))
         )
 
-    def select_frame(self, frame_number: int) -> OperationSuccess[FrameSelectionInfo] | OperationError:
+    def select_frame(
+        self, frame_number: int
+    ) -> OperationSuccess[FrameSelectionInfo] | OperationError:
         """Select a specific stack frame to make it the current frame."""
         result = self._command_runner.execute_command_result(
             f"-stack-select-frame {frame_number}", timeout_sec=DEFAULT_TIMEOUT_SEC
@@ -155,7 +161,9 @@ class SessionInspectionService:
             )
         )
 
-    def evaluate_expression(self, expression: str) -> OperationSuccess[ExpressionValueInfo] | OperationError:
+    def evaluate_expression(
+        self, expression: str
+    ) -> OperationSuccess[ExpressionValueInfo] | OperationError:
         """Evaluate an expression in the current context."""
         result = self._command_runner.execute_command_result(
             build_evaluate_expression_command(expression), timeout_sec=DEFAULT_TIMEOUT_SEC

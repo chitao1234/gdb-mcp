@@ -72,7 +72,9 @@ class SessionBreakpointService:
 
     def list_breakpoints(self) -> OperationSuccess[BreakpointListInfo] | OperationError:
         """List all breakpoints with structured data."""
-        result = self._command_runner.execute_command_result("-break-list", timeout_sec=DEFAULT_TIMEOUT_SEC)
+        result = self._command_runner.execute_command_result(
+            "-break-list", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
 
         if isinstance(result, OperationError):
             return result
