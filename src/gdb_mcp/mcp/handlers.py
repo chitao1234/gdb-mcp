@@ -18,12 +18,19 @@ from ..domain import (
     StructuredPayload,
     payload_to_mapping,
 )
+from ..session.campaign import (
+    RunUntilFailureCaptureRequest,
+    RunUntilFailureCriteria,
+    RunUntilFailureRequest,
+    RunUntilFailureService,
+)
 from ..session.registry import SessionRegistry
 from ..session.service import SessionService
-from ..session.workflow import BatchStepInvocation
+from ..session.workflow import BatchStepTemplate
 from .schemas import (
     AttachProcessArgs,
     BatchArgs,
+    BatchStepArgs,
     BreakpointNumberArgs,
     CallFunctionArgs,
     CaptureBundleArgs,
@@ -34,6 +41,7 @@ from .schemas import (
     GetRegistersArgs,
     GetVariablesArgs,
     ListSessionsArgs,
+    RunUntilFailureArgs,
     RunArgs,
     SessionIdArgs,
     SetBreakpointArgs,
@@ -193,52 +201,12 @@ def _handle_call_function(session: SessionService, args: CallFunctionArgs) -> To
 def _handle_batch(session: SessionService, args: BatchArgs) -> ToolResult:
     """Validate one batch request and execute it under one workflow lock."""
 
-    steps: list[BatchStepInvocation] = []
+    step_templates = _build_batch_step_templates(args.session_id, args.steps)
+    if isinstance(step_templates, OperationError):
+        return step_templates
 
-    for index, step in enumerate(args.steps):
-        if "session_id" in step.arguments:
-            return OperationError(
-                message=(
-                    f"Batch step {index} ({step.tool}) must not include session_id. "
-                    "Use the outer batch session_id instead."
-                ),
-                code="validation_error",
-            )
-
-        tool_spec = SESSION_TOOL_SPECS.get(step.tool)
-        if tool_spec is None or step.tool == "gdb_batch":
-            return OperationError(
-                message=f"Unsupported batch step tool: {step.tool}",
-                code="validation_error",
-            )
-        validated_tool_spec = tool_spec
-
-        step_arguments = cast(ToolArguments, {"session_id": args.session_id, **step.arguments})
-
-        try:
-            validated_args = validated_tool_spec.model.model_validate(step_arguments)
-        except Exception as exc:
-            return OperationError(
-                message=f"Invalid batch step {index} ({step.tool}): {exc}",
-                code="validation_error",
-            )
-
-        def execute_step(
-            tool_spec: SessionToolSpec = validated_tool_spec,
-            validated_args: BaseModel = validated_args,
-        ) -> ToolResult:
-            return tool_spec.handler(session, validated_args)
-
-        steps.append(
-            BatchStepInvocation(
-                tool=step.tool,
-                label=step.label,
-                execute=execute_step,
-            )
-        )
-
-    return session.execute_batch(
-        steps,
+    return session.execute_batch_templates(
+        step_templates.value,
         fail_fast=args.fail_fast,
         capture_stop_events=args.capture_stop_events,
     )
@@ -259,6 +227,57 @@ def _handle_capture_bundle(session: SessionService, args: CaptureBundleArgs) -> 
         include_registers=args.include_registers,
         include_transcript=args.include_transcript,
         include_stop_history=args.include_stop_history,
+    )
+
+
+def _handle_run_until_failure(
+    arguments: ToolArguments,
+    session_manager: SessionRegistry,
+) -> ToolResult:
+    """Run repeated fresh sessions until one failure predicate matches."""
+
+    args = RunUntilFailureArgs.model_validate(arguments)
+    step_templates = _build_batch_step_templates(1, args.setup_steps)
+    if isinstance(step_templates, OperationError):
+        return step_templates
+
+    runner = RunUntilFailureService(session_manager.create_untracked_session)
+    return runner.run_until_failure(
+        RunUntilFailureRequest(
+            program=args.startup.program,
+            args=tuple(args.startup.args or ()),
+            init_commands=tuple(args.startup.init_commands or ()),
+            env=dict(args.startup.env or {}),
+            gdb_path=args.startup.gdb_path,
+            working_dir=args.startup.working_dir,
+            core=args.startup.core,
+            setup_steps=tuple(step_templates.value),
+            run_args=tuple(args.run_args or ()),
+            run_timeout_sec=args.run_timeout_sec,
+            max_iterations=args.max_iterations,
+            failure=RunUntilFailureCriteria(
+                failure_on_error=args.failure.failure_on_error,
+                failure_on_timeout=args.failure.failure_on_timeout,
+                stop_reasons=tuple(args.failure.stop_reasons),
+                execution_states=tuple(args.failure.execution_states),
+                exit_codes=tuple(args.failure.exit_codes),
+                result_text_regex=args.failure.result_text_regex,
+            ),
+            capture=RunUntilFailureCaptureRequest(
+                enabled=args.capture.enabled,
+                output_dir=args.capture.output_dir,
+                bundle_name_prefix=args.capture.bundle_name_prefix,
+                expressions=tuple(args.capture.expressions),
+                max_frames=args.capture.max_frames,
+                include_threads=args.capture.include_threads,
+                include_backtraces=args.capture.include_backtraces,
+                include_frame=args.capture.include_frame,
+                include_variables=args.capture.include_variables,
+                include_registers=args.capture.include_registers,
+                include_transcript=args.capture.include_transcript,
+                include_stop_history=args.capture.include_stop_history,
+            ),
+        )
     )
 
 
@@ -325,6 +344,60 @@ def _session_workflow_context(session: SessionService) -> ContextManager[object]
     return cast(ContextManager[object], workflow_lock)
 
 
+def _build_batch_step_templates(
+    session_id: int,
+    steps: list[BatchStepArgs],
+) -> OperationSuccess[list[BatchStepTemplate]] | OperationError:
+    """Validate batch-like step definitions into reusable execution templates."""
+
+    templates: list[BatchStepTemplate] = []
+
+    for index, step in enumerate(steps):
+        if "session_id" in step.arguments:
+            return OperationError(
+                message=(
+                    f"Batch step {index} ({step.tool}) must not include session_id. "
+                    "Use the outer batch session_id instead."
+                ),
+                code="validation_error",
+            )
+
+        tool_spec = SESSION_TOOL_SPECS.get(step.tool)
+        if tool_spec is None or step.tool in {"gdb_batch", "gdb_run_until_failure"}:
+            return OperationError(
+                message=f"Unsupported batch step tool: {step.tool}",
+                code="validation_error",
+            )
+        resolved_tool_spec = tool_spec
+
+        step_arguments = cast(ToolArguments, {"session_id": session_id, **step.arguments})
+
+        try:
+            validated_args = resolved_tool_spec.model.model_validate(step_arguments)
+        except Exception as exc:
+            return OperationError(
+                message=f"Invalid batch step {index} ({step.tool}): {exc}",
+                code="validation_error",
+            )
+
+        def execute_step(
+            session: SessionService,
+            tool_spec: SessionToolSpec = resolved_tool_spec,
+            validated_args: BaseModel = validated_args,
+        ) -> ToolResult:
+            return tool_spec.handler(session, validated_args)
+
+        templates.append(
+            BatchStepTemplate(
+                tool=step.tool,
+                label=step.label,
+                execute=execute_step,
+            )
+        )
+
+    return OperationSuccess(templates)
+
+
 SESSION_TOOL_SPECS: dict[str, SessionToolSpec] = {
     "gdb_execute_command": session_tool_spec(ExecuteCommandArgs, _handle_execute_command),
     "gdb_run": session_tool_spec(RunArgs, _handle_run),
@@ -369,6 +442,8 @@ async def dispatch_tool_call(
 
         if name == "gdb_start_session":
             return serialize_result(_handle_start_session(normalized_args, session_manager))
+        if name == "gdb_run_until_failure":
+            return serialize_result(_handle_run_until_failure(normalized_args, session_manager))
         if name == "gdb_list_sessions":
             ListSessionsArgs.model_validate(normalized_args)
             return serialize_result(session_manager.list_sessions())

@@ -282,6 +282,50 @@ def test_capture_bundle_writes_manifest_and_artifacts(session_id, tmp_path):
 
 
 @pytest.mark.integration
+def test_run_until_failure_matches_signal_and_writes_bundle(compile_program, tmp_path):
+    """Repeat-until-failure should stop on a signal and emit a capture bundle."""
+
+    crashing_program = compile_program(
+        CRASHING_C_PROGRAM,
+        filename="crash_signal.c",
+        compiler="gcc",
+    )
+
+    result = call_gdb_tool(
+        "gdb_run_until_failure",
+        {
+            "startup": {
+                "program": crashing_program,
+                "init_commands": [
+                    "set disable-randomization on",
+                    "set startup-with-shell off",
+                ],
+            },
+            "max_iterations": 3,
+            "capture": {
+                "enabled": True,
+                "output_dir": str(tmp_path),
+                "bundle_name_prefix": "signal-failure",
+            },
+        },
+    )
+
+    assert result["status"] == "success"
+    assert result["matched_failure"] is True
+    assert result["failure_iteration"] == 1
+    assert result["trigger"] == "stop_reason:signal-received"
+    assert result["capture_bundle"] is not None
+
+    capture_bundle = result["capture_bundle"]
+    manifest_path = Path(str(capture_bundle["manifest_path"]))
+    assert manifest_path.is_file()
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest["execution_state"] == "paused"
+    assert manifest["stop_reason"] == "signal-received"
+    assert manifest["last_stop_event"]["reason"] == "signal-received"
+
+
+@pytest.mark.integration
 def test_step_through_functions(session_id):
     """Test stepping through function calls."""
     # Set breakpoint at main

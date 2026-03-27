@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING
 
 from ..domain import (
     BatchExecutionInfo,
@@ -17,6 +18,9 @@ from ..domain import (
 )
 from .runtime import SessionRuntime
 
+if TYPE_CHECKING:
+    from .service import SessionService
+
 WorkflowResult = OperationResult[object]
 
 
@@ -26,6 +30,15 @@ class BatchStepInvocation:
 
     tool: str
     execute: Callable[[], WorkflowResult]
+    label: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class BatchStepTemplate:
+    """Reusable validated batch step that can be bound to any session instance."""
+
+    tool: str
+    execute: Callable[["SessionService"], WorkflowResult]
     label: str | None = None
 
 
@@ -91,6 +104,33 @@ class SessionWorkflowService:
                 final_stop_reason=self._runtime.stop_reason,
                 last_stop_event=self._runtime.last_stop_event,
             )
+        )
+
+    def execute_batch_templates(
+        self,
+        session: "SessionService",
+        steps: Sequence[BatchStepTemplate],
+        *,
+        fail_fast: bool = True,
+        capture_stop_events: bool = True,
+    ) -> OperationSuccess[BatchExecutionInfo]:
+        """Bind reusable step templates to one session and execute them as a batch."""
+
+        def build_invocation(step: BatchStepTemplate) -> BatchStepInvocation:
+            def execute_bound() -> WorkflowResult:
+                return step.execute(session)
+
+            return BatchStepInvocation(
+                tool=step.tool,
+                label=step.label,
+                execute=execute_bound,
+            )
+
+        invocations = [build_invocation(step) for step in steps]
+        return self.execute_batch(
+            invocations,
+            fail_fast=fail_fast,
+            capture_stop_events=capture_stop_events,
         )
 
     def _step_stop_event(self, previous_stop_history_size: int) -> StopEvent | None:

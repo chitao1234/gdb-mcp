@@ -45,7 +45,7 @@ from .lifecycle import SessionLifecycleService
 from .protocols import OsModuleProtocol, TimeModuleProtocol
 from .runtime import SessionRuntime
 from .state import SessionState
-from .workflow import BatchStepInvocation, SessionWorkflowService
+from .workflow import BatchStepInvocation, BatchStepTemplate, SessionWorkflowService
 
 
 class SessionService:
@@ -230,11 +230,29 @@ class SessionService:
     ) -> OperationSuccess[BatchExecutionInfo]:
         """Execute a structured batch of existing session operations."""
 
-        return self._workflow.execute_batch(
-            steps,
-            fail_fast=fail_fast,
-            capture_stop_events=capture_stop_events,
-        )
+        with self.runtime.workflow_lock:
+            return self._workflow.execute_batch(
+                steps,
+                fail_fast=fail_fast,
+                capture_stop_events=capture_stop_events,
+            )
+
+    def execute_batch_templates(
+        self,
+        steps: Sequence[BatchStepTemplate],
+        *,
+        fail_fast: bool = True,
+        capture_stop_events: bool = True,
+    ) -> OperationSuccess[BatchExecutionInfo]:
+        """Execute reusable validated batch templates against this session."""
+
+        with self.runtime.workflow_lock:
+            return self._workflow.execute_batch_templates(
+                self,
+                steps,
+                fail_fast=fail_fast,
+                capture_stop_events=capture_stop_events,
+            )
 
     def capture_bundle(
         self,
@@ -253,19 +271,20 @@ class SessionService:
     ) -> OperationSuccess[CaptureBundleInfo] | OperationError:
         """Capture a file-oriented forensic bundle for the current session."""
 
-        return self._capture.capture_bundle(
-            output_dir=output_dir,
-            bundle_name=bundle_name,
-            expressions=expressions,
-            max_frames=max_frames,
-            include_threads=include_threads,
-            include_backtraces=include_backtraces,
-            include_frame=include_frame,
-            include_variables=include_variables,
-            include_registers=include_registers,
-            include_transcript=include_transcript,
-            include_stop_history=include_stop_history,
-        )
+        with self.runtime.workflow_lock:
+            return self._capture.capture_bundle(
+                output_dir=output_dir,
+                bundle_name=bundle_name,
+                expressions=expressions,
+                max_frames=max_frames,
+                include_threads=include_threads,
+                include_backtraces=include_backtraces,
+                include_frame=include_frame,
+                include_variables=include_variables,
+                include_registers=include_registers,
+                include_transcript=include_transcript,
+                include_stop_history=include_stop_history,
+            )
 
     def get_threads(self) -> OperationSuccess[ThreadListInfo] | OperationError:
         """Delegate thread inspection to the inspection service."""

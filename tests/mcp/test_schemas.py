@@ -19,6 +19,9 @@ from gdb_mcp.mcp.schemas import (
     EvaluateExpressionArgs,
     GetVariablesArgs,
     ListSessionsArgs,
+    RunUntilFailureArgs,
+    RunUntilFailureCaptureArgs,
+    RunUntilFailureFailureArgs,
     RunArgs,
 )
 
@@ -204,6 +207,43 @@ class TestCaptureBundleArgs:
             CaptureBundleArgs(session_id=1, output="/tmp/out")
 
         assert "output" in str(exc_info.value)
+
+
+class TestRunUntilFailureArgs:
+    """Test cases for repeat-until-failure campaigns."""
+
+    def test_run_until_failure_defaults(self):
+        """Campaign requests should default to one iteration and failure capture."""
+
+        args = RunUntilFailureArgs()
+
+        assert args.startup.program is None
+        assert args.setup_steps == []
+        assert args.run_args is None
+        assert args.run_timeout_sec == 30
+        assert args.max_iterations == 1
+        assert args.failure.failure_on_error is True
+        assert args.failure.failure_on_timeout is True
+        assert args.failure.stop_reasons == ["signal-received", "exited-signalled"]
+        assert args.capture.enabled is True
+
+    def test_run_until_failure_capture_args_defaults(self):
+        """Capture settings should expose deterministic defaults."""
+
+        args = RunUntilFailureCaptureArgs()
+
+        assert args.enabled is True
+        assert args.output_dir is None
+        assert args.bundle_name_prefix is None
+        assert args.expressions == []
+
+    def test_run_until_failure_rejects_unknown_field(self):
+        """Campaign requests should reject unexpected top-level keys."""
+
+        with pytest.raises(ValidationError) as exc_info:
+            RunUntilFailureArgs(iterations=5)
+
+        assert "iterations" in str(exc_info.value)
 
 
 class TestGetBacktraceArgs:

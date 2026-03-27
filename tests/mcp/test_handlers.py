@@ -460,6 +460,55 @@ class TestHandlerDispatch:
             include_stop_history=True,
         )
 
+    def test_run_until_failure_uses_untracked_sessions(self):
+        """Campaign requests should create fresh untracked sessions and return campaign data."""
+
+        manager = Mock()
+        session = Mock()
+        session.start.return_value = OperationSuccess(SessionMessage(message="started"))
+        session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
+        session.get_status.return_value = OperationSuccess(
+            SessionStatusSnapshot(
+                is_running=True,
+                target_loaded=True,
+                has_controller=True,
+                execution_state="paused",
+                stop_reason="signal-received",
+            )
+        )
+        session.last_stop_event = StopEvent(execution_state="paused", reason="signal-received")
+        session.capture_bundle.return_value = OperationSuccess(SessionMessage(message="bundle"))
+        session.controller = object()
+        session.stop.return_value = OperationSuccess(SessionMessage(message="stopped"))
+        manager.create_untracked_session.return_value = session
+
+        result_data = dispatch(
+            "gdb_run_until_failure",
+            {
+                "startup": {"program": "/tmp/a.out"},
+                "max_iterations": 2,
+                "capture": {"enabled": False},
+            },
+            manager,
+        )
+
+        manager.create_untracked_session.assert_called_once()
+        session.start.assert_called_once_with(
+            program="/tmp/a.out",
+            args=None,
+            init_commands=None,
+            env=None,
+            gdb_path=None,
+            working_dir=None,
+            core=None,
+        )
+        session.run.assert_called_once_with(args=None, timeout_sec=30)
+        assert result_data["status"] == "success"
+        assert result_data["matched_failure"] is True
+        assert result_data["failure_iteration"] == 1
+        assert result_data["trigger"] == "stop_reason:signal-received"
+        assert result_data["capture_bundle"] is None
+
     def test_multiple_tools_use_different_sessions(self):
         """Separate session IDs should be routed independently."""
 
@@ -535,6 +584,7 @@ class TestHandlerDispatch:
         exported_tools = {tool.name for tool in build_tool_definitions()}
         dispatched_tools = set(SESSION_TOOL_SPECS) | {
             "gdb_start_session",
+            "gdb_run_until_failure",
             "gdb_stop_session",
             "gdb_list_sessions",
         }

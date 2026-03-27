@@ -56,6 +56,11 @@ class SessionRegistry:
             self._sessions[session_id] = session
         return session_id
 
+    def create_untracked_session(self) -> SessionService:
+        """Create a fresh session without publishing it in the registry."""
+
+        return self._session_factory()
+
     def start_session(
         self,
         *,

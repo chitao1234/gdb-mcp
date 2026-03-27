@@ -261,6 +261,92 @@ class CaptureBundleArgs(StrictArgsModel):
     include_stop_history: bool = Field(True, description="Capture the bounded stop-event history.")
 
 
+class RunUntilFailureFailureArgs(StrictArgsModel):
+    """Failure predicates for repeat-until-failure campaigns."""
+
+    failure_on_error: bool = Field(
+        True,
+        description="Treat an error result from gdb_run or session startup as a matching failure.",
+    )
+    failure_on_timeout: bool = Field(
+        True,
+        description="Treat a timeout from gdb_run as a matching failure.",
+    )
+    stop_reasons: list[str] = Field(
+        default_factory=lambda: ["signal-received", "exited-signalled"],
+        description="Stop reasons that should count as a matching failure.",
+    )
+    execution_states: list[str] = Field(
+        default_factory=list,
+        description="Inferior execution states that should count as a matching failure.",
+    )
+    exit_codes: list[int] = Field(
+        default_factory=list,
+        description="Exit codes that should count as a matching failure.",
+    )
+    result_text_regex: Optional[str] = Field(
+        None,
+        description="Regular expression applied to the serialized run result payload.",
+    )
+
+
+class RunUntilFailureCaptureArgs(StrictArgsModel):
+    """Capture settings used when a run-until-failure campaign matches."""
+
+    enabled: bool = Field(True, description="Capture a forensic bundle when a failure matches.")
+    output_dir: Optional[str] = Field(
+        None,
+        description="Directory in which to place the capture bundle for the matching iteration.",
+    )
+    bundle_name_prefix: Optional[str] = Field(
+        None,
+        description="Deterministic bundle name prefix. The iteration number is appended automatically.",
+    )
+    expressions: list[str] = Field(
+        default_factory=list,
+        description="Expressions to evaluate and include in the capture bundle.",
+    )
+    max_frames: int = Field(100, gt=0, description="Maximum frames per thread backtrace.")
+    include_threads: bool = Field(True, description="Capture thread inventory.")
+    include_backtraces: bool = Field(True, description="Capture backtraces for all threads.")
+    include_frame: bool = Field(True, description="Capture the currently selected frame.")
+    include_variables: bool = Field(
+        True, description="Capture variables for the current selection."
+    )
+    include_registers: bool = Field(
+        True, description="Capture registers for the current selection."
+    )
+    include_transcript: bool = Field(True, description="Capture the bounded command transcript.")
+    include_stop_history: bool = Field(True, description="Capture the bounded stop-event history.")
+
+
+class RunUntilFailureArgs(StrictArgsModel):
+    """Arguments for repeating fresh-session runs until one failure matches."""
+
+    startup: StartSessionArgs = Field(
+        default_factory=lambda: StartSessionArgs.model_validate({}),
+        description="Session startup configuration used for every iteration.",
+    )
+    setup_steps: list[BatchStepArgs] = Field(
+        default_factory=list,
+        description="Optional structured setup steps run after startup and before gdb_run.",
+    )
+    run_args: Optional[list[str]] = Field(
+        None,
+        description="Arguments passed to gdb_run for each iteration.",
+    )
+    run_timeout_sec: int = Field(30, gt=0, description="Timeout for each gdb_run attempt.")
+    max_iterations: int = Field(1, gt=0, description="Maximum number of iterations to attempt.")
+    failure: RunUntilFailureFailureArgs = Field(
+        default_factory=lambda: RunUntilFailureFailureArgs.model_validate({}),
+        description="Failure predicates that stop the campaign.",
+    )
+    capture: RunUntilFailureCaptureArgs = Field(
+        default_factory=lambda: RunUntilFailureCaptureArgs.model_validate({}),
+        description="Capture settings used when a failure matches.",
+    )
+
+
 def build_tool_definitions() -> list[Tool]:
     """Build the MCP tool definitions exposed by this server."""
 
@@ -352,6 +438,18 @@ def build_tool_definitions() -> list[Tool]:
                 "Use output_dir and bundle_name when you need deterministic artifact paths."
             ),
             inputSchema=CaptureBundleArgs.model_json_schema(),
+        ),
+        Tool(
+            name="gdb_run_until_failure",
+            description=(
+                "Run fresh debugger sessions repeatedly until a failure predicate matches or the "
+                "iteration limit is reached. "
+                "Each iteration uses the same startup configuration, optional structured setup "
+                "steps, and one gdb_run invocation. "
+                "When a failure matches, the tool can automatically write a capture bundle to "
+                "disk and return the bundle metadata."
+            ),
+            inputSchema=RunUntilFailureArgs.model_json_schema(),
         ),
         Tool(
             name="gdb_get_status",
