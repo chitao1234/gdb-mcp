@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from collections.abc import Callable
 
 from mcp.server import Server
 from mcp.types import TextContent, Tool
@@ -42,7 +42,7 @@ class ServerRuntime:
 
         return build_tool_definitions()
 
-    async def call_tool(self, name: str, arguments: Any) -> list[TextContent]:
+    async def call_tool(self, name: str, arguments: object) -> list[TextContent]:
         """Dispatch one tool call through the injected session manager."""
 
         return await dispatch_tool_call(name, arguments, self.session_manager, logger=self.logger)

@@ -3,23 +3,22 @@
 from __future__ import annotations
 
 import json
-from typing import Any
 
 from mcp.types import TextContent
 
-from ..domain import OperationError, OperationResult, result_to_mapping
+from ..domain import OperationError, OperationResult, StructuredPayload, result_to_mapping
 
 
 def result_to_payload(
-    result: OperationResult[Any],
-) -> dict[str, object]:
+    result: OperationResult[object],
+) -> StructuredPayload:
     """Convert a typed internal result into the external JSON payload shape."""
 
     return result_to_mapping(result)
 
 
 def serialize_result(
-    result: OperationResult[Any],
+    result: OperationResult[object],
 ) -> list[TextContent]:
     """Serialize a typed tool result into MCP text content."""
 

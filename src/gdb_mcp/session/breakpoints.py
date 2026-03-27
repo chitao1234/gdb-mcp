@@ -13,6 +13,7 @@ from ..domain import (
     SessionMessage,
     breakpoint_list_info_from_payload,
     breakpoint_record,
+    payload_to_mapping,
 )
 from ..transport import extract_mi_result_payload, quote_mi_string
 from .command_runner import SessionCommandRunner
@@ -56,7 +57,7 @@ class SessionBreakpointService:
             logger.warning("No MI result for breakpoint at %s", location)
             return OperationError(
                 message=f"Failed to set breakpoint at {location}: no result from GDB",
-                details={"raw_result": result.value},
+                details={"raw_result": payload_to_mapping(result.value)},
             )
 
         bp = breakpoint_record(payload)
@@ -65,7 +66,7 @@ class SessionBreakpointService:
             logger.warning("Empty breakpoint result for %s: %s", location, payload)
             return OperationError(
                 message=f"Breakpoint set but no info returned for {location}",
-                details={"raw_result": result.value},
+                details={"raw_result": payload_to_mapping(result.value)},
             )
 
         return OperationSuccess(BreakpointInfo(breakpoint=bp))

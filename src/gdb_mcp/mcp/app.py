@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any
 
 from mcp.server import Server
 from mcp.types import TextContent, Tool
@@ -12,7 +11,7 @@ from mcp.types import TextContent, Tool
 def create_mcp_app(
     *,
     list_tools_handler: Callable[[], Awaitable[list[Tool]]],
-    call_tool_handler: Callable[[str, Any], Awaitable[list[TextContent]]],
+    call_tool_handler: Callable[[str, object], Awaitable[list[TextContent]]],
 ) -> Server:
     """Create an MCP app and register the provided handlers."""
 
@@ -23,7 +22,7 @@ def create_mcp_app(
         return await list_tools_handler()
 
     @app.call_tool()
-    async def call_tool(name: str, arguments: Any) -> list[TextContent]:
+    async def call_tool(name: str, arguments: object) -> list[TextContent]:
         return await call_tool_handler(name, arguments)
 
     return app

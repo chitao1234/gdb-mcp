@@ -4,14 +4,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
-from typing import Any, Callable, Protocol, TypeVar, cast
+from collections.abc import Callable
+from typing import Protocol, TypeAlias, TypeVar, cast
 
 from pydantic import BaseModel
+from mcp.types import TextContent
 
 from ..domain import (
     OperationError,
     OperationResult,
     OperationSuccess,
+    StructuredPayload,
     payload_to_mapping,
 )
 from ..session.registry import SessionRegistry
@@ -43,6 +46,8 @@ class SessionArgsProtocol(Protocol):
 
 
 SessionArgsT = TypeVar("SessionArgsT", bound=SessionArgsProtocol)
+ToolArguments: TypeAlias = StructuredPayload
+ToolResult: TypeAlias = OperationResult[object]
 
 
 @dataclass(frozen=True)
@@ -50,77 +55,71 @@ class SessionToolSpec:
     """Declarative definition for one session-scoped MCP tool."""
 
     model: type[BaseModel]
-    handler: Callable[[SessionService, BaseModel], OperationResult[Any]]
+    handler: Callable[[SessionService, BaseModel], ToolResult]
 
 
 def session_tool_spec(
     model: type[BaseModel],
-    handler: Callable[[SessionService, SessionArgsT], OperationResult[Any]],
+    handler: Callable[[SessionService, SessionArgsT], ToolResult],
 ) -> SessionToolSpec:
     """Wrap a typed handler for storage in the session tool registry."""
 
-    def invoke(session: SessionService, args: BaseModel) -> OperationResult[Any]:
+    def invoke(session: SessionService, args: BaseModel) -> ToolResult:
         return handler(session, cast(SessionArgsT, args))
 
     return SessionToolSpec(model=model, handler=invoke)
 
 
-def _normalize_arguments(arguments: Any) -> dict[str, Any]:
+def _normalize_arguments(arguments: object) -> ToolArguments:
     """Normalize tool arguments into a dictionary for Pydantic validation."""
 
     if arguments is None:
         return {}
     if not isinstance(arguments, dict):
         raise TypeError("Tool arguments must be a JSON object")
-    return arguments
+    return cast(ToolArguments, arguments)
 
 
-def _handle_execute_command(
-    session: SessionService, args: ExecuteCommandArgs
-) -> OperationResult[Any]:
+def _handle_execute_command(session: SessionService, args: ExecuteCommandArgs) -> ToolResult:
     return session.execute_command(command=args.command, timeout_sec=args.timeout_sec)
 
 
-def _handle_run(session: SessionService, args: RunArgs) -> OperationResult[Any]:
+def _handle_run(session: SessionService, args: RunArgs) -> ToolResult:
     return session.run(args=args.args, timeout_sec=args.timeout_sec)
 
 
-def _handle_attach_process(
-    session: SessionService, args: AttachProcessArgs
-) -> OperationResult[Any]:
+def _handle_attach_process(session: SessionService, args: AttachProcessArgs) -> ToolResult:
     return session.attach_process(pid=args.pid, timeout_sec=args.timeout_sec)
 
 
-def _handle_get_status(session: SessionService, args: SessionIdArgs) -> OperationResult[Any]:
+def _handle_get_status(session: SessionService, args: SessionIdArgs) -> ToolResult:
     del args
     return session.get_status()
 
 
-def _handle_get_threads(session: SessionService, args: SessionIdArgs) -> OperationResult[Any]:
+def _handle_get_threads(session: SessionService, args: SessionIdArgs) -> ToolResult:
     del args
     return session.get_threads()
 
 
-def _handle_select_thread(session: SessionService, args: ThreadSelectArgs) -> OperationResult[Any]:
+def _handle_select_thread(session: SessionService, args: ThreadSelectArgs) -> ToolResult:
     return session.select_thread(thread_id=args.thread_id)
 
 
-def _handle_get_backtrace(session: SessionService, args: GetBacktraceArgs) -> OperationResult[Any]:
+def _handle_get_backtrace(session: SessionService, args: GetBacktraceArgs) -> ToolResult:
     return session.get_backtrace(thread_id=args.thread_id, max_frames=args.max_frames)
 
 
-def _handle_select_frame(session: SessionService, args: FrameSelectArgs) -> OperationResult[Any]:
+def _handle_select_frame(session: SessionService, args: FrameSelectArgs) -> ToolResult:
     return session.select_frame(frame_number=args.frame_number)
 
 
-def _handle_get_frame_info(session: SessionService, args: SessionIdArgs) -> OperationResult[Any]:
+def _handle_get_frame_info(session: SessionService, args: SessionIdArgs) -> ToolResult:
     del args
     return session.get_frame_info()
 
 
-def _handle_set_breakpoint(
-    session: SessionService, args: SetBreakpointArgs
-) -> OperationResult[Any]:
+def _handle_set_breakpoint(session: SessionService, args: SetBreakpointArgs) -> ToolResult:
     return session.set_breakpoint(
         location=args.location,
         condition=args.condition,
@@ -128,52 +127,46 @@ def _handle_set_breakpoint(
     )
 
 
-def _handle_list_breakpoints(session: SessionService, args: SessionIdArgs) -> OperationResult[Any]:
+def _handle_list_breakpoints(session: SessionService, args: SessionIdArgs) -> ToolResult:
     del args
     return session.list_breakpoints()
 
 
-def _handle_delete_breakpoint(
-    session: SessionService, args: BreakpointNumberArgs
-) -> OperationResult[Any]:
+def _handle_delete_breakpoint(session: SessionService, args: BreakpointNumberArgs) -> ToolResult:
     return session.delete_breakpoint(number=args.number)
 
 
-def _handle_enable_breakpoint(
-    session: SessionService, args: BreakpointNumberArgs
-) -> OperationResult[Any]:
+def _handle_enable_breakpoint(session: SessionService, args: BreakpointNumberArgs) -> ToolResult:
     return session.enable_breakpoint(number=args.number)
 
 
-def _handle_disable_breakpoint(
-    session: SessionService, args: BreakpointNumberArgs
-) -> OperationResult[Any]:
+def _handle_disable_breakpoint(session: SessionService, args: BreakpointNumberArgs) -> ToolResult:
     return session.disable_breakpoint(number=args.number)
 
 
-def _handle_continue(session: SessionService, args: SessionIdArgs) -> OperationResult[Any]:
+def _handle_continue(session: SessionService, args: SessionIdArgs) -> ToolResult:
     del args
     return session.continue_execution()
 
 
-def _handle_step(session: SessionService, args: SessionIdArgs) -> OperationResult[Any]:
+def _handle_step(session: SessionService, args: SessionIdArgs) -> ToolResult:
     del args
     return session.step()
 
 
-def _handle_next(session: SessionService, args: SessionIdArgs) -> OperationResult[Any]:
+def _handle_next(session: SessionService, args: SessionIdArgs) -> ToolResult:
     del args
     return session.next()
 
 
-def _handle_interrupt(session: SessionService, args: SessionIdArgs) -> OperationResult[Any]:
+def _handle_interrupt(session: SessionService, args: SessionIdArgs) -> ToolResult:
     del args
     return session.interrupt()
 
 
 def _handle_evaluate_expression(
     session: SessionService, args: EvaluateExpressionArgs
-) -> OperationResult[Any]:
+) -> ToolResult:
     return session.evaluate_expression(
         args.expression,
         thread_id=args.thread_id,
@@ -181,19 +174,19 @@ def _handle_evaluate_expression(
     )
 
 
-def _handle_get_variables(session: SessionService, args: GetVariablesArgs) -> OperationResult[Any]:
+def _handle_get_variables(session: SessionService, args: GetVariablesArgs) -> ToolResult:
     return session.get_variables(thread_id=args.thread_id, frame=args.frame)
 
 
-def _handle_get_registers(session: SessionService, args: GetRegistersArgs) -> OperationResult[Any]:
+def _handle_get_registers(session: SessionService, args: GetRegistersArgs) -> ToolResult:
     return session.get_registers(thread_id=args.thread_id, frame=args.frame)
 
 
-def _handle_call_function(session: SessionService, args: CallFunctionArgs) -> OperationResult[Any]:
+def _handle_call_function(session: SessionService, args: CallFunctionArgs) -> ToolResult:
     return session.call_function(function_call=args.function_call, timeout_sec=args.timeout_sec)
 
 
-def _invalid_session_result(session_id: Any) -> OperationError:
+def _invalid_session_result(session_id: object) -> OperationError:
     """Return the standard invalid-session error response."""
 
     return OperationError(
@@ -202,9 +195,9 @@ def _invalid_session_result(session_id: Any) -> OperationError:
 
 
 def _handle_start_session(
-    arguments: dict[str, Any],
+    arguments: ToolArguments,
     session_manager: SessionRegistry,
-) -> OperationResult[Any]:
+) -> ToolResult:
     """Validate and start a new debugger session."""
 
     args = StartSessionArgs.model_validate(arguments)
@@ -219,16 +212,19 @@ def _handle_start_session(
     )
     if session_id is not None and isinstance(result, OperationSuccess):
         payload = payload_to_mapping(result.value)
+        if not isinstance(payload, dict):
+            return OperationError(message="Internal error: session start payload must be an object")
+        payload = dict(payload)
         payload["session_id"] = session_id
         return OperationSuccess(payload)
     return result
 
 
 def _dispatch_session_tool(
-    arguments: dict[str, Any],
+    arguments: ToolArguments,
     session_manager: SessionRegistry,
     tool_spec: SessionToolSpec,
-) -> OperationResult[Any]:
+) -> ToolResult:
     """Validate one session-scoped request and invoke its handler."""
 
     args = cast(SessionArgsProtocol, tool_spec.model.model_validate(arguments))
@@ -268,11 +264,11 @@ SESSION_TOOL_SPECS: dict[str, SessionToolSpec] = {
 
 async def dispatch_tool_call(
     name: str,
-    arguments: Any,
+    arguments: object,
     session_manager: SessionRegistry,
     *,
     logger: logging.Logger,
-) -> list:
+) -> list[TextContent]:
     """Dispatch one MCP tool call using structured validation and handlers."""
 
     try:

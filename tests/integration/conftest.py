@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 import pytest
 
@@ -37,9 +37,9 @@ def integration_runtime(request):
 def call_gdb_tool(integration_runtime):
     """Invoke one MCP tool and deserialize the JSON response payload."""
 
-    def invoke(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    def invoke(tool_name: str, arguments: dict[str, object]) -> dict[str, object]:
         result = asyncio.run(integration_runtime.call_tool(tool_name, arguments))
-        return json.loads(result[0].text)
+        return cast(dict[str, object], json.loads(result[0].text))
 
     return invoke
 
@@ -187,7 +187,7 @@ def start_session(start_session_result):
         program: str,
         *,
         init_commands: list[str] | None = None,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> int:
         return start_session_result(
             program,
@@ -206,9 +206,9 @@ def start_session_result(call_gdb_tool, default_init_commands):
         program: str,
         *,
         init_commands: list[str] | None = None,
-        **kwargs: Any,
-    ) -> dict[str, Any]:
-        payload: dict[str, Any] = {
+        **kwargs: object,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {
             "program": program,
             "init_commands": (
                 list(default_init_commands) if init_commands is None else init_commands
@@ -227,7 +227,7 @@ def start_session_result(call_gdb_tool, default_init_commands):
 def stop_session(call_gdb_tool):
     """Stop a GDB session and optionally ignore cleanup failures."""
 
-    def stop(session_id: int, *, ignore_errors: bool = False) -> dict[str, Any]:
+    def stop(session_id: int, *, ignore_errors: bool = False) -> dict[str, object]:
         result = call_gdb_tool("gdb_stop_session", {"session_id": session_id})
         if not ignore_errors:
             assert result["status"] == "success", f"Failed to stop session: {result}"

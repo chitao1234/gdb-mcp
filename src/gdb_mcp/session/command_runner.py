@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from typing import cast
 
-from ..domain import CommandExecutionInfo, OperationError, OperationSuccess
+from ..domain import CommandExecutionInfo, OperationError, OperationSuccess, StructuredPayload
 from ..transport import ParsedMiResponse, is_cli_command, parse_mi_responses, wrap_cli_command
 from .constants import DEFAULT_TIMEOUT_SEC
 from .runtime import SessionRuntime
@@ -123,7 +124,12 @@ class SessionCommandRunner:
                 )
             )
 
-        return OperationSuccess(CommandExecutionInfo(command=command, result=parsed.to_dict()))
+        return OperationSuccess(
+            CommandExecutionInfo(
+                command=command,
+                result=cast(StructuredPayload, parsed.to_dict()),
+            )
+        )
 
     def _update_runtime_after_command(self, command: str, parsed: ParsedMiResponse) -> None:
         """Update inferior execution state based on the parsed MI response."""

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from ..domain import CommandExecutionInfo, OperationSuccess
+from ..domain import CommandExecutionInfo, OperationSuccess, StructuredPayload
 
 
-def command_result_payload(result: OperationSuccess[CommandExecutionInfo]) -> dict[str, object]:
+def command_result_payload(result: OperationSuccess[CommandExecutionInfo]) -> StructuredPayload:
     """Extract the MI command-result container from a successful execution result."""
 
     return result.value.result or {}

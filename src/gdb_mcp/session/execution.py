@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import signal
-from typing import Optional
+from typing import Optional, cast
 
 from ..domain import (
     CommandExecutionInfo,
@@ -12,6 +12,7 @@ from ..domain import (
     MessageResult,
     OperationError,
     OperationSuccess,
+    StructuredPayload,
 )
 from ..transport import (
     build_exec_arguments_command,
@@ -123,7 +124,7 @@ class SessionExecutionService:
 
         raw_responses = result.get("command_responses", [])
         command_responses = raw_responses if isinstance(raw_responses, list) else []
-        parsed_result = parse_mi_responses(command_responses).to_dict()
+        parsed_result = cast(StructuredPayload, parse_mi_responses(command_responses).to_dict())
 
         if result.get("timed_out"):
             self._runtime.mark_inferior_running()
@@ -188,7 +189,7 @@ class SessionExecutionService:
         )
 
     @staticmethod
-    def _extract_stop_reason(parsed_result: dict[str, object]) -> str | None:
+    def _extract_stop_reason(parsed_result: StructuredPayload) -> str | None:
         """Extract the first stop reason from a parsed MI result payload."""
 
         notify_records = parsed_result.get("notify")

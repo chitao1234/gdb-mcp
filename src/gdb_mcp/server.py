@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 import os
 import threading
-from typing import Any
+
+from mcp.types import TextContent, Tool
 
 from .mcp import (
     AttachProcessArgs,
@@ -19,6 +20,7 @@ from .mcp import (
     GetVariablesArgs,
     ListSessionsArgs,
     RunArgs,
+    ServerRuntime,
     SessionIdArgs,
     SetBreakpointArgs,
     StartSessionArgs,
@@ -29,18 +31,18 @@ from .session.registry import SessionRegistry
 
 logger = logging.getLogger(__name__)
 
-_runtime = None
+_runtime: "ServerRuntime | None" = None
 _runtime_lock = threading.Lock()
 
 
-def create_default_runtime():
+def create_default_runtime() -> "ServerRuntime":
     """Create the default runtime used by the CLI compatibility entrypoint."""
 
     session_manager = SessionRegistry()
     return create_server_runtime(session_manager_provider=lambda: session_manager, logger=logger)
 
 
-def get_runtime():
+def get_runtime() -> "ServerRuntime":
     """Lazily create and cache the default runtime."""
 
     global _runtime
@@ -54,17 +56,17 @@ def get_runtime():
 class _LazyAppProxy:
     """Defer access to the MCP Server object until it is actually needed."""
 
-    def __getattr__(self, name: str) -> Any:
+    def __getattr__(self, name: str) -> object:
         return getattr(get_runtime().app, name)
 
 
-async def list_tools():
+async def list_tools() -> list[Tool]:
     """List all available GDB debugging tools."""
 
     return await get_runtime().list_tools()
 
 
-async def call_tool(name: str, arguments: Any):
+async def call_tool(name: str, arguments: object) -> list[TextContent]:
     """Handle tool calls from the MCP client."""
 
     return await get_runtime().call_tool(name, arguments)
@@ -73,13 +75,13 @@ async def call_tool(name: str, arguments: Any):
 app = _LazyAppProxy()
 
 
-async def main():
+async def main() -> None:
     """Main async entry point for the MCP server."""
 
     await get_runtime().main()
 
 
-def run_server():
+def run_server() -> None:
     """Synchronous entry point for the MCP server (for script entry point)."""
 
     configure_logging()

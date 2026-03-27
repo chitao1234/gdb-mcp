@@ -1,9 +1,15 @@
 """Typed domain models shared across service layers."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import TypedDict, TypeAlias
 
-StructuredPayload: TypeAlias = dict[str, object]
+JsonScalar: TypeAlias = str | int | float | bool | None
+JsonObject: TypeAlias = dict[str, "JsonValue"]
+JsonArray: TypeAlias = list["JsonValue"]
+JsonValue: TypeAlias = JsonScalar | JsonObject | JsonArray
+StructuredPayload: TypeAlias = JsonObject
 
 
 class FrameRecord(TypedDict, total=False):

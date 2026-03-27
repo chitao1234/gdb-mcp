@@ -11,6 +11,8 @@ from ..domain import (
     SessionMessage,
     SessionStartInfo,
     SessionStatusSnapshot,
+    StructuredPayload,
+    payload_to_mapping,
     result_to_mapping,
 )
 from ..transport import ParsedMiResponse, parse_mi_responses
@@ -21,7 +23,7 @@ from .runtime import SessionRuntime
 
 logger = logging.getLogger(__name__)
 
-SerializedResultMapping: TypeAlias = dict[str, object]
+SerializedResultMapping: TypeAlias = StructuredPayload
 
 
 class SessionLifecycleService:
@@ -186,7 +188,7 @@ class SessionLifecycleService:
                                 return OperationError(
                                     message=f"Init command '{cmd}' failed: {error_msg}",
                                     fatal=result.fatal,
-                                    details={"init_output": init_output},
+                                    details={"init_output": payload_to_mapping(init_output)},
                                 )
 
                         except Exception as exc:
@@ -204,7 +206,7 @@ class SessionLifecycleService:
                             )
                             return OperationError(
                                 message=f"Init command '{cmd}' raised an exception: {str(exc)}",
-                                details={"init_output": init_output},
+                                details={"init_output": payload_to_mapping(init_output)},
                             )
 
                 self._runtime.target_loaded = self._probe_target_loaded(
@@ -334,7 +336,7 @@ class SessionLifecycleService:
                 return OperationError(
                     message=f"Failed to set environment variable {var_name}: {result.message}",
                     fatal=result.fatal,
-                    details={"env_output": env_output},
+                    details={"env_output": payload_to_mapping(env_output)},
                 )
 
         return env_output
