@@ -139,6 +139,8 @@ The GDB MCP Server provides 22 tools for controlling GDB debugging sessions:
 `gdb_get_status` reports `target_loaded=false` when GDB started but the requested
 executable or core file did not load successfully. If the underlying GDB process
 dies unexpectedly, later status checks report the session as no longer running.
+The `gdb_start_session` response also includes `target_loaded` so callers can tell
+immediately whether startup loaded a usable target.
 
 ## Usage Examples
 

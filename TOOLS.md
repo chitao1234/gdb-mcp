@@ -21,6 +21,7 @@ Start a new GDB debugging session.
 - `message`: Status message
 - `program` (optional): Program path if specified
 - `core` (optional): Core dump path if specified
+- `target_loaded`: Whether GDB finished startup with an executable or core file loaded
 - `startup_output` (optional): GDB's initial output when loading the program
 - `warnings` (optional): Array of critical warnings detected, such as:
   - "No debugging symbols found - program was not compiled with -g"
@@ -30,6 +31,7 @@ Start a new GDB debugging session.
 - `init_output` (optional): Output from init_commands if provided
 
 **Important:** Always check the `warnings` field! Missing debug symbols will prevent breakpoints from working and variable inspection from showing useful information.
+Also check `target_loaded`: GDB itself can start successfully while the requested executable or core file still fails to load.
 
 **Core Dump Debugging:**
 

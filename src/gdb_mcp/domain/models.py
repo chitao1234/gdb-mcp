@@ -77,6 +77,7 @@ class SessionStartInfo:
     message: str
     program: str | None = None
     core: str | None = None
+    target_loaded: bool = False
     startup_output: str | None = None
     warnings: list[str] | None = None
     env_output: list[StructuredPayload] | None = None

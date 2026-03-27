@@ -46,12 +46,14 @@ class TestSessionService:
                 "timed_out": False,
             },
         ):
-            result = service.start(program="/bin/ls")
+            with patch.object(service._lifecycle, "_probe_target_loaded", return_value=True):
+                result = service.start(program="/bin/ls")
 
         assert isinstance(result, OperationSuccess)
         assert isinstance(result.value, SessionStartInfo)
         assert result.value.message == "GDB session started"
         assert result.value.program == "/bin/ls"
+        assert result.value.target_loaded is True
         assert service.state is SessionState.READY
         controller_factory.assert_called_once_with(
             command=["gdb", "--quiet", "--interpreter=mi", "/bin/ls"],
@@ -81,7 +83,8 @@ class TestSessionService:
                 "timed_out": False,
             },
         ):
-            result = service.start(program="/bin/ls", working_dir="/tmp/work")
+            with patch.object(service._lifecycle, "_probe_target_loaded", return_value=True):
+                result = service.start(program="/bin/ls", working_dir="/tmp/work")
 
         assert isinstance(result, OperationSuccess)
         assert result.value.program == "/bin/ls"
@@ -132,11 +135,12 @@ class TestSessionService:
         ):
             thread_1 = threading.Thread(target=run_start)
             thread_2 = threading.Thread(target=run_start)
-            thread_1.start()
-            thread_2.start()
-            start_barrier.wait()
-            thread_1.join()
-            thread_2.join()
+            with patch.object(service._lifecycle, "_probe_target_loaded", return_value=True):
+                thread_1.start()
+                thread_2.start()
+                start_barrier.wait()
+                thread_1.join()
+                thread_2.join()
 
         assert controller_factory_calls == 1
         assert len(results) == 2

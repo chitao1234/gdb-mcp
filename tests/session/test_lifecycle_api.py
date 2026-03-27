@@ -67,10 +67,14 @@ class TestLifecycleApi:
                 ]
             ),
         ):
-            result = result_to_mapping(session_service.start(program="/bin/ls"))
+            with patch.object(
+                session_service._lifecycle, "_probe_target_loaded", return_value=True
+            ):
+                result = result_to_mapping(session_service.start(program="/bin/ls"))
 
         assert result["status"] == "success"
         assert result["program"] == "/bin/ls"
+        assert result["target_loaded"] is True
         assert session_service.is_running is True
 
     @patch("gdb_mcp.session.factory.GdbController")
@@ -91,9 +95,12 @@ class TestLifecycleApi:
                 command_responses=[{"type": "result", "message": "done", "token": 1000}]
             ),
         ):
-            result = result_to_mapping(
-                session_service.start(program="/bin/ls", gdb_path="/usr/local/bin/gdb-custom")
-            )
+            with patch.object(
+                session_service._lifecycle, "_probe_target_loaded", return_value=True
+            ):
+                result = result_to_mapping(
+                    session_service.start(program="/bin/ls", gdb_path="/usr/local/bin/gdb-custom")
+                )
 
         call_args = mock_controller_class.call_args
         command = call_args[1]["command"]
@@ -120,9 +127,12 @@ class TestLifecycleApi:
                 command_responses=[{"type": "result", "message": "done", "token": 1000}]
             ),
         ):
-            result = result_to_mapping(
-                session_service.start(program="/bin/ls", core="/tmp/core.123")
-            )
+            with patch.object(
+                session_service._lifecycle, "_probe_target_loaded", return_value=True
+            ):
+                result = result_to_mapping(
+                    session_service.start(program="/bin/ls", core="/tmp/core.123")
+                )
 
         command = mock_controller_class.call_args[1]["command"]
 
@@ -150,7 +160,10 @@ class TestLifecycleApi:
                 command_responses=[{"type": "result", "message": "done", "token": 1000}]
             ),
         ):
-            result = result_to_mapping(session_service.start(program="/bin/ls"))
+            with patch.object(
+                session_service._lifecycle, "_probe_target_loaded", return_value=True
+            ):
+                result = result_to_mapping(session_service.start(program="/bin/ls"))
 
         call_args = mock_controller_class.call_args
         command = call_args[1]["command"]
@@ -178,9 +191,12 @@ class TestLifecycleApi:
                 command_responses=[{"type": "result", "message": "done", "token": 1000}]
             ),
         ):
-            result = result_to_mapping(
-                session_service.start(program="/bin/ls", gdb_path="/explicit/gdb")
-            )
+            with patch.object(
+                session_service._lifecycle, "_probe_target_loaded", return_value=True
+            ):
+                result = result_to_mapping(
+                    session_service.start(program="/bin/ls", gdb_path="/explicit/gdb")
+                )
 
         call_args = mock_controller_class.call_args
         command = call_args[1]["command"]
@@ -218,12 +234,15 @@ class TestLifecycleApi:
             with patch.object(
                 session_service._command_runner, "execute_command_result", side_effect=mock_execute
             ):
-                result = result_to_mapping(
-                    session_service.start(
-                        program="/bin/ls",
-                        env={"DEBUG_MODE": "1", "LOG_LEVEL": "verbose"},
+                with patch.object(
+                    session_service._lifecycle, "_probe_target_loaded", return_value=True
+                ):
+                    result = result_to_mapping(
+                        session_service.start(
+                            program="/bin/ls",
+                            env={"DEBUG_MODE": "1", "LOG_LEVEL": "verbose"},
+                        )
                     )
-                )
 
         assert result["status"] == "success"
         assert len(env_commands) == 2
@@ -258,13 +277,16 @@ class TestLifecycleApi:
             with patch.object(
                 session_service._command_runner, "execute_command_result", side_effect=mock_execute
             ):
-                result = result_to_mapping(
-                    session_service.start(
-                        program="/bin/ls",
-                        env={"DEBUG_MODE": "1"},
-                        init_commands=["set pagination off", "run"],
+                with patch.object(
+                    session_service._lifecycle, "_probe_target_loaded", return_value=True
+                ):
+                    result = result_to_mapping(
+                        session_service.start(
+                            program="/bin/ls",
+                            env={"DEBUG_MODE": "1"},
+                            init_commands=["set pagination off", "run"],
+                        )
                     )
-                )
 
         assert result["status"] == "success"
         assert executed_commands == [
@@ -301,9 +323,12 @@ class TestLifecycleApi:
             with patch.object(
                 session_service._command_runner, "execute_command_result", side_effect=mock_execute
             ):
-                result = result_to_mapping(
-                    session_service.start(program="/bin/ls", env={"DEBUG_MODE": "1"})
-                )
+                with patch.object(
+                    session_service._lifecycle, "_probe_target_loaded", return_value=True
+                ):
+                    result = result_to_mapping(
+                        session_service.start(program="/bin/ls", env={"DEBUG_MODE": "1"})
+                    )
 
         assert result["status"] == "error"
         assert "environment" in result["message"].lower()
@@ -348,7 +373,10 @@ class TestLifecycleApi:
                 ]
             ),
         ):
-            result = result_to_mapping(session_service.start(program="/bin/ls"))
+            with patch.object(
+                session_service._lifecycle, "_probe_target_loaded", return_value=True
+            ):
+                result = result_to_mapping(session_service.start(program="/bin/ls"))
 
         assert result["status"] == "success"
         assert "warnings" in result
@@ -377,14 +405,59 @@ class TestLifecycleApi:
                     command_responses=[{"type": "result", "message": "done", "token": 1000}]
                 ),
             ):
-                result = result_to_mapping(session_service.start(program="/missing/app"))
+                with patch.object(
+                    session_service._lifecycle, "_probe_target_loaded", return_value=False
+                ):
+                    result = result_to_mapping(session_service.start(program="/missing/app"))
 
         status = result_to_mapping(session_service.get_status())
 
         assert result["status"] == "success"
+        assert result["target_loaded"] is False
         assert "warnings" in result
         assert "Program file not found" in result["warnings"]
         assert status["target_loaded"] is False
+
+    @patch("gdb_mcp.session.factory.GdbController")
+    def test_start_session_refreshes_target_loaded_after_init_commands(
+        self,
+        mock_controller_class,
+        session_service,
+        prompt_response,
+        command_result,
+    ):
+        """Final startup target state should be refreshed from GDB after init commands."""
+
+        del mock_controller_class
+        executed_commands: list[str] = []
+
+        def mock_execute(command, **kwargs):
+            del kwargs
+            executed_commands.append(command)
+            return command_result(command, output="")
+
+        with patch.object(
+            session_service._command_runner,
+            "send_command_and_wait_for_prompt",
+            return_value=prompt_response(
+                command_responses=[{"type": "result", "message": "done", "token": 1000}]
+            ),
+        ):
+            with patch.object(
+                session_service._command_runner, "execute_command_result", side_effect=mock_execute
+            ):
+                with patch.object(
+                    session_service._lifecycle, "_probe_target_loaded", return_value=True
+                ):
+                    result = result_to_mapping(
+                        session_service.start(
+                            init_commands=["source setup.gdb"],
+                        )
+                    )
+
+        assert result["status"] == "success"
+        assert result["target_loaded"] is True
+        assert executed_commands == ["source setup.gdb"]
 
     def test_stop_active_session(self, running_session):
         """Stopping an active session should clear the controller and running flag."""

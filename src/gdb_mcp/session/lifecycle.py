@@ -185,11 +185,6 @@ class SessionLifecycleService:
                                     details={"init_output": init_output},
                                 )
 
-                            if self._loads_target(cmd_lower):
-                                logger.debug(
-                                    "Setting target_loaded=True after file-related command: %s", cmd
-                                )
-                                self._runtime.target_loaded = True
                         except Exception as exc:
                             logger.error(
                                 "Exception during init command '%s': %s", cmd, exc, exc_info=True
@@ -208,6 +203,9 @@ class SessionLifecycleService:
                                 details={"init_output": init_output},
                             )
 
+                self._runtime.target_loaded = self._probe_target_loaded(
+                    fallback=self._runtime.target_loaded
+                )
                 self._runtime.mark_ready()
 
                 return OperationSuccess(
@@ -215,6 +213,7 @@ class SessionLifecycleService:
                         message="GDB session started",
                         program=program,
                         core=core,
+                        target_loaded=self._runtime.target_loaded,
                         startup_output=startup_output_text.strip() or None,
                         warnings=warnings or None,
                         env_output=env_output or None,
@@ -359,3 +358,27 @@ class SessionLifecycleService:
             "no executable file now",
         )
         return not any(marker in startup_output for marker in failure_markers)
+
+    def _probe_target_loaded(self, *, fallback: bool) -> bool:
+        """Probe whether GDB currently has an executable or core file loaded."""
+
+        result = self._command_runner.execute_command_result(
+            "info files", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
+        if isinstance(result, OperationError):
+            logger.debug(
+                "Falling back to heuristic target_loaded=%s after probe error: %s",
+                fallback,
+                result.message,
+            )
+            return fallback
+
+        output = (result.value.output or "").strip()
+        if not output or output == "(no output)":
+            return False
+
+        output_lower = output.lower()
+        if "no executable file now" in output_lower:
+            return False
+
+        return True

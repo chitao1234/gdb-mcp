@@ -136,6 +136,8 @@ def build_tool_definitions() -> list[Tool]:
                 "env (environment variables applied before init_commands), gdb_path (GDB binary path), "
                 "working_dir (directory to run program from). "
                 "NOTE: 'args' and 'core' are mutually exclusive in one startup request. "
+                "The success response includes 'target_loaded' so callers can distinguish "
+                "between 'GDB started' and 'requested target actually loaded'. "
                 "IMPORTANT for core dump debugging: Set 'sysroot' and 'solib-search-path' AFTER "
                 "loading the core (either via 'core' parameter or 'core-file' init_command) "
                 "for symbols to resolve correctly. "

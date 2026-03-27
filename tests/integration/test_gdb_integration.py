@@ -77,6 +77,7 @@ def test_start_session_with_program(compiled_program, start_session_result, stop
 
     assert result["status"] == "success"
     assert result["program"] == compiled_program
+    assert result["target_loaded"] is True
     assert "session_id" in result
     assert isinstance(result["session_id"], int)
     session_id = result["session_id"]
@@ -424,12 +425,38 @@ def test_start_session_with_missing_program_reports_target_unloaded(stop_session
 
     assert result["status"] == "success"
     assert "session_id" in result
+    assert result["target_loaded"] is False
     assert "Program file not found" in result.get("warnings", [])
 
     session_id = result["session_id"]
     status = call_gdb_tool("gdb_get_status", {"session_id": session_id})
     assert status["is_running"] is True
     assert status["target_loaded"] is False
+
+    stop_session(session_id)
+
+
+@pytest.mark.integration
+def test_start_session_with_file_init_command_reports_target_loaded(compiled_program, stop_session):
+    """Startup should expose target_loaded when init commands load the executable."""
+
+    result = call_gdb_tool(
+        "gdb_start_session",
+        {
+            "init_commands": [
+                f"file {compiled_program}",
+                "set disable-randomization on",
+                "set startup-with-shell off",
+            ]
+        },
+    )
+
+    assert result["status"] == "success"
+    assert result["target_loaded"] is True
+
+    session_id = result["session_id"]
+    status = call_gdb_tool("gdb_get_status", {"session_id": session_id})
+    assert status["target_loaded"] is True
 
     stop_session(session_id)
 
