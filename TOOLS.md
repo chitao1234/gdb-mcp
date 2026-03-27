@@ -116,8 +116,13 @@ List all currently registered debugger sessions.
 - `attached_pid`: Attached process PID when relevant
 - `current_thread_id`: Last known selected thread
 - `current_frame`: Last known selected frame
+- `current_inferior_id`: Last known selected inferior ID
+- `inferior_count`: Last known inferior inventory size
+- `inferior_states`: Optional array of per-inferior state records (`inferior_id`, `is_current`, `execution_state`, `stop_reason`, `exit_code`)
 - `stop_reason`: Last stop reason when known
 - `exit_code`: Inferior exit code when known
+- `follow_fork_mode`: Last configured follow-fork-mode (`parent` or `child`) when known
+- `detach_on_fork`: Last configured detach-on-fork value when known
 - `last_failure_message`: Failure detail when the session is in a failed state
 
 ### `gdb_execute_command`
@@ -287,12 +292,19 @@ Get the current status of the GDB session.
 - `execution_state`: Inferior state (`not_started`, `running`, `paused`, `exited`, or `unknown`)
 - `stop_reason`: Stop reason when the inferior is paused or has exited
 - `exit_code`: Exit code when the inferior exited and GDB reported one
+- `current_inferior_id`: Selected inferior ID when known
+- `inferior_count`: Known inferior count when available
+- `inferior_states`: Optional array of per-inferior state records (`inferior_id`, `is_current`, `execution_state`, `stop_reason`, `exit_code`)
+- `follow_fork_mode`: Current follow-fork-mode when known
+- `detach_on_fork`: Current detach-on-fork setting when known
 
 **Notes:**
 - If the GDB process has exited unexpectedly, `is_running` becomes `false`
   and `has_controller` becomes `false`
 - If startup succeeded but the requested executable or core file did not load,
   `target_loaded` remains `false`
+- `execution_state`, `stop_reason`, and `exit_code` reflect the currently selected
+  inferior when multiple inferiors exist; use `inferior_states` for full visibility
 
 ### `gdb_stop_session`
 Stop the current GDB session.
@@ -482,10 +494,17 @@ Get CPU register values for the current frame.
 **Parameters:**
 - `thread_id` (optional): Thread ID override (integer or numeric string)
 - `frame` (optional): Frame override (integer or numeric string)
+- `register_numbers` (optional): Explicit register numbers to query (integers or numeric strings)
+- `register_names` (optional): Explicit register names to query (resolved to numbers)
+- `include_vector_registers` (optional): When `false`, omit vector/SIMD-style registers when names are available (default: `true`)
+- `max_registers` (optional): Upper bound on returned register records
+- `value_format` (optional): Value rendering mode (`"hex"` or `"natural"`, default: `"hex"`)
 
 **Notes:**
 - Like `gdb_evaluate_expression`, this can inspect a specific thread/frame
   without changing the selected debugger context permanently
+- `register_numbers` and `register_names` can be combined; duplicates are removed
+- `max_registers` is applied after any vector-register filtering
 
 ### `gdb_read_memory`
 Read raw target memory bytes from an address expression.

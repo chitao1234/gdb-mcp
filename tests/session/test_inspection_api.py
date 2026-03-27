@@ -85,6 +85,34 @@ class TestThreadAndStackInspectionApi:
             '-interpreter-exec console "info inferiors"\n'
         )
 
+    def test_list_inferiors_includes_runtime_state_summary(
+        self,
+        scripted_running_session,
+        mi_console,
+        mi_result,
+    ):
+        """Inferior listings should carry known runtime state metadata per inferior."""
+
+        session, _controller = scripted_running_session(
+            [
+                mi_console("  Num  Description       Connection           Executable        \n"),
+                mi_console("  1    <null>                                 /tmp/app \n"),
+                mi_console("* 2    <null>                                 /tmp/app \n"),
+                mi_result(),
+            ]
+        )
+        session.runtime.mark_inferior_paused("signal-received", inferior_id=2)
+        session.runtime.mark_inferior_selected(2)
+
+        result = result_to_mapping(session.list_inferiors())
+
+        assert result["status"] == "success"
+        assert result["inferiors"][0]["inferior_id"] == 1
+        assert result["inferiors"][0]["execution_state"] == "unknown"
+        assert result["inferiors"][1]["inferior_id"] == 2
+        assert result["inferiors"][1]["execution_state"] == "paused"
+        assert result["inferiors"][1]["stop_reason"] == "signal-received"
+
     def test_select_inferior(self, scripted_running_session, mi_console, mi_result):
         """Inferior selection should refresh inventory and update runtime state."""
 
@@ -326,6 +354,96 @@ class TestDataInspectionApi:
         assert any("-stack-select-frame 1" in command for command in written)
         assert written[-2].endswith("-thread-select 1\n")
         assert written[-1].endswith("-stack-select-frame 0\n")
+
+    def test_get_registers_supports_number_filters_and_natural_format(
+        self,
+        scripted_running_session,
+        mi_result,
+    ):
+        """Register listing should pass explicit number filters and natural format token."""
+
+        session, controller = scripted_running_session(
+            [mi_result({"register-values": [{"number": "0", "value": "1"}, {"number": "3", "value": "2"}]})]
+        )
+
+        result = result_to_mapping(
+            session.get_registers(register_numbers=[0, 3], value_format="natural")
+        )
+
+        assert result["status"] == "success"
+        assert len(result["registers"]) == 2
+        assert (
+            controller.io_manager.stdin.writes[0]
+            .decode()
+            .endswith("-data-list-register-values N 0 3\n")
+        )
+
+    def test_get_registers_resolves_name_filters(
+        self,
+        scripted_running_session,
+        mi_result,
+    ):
+        """Register-name filters should resolve to register numbers before value lookup."""
+
+        session, controller = scripted_running_session(
+            [mi_result({"register-names": ["rax", "rbx", "rip"]})],
+            [mi_result({"register-values": [{"number": "2", "value": "0x4444"}]})],
+        )
+
+        result = result_to_mapping(session.get_registers(register_names=["rip"]))
+
+        assert result["status"] == "success"
+        assert result["registers"][0]["number"] == "2"
+        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert written[0].endswith("-data-list-register-names\n")
+        assert written[1].endswith("-data-list-register-values x 2\n")
+
+    def test_get_registers_can_omit_vector_registers(self, scripted_running_session, mi_result):
+        """Vector/SIMD registers should be filtered when include_vector_registers is false."""
+
+        session, controller = scripted_running_session(
+            [
+                mi_result(
+                    {
+                        "register-values": [
+                            {"number": "0", "value": "0x1"},
+                            {"number": "17", "value": "0x2"},
+                        ]
+                    }
+                )
+            ],
+            [mi_result({"register-names": ["rax", "xmm0"]})],
+        )
+
+        result = result_to_mapping(session.get_registers(include_vector_registers=False))
+
+        assert result["status"] == "success"
+        assert len(result["registers"]) == 1
+        assert result["registers"][0]["number"] == "0"
+        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert written[1].endswith("-data-list-register-names 0 17\n")
+
+    def test_get_registers_applies_max_registers_limit(self, scripted_running_session, mi_result):
+        """Register payload should respect max_registers upper bounds."""
+
+        session, _controller = scripted_running_session(
+            [
+                mi_result(
+                    {
+                        "register-values": [
+                            {"number": "0", "value": "0x1"},
+                            {"number": "1", "value": "0x2"},
+                            {"number": "2", "value": "0x3"},
+                        ]
+                    }
+                )
+            ]
+        )
+
+        result = result_to_mapping(session.get_registers(max_registers=2))
+
+        assert result["status"] == "success"
+        assert len(result["registers"]) == 2
 
     def test_read_memory(self, scripted_running_session, mi_result):
         """Memory reads should surface captured blocks and byte counts."""

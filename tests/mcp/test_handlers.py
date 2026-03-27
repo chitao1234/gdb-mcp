@@ -147,6 +147,7 @@ class TestHandlerDispatch:
             "exit_code": None,
             "current_inferior_id": None,
             "inferior_count": None,
+            "inferior_states": None,
             "follow_fork_mode": None,
             "detach_on_fork": None,
         }
@@ -931,7 +932,15 @@ class TestHandlerDispatch:
             manager,
         )
 
-        session.get_registers.assert_called_once_with(thread_id=2, frame=3)
+        session.get_registers.assert_called_once_with(
+            thread_id=2,
+            frame=3,
+            register_numbers=None,
+            register_names=None,
+            include_vector_registers=True,
+            max_registers=None,
+            value_format="hex",
+        )
 
     def test_get_registers_accepts_numeric_string_overrides(self):
         """Register context overrides should accept numeric-string values."""
@@ -949,7 +958,48 @@ class TestHandlerDispatch:
             manager,
         )
 
-        session.get_registers.assert_called_once_with(thread_id=2, frame=3)
+        session.get_registers.assert_called_once_with(
+            thread_id=2,
+            frame=3,
+            register_numbers=None,
+            register_names=None,
+            include_vector_registers=True,
+            max_registers=None,
+            value_format="hex",
+        )
+
+    def test_get_registers_routes_filter_and_format_options(self):
+        """Register requests should forward selector and rendering options."""
+
+        manager = Mock()
+        session = Mock()
+        session.get_registers.return_value = OperationSuccess(
+            CommandExecutionInfo(command="-data-list-register-values N")
+        )
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_get_registers",
+            {
+                "session_id": 1,
+                "register_numbers": ["0", 1],
+                "register_names": ["rip", "rax"],
+                "include_vector_registers": False,
+                "max_registers": 8,
+                "value_format": "natural",
+            },
+            manager,
+        )
+
+        session.get_registers.assert_called_once_with(
+            thread_id=None,
+            frame=None,
+            register_numbers=[0, 1],
+            register_names=["rip", "rax"],
+            include_vector_registers=False,
+            max_registers=8,
+            value_format="natural",
+        )
 
     def test_get_backtrace_accepts_numeric_string_thread_id(self):
         """Backtrace requests should accept numeric-string thread IDs."""

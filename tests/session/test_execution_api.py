@@ -105,6 +105,44 @@ class TestExecutionApi:
         assert result["status"] == "error"
         assert "already running" in result["message"].lower()
 
+    def test_continue_execution_tracks_stopped_inferior_from_thread_group(
+        self,
+        scripted_running_session,
+        mi_result,
+        mi_notify,
+    ):
+        """Stopped notifications should populate stop-event inferior identity."""
+
+        session, _controller = scripted_running_session(
+            [
+                mi_result(message="running"),
+                mi_notify(
+                    "stopped",
+                    {
+                        "reason": "breakpoint-hit",
+                        "thread-group": "i2",
+                        "thread-id": "4",
+                    },
+                ),
+            ]
+        )
+        session.runtime.mark_inferior_selected(2)
+
+        result = result_to_mapping(session.continue_execution())
+
+        assert result["status"] == "success"
+        status = result_to_mapping(session.get_status())
+        assert status["execution_state"] == "paused"
+        assert status["current_inferior_id"] == 2
+        assert status["inferior_states"] is not None
+        inferior_state = next(
+            record for record in status["inferior_states"] if record["inferior_id"] == 2
+        )
+        assert inferior_state["execution_state"] == "paused"
+        assert inferior_state["stop_reason"] == "breakpoint-hit"
+        assert session.last_stop_event is not None
+        assert session.last_stop_event.inferior_id == 2
+
     def test_step(self, scripted_running_session, mi_result, mi_notify):
         """Step should emit the MI exec-step command."""
 

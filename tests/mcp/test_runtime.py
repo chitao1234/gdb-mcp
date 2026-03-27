@@ -40,6 +40,7 @@ class TestServerRuntime:
             "exit_code": None,
             "current_inferior_id": None,
             "inferior_count": None,
+            "inferior_states": None,
             "follow_fork_mode": None,
             "detach_on_fork": None,
         }

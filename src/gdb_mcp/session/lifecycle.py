@@ -287,6 +287,7 @@ class SessionLifecycleService:
             exit_code=self._runtime.exit_code,
             current_inferior_id=self._runtime.current_inferior_id,
             inferior_count=self._runtime.inferior_count,
+            inferior_states=self._runtime.inferiors_state_summary() or None,
             follow_fork_mode=self._runtime.follow_fork_mode,
             detach_on_fork=self._runtime.detach_on_fork,
         )

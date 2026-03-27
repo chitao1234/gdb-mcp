@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 import re
-from typing import Optional
+from typing import Literal, Optional, cast
 
 from ..domain import (
     BacktraceInfo,
@@ -18,6 +18,7 @@ from ..domain import (
     MemoryReadInfo,
     OperationError,
     OperationSuccess,
+    RegisterRecord,
     RegistersInfo,
     ThreadListInfo,
     ThreadSelectionInfo,
@@ -45,6 +46,10 @@ logger = logging.getLogger(__name__)
 
 _INFERIOR_ROW_RE = re.compile(r"^(?P<current>\*)?\s*(?P<inferior_id>\d+)\s+(?P<columns>.*)$")
 _INFERIOR_COLUMN_SPLIT_RE = re.compile(r"\s{2,}")
+_VECTOR_REGISTER_NAME_RE = re.compile(
+    r"^(?:xmm[0-9]+|ymm[0-9]+|zmm[0-9]+|mm[0-9]+|st(?:\([0-9]+\)|[0-9]+)?|k[0-9]+|v[0-9]+|q[0-9]+|d[0-9]+|s[0-9]+)$",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -105,6 +110,17 @@ class SessionInspectionService:
         self._runtime.update_inferior_inventory(
             current_inferior_id=payload.current_inferior_id,
             count=payload.count,
+            inferior_ids=tuple(
+                record["inferior_id"]
+                for record in payload.inferiors
+                if isinstance(record.get("inferior_id"), int)
+            ),
+        )
+        inferiors_with_state = self._enrich_inferiors_with_runtime_state(payload.inferiors)
+        payload = InferiorListInfo(
+            inferiors=inferiors_with_state,
+            count=payload.count,
+            current_inferior_id=payload.current_inferior_id,
         )
         return OperationSuccess(payload)
 
@@ -385,6 +401,11 @@ class SessionInspectionService:
         self,
         thread_id: Optional[int] = None,
         frame: Optional[int] = None,
+        register_numbers: list[int] | None = None,
+        register_names: list[str] | None = None,
+        include_vector_registers: bool = True,
+        max_registers: int | None = None,
+        value_format: Literal["hex", "natural"] = "hex",
     ) -> OperationSuccess[RegistersInfo] | OperationError:
         """Get register values for current frame."""
         selection = (
@@ -401,8 +422,22 @@ class SessionInspectionService:
         if selection_error is not None:
             return selection_error
 
+        resolved_numbers = self._resolve_register_number_filters(
+            register_numbers=register_numbers or [],
+            register_names=register_names or [],
+        )
+        if isinstance(resolved_numbers, OperationError):
+            if selection is not None:
+                restore_error = self._restore_selection(selection)
+                if restore_error is not None:
+                    return restore_error
+            return resolved_numbers
+
+        format_token = "x" if value_format == "hex" else "N"
+        registers_cmd = self._register_values_command(format_token, resolved_numbers)
         result = self._command_runner.execute_command_result(
-            "-data-list-register-values x", timeout_sec=DEFAULT_TIMEOUT_SEC
+            registers_cmd,
+            timeout_sec=DEFAULT_TIMEOUT_SEC,
         )
 
         if isinstance(result, OperationError):
@@ -412,15 +447,174 @@ class SessionInspectionService:
                     return restore_error
             return result
 
-        payload = registers_info_from_payload(
-            extract_mi_result_payload(command_result_payload(result))
-        )
+        payload = registers_info_from_payload(extract_mi_result_payload(command_result_payload(result)))
+        filtered_registers = payload.registers
+
+        if not include_vector_registers:
+            name_map_result = self._load_register_name_map(filtered_registers)
+            if isinstance(name_map_result, OperationError):
+                if selection is not None:
+                    restore_error = self._restore_selection(selection)
+                    if restore_error is not None:
+                        return restore_error
+                return name_map_result
+            filtered_registers = self._filter_vector_registers(
+                filtered_registers,
+                name_map=name_map_result,
+            )
+
+        if max_registers is not None:
+            filtered_registers = filtered_registers[:max_registers]
+
+        payload = RegistersInfo(registers=filtered_registers)
         if selection is not None:
             restore_error = self._restore_selection(selection)
             if restore_error is not None:
                 return restore_error
 
         return OperationSuccess(payload)
+
+    def _resolve_register_number_filters(
+        self,
+        *,
+        register_numbers: list[int],
+        register_names: list[str],
+    ) -> list[int] | None | OperationError:
+        """Resolve explicit register number/name selectors into one number list."""
+
+        selected_numbers: list[int] = []
+        seen_numbers: set[int] = set()
+        for number in register_numbers:
+            if number in seen_numbers:
+                continue
+            seen_numbers.add(number)
+            selected_numbers.append(number)
+
+        if register_names:
+            name_to_number = self._register_name_to_number_index()
+            if isinstance(name_to_number, OperationError):
+                return name_to_number
+
+            missing_names: list[str] = []
+            for register_name in register_names:
+                resolved_number = name_to_number.get(register_name)
+                if resolved_number is None:
+                    missing_names.append(register_name)
+                    continue
+                if resolved_number in seen_numbers:
+                    continue
+                seen_numbers.add(resolved_number)
+                selected_numbers.append(resolved_number)
+
+            if missing_names:
+                return OperationError(
+                    message=(
+                        "Unknown register names: "
+                        + ", ".join(sorted(missing_names))
+                    )
+                )
+
+        return selected_numbers or None
+
+    def _register_name_to_number_index(self) -> dict[str, int] | OperationError:
+        """Build a name-to-number index from `-data-list-register-names` output."""
+
+        result = self._command_runner.execute_command_result(
+            "-data-list-register-names",
+            timeout_sec=DEFAULT_TIMEOUT_SEC,
+        )
+        if isinstance(result, OperationError):
+            return result
+
+        payload = extract_mi_result_payload(command_result_payload(result))
+        if not isinstance(payload, dict):
+            return OperationError(
+                message="GDB returned malformed register-name payload"
+            )
+
+        raw_names = payload.get("register-names")
+        if not isinstance(raw_names, list):
+            return OperationError(
+                message="GDB did not return register names in the expected format"
+            )
+
+        index: dict[str, int] = {}
+        for number, raw_name in enumerate(raw_names):
+            if not isinstance(raw_name, str):
+                continue
+            name = raw_name.strip()
+            if not name:
+                continue
+            index[name] = number
+        return index
+
+    def _load_register_name_map(
+        self,
+        registers: list[RegisterRecord],
+    ) -> dict[int, str] | OperationError:
+        """Load register names for one returned register set."""
+
+        numbers: list[int] = []
+        for register in registers:
+            raw_number = register.get("number")
+            number = self._int_or_none(raw_number)
+            if number is None:
+                continue
+            numbers.append(number)
+
+        if not numbers:
+            return {}
+
+        command = "-data-list-register-names " + " ".join(str(number) for number in numbers)
+        result = self._command_runner.execute_command_result(
+            command,
+            timeout_sec=DEFAULT_TIMEOUT_SEC,
+        )
+        if isinstance(result, OperationError):
+            return result
+
+        payload = extract_mi_result_payload(command_result_payload(result))
+        if not isinstance(payload, dict):
+            return OperationError(message="GDB returned malformed register-name payload")
+
+        raw_names = payload.get("register-names")
+        if not isinstance(raw_names, list):
+            return OperationError(message="GDB did not return register names in the expected format")
+
+        mapping: dict[int, str] = {}
+        for index, raw_name in enumerate(raw_names):
+            if index >= len(numbers):
+                break
+            if isinstance(raw_name, str):
+                mapping[numbers[index]] = raw_name.strip()
+        return mapping
+
+    def _filter_vector_registers(
+        self,
+        registers: list[RegisterRecord],
+        *,
+        name_map: dict[int, str],
+    ) -> list[RegisterRecord]:
+        """Return register records with vector/SIMD names omitted."""
+
+        filtered: list[RegisterRecord] = []
+        for register in registers:
+            raw_number = register.get("number")
+            number = self._int_or_none(raw_number)
+            name = name_map.get(number, "") if number is not None else ""
+            if name and _VECTOR_REGISTER_NAME_RE.match(name):
+                continue
+            filtered.append(register)
+        return filtered
+
+    @staticmethod
+    def _register_values_command(format_token: str, register_numbers: list[int] | None) -> str:
+        """Build a register-values MI command with optional explicit register numbers."""
+
+        if not register_numbers:
+            return f"-data-list-register-values {format_token}"
+        numbers = " ".join(str(number) for number in register_numbers)
+        return f"-data-list-register-values {format_token} {numbers}"
 
     def _capture_selection(self) -> _SelectionSnapshot | OperationError:
         """Capture the currently selected thread and frame for later restoration."""
@@ -603,3 +797,42 @@ class SessionInspectionService:
                 f"Inferior {inferior_id} selected" if inferior_id > 0 else "Inferior selected"
             ),
         )
+
+    def _enrich_inferiors_with_runtime_state(
+        self,
+        inferiors: list[InferiorRecord],
+    ) -> list[InferiorRecord]:
+        """Attach runtime execution-state metadata to listed inferiors when known."""
+
+        state_by_inferior = {
+            record["inferior_id"]: record
+            for record in self._runtime.inferiors_state_summary()
+            if isinstance(record.get("inferior_id"), int)
+        }
+
+        enriched: list[InferiorRecord] = []
+        for inferior in inferiors:
+            inferior_id = inferior.get("inferior_id")
+            if not isinstance(inferior_id, int):
+                enriched.append(cast(InferiorRecord, dict(inferior)))
+                continue
+
+            state_record = state_by_inferior.get(inferior_id)
+            if state_record is None:
+                enriched.append(cast(InferiorRecord, dict(inferior)))
+                continue
+
+            enriched_record = cast(InferiorRecord, dict(inferior))
+            execution_state = state_record.get("execution_state")
+            if isinstance(execution_state, str):
+                enriched_record["execution_state"] = execution_state
+            enriched_record["stop_reason"] = (
+                str(state_record["stop_reason"])
+                if isinstance(state_record.get("stop_reason"), str)
+                else None
+            )
+            exit_code = state_record.get("exit_code")
+            enriched_record["exit_code"] = int(exit_code) if isinstance(exit_code, int) else None
+            enriched.append(enriched_record)
+
+        return enriched

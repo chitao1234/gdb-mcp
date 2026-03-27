@@ -116,7 +116,7 @@ The GDB MCP Server provides 37 tools for controlling GDB debugging sessions:
 - `gdb_capture_bundle` - Capture structured forensic artifacts to disk
 - `gdb_run_until_failure` - Repeat fresh runs until failure criteria match
 - `gdb_call_function` - Call a function in the target process (dedicated tool for separate permissioning)
-- `gdb_get_status` - Get current session status, including whether the target actually loaded and whether execution is running, paused, or exited
+- `gdb_get_status` - Get current session status, including target load state, execution state, and per-inferior state summaries when available
 - `gdb_stop_session` - Stop the current session
 
 **Thread & Frame Navigation:**
@@ -147,7 +147,7 @@ The GDB MCP Server provides 37 tools for controlling GDB debugging sessions:
 - `gdb_evaluate_expression` - Evaluate expressions, optionally in a specific thread/frame
 - `gdb_read_memory` - Read raw memory bytes using MI memory-read
 - `gdb_get_variables` - Get local variables without changing the selected thread/frame
-- `gdb_get_registers` - Get CPU registers, optionally in a specific thread/frame
+- `gdb_get_registers` - Get CPU registers, optionally in a specific thread/frame, with selector/filter options for large payloads
 
 **For detailed documentation of each tool including parameters, return values, and examples, see [TOOLS.md](TOOLS.md).**
 
@@ -163,6 +163,8 @@ When multiple sessions are active, `gdb_list_sessions` provides an inventory vie
 with session IDs, lifecycle/execution state, and basic target metadata so MCP
 clients can recover or render session state without maintaining all bookkeeping
 out of band.
+Both `gdb_get_status` and `gdb_list_sessions` include `inferior_states` when known,
+so clients can reason about forked/multi-inferior state without extra polling glue.
 `gdb_get_status` also reports the inferior execution state as `not_started`,
 `running`, `paused`, `exited`, or `unknown`.
 

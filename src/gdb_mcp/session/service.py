@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Literal
 
 from ..domain import (
     BacktraceInfo,
@@ -402,10 +403,23 @@ class SessionService:
         self,
         thread_id: int | None = None,
         frame: int | None = None,
+        register_numbers: list[int] | None = None,
+        register_names: list[str] | None = None,
+        include_vector_registers: bool = True,
+        max_registers: int | None = None,
+        value_format: Literal["hex", "natural"] = "hex",
     ) -> OperationSuccess[RegistersInfo] | OperationError:
         """Delegate register inspection to the inspection service."""
 
-        return self._inspection.get_registers(thread_id=thread_id, frame=frame)
+        return self._inspection.get_registers(
+            thread_id=thread_id,
+            frame=frame,
+            register_numbers=register_numbers,
+            register_names=register_names,
+            include_vector_registers=include_vector_registers,
+            max_registers=max_registers,
+            value_format=value_format,
+        )
 
     def set_breakpoint(
         self, location: str, condition: str | None = None, temporary: bool = False

@@ -344,6 +344,35 @@ class GetRegistersArgs(StrictArgsModel):
         None,
         description="Frame number override as an integer or numeric string",
     )
+    register_numbers: list[int | str] = Field(
+        default_factory=list,
+        description=(
+            "Optional explicit register numbers to query. "
+            "Accepts integers or numeric strings."
+        ),
+    )
+    register_names: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Optional explicit register names to query (for example ['rax', 'rip']). "
+            "Resolved to register numbers at runtime."
+        ),
+    )
+    include_vector_registers: bool = Field(
+        True,
+        description=(
+            "When false, omit vector/SIMD-style registers from the returned set where names are available."
+        ),
+    )
+    max_registers: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Optional upper bound on the number of returned register records.",
+    )
+    value_format: Literal["hex", "natural"] = Field(
+        "hex",
+        description="Value rendering mode: 'hex' for MI format 'x', 'natural' for MI format 'N'.",
+    )
 
     @field_validator("thread_id")
     @classmethod
@@ -358,6 +387,37 @@ class GetRegistersArgs(StrictArgsModel):
         """Accept numeric strings while enforcing non-negative frame indices."""
 
         return _coerce_int_like(value, field_name="frame", minimum=0, allow_none=True)
+
+    @field_validator("register_numbers")
+    @classmethod
+    def validate_register_numbers(cls, value: list[int | str]) -> list[int]:
+        """Accept numeric-string register numbers while enforcing positivity."""
+
+        normalized: list[int] = []
+        for index, raw_number in enumerate(value):
+            normalized_number = _coerce_int_like(
+                raw_number,
+                field_name=f"register_numbers[{index}]",
+                minimum=0,
+                allow_none=False,
+            )
+            if normalized_number is None:
+                raise ValueError(f"register_numbers[{index}] is required")
+            normalized.append(normalized_number)
+        return normalized
+
+    @field_validator("register_names")
+    @classmethod
+    def validate_register_names(cls, value: list[str]) -> list[str]:
+        """Reject empty register-name selectors."""
+
+        normalized: list[str] = []
+        for index, register_name in enumerate(value):
+            text = register_name.strip()
+            if not text:
+                raise ValueError(f"register_names[{index}] must be a non-empty string")
+            normalized.append(text)
+        return normalized
 
 
 class ReadMemoryArgs(StrictArgsModel):
@@ -1020,6 +1080,8 @@ def build_tool_definitions() -> list[Tool]:
                 "Get CPU register values for the current frame. "
                 "Optional thread_id and frame parameters let callers inspect a specific context "
                 "without permanently changing the selected thread or frame. "
+                "Optional register_numbers/register_names filters, vector-register suppression, "
+                "and max_registers bounds help reduce large payloads. "
                 "Requires session_id parameter (obtained from gdb_start_session)."
             ),
             inputSchema=GetRegistersArgs.model_json_schema(),

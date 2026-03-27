@@ -622,6 +622,35 @@ class TestSessionIdRequired:
         assert args.thread_id == 2
         assert args.frame == 1
 
+    def test_get_registers_accepts_selector_and_format_options(self):
+        """Register requests should validate selectors and rendering options."""
+
+        args = GetRegistersArgs(
+            session_id=4,
+            register_numbers=["0", 7],
+            register_names=["rip", "rax"],
+            include_vector_registers=False,
+            max_registers=5,
+            value_format="natural",
+        )
+        assert args.register_numbers == [0, 7]
+        assert args.register_names == ["rip", "rax"]
+        assert args.include_vector_registers is False
+        assert args.max_registers == 5
+        assert args.value_format == "natural"
+
+    def test_get_registers_rejects_empty_register_name(self):
+        """Register-name selectors should reject blank entries."""
+
+        with pytest.raises(ValidationError):
+            GetRegistersArgs(session_id=4, register_names=["rip", " "])
+
+    def test_get_registers_rejects_negative_register_number(self):
+        """Register-number selectors should require non-negative values."""
+
+        with pytest.raises(ValidationError):
+            GetRegistersArgs(session_id=4, register_numbers=[-1])
+
 
 class TestArgumentBounds:
     """Test numeric bounds for MCP tool argument models."""

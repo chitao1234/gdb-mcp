@@ -293,7 +293,18 @@ def _handle_get_registers(session: SessionService, args: GetRegistersArgs) -> To
     if isinstance(frame, OperationError):
         return frame
 
-    return session.get_registers(thread_id=thread_id, frame=frame)
+    register_numbers = [int(number) for number in args.register_numbers]
+    register_names = [str(name) for name in args.register_names]
+
+    return session.get_registers(
+        thread_id=thread_id,
+        frame=frame,
+        register_numbers=register_numbers or None,
+        register_names=register_names or None,
+        include_vector_registers=args.include_vector_registers,
+        max_registers=args.max_registers,
+        value_format=args.value_format,
+    )
 
 
 def _handle_call_function(session: SessionService, args: CallFunctionArgs) -> ToolResult:

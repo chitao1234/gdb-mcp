@@ -101,6 +101,19 @@ class InferiorRecord(TypedDict, total=False):
     description: str
     connection: str
     executable: str
+    execution_state: str
+    stop_reason: str | None
+    exit_code: int | None
+
+
+class InferiorStateRecord(TypedDict, total=False):
+    """Structured runtime execution-state summary for one inferior."""
+
+    inferior_id: int
+    is_current: bool
+    execution_state: str
+    stop_reason: str | None
+    exit_code: int | None
 
 
 @dataclass(slots=True, frozen=True)
@@ -115,6 +128,7 @@ class SessionStatusSnapshot:
     exit_code: int | None = None
     current_inferior_id: int | None = None
     inferior_count: int | None = None
+    inferior_states: list[InferiorStateRecord] | None = None
     follow_fork_mode: FollowForkMode | None = None
     detach_on_fork: bool | None = None
 
@@ -138,6 +152,7 @@ class SessionSummary:
     exit_code: int | None = None
     current_inferior_id: int | None = None
     inferior_count: int | None = None
+    inferior_states: list[InferiorStateRecord] | None = None
     follow_fork_mode: FollowForkMode | None = None
     detach_on_fork: bool | None = None
     last_failure_message: str | None = None
@@ -175,6 +190,7 @@ class StopEvent:
     execution_state: str
     reason: str | None = None
     command: str | None = None
+    inferior_id: int | None = None
     thread_id: int | None = None
     frame: FrameRecord | None = None
     signal_name: str | None = None

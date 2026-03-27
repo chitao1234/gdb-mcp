@@ -142,6 +142,12 @@ class SessionCommandRunner:
         raw_responses = result.get("command_responses", [])
         command_responses = raw_responses if isinstance(raw_responses, list) else []
         parsed = parse_mi_responses(command_responses)
+        raw_async = result.get("async_notifications", [])
+        async_notifications = raw_async if isinstance(raw_async, list) else []
+        if async_notifications:
+            async_parsed = parse_mi_responses(async_notifications)
+            if async_parsed.notify:
+                parsed.notify.extend(async_parsed.notify)
 
         if result.get("timed_out"):
             self._update_runtime_after_command(command, parsed)
@@ -220,6 +226,7 @@ class SessionCommandRunner:
 
         stopped_reason: str | None = None
         exit_code: int | None = None
+        stopped_inferior_id: int | None = None
         saw_stopped = False
         stop_event: StopEvent | None = None
         for notify in parsed.notify:
@@ -233,24 +240,40 @@ class SessionCommandRunner:
                 if isinstance(reason_value, str):
                     stopped_reason = reason_value
                 exit_code = self._parse_exit_code(payload.get("exit-code"))
+                stopped_inferior_id = self._parse_inferior_id_from_thread_group(
+                    payload.get("thread-group")
+                )
                 frame_payload = payload.get("frame")
                 if isinstance(frame_payload, dict):
                     self._runtime.mark_frame_selected(self._int_or_none(frame_payload.get("level")))
                 thread_id = self._int_or_none(payload.get("thread-id"))
                 if thread_id is not None:
                     self._runtime.mark_thread_selected(thread_id)
-            stop_event = self._build_stop_event(command, payload, stopped_reason, exit_code)
+            stop_event = self._build_stop_event(
+                command,
+                payload,
+                stopped_reason,
+                exit_code,
+                stopped_inferior_id,
+            )
             break
 
         if saw_stopped:
             if stopped_reason in {"exited", "exited-normally", "exited-signalled"}:
-                self._runtime.mark_inferior_exited(stopped_reason, exit_code)
+                self._runtime.mark_inferior_exited(
+                    stopped_reason,
+                    exit_code,
+                    inferior_id=stopped_inferior_id,
+                )
             else:
-                self._runtime.mark_inferior_paused(stopped_reason)
+                self._runtime.mark_inferior_paused(
+                    stopped_reason,
+                    inferior_id=stopped_inferior_id,
+                )
             if stop_event is not None:
                 self._runtime.record_stop_event(stop_event)
         elif parsed.result_class == "running":
-            self._runtime.mark_inferior_running()
+            self._runtime.mark_inferior_running(inferior_id=self._runtime.current_inferior_id)
 
         normalized_command = command.strip().lower()
         if self._loads_target(normalized_command):
@@ -258,16 +281,23 @@ class SessionCommandRunner:
             self._runtime.clear_attached_pid()
             if self._runtime.execution_state == "unknown":
                 if normalized_command.startswith("core-file "):
-                    self._runtime.mark_inferior_paused("core-file")
+                    self._runtime.mark_inferior_paused(
+                        "core-file", inferior_id=self._runtime.current_inferior_id
+                    )
                 else:
-                    self._runtime.mark_inferior_not_started()
+                    self._runtime.mark_inferior_not_started(
+                        inferior_id=self._runtime.current_inferior_id
+                    )
         elif normalized_command.startswith("attach ") and not parsed.is_error_result():
             self._runtime.target_loaded = True
             attached_pid = self._parse_attached_pid(normalized_command)
             if attached_pid is not None:
                 self._runtime.mark_attached(attached_pid)
             if self._runtime.execution_state != "paused" or self._runtime.stop_reason is None:
-                self._runtime.mark_inferior_paused("attached")
+                self._runtime.mark_inferior_paused(
+                    "attached",
+                    inferior_id=self._runtime.current_inferior_id,
+                )
         elif normalized_command == "detach" and not parsed.is_error_result():
             self._runtime.clear_attached_pid()
         elif normalized_command.startswith("inferior ") and not parsed.is_error_result():
@@ -380,6 +410,7 @@ class SessionCommandRunner:
         payload: object,
         stopped_reason: str | None,
         exit_code: int | None,
+        inferior_id: int | None,
     ) -> StopEvent:
         """Build a structured stop event from one MI stopped notification."""
 
@@ -402,6 +433,7 @@ class SessionCommandRunner:
             execution_state=execution_state,
             reason=stopped_reason,
             command=command,
+            inferior_id=inferior_id,
             thread_id=thread_id,
             frame=frame,
             signal_name=signal_name,
@@ -472,3 +504,15 @@ class SessionCommandRunner:
         if isinstance(value, int):
             return str(value)
         return None
+
+    @classmethod
+    def _parse_inferior_id_from_thread_group(cls, value: object) -> int | None:
+        """Parse a thread-group token such as 'i1' into an inferior ID."""
+
+        text = cls._str_or_none(value)
+        if text is None:
+            return None
+        normalized = text.strip()
+        if normalized.startswith(("i", "I")):
+            normalized = normalized[1:]
+        return int(normalized) if normalized.isdigit() else None
