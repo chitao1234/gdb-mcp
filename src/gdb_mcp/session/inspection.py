@@ -192,18 +192,43 @@ class SessionInspectionService:
         )
 
     def evaluate_expression(
-        self, expression: str
+        self,
+        expression: str,
+        thread_id: Optional[int] = None,
+        frame: Optional[int] = None,
     ) -> OperationSuccess[ExpressionValueInfo] | OperationError:
         """Evaluate an expression in the current context."""
+        selection = (
+            self._capture_selection() if thread_id is not None or frame is not None else None
+        )
+        if isinstance(selection, OperationError):
+            return selection
+
+        selection_error = self._select_for_inspection(
+            selection,
+            thread_id=thread_id,
+            frame=frame,
+        )
+        if selection_error is not None:
+            return selection_error
+
         result = self._command_runner.execute_command_result(
             build_evaluate_expression_command(expression), timeout_sec=DEFAULT_TIMEOUT_SEC
         )
 
         if isinstance(result, OperationError):
+            if selection is not None:
+                restore_error = self._restore_selection(selection)
+                if restore_error is not None:
+                    return restore_error
             return result
 
         raw_payload = extract_mi_result_payload(command_result_payload(result))
         value = raw_payload.get("value") if isinstance(raw_payload, dict) else None
+        if selection is not None:
+            restore_error = self._restore_selection(selection)
+            if restore_error is not None:
+                return restore_error
 
         return OperationSuccess(ExpressionValueInfo(expression=expression, value=value))
 
@@ -250,18 +275,46 @@ class SessionInspectionService:
 
         return OperationSuccess(payload)
 
-    def get_registers(self) -> OperationSuccess[RegistersInfo] | OperationError:
+    def get_registers(
+        self,
+        thread_id: Optional[int] = None,
+        frame: Optional[int] = None,
+    ) -> OperationSuccess[RegistersInfo] | OperationError:
         """Get register values for current frame."""
+        selection = (
+            self._capture_selection() if thread_id is not None or frame is not None else None
+        )
+        if isinstance(selection, OperationError):
+            return selection
+
+        selection_error = self._select_for_inspection(
+            selection,
+            thread_id=thread_id,
+            frame=frame,
+        )
+        if selection_error is not None:
+            return selection_error
+
         result = self._command_runner.execute_command_result(
             "-data-list-register-values x", timeout_sec=DEFAULT_TIMEOUT_SEC
         )
 
         if isinstance(result, OperationError):
+            if selection is not None:
+                restore_error = self._restore_selection(selection)
+                if restore_error is not None:
+                    return restore_error
             return result
 
-        return OperationSuccess(
-            registers_info_from_payload(extract_mi_result_payload(command_result_payload(result)))
+        payload = registers_info_from_payload(
+            extract_mi_result_payload(command_result_payload(result))
         )
+        if selection is not None:
+            restore_error = self._restore_selection(selection)
+            if restore_error is not None:
+                return restore_error
+
+        return OperationSuccess(payload)
 
     def _capture_selection(self) -> _SelectionSnapshot | OperationError:
         """Capture the currently selected thread and frame for later restoration."""
@@ -325,6 +378,31 @@ class SessionInspectionService:
 
         self._runtime.mark_thread_selected(selection.thread_id)
         self._runtime.mark_frame_selected(selection.frame_number)
+        return None
+
+    def _select_for_inspection(
+        self,
+        selection: _SelectionSnapshot | None,
+        *,
+        thread_id: int | None,
+        frame: int | None,
+    ) -> OperationError | None:
+        """Temporarily switch thread/frame for one inspection call."""
+
+        if selection is not None and thread_id is not None and selection.thread_id != thread_id:
+            thread_result = self._command_runner.execute_command_result(
+                f"-thread-select {thread_id}", timeout_sec=DEFAULT_TIMEOUT_SEC
+            )
+            if isinstance(thread_result, OperationError):
+                return thread_result
+
+        if selection is not None and frame is not None and selection.frame_number != frame:
+            frame_result = self._command_runner.execute_command_result(
+                f"-stack-select-frame {frame}", timeout_sec=DEFAULT_TIMEOUT_SEC
+            )
+            if isinstance(frame_result, OperationError):
+                return frame_result
+
         return None
 
     @staticmethod

@@ -84,6 +84,9 @@ class TestHandlerDispatch:
             "is_running": False,
             "target_loaded": False,
             "has_controller": True,
+            "execution_state": "unknown",
+            "stop_reason": None,
+            "exit_code": None,
         }
 
     def test_tool_with_invalid_session_id_returns_error(self):
@@ -167,10 +170,50 @@ class TestHandlerDispatch:
         )
         manager.get_session.return_value = session
 
-        dispatch("gdb_execute_command", {"session_id": 5, "command": "info threads"}, manager)
+        dispatch(
+            "gdb_execute_command",
+            {"session_id": 5, "command": "info threads", "timeout_sec": 12},
+            manager,
+        )
 
         manager.get_session.assert_called_once_with(5)
-        session.execute_command.assert_called_once_with(command="info threads")
+        session.execute_command.assert_called_once_with(command="info threads", timeout_sec=12)
+
+    def test_run_routes_to_correct_session(self):
+        """Structured run requests should forward argv and timeout."""
+
+        manager = Mock()
+        session = Mock()
+        session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
+        manager.get_session.return_value = session
+
+        dispatch(
+            "gdb_run",
+            {"session_id": 5, "args": ["--flag", "value"], "timeout_sec": 7},
+            manager,
+        )
+
+        manager.get_session.assert_called_once_with(5)
+        session.run.assert_called_once_with(args=["--flag", "value"], timeout_sec=7)
+
+    def test_attach_process_routes_to_correct_session(self):
+        """Attach requests should forward pid and timeout."""
+
+        manager = Mock()
+        session = Mock()
+        session.attach_process.return_value = OperationSuccess(
+            CommandExecutionInfo(command="attach 42")
+        )
+        manager.get_session.return_value = session
+
+        dispatch(
+            "gdb_attach_process",
+            {"session_id": 3, "pid": 42, "timeout_sec": 9},
+            manager,
+        )
+
+        manager.get_session.assert_called_once_with(3)
+        session.attach_process.assert_called_once_with(pid=42, timeout_sec=9)
 
     def test_set_breakpoint_routes_to_correct_session(self):
         """Breakpoint requests should be routed to the resolved session."""
@@ -217,6 +260,42 @@ class TestHandlerDispatch:
         session_2.get_status.assert_called_once()
         assert result_1["is_running"] is False
         assert result_2["is_running"] is True
+
+    def test_evaluate_expression_routes_thread_and_frame_overrides(self):
+        """Expression requests should forward optional context overrides."""
+
+        manager = Mock()
+        session = Mock()
+        session.evaluate_expression.return_value = OperationSuccess(
+            CommandExecutionInfo(command="-data-evaluate-expression")
+        )
+        manager.get_session.return_value = session
+
+        dispatch(
+            "gdb_evaluate_expression",
+            {"session_id": 1, "expression": "x", "thread_id": 2, "frame": 1},
+            manager,
+        )
+
+        session.evaluate_expression.assert_called_once_with("x", thread_id=2, frame=1)
+
+    def test_get_registers_routes_thread_and_frame_overrides(self):
+        """Register requests should forward optional context overrides."""
+
+        manager = Mock()
+        session = Mock()
+        session.get_registers.return_value = OperationSuccess(
+            CommandExecutionInfo(command="-data-list-register-values x")
+        )
+        manager.get_session.return_value = session
+
+        dispatch(
+            "gdb_get_registers",
+            {"session_id": 1, "thread_id": 2, "frame": 3},
+            manager,
+        )
+
+        session.get_registers.assert_called_once_with(thread_id=2, frame=3)
 
     def test_tool_definitions_match_dispatch_registry(self):
         """Every exported tool should have a matching dispatch path and vice versa."""

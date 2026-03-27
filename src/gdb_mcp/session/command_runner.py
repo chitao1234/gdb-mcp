@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from typing import Any
 
 from ..domain import CommandExecutionInfo, OperationError, OperationSuccess
 from ..transport import is_cli_command, parse_mi_responses, wrap_cli_command
@@ -95,21 +96,24 @@ class SessionCommandRunner:
                 details={"command": command},
             )
 
+        raw_responses = result.get("command_responses", [])
+        command_responses = raw_responses if isinstance(raw_responses, list) else []
+        parsed = parse_mi_responses(command_responses)
+
         if result.get("timed_out"):
+            self._update_runtime_after_command(command, parsed)
             return OperationError(
                 message=f"Timeout waiting for command response after {timeout_sec}s",
                 details={"command": command},
             )
-
-        raw_responses = result.get("command_responses", [])
-        command_responses = raw_responses if isinstance(raw_responses, list) else []
-        parsed = parse_mi_responses(command_responses)
 
         if parsed.is_error_result():
             return OperationError(
                 message=parsed.error_message() or "GDB returned an error",
                 details={"command": command},
             )
+
+        self._update_runtime_after_command(command, parsed)
 
         if cli_command:
             console_output = "".join(item for item in parsed.console if isinstance(item, str))
@@ -121,3 +125,78 @@ class SessionCommandRunner:
             )
 
         return OperationSuccess(CommandExecutionInfo(command=command, result=parsed.to_dict()))
+
+    def _update_runtime_after_command(self, command: str, parsed: Any) -> None:
+        """Update inferior execution state based on the parsed MI response."""
+
+        stopped_reason: str | None = None
+        exit_code: int | None = None
+        saw_stopped = False
+        for notify in parsed.notify:
+            if notify.get("message") != "stopped":
+                continue
+
+            saw_stopped = True
+            payload = notify.get("payload")
+            if isinstance(payload, dict):
+                reason_value = payload.get("reason")
+                if isinstance(reason_value, str):
+                    stopped_reason = reason_value
+                exit_code = self._parse_exit_code(payload.get("exit-code"))
+                frame_payload = payload.get("frame")
+                if isinstance(frame_payload, dict):
+                    self._runtime.mark_frame_selected(self._int_or_none(frame_payload.get("level")))
+                thread_id = self._int_or_none(payload.get("thread-id"))
+                if thread_id is not None:
+                    self._runtime.mark_thread_selected(thread_id)
+            break
+
+        if saw_stopped:
+            if stopped_reason in {"exited", "exited-normally", "exited-signalled"}:
+                self._runtime.mark_inferior_exited(stopped_reason, exit_code)
+            else:
+                self._runtime.mark_inferior_paused(stopped_reason)
+        elif parsed.result_class == "running":
+            self._runtime.mark_inferior_running()
+
+        normalized_command = command.strip().lower()
+        if self._loads_target(normalized_command):
+            self._runtime.target_loaded = True
+            if self._runtime.execution_state == "unknown":
+                if normalized_command.startswith("core-file "):
+                    self._runtime.mark_inferior_paused("core-file")
+                else:
+                    self._runtime.mark_inferior_not_started()
+        elif normalized_command.startswith("attach ") and not parsed.is_error_result():
+            self._runtime.target_loaded = True
+            if self._runtime.execution_state == "unknown":
+                self._runtime.mark_inferior_paused("attached")
+
+    @staticmethod
+    def _loads_target(command: str) -> bool:
+        """Return whether a successful command loads an executable or core."""
+
+        return command.startswith("file ") or command.startswith("core-file ")
+
+    @staticmethod
+    def _int_or_none(value: object) -> int | None:
+        """Parse a string or int field into an integer when possible."""
+
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+        return None
+
+    @staticmethod
+    def _parse_exit_code(value: object) -> int | None:
+        """Parse a GDB exit-code field."""
+
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            try:
+                return int(value, 0)
+            except ValueError:
+                return None
+        return None

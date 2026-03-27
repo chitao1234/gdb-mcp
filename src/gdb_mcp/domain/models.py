@@ -68,6 +68,9 @@ class SessionStatusSnapshot:
     is_running: bool
     target_loaded: bool
     has_controller: bool
+    execution_state: str = "unknown"
+    stop_reason: str | None = None
+    exit_code: int | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -78,6 +81,9 @@ class SessionStartInfo:
     program: str | None = None
     core: str | None = None
     target_loaded: bool = False
+    execution_state: str = "unknown"
+    stop_reason: str | None = None
+    exit_code: int | None = None
     startup_output: str | None = None
     warnings: list[str] | None = None
     env_output: list[StructuredPayload] | None = None

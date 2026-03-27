@@ -19,6 +19,9 @@ class TestLifecycleApi:
         assert status["is_running"] is False
         assert status["target_loaded"] is False
         assert status["has_controller"] is False
+        assert status["execution_state"] == "unknown"
+        assert status["stop_reason"] is None
+        assert status["exit_code"] is None
 
     def test_get_status_marks_dead_gdb_process_inactive(self, running_session):
         """Status should reconcile against a dead GDB child process."""
@@ -30,6 +33,7 @@ class TestLifecycleApi:
         assert status["is_running"] is False
         assert status["target_loaded"] is False
         assert status["has_controller"] is False
+        assert status["execution_state"] == "unknown"
         assert running_session.controller is None
         assert running_session.state.value == "failed"
 
@@ -75,6 +79,7 @@ class TestLifecycleApi:
         assert result["status"] == "success"
         assert result["program"] == "/bin/ls"
         assert result["target_loaded"] is True
+        assert result["execution_state"] == "not_started"
         assert session_service.is_running is True
 
     @patch("gdb_mcp.session.factory.GdbController")
@@ -137,6 +142,7 @@ class TestLifecycleApi:
         command = mock_controller_class.call_args[1]["command"]
 
         assert result["status"] == "success"
+        assert result["execution_state"] == "paused"
         assert "--exec=/bin/ls" in command
         assert "--core=/tmp/core.123" in command
         assert "--args" not in command

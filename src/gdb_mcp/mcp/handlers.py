@@ -17,13 +17,16 @@ from ..domain import (
 from ..session.registry import SessionRegistry
 from ..session.service import SessionService
 from .schemas import (
+    AttachProcessArgs,
     BreakpointNumberArgs,
     CallFunctionArgs,
     EvaluateExpressionArgs,
     ExecuteCommandArgs,
     FrameSelectArgs,
     GetBacktraceArgs,
+    GetRegistersArgs,
     GetVariablesArgs,
+    RunArgs,
     SessionIdArgs,
     SetBreakpointArgs,
     StartSessionArgs,
@@ -74,7 +77,17 @@ def _normalize_arguments(arguments: Any) -> dict[str, Any]:
 def _handle_execute_command(
     session: SessionService, args: ExecuteCommandArgs
 ) -> OperationResult[Any]:
-    return session.execute_command(command=args.command)
+    return session.execute_command(command=args.command, timeout_sec=args.timeout_sec)
+
+
+def _handle_run(session: SessionService, args: RunArgs) -> OperationResult[Any]:
+    return session.run(args=args.args, timeout_sec=args.timeout_sec)
+
+
+def _handle_attach_process(
+    session: SessionService, args: AttachProcessArgs
+) -> OperationResult[Any]:
+    return session.attach_process(pid=args.pid, timeout_sec=args.timeout_sec)
 
 
 def _handle_get_status(session: SessionService, args: SessionIdArgs) -> OperationResult[Any]:
@@ -160,20 +173,23 @@ def _handle_interrupt(session: SessionService, args: SessionIdArgs) -> Operation
 def _handle_evaluate_expression(
     session: SessionService, args: EvaluateExpressionArgs
 ) -> OperationResult[Any]:
-    return session.evaluate_expression(args.expression)
+    return session.evaluate_expression(
+        args.expression,
+        thread_id=args.thread_id,
+        frame=args.frame,
+    )
 
 
 def _handle_get_variables(session: SessionService, args: GetVariablesArgs) -> OperationResult[Any]:
     return session.get_variables(thread_id=args.thread_id, frame=args.frame)
 
 
-def _handle_get_registers(session: SessionService, args: SessionIdArgs) -> OperationResult[Any]:
-    del args
-    return session.get_registers()
+def _handle_get_registers(session: SessionService, args: GetRegistersArgs) -> OperationResult[Any]:
+    return session.get_registers(thread_id=args.thread_id, frame=args.frame)
 
 
 def _handle_call_function(session: SessionService, args: CallFunctionArgs) -> OperationResult[Any]:
-    return session.call_function(function_call=args.function_call)
+    return session.call_function(function_call=args.function_call, timeout_sec=args.timeout_sec)
 
 
 def _invalid_session_result(session_id: Any) -> OperationError:
@@ -223,6 +239,8 @@ def _dispatch_session_tool(
 
 SESSION_TOOL_SPECS: dict[str, SessionToolSpec] = {
     "gdb_execute_command": session_tool_spec(ExecuteCommandArgs, _handle_execute_command),
+    "gdb_run": session_tool_spec(RunArgs, _handle_run),
+    "gdb_attach_process": session_tool_spec(AttachProcessArgs, _handle_attach_process),
     "gdb_get_status": session_tool_spec(SessionIdArgs, _handle_get_status),
     "gdb_get_threads": session_tool_spec(SessionIdArgs, _handle_get_threads),
     "gdb_select_thread": session_tool_spec(ThreadSelectArgs, _handle_select_thread),
@@ -242,7 +260,7 @@ SESSION_TOOL_SPECS: dict[str, SessionToolSpec] = {
         EvaluateExpressionArgs, _handle_evaluate_expression
     ),
     "gdb_get_variables": session_tool_spec(GetVariablesArgs, _handle_get_variables),
-    "gdb_get_registers": session_tool_spec(SessionIdArgs, _handle_get_registers),
+    "gdb_get_registers": session_tool_spec(GetRegistersArgs, _handle_get_registers),
     "gdb_call_function": session_tool_spec(CallFunctionArgs, _handle_call_function),
 }
 

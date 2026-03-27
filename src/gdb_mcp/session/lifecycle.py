@@ -206,6 +206,14 @@ class SessionLifecycleService:
                 self._runtime.target_loaded = self._probe_target_loaded(
                     fallback=self._runtime.target_loaded
                 )
+                if self._runtime.execution_state == "unknown":
+                    if core or any(
+                        command.lower().strip().startswith("core-file ")
+                        for command in (init_commands or [])
+                    ):
+                        self._runtime.mark_inferior_paused("core-file")
+                    elif self._runtime.target_loaded:
+                        self._runtime.mark_inferior_not_started()
                 self._runtime.mark_ready()
 
                 return OperationSuccess(
@@ -214,6 +222,9 @@ class SessionLifecycleService:
                         program=program,
                         core=core,
                         target_loaded=self._runtime.target_loaded,
+                        execution_state=self._runtime.execution_state,
+                        stop_reason=self._runtime.stop_reason,
+                        exit_code=self._runtime.exit_code,
                         startup_output=startup_output_text.strip() or None,
                         warnings=warnings or None,
                         env_output=env_output or None,
@@ -254,6 +265,9 @@ class SessionLifecycleService:
             is_running=self._runtime.is_running,
             target_loaded=self._runtime.target_loaded,
             has_controller=self._runtime.has_controller,
+            execution_state=self._runtime.execution_state,
+            stop_reason=self._runtime.stop_reason,
+            exit_code=self._runtime.exit_code,
         )
         return OperationSuccess(snapshot)
 

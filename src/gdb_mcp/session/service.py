@@ -103,6 +103,12 @@ class SessionService:
 
         return self.runtime.target_loaded
 
+    @property
+    def execution_state(self) -> str:
+        """Expose the current inferior execution state."""
+
+        return self.runtime.execution_state
+
     def start(self, *args: Any, **kwargs: Any) -> OperationSuccess[Any] | OperationError:
         """Delegate session startup to the lifecycle service."""
 
@@ -126,11 +132,22 @@ class SessionService:
         return self._execution.execute_command(command, timeout_sec)
 
     def run(
-        self, args: list[str] | None = None
+        self,
+        args: list[str] | None = None,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate target start to the execution service."""
 
-        return self._execution.run(args=args)
+        return self._execution.run(args=args, timeout_sec=timeout_sec)
+
+    def attach_process(
+        self,
+        pid: int,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        """Delegate process attach to the execution service."""
+
+        return self._execution.attach_process(pid=pid, timeout_sec=timeout_sec)
 
     def continue_execution(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate continue to the execution service."""
@@ -191,11 +208,14 @@ class SessionService:
         return self._inspection.select_frame(frame_number)
 
     def evaluate_expression(
-        self, expression: str
+        self,
+        expression: str,
+        thread_id: int | None = None,
+        frame: int | None = None,
     ) -> OperationSuccess[ExpressionValueInfo] | OperationError:
         """Delegate expression evaluation to the inspection service."""
 
-        return self._inspection.evaluate_expression(expression)
+        return self._inspection.evaluate_expression(expression, thread_id=thread_id, frame=frame)
 
     def get_variables(
         self, thread_id: int | None = None, frame: int = 0
@@ -204,10 +224,14 @@ class SessionService:
 
         return self._inspection.get_variables(thread_id, frame)
 
-    def get_registers(self) -> OperationSuccess[RegistersInfo] | OperationError:
+    def get_registers(
+        self,
+        thread_id: int | None = None,
+        frame: int | None = None,
+    ) -> OperationSuccess[RegistersInfo] | OperationError:
         """Delegate register inspection to the inspection service."""
 
-        return self._inspection.get_registers()
+        return self._inspection.get_registers(thread_id=thread_id, frame=frame)
 
     def set_breakpoint(
         self, location: str, condition: str | None = None, temporary: bool = False

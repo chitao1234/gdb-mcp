@@ -24,6 +24,9 @@ class SessionRuntime:
     state: SessionState = SessionState.CREATED
     is_running: bool = False
     target_loaded: bool = False
+    execution_state: str = "unknown"
+    stop_reason: str | None = None
+    exit_code: int | None = None
     last_failure_message: str | None = None
     current_thread_id: int | None = None
     current_frame: int | None = None
@@ -53,6 +56,9 @@ class SessionRuntime:
         self.state = SessionState.STARTING
         self.is_running = False
         self.target_loaded = False
+        self.execution_state = "unknown"
+        self.stop_reason = None
+        self.exit_code = None
         self.last_failure_message = None
         self.current_thread_id = None
         self.current_frame = None
@@ -70,6 +76,9 @@ class SessionRuntime:
         self.state = SessionState.FAILED
         self.is_running = False
         self.target_loaded = False
+        self.execution_state = "unknown"
+        self.stop_reason = None
+        self.exit_code = None
         self.last_failure_message = message
         self.current_thread_id = None
         self.current_frame = None
@@ -86,6 +95,9 @@ class SessionRuntime:
         self.state = SessionState.STOPPED
         self.is_running = False
         self.target_loaded = False
+        self.execution_state = "unknown"
+        self.stop_reason = None
+        self.exit_code = None
         self.last_failure_message = None
         self.current_thread_id = None
         self.current_frame = None
@@ -99,3 +111,35 @@ class SessionRuntime:
         """Track the currently selected frame."""
 
         self.current_frame = frame_number
+
+    def mark_inferior_not_started(self) -> None:
+        """Record that a target is loaded but execution has not begun."""
+
+        self.execution_state = "not_started"
+        self.stop_reason = None
+        self.exit_code = None
+
+    def mark_inferior_running(self) -> None:
+        """Record that the inferior is currently running."""
+
+        self.execution_state = "running"
+        self.stop_reason = None
+        self.exit_code = None
+
+    def mark_inferior_paused(self, reason: str | None = None) -> None:
+        """Record that the inferior is paused and inspectable."""
+
+        self.execution_state = "paused"
+        self.stop_reason = reason
+        self.exit_code = None
+
+    def mark_inferior_exited(
+        self,
+        reason: str | None = None,
+        exit_code: int | None = None,
+    ) -> None:
+        """Record that the inferior has exited while the session remains alive."""
+
+        self.execution_state = "exited"
+        self.stop_reason = reason
+        self.exit_code = exit_code

@@ -8,13 +8,16 @@ import threading
 from typing import Any
 
 from .mcp import (
+    AttachProcessArgs,
     BreakpointNumberArgs,
     CallFunctionArgs,
     EvaluateExpressionArgs,
     ExecuteCommandArgs,
     FrameSelectArgs,
     GetBacktraceArgs,
+    GetRegistersArgs,
     GetVariablesArgs,
+    RunArgs,
     SessionIdArgs,
     SetBreakpointArgs,
     StartSessionArgs,

@@ -57,6 +57,17 @@ int main(void) {
 }
 """
 
+ATTACHABLE_C_PROGRAM = """
+#include <unistd.h>
+
+int main(void) {
+    while (1) {
+        sleep(1);
+    }
+    return 0;
+}
+"""
+
 
 @pytest.fixture
 def compiled_program(compile_program):
@@ -87,6 +98,17 @@ def compiled_program_and_core(compile_program_with_core):
     )
 
 
+@pytest.fixture
+def attachable_program(compile_program):
+    """Compile a long-running program that can be attached to."""
+
+    return compile_program(
+        ATTACHABLE_C_PROGRAM,
+        filename="attachable.c",
+        compiler="gcc",
+    )
+
+
 # Integration tests that run GDB with a real program
 
 
@@ -106,6 +128,7 @@ def test_start_session_with_program(compiled_program, start_session_result, stop
     status = call_gdb_tool("gdb_get_status", {"session_id": session_id})
     assert status["is_running"] is True
     assert status["target_loaded"] is True
+    assert status["execution_state"] == "not_started"
 
     # Cleanup
     stop_session(session_id)
@@ -151,8 +174,12 @@ def test_run_and_hit_breakpoint(session_id):
     call_gdb_tool("gdb_set_breakpoint", {"session_id": session_id, "location": "main"})
 
     # Run the program (it should stop at main)
-    run_result = call_gdb_tool("gdb_execute_command", {"session_id": session_id, "command": "run"})
+    run_result = call_gdb_tool("gdb_run", {"session_id": session_id})
     assert run_result["status"] == "success"
+
+    status = call_gdb_tool("gdb_get_status", {"session_id": session_id})
+    assert status["execution_state"] == "paused"
+    assert status["stop_reason"] == "breakpoint-hit"
 
     # Get backtrace to verify we're at main
     backtrace = call_gdb_tool("gdb_get_backtrace", {"session_id": session_id})
@@ -511,6 +538,58 @@ def test_start_session_with_core_file_init_command_reports_target_loaded(
     assert threads["count"] >= 1
 
     stop_session(session_id)
+
+
+@pytest.mark.integration
+def test_get_status_reports_exited_state_after_continue(session_id):
+    """Status should expose the inferior execution state after it exits."""
+
+    call_gdb_tool("gdb_set_breakpoint", {"session_id": session_id, "location": "main"})
+    run_result = call_gdb_tool("gdb_run", {"session_id": session_id})
+    assert run_result["status"] == "success"
+
+    continue_result = call_gdb_tool("gdb_continue", {"session_id": session_id})
+    assert continue_result["status"] == "success"
+
+    status = call_gdb_tool("gdb_get_status", {"session_id": session_id})
+    assert status["execution_state"] == "exited"
+    assert status["target_loaded"] is True
+
+
+@pytest.mark.integration
+def test_attach_process_tool(attachable_program, stop_session):
+    """Attaching to a running process should be a first-class structured workflow."""
+
+    process = subprocess.Popen([attachable_program])
+    session_id = None
+    try:
+        start_result = call_gdb_tool("gdb_start_session", {"init_commands": []})
+        assert start_result["status"] == "success"
+        session_id = start_result["session_id"]
+
+        attach_result = call_gdb_tool(
+            "gdb_attach_process",
+            {"session_id": session_id, "pid": process.pid},
+        )
+        assert attach_result["status"] == "success"
+
+        status = call_gdb_tool("gdb_get_status", {"session_id": session_id})
+        assert status["target_loaded"] is True
+        assert status["execution_state"] == "paused"
+
+        backtrace = call_gdb_tool("gdb_get_backtrace", {"session_id": session_id, "max_frames": 1})
+        assert backtrace["status"] == "success"
+        assert backtrace["count"] == 1
+    finally:
+        if session_id is not None:
+            stop_session(session_id, ignore_errors=True)
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
 
 
 @pytest.mark.integration

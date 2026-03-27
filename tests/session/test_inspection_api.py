@@ -151,6 +151,35 @@ class TestDataInspectionApi:
             .endswith('-data-evaluate-expression "strlen(\\"a\\\\\\\\b\\")"\n')
         )
 
+    def test_evaluate_expression_with_thread_and_frame_restores_selection(
+        self,
+        scripted_running_session,
+        mi_result,
+    ):
+        """Expression evaluation should support stateless context overrides."""
+
+        session, controller = scripted_running_session(
+            [mi_result({"threads": [{"id": "1"}, {"id": "2"}], "current-thread-id": "1"})],
+            [mi_result({"frame": {"level": "0", "func": "main"}})],
+            [mi_result()],
+            [mi_result()],
+            [mi_result({"value": "99"})],
+            [mi_result()],
+            [mi_result()],
+        )
+
+        result = result_to_mapping(session.evaluate_expression("x", thread_id=2, frame=1))
+
+        assert result["status"] == "success"
+        assert result["value"] == "99"
+        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert written[0].endswith("-thread-info\n")
+        assert written[1].endswith("-stack-info-frame\n")
+        assert any("-thread-select 2" in command for command in written)
+        assert any("-stack-select-frame 1" in command for command in written)
+        assert written[-2].endswith("-thread-select 1\n")
+        assert written[-1].endswith("-stack-select-frame 0\n")
+
     def test_get_variables(self, scripted_running_session, mi_result):
         """Variable inspection should restore the original thread/frame selection."""
 
@@ -215,3 +244,32 @@ class TestDataInspectionApi:
             .decode()
             .endswith("-data-list-register-values x\n")
         )
+
+    def test_get_registers_with_thread_and_frame_restores_selection(
+        self,
+        scripted_running_session,
+        mi_result,
+    ):
+        """Register inspection should support stateless context overrides."""
+
+        session, controller = scripted_running_session(
+            [mi_result({"threads": [{"id": "1"}, {"id": "2"}], "current-thread-id": "1"})],
+            [mi_result({"frame": {"level": "0", "func": "main"}})],
+            [mi_result()],
+            [mi_result()],
+            [mi_result({"register-values": [{"number": "0", "value": "0x1"}]})],
+            [mi_result()],
+            [mi_result()],
+        )
+
+        result = result_to_mapping(session.get_registers(thread_id=2, frame=1))
+
+        assert result["status"] == "success"
+        assert len(result["registers"]) == 1
+        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert written[0].endswith("-thread-info\n")
+        assert written[1].endswith("-stack-info-frame\n")
+        assert any("-thread-select 2" in command for command in written)
+        assert any("-stack-select-frame 1" in command for command in written)
+        assert written[-2].endswith("-thread-select 1\n")
+        assert written[-1].endswith("-stack-select-frame 0\n")

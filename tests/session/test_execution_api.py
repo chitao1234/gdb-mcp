@@ -31,6 +31,9 @@ class TestExecutionApi:
         result = result_to_mapping(session.continue_execution())
 
         assert result["status"] == "success"
+        status = result_to_mapping(session.get_status())
+        assert status["execution_state"] == "paused"
+        assert status["stop_reason"] == "breakpoint-hit"
         assert controller.io_manager.stdin.writes[0].decode().endswith("-exec-continue\n")
 
     def test_step(self, scripted_running_session, mi_result, mi_notify):
@@ -84,6 +87,9 @@ class TestExecutionApi:
 
         assert result["status"] == "success"
         assert "interrupted" in result["message"].lower()
+        status = result_to_mapping(running_session.get_status())
+        assert status["execution_state"] == "paused"
+        assert status["stop_reason"] == "signal-received"
         mock_kill.assert_called_once()
 
     def test_interrupt_no_stopped_notification(self, running_session):
@@ -97,6 +103,8 @@ class TestExecutionApi:
 
         assert result["status"] == "warning"
         assert "no stopped notification" in result["message"].lower()
+        status = result_to_mapping(running_session.get_status())
+        assert status["execution_state"] == "running"
         mock_kill.assert_called_once()
 
     def test_execute_command_cli(self, scripted_running_session, mi_console, mi_result):
@@ -117,6 +125,17 @@ class TestExecutionApi:
             '-interpreter-exec console "info threads"'
             in controller.io_manager.stdin.writes[0].decode()
         )
+
+    def test_execute_command_accepts_timeout_override(self, scripted_running_session, mi_result):
+        """Command execution should pass the requested timeout through."""
+
+        session, _controller = scripted_running_session([mi_result()])
+
+        with patch.object(session._command_runner, "execute_command_result") as mock_execute:
+            mock_execute.return_value = object()
+            session.execute_command("info threads", timeout_sec=9)
+
+        mock_execute.assert_called_once_with("info threads", 9)
 
     def test_execute_command_mi(self, scripted_running_session, mi_result):
         """MI commands should surface parsed result payloads."""
@@ -155,6 +174,24 @@ class TestExecutionApi:
         assert running_session.is_running is False
         assert running_session.target_loaded is False
 
+    def test_run_sets_execution_state_to_paused_when_stopped(
+        self, scripted_running_session, mi_result, mi_notify
+    ):
+        """Structured run should update status when execution stops."""
+
+        session, controller = scripted_running_session(
+            [mi_result(message="running"), mi_notify("stopped", {"reason": "breakpoint-hit"})],
+        )
+
+        result = result_to_mapping(session.run(timeout_sec=5))
+
+        assert result["status"] == "success"
+        status = result_to_mapping(session.get_status())
+        assert status["execution_state"] == "paused"
+        assert status["stop_reason"] == "breakpoint-hit"
+        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert written[-1].endswith("-exec-run\n")
+
     def test_run_with_args_preserves_argument_boundaries(
         self,
         scripted_running_session,
@@ -177,6 +214,28 @@ class TestExecutionApi:
         written = [command.decode() for command in controller.io_manager.stdin.writes]
         assert '-exec-arguments "--name" "hello world" "quote\\"value"\n' in written[0]
         assert written[1].endswith("-exec-run\n")
+
+    def test_attach_process(self, scripted_running_session, mi_console, mi_result, mi_notify):
+        """Attach should route through the CLI attach command and mark the target loaded."""
+
+        session, controller = scripted_running_session(
+            [
+                mi_console("Attaching to process 1234\n"),
+                mi_result(message="running"),
+                mi_notify("stopped", {"reason": "signal-received"}),
+            ]
+        )
+
+        result = result_to_mapping(session.attach_process(pid=1234, timeout_sec=8))
+
+        assert result["status"] == "success"
+        assert (
+            '-interpreter-exec console "attach 1234"'
+            in controller.io_manager.stdin.writes[0].decode()
+        )
+        status = result_to_mapping(session.get_status())
+        assert status["target_loaded"] is True
+        assert status["execution_state"] == "paused"
 
 
 class TestCallFunctionApi:
@@ -219,6 +278,24 @@ class TestCallFunctionApi:
 
         assert result["status"] == "error"
         assert "Timeout" in result["message"]
+
+    def test_call_function_accepts_timeout_override(self, running_session):
+        """Function calls should pass through the requested timeout."""
+
+        with patch.object(
+            running_session._command_runner, "send_command_and_wait_for_prompt"
+        ) as mock_send:
+            mock_send.return_value = {
+                "command_responses": [],
+                "async_notifications": [],
+                "timed_out": False,
+            }
+            with patch("gdb_mcp.session.execution.parse_mi_responses") as mock_parse:
+                mock_parse.return_value.is_error_result.return_value = False
+                mock_parse.return_value.console = []
+                running_session.call_function("some_func()", timeout_sec=11)
+
+        assert mock_send.call_args.args[1] == 11
 
     def test_call_function_error(self, running_session, prompt_response):
         """Transport-level call failures should surface their message."""

@@ -35,6 +35,9 @@ class TestServerRuntime:
             "is_running": False,
             "target_loaded": False,
             "has_controller": True,
+            "execution_state": "unknown",
+            "stop_reason": None,
+            "exit_code": None,
         }
         mock_manager.get_session.assert_called_once_with(7)
         mock_session.get_status.assert_called_once()

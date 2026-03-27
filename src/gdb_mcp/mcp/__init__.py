@@ -4,13 +4,16 @@ from .app import create_mcp_app, run_stdio_app
 from .handlers import dispatch_tool_call
 from .runtime import ServerRuntime, create_server_runtime
 from .schemas import (
+    AttachProcessArgs,
     BreakpointNumberArgs,
     CallFunctionArgs,
     EvaluateExpressionArgs,
     ExecuteCommandArgs,
     FrameSelectArgs,
     GetBacktraceArgs,
+    GetRegistersArgs,
     GetVariablesArgs,
+    RunArgs,
     SessionIdArgs,
     SetBreakpointArgs,
     StartSessionArgs,
@@ -21,11 +24,14 @@ from .schemas import (
 __all__ = [
     "BreakpointNumberArgs",
     "CallFunctionArgs",
+    "AttachProcessArgs",
     "EvaluateExpressionArgs",
     "ExecuteCommandArgs",
     "FrameSelectArgs",
     "GetBacktraceArgs",
+    "GetRegistersArgs",
     "GetVariablesArgs",
+    "RunArgs",
     "SessionIdArgs",
     "SetBreakpointArgs",
     "StartSessionArgs",

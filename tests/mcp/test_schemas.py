@@ -3,16 +3,19 @@
 import pytest
 from pydantic import ValidationError
 from gdb_mcp.mcp.schemas import (
+    AttachProcessArgs,
     BreakpointNumberArgs,
     CallFunctionArgs,
     StartSessionArgs,
     ExecuteCommandArgs,
     FrameSelectArgs,
     GetBacktraceArgs,
+    GetRegistersArgs,
     ThreadSelectArgs,
     SetBreakpointArgs,
     EvaluateExpressionArgs,
     GetVariablesArgs,
+    RunArgs,
 )
 
 
@@ -71,17 +74,48 @@ class TestExecuteCommandArgs:
 
     def test_command_arg(self):
         """Test command argument."""
-        args = ExecuteCommandArgs(session_id=1, command="info threads")
+        args = ExecuteCommandArgs(session_id=1, command="info threads", timeout_sec=10)
         assert args.session_id == 1
         assert args.command == "info threads"
+        assert args.timeout_sec == 10
 
     def test_unknown_field_is_rejected(self):
         """Extra command fields should not be silently dropped."""
 
         with pytest.raises(ValidationError) as exc_info:
-            ExecuteCommandArgs(session_id=1, command="info threads", timeout_sec=10)
+            ExecuteCommandArgs(session_id=1, command="info threads", timeout_seconds=10)
 
-        assert "timeout_sec" in str(exc_info.value)
+        assert "timeout_seconds" in str(exc_info.value)
+
+
+class TestRunArgs:
+    """Test cases for RunArgs model."""
+
+    def test_defaults(self):
+        """RunArgs should allow omitted argv with a default timeout."""
+
+        args = RunArgs(session_id=1)
+        assert args.session_id == 1
+        assert args.args is None
+        assert args.timeout_sec == 30
+
+
+class TestAttachProcessArgs:
+    """Test cases for AttachProcessArgs model."""
+
+    def test_pid_required(self):
+        """Attach requests should require a positive PID."""
+
+        with pytest.raises(ValidationError):
+            AttachProcessArgs(session_id=1)
+
+    def test_attach_args(self):
+        """Attach requests should accept pid and timeout."""
+
+        args = AttachProcessArgs(session_id=1, pid=4321, timeout_sec=15)
+        assert args.session_id == 1
+        assert args.pid == 4321
+        assert args.timeout_sec == 15
 
 
 class TestGetBacktraceArgs:
@@ -139,9 +173,11 @@ class TestEvaluateExpressionArgs:
 
     def test_expression(self):
         """Test with expression."""
-        args = EvaluateExpressionArgs(session_id=1, expression="x + y")
+        args = EvaluateExpressionArgs(session_id=1, expression="x + y", thread_id=2, frame=1)
         assert args.session_id == 1
         assert args.expression == "x + y"
+        assert args.thread_id == 2
+        assert args.frame == 1
 
 
 class TestGetVariablesArgs:
@@ -172,9 +208,10 @@ class TestCallFunctionArgs:
 
     def test_function_call_arg(self):
         """Test function_call argument."""
-        args = CallFunctionArgs(session_id=1, function_call='printf("hello")')
+        args = CallFunctionArgs(session_id=1, function_call='printf("hello")', timeout_sec=12)
         assert args.session_id == 1
         assert args.function_call == 'printf("hello")'
+        assert args.timeout_sec == 12
 
     def test_function_call_with_args(self):
         """Test function_call with multiple arguments."""
@@ -240,6 +277,20 @@ class TestSessionIdRequired:
             CallFunctionArgs(function_call='printf("hello")')
         assert "session_id" in str(exc_info.value)
 
+    def test_run_requires_session_id(self):
+        """Test RunArgs requires session_id."""
+
+        with pytest.raises(ValidationError) as exc_info:
+            RunArgs()
+        assert "session_id" in str(exc_info.value)
+
+    def test_attach_requires_session_id(self):
+        """Test AttachProcessArgs requires session_id."""
+
+        with pytest.raises(ValidationError) as exc_info:
+            AttachProcessArgs(pid=1234)
+        assert "session_id" in str(exc_info.value)
+
     def test_session_id_validation_success(self):
         """Test that models accept session_id correctly."""
         # ExecuteCommandArgs
@@ -253,6 +304,12 @@ class TestSessionIdRequired:
         # SetBreakpointArgs
         args3 = SetBreakpointArgs(session_id=3, location="main")
         assert args3.session_id == 3
+
+        # GetRegistersArgs
+        args4 = GetRegistersArgs(session_id=4, thread_id=2, frame=1)
+        assert args4.session_id == 4
+        assert args4.thread_id == 2
+        assert args4.frame == 1
 
 
 class TestArgumentBounds:

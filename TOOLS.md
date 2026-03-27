@@ -22,6 +22,9 @@ Start a new GDB debugging session.
 - `program` (optional): Program path if specified
 - `core` (optional): Core dump path if specified
 - `target_loaded`: Whether GDB finished startup with an executable or core file loaded
+- `execution_state`: Inferior state after startup (`not_started`, `paused`, `running`, `exited`, or `unknown`)
+- `stop_reason` (optional): Stop reason if startup left the inferior paused
+- `exit_code` (optional): Exit code if startup completed with an exited inferior
 - `startup_output` (optional): GDB's initial output when loading the program
 - `warnings` (optional): Array of critical warnings detected, such as:
   - "No debugging symbols found - program was not compiled with -g"
@@ -118,6 +121,34 @@ structured output and can be separately permissioned.
 - `list` - Show source code
 - `disassemble` - Show assembly code
 
+### `gdb_run`
+Run the currently loaded target in a structured way.
+
+**Parameters:**
+- `args` (optional): Override inferior arguments for this run
+- `timeout_sec`: Timeout in seconds (default: 30)
+
+**Use this when:**
+- The target is loaded but has not started yet
+- You want a structured alternative to raw `run` text
+- You want to override inferior argv without going through raw commands
+
+### `gdb_attach_process`
+Attach GDB to a running process by PID.
+
+**WARNING:** This is a privileged operation and should be separately permissioned
+when possible.
+
+**Parameters:**
+- `pid`: PID of the process to attach to
+- `timeout_sec`: Timeout in seconds (default: 30)
+
+**Returns:**
+- Standard command execution payload
+
+**Typical result:**
+- The process becomes paused and inspectable after attach succeeds
+
 ### `gdb_call_function`
 Call a function in the target process.
 
@@ -153,6 +184,9 @@ Get the current status of the GDB session.
 - `is_running`: Whether the GDB session is still alive and usable
 - `target_loaded`: Whether GDB successfully loaded an executable or core file
 - `has_controller`: Whether the session still has an active GDB controller
+- `execution_state`: Inferior state (`not_started`, `running`, `paused`, `exited`, or `unknown`)
+- `stop_reason`: Stop reason when the inferior is paused or has exited
+- `exit_code`: Exit code when the inferior exited and GDB reported one
 
 **Notes:**
 - If the GDB process has exited unexpectedly, `is_running` becomes `false`
@@ -253,6 +287,7 @@ List all breakpoints with structured data.
 Continue execution until next breakpoint.
 
 **IMPORTANT:** Only use when program is PAUSED (at a breakpoint). If program hasn't started, use `gdb_execute_command` with "run" instead.
+**IMPORTANT:** If program hasn't started yet, prefer `gdb_run`.
 
 ### `gdb_step`
 Step into next instruction (enters functions).
@@ -282,6 +317,8 @@ Evaluate a C/C++ expression in the current context.
 
 **Parameters:**
 - `expression`: Expression to evaluate
+- `thread_id` (optional): Thread ID override
+- `frame` (optional): Frame override
 
 **Examples:**
 - `"x"` - Get value of variable x
@@ -304,3 +341,11 @@ Get local variables for a stack frame.
 
 ### `gdb_get_registers`
 Get CPU register values for the current frame.
+
+**Parameters:**
+- `thread_id` (optional): Thread ID override
+- `frame` (optional): Frame override
+
+**Notes:**
+- Like `gdb_evaluate_expression`, this can inspect a specific thread/frame
+  without changing the selected debugger context permanently

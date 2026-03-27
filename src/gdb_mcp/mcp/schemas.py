@@ -63,6 +63,19 @@ class StartSessionArgs(StrictArgsModel):
 class ExecuteCommandArgs(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
     command: str = Field(..., description="GDB command to execute")
+    timeout_sec: int = Field(30, gt=0, description="Timeout in seconds")
+
+
+class RunArgs(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    args: Optional[list[str]] = Field(None, description="Override inferior arguments for this run")
+    timeout_sec: int = Field(30, gt=0, description="Timeout in seconds")
+
+
+class AttachProcessArgs(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    pid: int = Field(..., gt=0, description="PID of the process to attach to")
+    timeout_sec: int = Field(30, gt=0, description="Timeout in seconds")
 
 
 class GetBacktraceArgs(StrictArgsModel):
@@ -81,6 +94,8 @@ class SetBreakpointArgs(StrictArgsModel):
 class EvaluateExpressionArgs(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
     expression: str = Field(..., description="C/C++ expression to evaluate")
+    thread_id: Optional[int] = Field(None, gt=0, description="Thread ID override")
+    frame: Optional[int] = Field(None, ge=0, description="Frame number override")
 
 
 class GetVariablesArgs(StrictArgsModel):
@@ -110,6 +125,13 @@ class CallFunctionArgs(StrictArgsModel):
         ...,
         description="Function call expression (e.g., 'printf(\"hello\\n\")' or 'my_func(arg1, arg2)')",
     )
+    timeout_sec: int = Field(30, gt=0, description="Timeout in seconds")
+
+
+class GetRegistersArgs(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    thread_id: Optional[int] = Field(None, gt=0, description="Thread ID override")
+    frame: Optional[int] = Field(None, ge=0, description="Frame number override")
 
 
 class SessionIdArgs(StrictArgsModel):
@@ -153,6 +175,7 @@ def build_tool_definitions() -> list[Tool]:
                 "handled and their output is formatted for readability. "
                 "MI commands (starting with '-', like '-break-list', '-exec-run') return "
                 "structured data. "
+                "Supports an optional timeout_sec override. "
                 "NOTE: For calling functions in the target process, prefer using the dedicated "
                 "gdb_call_function tool instead of 'call' command, as it provides better "
                 "structured output and can be separately permissioned. "
@@ -163,11 +186,34 @@ def build_tool_definitions() -> list[Tool]:
             inputSchema=ExecuteCommandArgs.model_json_schema(),
         ),
         Tool(
+            name="gdb_run",
+            description=(
+                "Run the currently loaded target in a structured way. "
+                "Use this instead of raw 'run' text when you want optional argv overrides "
+                "and a dedicated tool for launching execution. "
+                "If args are provided, they replace the inferior arguments for this run. "
+                "Requires session_id parameter (obtained from gdb_start_session)."
+            ),
+            inputSchema=RunArgs.model_json_schema(),
+        ),
+        Tool(
+            name="gdb_attach_process",
+            description=(
+                "Attach GDB to a running process by PID. "
+                "This is a privileged operation that should be separately permissioned from "
+                "general command execution when possible. "
+                "On success, the attached process is typically paused and inspectable. "
+                "Requires session_id parameter (obtained from gdb_start_session)."
+            ),
+            inputSchema=AttachProcessArgs.model_json_schema(),
+        ),
+        Tool(
             name="gdb_get_status",
             description=(
                 "Get the current status of the GDB session. "
                 "Reports whether the GDB process is still alive, whether a target was "
-                "successfully loaded, and whether the session still has an active controller. "
+                "successfully loaded, whether the session still has an active controller, "
+                "and the inferior execution state (for example not_started, running, paused, exited). "
                 "Requires session_id parameter (obtained from gdb_start_session)."
             ),
             inputSchema=SessionIdArgs.model_json_schema(),
@@ -329,6 +375,8 @@ def build_tool_definitions() -> list[Tool]:
             description=(
                 "Evaluate a C/C++ expression in the current context and return its value. "
                 "Can access variables, dereference pointers, call functions, etc. "
+                "Optional thread_id and frame parameters let callers inspect a specific context "
+                "without permanently changing the selected thread or frame. "
                 "Requires session_id parameter (obtained from gdb_start_session)."
             ),
             inputSchema=EvaluateExpressionArgs.model_json_schema(),
@@ -347,9 +395,11 @@ def build_tool_definitions() -> list[Tool]:
             name="gdb_get_registers",
             description=(
                 "Get CPU register values for the current frame. "
+                "Optional thread_id and frame parameters let callers inspect a specific context "
+                "without permanently changing the selected thread or frame. "
                 "Requires session_id parameter (obtained from gdb_start_session)."
             ),
-            inputSchema=SessionIdArgs.model_json_schema(),
+            inputSchema=GetRegistersArgs.model_json_schema(),
         ),
         Tool(
             name="gdb_stop_session",
@@ -370,6 +420,7 @@ def build_tool_definitions() -> list[Tool]:
                 "- System calls via wrappers "
                 "The function executes with full privileges of the debugged process. "
                 "Use with caution as it may have side effects and modify program state. "
+                "Supports an optional timeout_sec override. "
                 "Examples: 'printf(\"debug: x=%d\\n\", x)', 'my_cleanup_func()', 'strlen(str)'. "
                 "Requires session_id parameter (obtained from gdb_start_session)."
             ),

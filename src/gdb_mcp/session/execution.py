@@ -40,7 +40,9 @@ class SessionExecutionService:
         return self._command_runner.execute_command_result(command, timeout_sec)
 
     def run(
-        self, args: Optional[list[str]] = None
+        self,
+        args: Optional[list[str]] = None,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Run the program."""
         if not self._runtime.has_controller:
@@ -48,14 +50,32 @@ class SessionExecutionService:
 
         if args:
             result = self._command_runner.execute_command_result(
-                build_exec_arguments_command(args), timeout_sec=DEFAULT_TIMEOUT_SEC
+                build_exec_arguments_command(args), timeout_sec=timeout_sec
             )
             if isinstance(result, OperationError):
                 return result
 
-        return self._command_runner.execute_command_result(
-            "-exec-run", timeout_sec=DEFAULT_TIMEOUT_SEC
+        return self._command_runner.execute_command_result("-exec-run", timeout_sec=timeout_sec)
+
+    def attach_process(
+        self, pid: int, timeout_sec: int = DEFAULT_TIMEOUT_SEC
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        """Attach GDB to a running process."""
+
+        if not self._runtime.has_controller:
+            return OperationError(message="No active GDB session")
+
+        result = self._command_runner.execute_command_result(
+            f"attach {pid}", timeout_sec=timeout_sec
         )
+        if isinstance(result, OperationError):
+            return result
+
+        self._runtime.target_loaded = True
+        if self._runtime.execution_state == "unknown":
+            self._runtime.mark_inferior_paused("attached")
+
+        return result
 
     def continue_execution(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Continue execution of the program."""
@@ -104,6 +124,7 @@ class SessionExecutionService:
         parsed_result = parse_mi_responses(command_responses).to_dict()
 
         if result.get("timed_out"):
+            self._runtime.mark_inferior_running()
             return OperationSuccess(
                 MessageResult(
                     message="Interrupt sent but no stopped notification received",
@@ -112,6 +133,8 @@ class SessionExecutionService:
                 )
             )
 
+        stop_reason = self._extract_stop_reason(parsed_result)
+        self._runtime.mark_inferior_paused(stop_reason)
         return OperationSuccess(
             MessageResult(message="Program interrupted (paused)", result=parsed_result)
         )
@@ -161,3 +184,21 @@ class SessionExecutionService:
                 result=console_output.strip() if console_output else "(no return value)",
             )
         )
+
+    @staticmethod
+    def _extract_stop_reason(parsed_result: dict[str, object]) -> str | None:
+        """Extract the first stop reason from a parsed MI result payload."""
+
+        notify_records = parsed_result.get("notify")
+        if not isinstance(notify_records, list):
+            return None
+
+        for notify in notify_records:
+            if not isinstance(notify, dict) or notify.get("message") != "stopped":
+                continue
+            payload = notify.get("payload")
+            if isinstance(payload, dict):
+                reason = payload.get("reason")
+                if isinstance(reason, str):
+                    return reason
+        return None

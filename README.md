@@ -100,13 +100,15 @@ gdb-mcp-server
 
 ## Available Tools
 
-The GDB MCP Server provides 22 tools for controlling GDB debugging sessions:
+The GDB MCP Server provides 24 tools for controlling GDB debugging sessions:
 
 **Session Management:**
 - `gdb_start_session` - Start a new GDB session with optional initialization
 - `gdb_execute_command` - Execute GDB commands (CLI or MI format)
+- `gdb_run` - Start the loaded program with optional argv overrides
+- `gdb_attach_process` - Attach GDB to a running process by PID
 - `gdb_call_function` - Call a function in the target process (dedicated tool for separate permissioning)
-- `gdb_get_status` - Get current session status, including whether the target actually loaded
+- `gdb_get_status` - Get current session status, including whether the target actually loaded and whether execution is running, paused, or exited
 - `gdb_stop_session` - Stop the current session
 
 **Thread & Frame Navigation:**
@@ -130,9 +132,9 @@ The GDB MCP Server provides 22 tools for controlling GDB debugging sessions:
 - `gdb_interrupt` - Pause a running program
 
 **Data Inspection:**
-- `gdb_evaluate_expression` - Evaluate expressions
+- `gdb_evaluate_expression` - Evaluate expressions, optionally in a specific thread/frame
 - `gdb_get_variables` - Get local variables without changing the selected thread/frame
-- `gdb_get_registers` - Get CPU registers
+- `gdb_get_registers` - Get CPU registers, optionally in a specific thread/frame
 
 **For detailed documentation of each tool including parameters, return values, and examples, see [TOOLS.md](TOOLS.md).**
 
@@ -141,6 +143,11 @@ executable or core file did not load successfully. If the underlying GDB process
 dies unexpectedly, later status checks report the session as no longer running.
 The `gdb_start_session` response also includes `target_loaded` so callers can tell
 immediately whether startup loaded a usable target.
+It also includes the initial `execution_state` when startup leaves the inferior
+in a known state, such as `not_started` for a loaded executable or `paused` for
+a loaded core dump.
+`gdb_get_status` also reports the inferior execution state as `not_started`,
+`running`, `paused`, `exited`, or `unknown`.
 
 ## Usage Examples
 
@@ -232,13 +239,13 @@ Use with:
 
 ### Working with Running Processes
 
-While this server primarily works with core dumps and executables, you can attach to running processes:
+While this server primarily works with core dumps and executables, you can also
+attach to running processes with the dedicated `gdb_attach_process` tool:
 
 ```json
 {
-  "init_commands": [
-    "attach 12345"  // PID of running process
-  ]
+  "session_id": 1,
+  "pid": 12345
 }
 ```
 
@@ -261,7 +268,7 @@ The program is likely still running! When a program is running, GDB is busy and 
 **Solution:** Use `gdb_interrupt` to pause the running program, then other commands will work.
 
 **Program States:**
-- **Not started**: Use `gdb_execute_command` with "run" or "start"
+- **Not started**: Use `gdb_run`
 - **Running**: Program is executing - use `gdb_interrupt` to pause it
 - **Paused** (at breakpoint): Use `gdb_continue`, `gdb_step`, `gdb_next`, inspect variables
 - **Finished**: Program has exited - restart with "run" if needed
