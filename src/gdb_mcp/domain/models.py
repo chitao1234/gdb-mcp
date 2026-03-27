@@ -158,6 +158,33 @@ class CommandTranscriptEntry:
 
 
 @dataclass(slots=True, frozen=True)
+class BatchStepResult:
+    """Structured result for one step executed by a batch workflow."""
+
+    index: int
+    tool: str
+    status: str
+    result: StructuredPayload
+    label: str | None = None
+    stop_event: StopEvent | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class BatchExecutionInfo:
+    """Structured result for one workflow batch executed in a session."""
+
+    steps: list[BatchStepResult]
+    count: int
+    completed_steps: int
+    error_count: int
+    stopped_early: bool = False
+    failure_step_index: int | None = None
+    final_execution_state: str | None = None
+    final_stop_reason: str | None = None
+    last_stop_event: StopEvent | None = None
+
+
+@dataclass(slots=True, frozen=True)
 class SessionMessage:
     """Simple message payload."""
 

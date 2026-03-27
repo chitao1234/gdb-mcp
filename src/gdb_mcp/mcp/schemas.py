@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional, TypeAlias
 
 from mcp.types import Tool
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,6 +12,56 @@ class StrictArgsModel(BaseModel):
     """Base model for MCP request validation."""
 
     model_config = ConfigDict(extra="forbid")
+
+
+BATCH_STEP_TOOL_NAMES = (
+    "gdb_execute_command",
+    "gdb_run",
+    "gdb_attach_process",
+    "gdb_get_status",
+    "gdb_get_threads",
+    "gdb_select_thread",
+    "gdb_get_backtrace",
+    "gdb_select_frame",
+    "gdb_get_frame_info",
+    "gdb_set_breakpoint",
+    "gdb_list_breakpoints",
+    "gdb_delete_breakpoint",
+    "gdb_enable_breakpoint",
+    "gdb_disable_breakpoint",
+    "gdb_continue",
+    "gdb_step",
+    "gdb_next",
+    "gdb_interrupt",
+    "gdb_evaluate_expression",
+    "gdb_get_variables",
+    "gdb_get_registers",
+    "gdb_call_function",
+)
+BatchStepToolName: TypeAlias = Literal[
+    "gdb_execute_command",
+    "gdb_run",
+    "gdb_attach_process",
+    "gdb_get_status",
+    "gdb_get_threads",
+    "gdb_select_thread",
+    "gdb_get_backtrace",
+    "gdb_select_frame",
+    "gdb_get_frame_info",
+    "gdb_set_breakpoint",
+    "gdb_list_breakpoints",
+    "gdb_delete_breakpoint",
+    "gdb_enable_breakpoint",
+    "gdb_disable_breakpoint",
+    "gdb_continue",
+    "gdb_step",
+    "gdb_next",
+    "gdb_interrupt",
+    "gdb_evaluate_expression",
+    "gdb_get_variables",
+    "gdb_get_registers",
+    "gdb_call_function",
+]
 
 
 class StartSessionArgs(StrictArgsModel):
@@ -144,6 +194,35 @@ class ListSessionsArgs(StrictArgsModel):
     """Arguments for tools that do not require any parameters."""
 
 
+class BatchStepArgs(StrictArgsModel):
+    """One validated batch step definition."""
+
+    tool: BatchStepToolName = Field(..., description="Existing session-scoped tool to execute")
+    arguments: dict[str, object] = Field(
+        default_factory=dict,
+        description="Tool-specific arguments excluding session_id, which comes from the batch",
+    )
+    label: Optional[str] = Field(
+        None,
+        description="Optional human-readable label to make batch results easier to scan",
+    )
+
+
+class BatchArgs(StrictArgsModel):
+    """Arguments for executing a structured batch against one live session."""
+
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    steps: list[BatchStepArgs] = Field(..., min_length=1, description="Ordered step list")
+    fail_fast: bool = Field(
+        True,
+        description="Stop executing later steps after the first error result",
+    )
+    capture_stop_events: bool = Field(
+        True,
+        description="Include any new stop event produced by each step in the batch result",
+    )
+
+
 def build_tool_definitions() -> list[Tool]:
     """Build the MCP tool definitions exposed by this server."""
 
@@ -210,6 +289,19 @@ def build_tool_definitions() -> list[Tool]:
                 "Requires session_id parameter (obtained from gdb_start_session)."
             ),
             inputSchema=AttachProcessArgs.model_json_schema(),
+        ),
+        Tool(
+            name="gdb_batch",
+            description=(
+                "Execute a structured sequence of existing session-scoped GDB tools atomically "
+                "within one session. "
+                "Each step names an existing tool plus tool-specific arguments excluding "
+                "session_id, which is inherited from the enclosing batch request. "
+                "Use this to combine setup, execution, and inspection steps into one "
+                "workflow without interleaving from other requests on the same session. "
+                "Supports optional fail_fast behavior and optional per-step stop-event capture."
+            ),
+            inputSchema=BatchArgs.model_json_schema(),
         ),
         Tool(
             name="gdb_get_status",

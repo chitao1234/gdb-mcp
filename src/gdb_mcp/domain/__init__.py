@@ -14,6 +14,8 @@ from .adapters import (
 from .errors import FatalTransportError, GdbMcpError, TransportError, ValidationFailure
 from .models import (
     BacktraceInfo,
+    BatchExecutionInfo,
+    BatchStepResult,
     BreakpointInfo,
     BreakpointListInfo,
     BreakpointRecord,
@@ -53,6 +55,8 @@ from .results import (
 __all__ = [
     "BacktraceInfo",
     "backtrace_info_from_payload",
+    "BatchExecutionInfo",
+    "BatchStepResult",
     "BreakpointInfo",
     "BreakpointListInfo",
     "breakpoint_list_info_from_payload",

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 import threading
 from collections.abc import Callable
+from typing import ContextManager, cast
 
 from ..domain import (
     OperationError,
@@ -197,7 +199,8 @@ class SessionRegistry:
             return OperationSuccess(SessionMessage(message="Session removed"))
 
         try:
-            result = session.stop()
+            with self._session_workflow_context(session):
+                result = session.stop()
         except Exception as exc:
             with self._lock:
                 self._closing_sessions.discard(session_id)
@@ -230,7 +233,8 @@ class SessionRegistry:
                 results[session_id] = OperationSuccess(SessionMessage(message="Session removed"))
                 continue
             try:
-                results[session_id] = session.stop()
+                with self._session_workflow_context(session):
+                    results[session_id] = session.stop()
             except Exception as exc:
                 results[session_id] = OperationError(message=str(exc))
 
@@ -238,3 +242,17 @@ class SessionRegistry:
             self._closing_sessions.clear()
 
         return results
+
+    @staticmethod
+    def _session_workflow_context(session: SessionService) -> ContextManager[object]:
+        """Return the session workflow lock when it is available."""
+
+        runtime = getattr(session, "runtime", None)
+        workflow_lock = getattr(runtime, "workflow_lock", None)
+        if (
+            workflow_lock is None
+            or not hasattr(workflow_lock, "__enter__")
+            or not hasattr(workflow_lock, "__exit__")
+        ):
+            return nullcontext()
+        return cast(ContextManager[object], workflow_lock)

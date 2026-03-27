@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import dataclass
 import logging
 from collections.abc import Callable
-from typing import Protocol, TypeAlias, TypeVar, cast
+from typing import ContextManager, Protocol, TypeAlias, TypeVar, cast
 
 from pydantic import BaseModel
 from mcp.types import TextContent
@@ -19,8 +20,10 @@ from ..domain import (
 )
 from ..session.registry import SessionRegistry
 from ..session.service import SessionService
+from ..session.workflow import BatchStepInvocation
 from .schemas import (
     AttachProcessArgs,
+    BatchArgs,
     BreakpointNumberArgs,
     CallFunctionArgs,
     EvaluateExpressionArgs,
@@ -186,6 +189,60 @@ def _handle_call_function(session: SessionService, args: CallFunctionArgs) -> To
     return session.call_function(function_call=args.function_call, timeout_sec=args.timeout_sec)
 
 
+def _handle_batch(session: SessionService, args: BatchArgs) -> ToolResult:
+    """Validate one batch request and execute it under one workflow lock."""
+
+    steps: list[BatchStepInvocation] = []
+
+    for index, step in enumerate(args.steps):
+        if "session_id" in step.arguments:
+            return OperationError(
+                message=(
+                    f"Batch step {index} ({step.tool}) must not include session_id. "
+                    "Use the outer batch session_id instead."
+                ),
+                code="validation_error",
+            )
+
+        tool_spec = SESSION_TOOL_SPECS.get(step.tool)
+        if tool_spec is None or step.tool == "gdb_batch":
+            return OperationError(
+                message=f"Unsupported batch step tool: {step.tool}",
+                code="validation_error",
+            )
+        validated_tool_spec = tool_spec
+
+        step_arguments = cast(ToolArguments, {"session_id": args.session_id, **step.arguments})
+
+        try:
+            validated_args = validated_tool_spec.model.model_validate(step_arguments)
+        except Exception as exc:
+            return OperationError(
+                message=f"Invalid batch step {index} ({step.tool}): {exc}",
+                code="validation_error",
+            )
+
+        def execute_step(
+            tool_spec: SessionToolSpec = validated_tool_spec,
+            validated_args: BaseModel = validated_args,
+        ) -> ToolResult:
+            return tool_spec.handler(session, validated_args)
+
+        steps.append(
+            BatchStepInvocation(
+                tool=step.tool,
+                label=step.label,
+                execute=execute_step,
+            )
+        )
+
+    return session.execute_batch(
+        steps,
+        fail_fast=args.fail_fast,
+        capture_stop_events=args.capture_stop_events,
+    )
+
+
 def _invalid_session_result(session_id: object) -> OperationError:
     """Return the standard invalid-session error response."""
 
@@ -231,13 +288,29 @@ def _dispatch_session_tool(
     session = session_manager.resolve_session(args.session_id)
     if isinstance(session, OperationError):
         return session
-    return tool_spec.handler(session, cast(BaseModel, args))
+    with _session_workflow_context(session):
+        return tool_spec.handler(session, cast(BaseModel, args))
+
+
+def _session_workflow_context(session: SessionService) -> ContextManager[object]:
+    """Return the session workflow lock when it is available."""
+
+    runtime = getattr(session, "runtime", None)
+    workflow_lock = getattr(runtime, "workflow_lock", None)
+    if (
+        workflow_lock is None
+        or not hasattr(workflow_lock, "__enter__")
+        or not hasattr(workflow_lock, "__exit__")
+    ):
+        return nullcontext()
+    return cast(ContextManager[object], workflow_lock)
 
 
 SESSION_TOOL_SPECS: dict[str, SessionToolSpec] = {
     "gdb_execute_command": session_tool_spec(ExecuteCommandArgs, _handle_execute_command),
     "gdb_run": session_tool_spec(RunArgs, _handle_run),
     "gdb_attach_process": session_tool_spec(AttachProcessArgs, _handle_attach_process),
+    "gdb_batch": session_tool_spec(BatchArgs, _handle_batch),
     "gdb_get_status": session_tool_spec(SessionIdArgs, _handle_get_status),
     "gdb_get_threads": session_tool_spec(SessionIdArgs, _handle_get_threads),
     "gdb_select_thread": session_tool_spec(ThreadSelectArgs, _handle_select_thread),

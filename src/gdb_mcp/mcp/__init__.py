@@ -5,6 +5,8 @@ from .handlers import dispatch_tool_call
 from .runtime import ServerRuntime, create_server_runtime
 from .schemas import (
     AttachProcessArgs,
+    BatchArgs,
+    BatchStepArgs,
     BreakpointNumberArgs,
     CallFunctionArgs,
     EvaluateExpressionArgs,
@@ -24,6 +26,8 @@ from .schemas import (
 
 __all__ = [
     "BreakpointNumberArgs",
+    "BatchArgs",
+    "BatchStepArgs",
     "CallFunctionArgs",
     "AttachProcessArgs",
     "EvaluateExpressionArgs",

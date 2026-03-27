@@ -4,6 +4,8 @@ import pytest
 from pydantic import ValidationError
 from gdb_mcp.mcp.schemas import (
     AttachProcessArgs,
+    BatchArgs,
+    BatchStepArgs,
     BreakpointNumberArgs,
     CallFunctionArgs,
     StartSessionArgs,
@@ -127,6 +129,50 @@ class TestListSessionsArgs:
 
         args = ListSessionsArgs()
         assert args.model_dump() == {}
+
+
+class TestBatchArgs:
+    """Test cases for structured batch workflows."""
+
+    def test_batch_args_minimal(self):
+        """Batch requests should accept one valid step."""
+
+        args = BatchArgs(
+            session_id=1,
+            steps=[
+                BatchStepArgs(
+                    tool="gdb_execute_command",
+                    arguments={"command": "info threads"},
+                )
+            ],
+        )
+
+        assert args.session_id == 1
+        assert len(args.steps) == 1
+        assert args.fail_fast is True
+        assert args.capture_stop_events is True
+
+    def test_batch_args_reject_empty_steps(self):
+        """Batches must include at least one step."""
+
+        with pytest.raises(ValidationError):
+            BatchArgs(session_id=1, steps=[])
+
+    def test_batch_step_rejects_unknown_tool(self):
+        """Batch step tools should be validated against the supported allowlist."""
+
+        with pytest.raises(ValidationError) as exc_info:
+            BatchStepArgs(tool="gdb_stop_session", arguments={})
+
+        assert "gdb_stop_session" in str(exc_info.value)
+
+    def test_batch_step_rejects_unknown_field(self):
+        """Batch step definitions should reject unexpected keys."""
+
+        with pytest.raises(ValidationError) as exc_info:
+            BatchStepArgs(tool="gdb_get_status", arguments={}, unexpected=True)
+
+        assert "unexpected" in str(exc_info.value)
 
 
 class TestGetBacktraceArgs:

@@ -5,13 +5,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 from gdb_mcp.domain import (
     BreakpointInfo,
     CommandExecutionInfo,
     OperationError,
     OperationSuccess,
+    StopEvent,
     SessionListInfo,
     SessionMessage,
     SessionStatusSnapshot,
@@ -19,6 +20,7 @@ from gdb_mcp.domain import (
 )
 from gdb_mcp.mcp.handlers import SESSION_TOOL_SPECS, dispatch_tool_call
 from gdb_mcp.mcp.schemas import build_tool_definitions
+from gdb_mcp.session.factory import create_default_session_service
 
 
 def dispatch(name: str, arguments, session_manager) -> dict[str, object]:
@@ -272,6 +274,154 @@ class TestHandlerDispatch:
 
         manager.resolve_session.assert_called_once_with(3)
         session.set_breakpoint.assert_called_once()
+
+    def test_batch_routes_validated_steps_and_captures_stop_event(self):
+        """Batch requests should execute validated session steps atomically."""
+
+        manager = Mock()
+        session = create_default_session_service()
+        session.set_breakpoint = Mock(
+            return_value=OperationSuccess(
+                BreakpointInfo(breakpoint={"number": "1", "original_location": "main"})
+            )
+        )
+
+        def continue_side_effect():
+            session.runtime.mark_inferior_paused("breakpoint-hit")
+            stop_event = StopEvent(
+                execution_state="paused",
+                reason="breakpoint-hit",
+                command="-exec-continue",
+                thread_id=2,
+            )
+            session.runtime.record_stop_event(stop_event)
+            return OperationSuccess(CommandExecutionInfo(command="-exec-continue"))
+
+        session.continue_execution = Mock(side_effect=continue_side_effect)
+        manager.resolve_session.return_value = session
+
+        result_data = dispatch(
+            "gdb_batch",
+            {
+                "session_id": 7,
+                "steps": [
+                    {
+                        "tool": "gdb_set_breakpoint",
+                        "label": "break main",
+                        "arguments": {"location": "main"},
+                    },
+                    {
+                        "tool": "gdb_continue",
+                        "label": "run until stop",
+                        "arguments": {},
+                    },
+                ],
+            },
+            manager,
+        )
+
+        assert result_data["status"] == "success"
+        assert result_data["count"] == 2
+        assert result_data["completed_steps"] == 2
+        assert result_data["error_count"] == 0
+        assert result_data["stopped_early"] is False
+        assert result_data["steps"][0]["tool"] == "gdb_set_breakpoint"
+        assert result_data["steps"][0]["label"] == "break main"
+        assert result_data["steps"][0]["status"] == "success"
+        assert result_data["steps"][1]["tool"] == "gdb_continue"
+        assert result_data["steps"][1]["stop_event"]["reason"] == "breakpoint-hit"
+        assert result_data["last_stop_event"]["reason"] == "breakpoint-hit"
+        session.set_breakpoint.assert_called_once_with(
+            location="main",
+            condition=None,
+            temporary=False,
+        )
+        session.continue_execution.assert_called_once_with()
+
+    def test_batch_stops_on_first_error_by_default(self):
+        """Fail-fast batches should stop before executing later steps."""
+
+        manager = Mock()
+        session = create_default_session_service()
+        session.execute_command = Mock(
+            return_value=OperationError(message="boom", details={"command": "info threads"})
+        )
+        session.get_status = Mock(
+            return_value=OperationSuccess(
+                SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=False)
+            )
+        )
+        manager.resolve_session.return_value = session
+
+        result_data = dispatch(
+            "gdb_batch",
+            {
+                "session_id": 9,
+                "steps": [
+                    {
+                        "tool": "gdb_execute_command",
+                        "arguments": {"command": "info threads"},
+                    },
+                    {
+                        "tool": "gdb_get_status",
+                        "arguments": {},
+                    },
+                ],
+            },
+            manager,
+        )
+
+        assert result_data["status"] == "success"
+        assert result_data["completed_steps"] == 1
+        assert result_data["error_count"] == 1
+        assert result_data["stopped_early"] is True
+        assert result_data["failure_step_index"] == 0
+        assert result_data["steps"][0]["status"] == "error"
+        session.execute_command.assert_called_once_with(command="info threads", timeout_sec=30)
+        session.get_status.assert_not_called()
+
+    def test_session_tool_dispatch_uses_workflow_lock(self):
+        """Session-scoped tools should serialize through the workflow lock."""
+
+        manager = Mock()
+        session = Mock()
+        workflow_lock = MagicMock()
+        workflow_lock.__enter__.return_value = None
+        workflow_lock.__exit__.return_value = None
+        session.runtime = Mock(workflow_lock=workflow_lock)
+        session.get_status.return_value = OperationSuccess(
+            SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=True)
+        )
+        manager.resolve_session.return_value = session
+
+        dispatch("gdb_get_status", {"session_id": 1}, manager)
+
+        workflow_lock.__enter__.assert_called_once()
+        workflow_lock.__exit__.assert_called_once()
+
+    def test_batch_rejects_step_level_session_id(self):
+        """Batch steps should inherit session_id from the batch envelope only."""
+
+        manager = Mock()
+        session = create_default_session_service()
+        manager.resolve_session.return_value = session
+
+        result_data = dispatch(
+            "gdb_batch",
+            {
+                "session_id": 3,
+                "steps": [
+                    {
+                        "tool": "gdb_get_status",
+                        "arguments": {"session_id": 99},
+                    }
+                ],
+            },
+            manager,
+        )
+
+        assert result_data["status"] == "error"
+        assert "must not include session_id" in result_data["message"]
 
     def test_multiple_tools_use_different_sessions(self):
         """Separate session IDs should be routed independently."""

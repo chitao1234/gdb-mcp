@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from ..domain import (
     BacktraceInfo,
+    BatchExecutionInfo,
     BreakpointInfo,
     BreakpointListInfo,
     CommandTranscriptEntry,
@@ -40,6 +43,7 @@ from .lifecycle import SessionLifecycleService
 from .protocols import OsModuleProtocol, TimeModuleProtocol
 from .runtime import SessionRuntime
 from .state import SessionState
+from .workflow import BatchStepInvocation, SessionWorkflowService
 
 
 class SessionService:
@@ -74,6 +78,7 @@ class SessionService:
         self._execution = SessionExecutionService(self.runtime, self._command_runner)
         self._breakpoints = SessionBreakpointService(self._command_runner)
         self._inspection = SessionInspectionService(self.runtime, self._command_runner)
+        self._workflow = SessionWorkflowService(self.runtime)
 
     @property
     def controller(self) -> GdbControllerProtocol | None:
@@ -212,6 +217,21 @@ class SessionService:
         """Delegate function call execution to the execution service."""
 
         return self._execution.call_function(function_call, timeout_sec)
+
+    def execute_batch(
+        self,
+        steps: Sequence[BatchStepInvocation],
+        *,
+        fail_fast: bool = True,
+        capture_stop_events: bool = True,
+    ) -> OperationSuccess[BatchExecutionInfo]:
+        """Execute a structured batch of existing session operations."""
+
+        return self._workflow.execute_batch(
+            steps,
+            fail_fast=fail_fast,
+            capture_stop_events=capture_stop_events,
+        )
 
     def get_threads(self) -> OperationSuccess[ThreadListInfo] | OperationError:
         """Delegate thread inspection to the inspection service."""

@@ -191,6 +191,48 @@ def test_run_and_hit_breakpoint(session_id):
 
 
 @pytest.mark.integration
+def test_batch_can_set_breakpoint_run_and_capture_backtrace(session_id):
+    """Structured batch should execute setup, run, and inspection in one call."""
+
+    batch_result = call_gdb_tool(
+        "gdb_batch",
+        {
+            "session_id": session_id,
+            "steps": [
+                {
+                    "tool": "gdb_set_breakpoint",
+                    "label": "break main",
+                    "arguments": {"location": "main"},
+                },
+                {
+                    "tool": "gdb_run",
+                    "label": "run to breakpoint",
+                    "arguments": {},
+                },
+                {
+                    "tool": "gdb_get_backtrace",
+                    "label": "capture stack",
+                    "arguments": {},
+                },
+            ],
+        },
+    )
+
+    assert batch_result["status"] == "success"
+    assert batch_result["count"] == 3
+    assert batch_result["completed_steps"] == 3
+    assert batch_result["error_count"] == 0
+    assert batch_result["stopped_early"] is False
+    assert batch_result["final_execution_state"] == "paused"
+    assert batch_result["final_stop_reason"] == "breakpoint-hit"
+    assert batch_result["steps"][0]["tool"] == "gdb_set_breakpoint"
+    assert batch_result["steps"][1]["tool"] == "gdb_run"
+    assert batch_result["steps"][1]["stop_event"]["reason"] == "breakpoint-hit"
+    assert batch_result["steps"][2]["tool"] == "gdb_get_backtrace"
+    assert batch_result["steps"][2]["result"]["count"] > 0
+
+
+@pytest.mark.integration
 def test_step_through_functions(session_id):
     """Test stepping through function calls."""
     # Set breakpoint at main
