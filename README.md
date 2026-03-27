@@ -328,6 +328,16 @@ The response payload always contains:
 
 The server does not currently publish MCP `outputSchema`, resource endpoints, or event streams. Clients should treat tool responses as the authoritative runtime state and keep track of `session_id` explicitly.
 
+## Migration Notes
+
+For client maintainers upgrading from earlier revisions:
+
+- `gdb_continue` may return success with `execution_state="running"` when execution was acknowledged but no stop happened yet. Use `gdb_wait_for_stop` for blocking stop detection.
+- `gdb_get_status` and `gdb_list_sessions` now include `current_inferior_id`, `inferior_count`, and `inferior_states` for fork/multi-inferior workflows.
+- `gdb_run.args` and `gdb_start_session.args` accept either `list[str]` or a shell-style string.
+- `gdb_batch.steps` and `gdb_capture_bundle.memory_ranges` accept structured forms and shorthand string forms.
+- `gdb_get_registers` supports payload-slimming options (`register_numbers`, `register_names`, `include_vector_registers`, `max_registers`, `value_format`).
+
 ## Contributing
 
 Contributions welcome! Areas for improvement:

@@ -89,3 +89,25 @@ class TestServerEntrypoint:
 
         mock_configure_logging.assert_called_once_with()
         runtime.run_server.assert_called_once_with()
+
+    @patch("gdb_mcp.server.get_runtime")
+    @patch("gdb_mcp.server.configure_logging")
+    @patch("gdb_mcp.server.logger.warning")
+    def test_run_server_warns_when_module_is_loaded_from_build_lib(
+        self,
+        mock_warning,
+        _mock_configure_logging,
+        mock_get_runtime,
+    ):
+        """CLI startup should flag potentially stale build/lib shadow imports."""
+
+        import gdb_mcp.server as server
+
+        runtime = Mock()
+        mock_get_runtime.return_value = runtime
+
+        with patch.object(server, "__file__", "/tmp/repo/build/lib/gdb_mcp/server.py"):
+            server.run_server()
+
+        mock_warning.assert_called_once()
+        runtime.run_server.assert_called_once_with()

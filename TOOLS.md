@@ -2,6 +2,12 @@
 
 This document provides detailed documentation for all available tools in the GDB MCP Server.
 
+## Input Typing Rules
+
+- Prefer JSON numbers for numeric fields such as `session_id`, `thread_id`, `frame`, `max_frames`, and breakpoint/watchpoint numbers.
+- Some fields intentionally accept numeric strings for compatibility with clients that preserve MI-style IDs as text.
+- When both are accepted, numbers remain the recommended shape for new clients.
+
 ## Session Management
 
 ### `gdb_start_session`

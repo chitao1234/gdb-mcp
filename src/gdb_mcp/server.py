@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 import threading
 
 from mcp.types import TextContent, Tool
@@ -85,6 +86,7 @@ def run_server() -> None:
     """Synchronous entry point for the MCP server (for script entry point)."""
 
     configure_logging()
+    _warn_if_shadowed_by_build_lib()
     get_runtime().run_server()
 
 
@@ -95,6 +97,22 @@ def configure_logging() -> None:
     logging.basicConfig(
         level=getattr(logging, log_level, logging.INFO),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
+
+def _warn_if_shadowed_by_build_lib() -> None:
+    """Warn when this module is loaded from a local build/lib tree."""
+
+    module_path = Path(__file__).resolve()
+    normalized_parts = tuple(part.lower() for part in module_path.parts)
+    if "build" not in normalized_parts or "lib" not in normalized_parts:
+        return
+
+    logger.warning(
+        "Detected gdb_mcp imported from a build/lib path (%s). "
+        "This can be stale and diverge from src/. "
+        "Prefer an editable install or remove the local build/ tree.",
+        module_path,
     )
 
 
