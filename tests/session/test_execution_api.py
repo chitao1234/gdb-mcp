@@ -24,7 +24,20 @@ class TestExecutionApi:
         session, controller = scripted_running_session(
             [
                 mi_result(message="running"),
-                mi_notify("stopped", {"reason": "breakpoint-hit"}),
+                mi_notify(
+                    "stopped",
+                    {
+                        "reason": "breakpoint-hit",
+                        "thread-id": "2",
+                        "bkptno": "1",
+                        "frame": {
+                            "level": "0",
+                            "func": "main",
+                            "file": "app.c",
+                            "line": "12",
+                        },
+                    },
+                ),
             ]
         )
 
@@ -34,6 +47,21 @@ class TestExecutionApi:
         status = result_to_mapping(session.get_status())
         assert status["execution_state"] == "paused"
         assert status["stop_reason"] == "breakpoint-hit"
+        stop_event = session.last_stop_event
+        assert stop_event is not None
+        assert stop_event.execution_state == "paused"
+        assert stop_event.reason == "breakpoint-hit"
+        assert stop_event.thread_id == 2
+        assert stop_event.breakpoint_number == "1"
+        assert stop_event.command == "-exec-continue"
+        assert stop_event.frame is not None
+        assert stop_event.frame["func"] == "main"
+        assert session.runtime.stop_history[-1] == stop_event
+        transcript_entry = session.command_transcript[-1]
+        assert transcript_entry.command == "-exec-continue"
+        assert transcript_entry.status == "success"
+        assert transcript_entry.execution_state == "paused"
+        assert transcript_entry.stop_reason == "breakpoint-hit"
         assert controller.io_manager.stdin.writes[0].decode().endswith("-exec-continue\n")
 
     def test_step(self, scripted_running_session, mi_result, mi_notify):
@@ -90,6 +118,15 @@ class TestExecutionApi:
         status = result_to_mapping(running_session.get_status())
         assert status["execution_state"] == "paused"
         assert status["stop_reason"] == "signal-received"
+        stop_event = running_session.last_stop_event
+        assert stop_event is not None
+        assert stop_event.command == "interrupt"
+        assert stop_event.reason == "signal-received"
+        assert stop_event.execution_state == "paused"
+        transcript_entry = running_session.command_transcript[-1]
+        assert transcript_entry.command == "interrupt"
+        assert transcript_entry.status == "success"
+        assert transcript_entry.stop_reason == "signal-received"
         mock_kill.assert_called_once()
 
     def test_interrupt_no_stopped_notification(self, running_session):

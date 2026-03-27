@@ -6,7 +6,16 @@ import logging
 from collections.abc import Callable
 from typing import cast
 
-from ..domain import CommandExecutionInfo, OperationError, OperationSuccess, StructuredPayload
+from ..domain import (
+    CommandExecutionInfo,
+    CommandTranscriptEntry,
+    FrameRecord,
+    OperationError,
+    OperationSuccess,
+    StopEvent,
+    StructuredPayload,
+    payload_to_mapping,
+)
 from ..transport import ParsedMiResponse, is_cli_command, parse_mi_responses, wrap_cli_command
 from .constants import DEFAULT_TIMEOUT_SEC
 from .runtime import SessionRuntime
@@ -64,6 +73,11 @@ class SessionCommandRunner:
 
         self._runtime.mark_transport_terminated(message)
 
+    def update_runtime_after_command(self, command: str, parsed: ParsedMiResponse) -> None:
+        """Apply parsed MI execution effects to the mutable session runtime."""
+
+        self._update_runtime_after_command(command, parsed)
+
     def execute_command_result(
         self, command: str, timeout_sec: int = DEFAULT_TIMEOUT_SEC
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
@@ -76,6 +90,12 @@ class SessionCommandRunner:
             logger.error("GDB process is not running when trying to execute: %s", command)
             message = "GDB process has exited - session is no longer active"
             self.handle_dead_transport(message)
+            self._record_command_transcript(
+                command=command,
+                sent_command=command,
+                status="error",
+                error=message,
+            )
             return OperationError(
                 message=message,
                 details={"command": command},
@@ -90,6 +110,13 @@ class SessionCommandRunner:
         result = self.send_command_and_wait_for_prompt(actual_command, timeout_sec)
 
         if "error" in result:
+            self._record_command_transcript(
+                command=command,
+                sent_command=actual_command,
+                status="error",
+                error=str(result["error"]),
+                fatal=bool(result.get("fatal", False)),
+            )
             return OperationError(
                 message=str(result["error"]),
                 fatal=bool(result.get("fatal", False)),
@@ -102,18 +129,39 @@ class SessionCommandRunner:
 
         if result.get("timed_out"):
             self._update_runtime_after_command(command, parsed)
+            self._record_command_transcript(
+                command=command,
+                sent_command=actual_command,
+                status="timeout",
+                parsed=parsed,
+                timed_out=True,
+                error=f"Timeout waiting for command response after {timeout_sec}s",
+            )
             return OperationError(
                 message=f"Timeout waiting for command response after {timeout_sec}s",
                 details={"command": command},
             )
 
         if parsed.is_error_result():
+            self._record_command_transcript(
+                command=command,
+                sent_command=actual_command,
+                status="error",
+                parsed=parsed,
+                error=parsed.error_message() or "GDB returned an error",
+            )
             return OperationError(
                 message=parsed.error_message() or "GDB returned an error",
                 details={"command": command},
             )
 
         self._update_runtime_after_command(command, parsed)
+        self._record_command_transcript(
+            command=command,
+            sent_command=actual_command,
+            status="success",
+            parsed=parsed,
+        )
 
         if cli_command:
             console_output = "".join(item for item in parsed.console if isinstance(item, str))
@@ -137,6 +185,7 @@ class SessionCommandRunner:
         stopped_reason: str | None = None
         exit_code: int | None = None
         saw_stopped = False
+        stop_event: StopEvent | None = None
         for notify in parsed.notify:
             if notify.get("message") != "stopped":
                 continue
@@ -154,6 +203,7 @@ class SessionCommandRunner:
                 thread_id = self._int_or_none(payload.get("thread-id"))
                 if thread_id is not None:
                     self._runtime.mark_thread_selected(thread_id)
+            stop_event = self._build_stop_event(command, payload, stopped_reason, exit_code)
             break
 
         if saw_stopped:
@@ -161,6 +211,8 @@ class SessionCommandRunner:
                 self._runtime.mark_inferior_exited(stopped_reason, exit_code)
             else:
                 self._runtime.mark_inferior_paused(stopped_reason)
+            if stop_event is not None:
+                self._runtime.record_stop_event(stop_event)
         elif parsed.result_class == "running":
             self._runtime.mark_inferior_running()
 
@@ -221,3 +273,85 @@ class SessionCommandRunner:
             return None
         pid_text = parts[1].strip()
         return int(pid_text) if pid_text.isdigit() else None
+
+    def _build_stop_event(
+        self,
+        command: str,
+        payload: object,
+        stopped_reason: str | None,
+        exit_code: int | None,
+    ) -> StopEvent:
+        """Build a structured stop event from one MI stopped notification."""
+
+        payload_mapping: StructuredPayload = {}
+        if isinstance(payload, dict):
+            payload_mapping = cast(StructuredPayload, payload_to_mapping(payload))
+
+        thread_id = self._int_or_none(payload_mapping.get("thread-id"))
+        frame = self._frame_record(payload_mapping.get("frame"))
+        signal_name = self._str_or_none(payload_mapping.get("signal-name"))
+        signal_meaning = self._str_or_none(payload_mapping.get("signal-meaning"))
+        breakpoint_number = self._str_or_none(payload_mapping.get("bkptno"))
+        execution_state = (
+            "exited"
+            if stopped_reason in {"exited", "exited-normally", "exited-signalled"}
+            else "paused"
+        )
+
+        return StopEvent(
+            execution_state=execution_state,
+            reason=stopped_reason,
+            command=command,
+            thread_id=thread_id,
+            frame=frame,
+            signal_name=signal_name,
+            signal_meaning=signal_meaning,
+            breakpoint_number=breakpoint_number,
+            exit_code=exit_code,
+            timestamp=self._runtime.time_module.time(),
+            details=payload_mapping,
+        )
+
+    def _record_command_transcript(
+        self,
+        *,
+        command: str,
+        sent_command: str,
+        status: str,
+        parsed: ParsedMiResponse | None = None,
+        timed_out: bool = False,
+        fatal: bool = False,
+        error: str | None = None,
+    ) -> None:
+        """Record structured transcript metadata for one debugger command."""
+
+        self._runtime.record_command_transcript(
+            CommandTranscriptEntry(
+                command=command,
+                sent_command=sent_command,
+                status=status,
+                result_class=parsed.result_class if parsed is not None else None,
+                timed_out=timed_out,
+                fatal=fatal,
+                error=error,
+                execution_state=self._runtime.execution_state,
+                stop_reason=self._runtime.stop_reason,
+                timestamp=self._runtime.time_module.time(),
+            )
+        )
+
+    @staticmethod
+    def _frame_record(value: object) -> FrameRecord | None:
+        """Normalize an MI frame mapping into the structured frame record type."""
+
+        return cast(FrameRecord, value) if isinstance(value, dict) else None
+
+    @staticmethod
+    def _str_or_none(value: object) -> str | None:
+        """Return a string-compatible scalar as text when possible."""
+
+        if isinstance(value, str):
+            return value
+        if isinstance(value, int):
+            return str(value)
+        return None

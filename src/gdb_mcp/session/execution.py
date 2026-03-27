@@ -7,6 +7,7 @@ import signal
 from typing import Optional, cast
 
 from ..domain import (
+    CommandTranscriptEntry,
     CommandExecutionInfo,
     FunctionCallInfo,
     MessageResult,
@@ -120,14 +121,40 @@ class SessionExecutionService:
         )
 
         if "error" in result:
+            self._runtime.record_command_transcript(
+                CommandTranscriptEntry(
+                    command="interrupt",
+                    sent_command="SIGINT",
+                    status="error",
+                    fatal=bool(result.get("fatal", False)),
+                    error=str(result["error"]),
+                    execution_state=self._runtime.execution_state,
+                    stop_reason=self._runtime.stop_reason,
+                    timestamp=self._runtime.time_module.time(),
+                )
+            )
             return OperationError(message=str(result["error"]))
 
         raw_responses = result.get("command_responses", [])
         command_responses = raw_responses if isinstance(raw_responses, list) else []
-        parsed_result = cast(StructuredPayload, parse_mi_responses(command_responses).to_dict())
+        parsed = parse_mi_responses(command_responses)
+        self._command_runner.update_runtime_after_command("interrupt", parsed)
+        parsed_result = cast(StructuredPayload, parsed.to_dict())
 
         if result.get("timed_out"):
             self._runtime.mark_inferior_running()
+            self._runtime.record_command_transcript(
+                CommandTranscriptEntry(
+                    command="interrupt",
+                    sent_command="SIGINT",
+                    status="timeout",
+                    timed_out=True,
+                    error="Interrupt sent but no stopped notification received",
+                    execution_state=self._runtime.execution_state,
+                    stop_reason=self._runtime.stop_reason,
+                    timestamp=self._runtime.time_module.time(),
+                )
+            )
             return OperationSuccess(
                 MessageResult(
                     message="Interrupt sent but no stopped notification received",
@@ -138,6 +165,17 @@ class SessionExecutionService:
 
         stop_reason = self._extract_stop_reason(parsed_result)
         self._runtime.mark_inferior_paused(stop_reason)
+        self._runtime.record_command_transcript(
+            CommandTranscriptEntry(
+                command="interrupt",
+                sent_command="SIGINT",
+                status="success",
+                result_class=parsed.result_class,
+                execution_state=self._runtime.execution_state,
+                stop_reason=self._runtime.stop_reason,
+                timestamp=self._runtime.time_module.time(),
+            )
+        )
         return OperationSuccess(
             MessageResult(message="Program interrupted (paused)", result=parsed_result)
         )
@@ -160,12 +198,36 @@ class SessionExecutionService:
         result = self._command_runner.send_command_and_wait_for_prompt(mi_command, timeout_sec)
 
         if "error" in result:
+            self._runtime.record_command_transcript(
+                CommandTranscriptEntry(
+                    command=command,
+                    sent_command=mi_command,
+                    status="error",
+                    fatal=bool(result.get("fatal", False)),
+                    error=str(result["error"]),
+                    execution_state=self._runtime.execution_state,
+                    stop_reason=self._runtime.stop_reason,
+                    timestamp=self._runtime.time_module.time(),
+                )
+            )
             return OperationError(
                 message=str(result["error"]),
                 details={"function_call": function_call},
             )
 
         if result.get("timed_out"):
+            self._runtime.record_command_transcript(
+                CommandTranscriptEntry(
+                    command=command,
+                    sent_command=mi_command,
+                    status="timeout",
+                    timed_out=True,
+                    error=f"Timeout waiting for call to complete after {timeout_sec}s",
+                    execution_state=self._runtime.execution_state,
+                    stop_reason=self._runtime.stop_reason,
+                    timestamp=self._runtime.time_module.time(),
+                )
+            )
             return OperationError(
                 message=f"Timeout waiting for call to complete after {timeout_sec}s",
                 details={"function_call": function_call},
@@ -174,12 +236,36 @@ class SessionExecutionService:
         raw_responses = result.get("command_responses", [])
         command_responses = raw_responses if isinstance(raw_responses, list) else []
         parsed = parse_mi_responses(command_responses)
+        self._command_runner.update_runtime_after_command(command, parsed)
         if parsed.is_error_result():
+            self._runtime.record_command_transcript(
+                CommandTranscriptEntry(
+                    command=command,
+                    sent_command=mi_command,
+                    status="error",
+                    result_class=parsed.result_class,
+                    error=parsed.error_message() or "GDB returned an error",
+                    execution_state=self._runtime.execution_state,
+                    stop_reason=self._runtime.stop_reason,
+                    timestamp=self._runtime.time_module.time(),
+                )
+            )
             return OperationError(
                 message=parsed.error_message() or "GDB returned an error",
                 details={"function_call": function_call},
             )
         console_output = "".join(item for item in parsed.console if isinstance(item, str))
+        self._runtime.record_command_transcript(
+            CommandTranscriptEntry(
+                command=command,
+                sent_command=mi_command,
+                status="success",
+                result_class=parsed.result_class,
+                execution_state=self._runtime.execution_state,
+                stop_reason=self._runtime.stop_reason,
+                timestamp=self._runtime.time_module.time(),
+            )
+        )
 
         return OperationSuccess(
             FunctionCallInfo(

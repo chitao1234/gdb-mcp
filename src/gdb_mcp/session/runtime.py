@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import threading
+from typing import TypeVar
 
+from ..domain import CommandTranscriptEntry, StopEvent
 from ..transport import MiClient
 from ..transport.protocols import GdbControllerProtocol
 from .config import SessionConfig
+from .constants import DEFAULT_COMMAND_TRANSCRIPT_LIMIT, DEFAULT_STOP_HISTORY_LIMIT
 from .protocols import LockProtocol, OsModuleProtocol, TimeModuleProtocol
 from .state import SessionState
+
+HistoryItemT = TypeVar("HistoryItemT")
 
 
 @dataclass(slots=True)
@@ -20,6 +25,7 @@ class SessionRuntime:
     os_module: OsModuleProtocol
     time_module: TimeModuleProtocol
     lifecycle_lock: LockProtocol = field(default_factory=threading.RLock, repr=False)
+    workflow_lock: LockProtocol = field(default_factory=threading.RLock, repr=False)
     config: SessionConfig | None = None
     state: SessionState = SessionState.CREATED
     is_running: bool = False
@@ -31,6 +37,12 @@ class SessionRuntime:
     last_failure_message: str | None = None
     current_thread_id: int | None = None
     current_frame: int | None = None
+    artifact_root: str | None = None
+    last_stop_event: StopEvent | None = None
+    stop_history: list[StopEvent] = field(default_factory=list)
+    stop_history_limit: int = DEFAULT_STOP_HISTORY_LIMIT
+    command_transcript: list[CommandTranscriptEntry] = field(default_factory=list)
+    command_transcript_limit: int = DEFAULT_COMMAND_TRANSCRIPT_LIMIT
 
     @property
     def controller(self) -> GdbControllerProtocol | None:
@@ -64,6 +76,9 @@ class SessionRuntime:
         self.last_failure_message = None
         self.current_thread_id = None
         self.current_frame = None
+        self.last_stop_event = None
+        self.stop_history.clear()
+        self.command_transcript.clear()
 
     def mark_ready(self) -> None:
         """Mark the session as ready for requests."""
@@ -157,3 +172,28 @@ class SessionRuntime:
         self.execution_state = "exited"
         self.stop_reason = reason
         self.exit_code = exit_code
+
+    def record_stop_event(self, event: StopEvent) -> None:
+        """Remember a structured stop event and keep bounded history."""
+
+        self.last_stop_event = event
+        self.stop_history.append(event)
+        self._trim_history(self.stop_history, self.stop_history_limit)
+
+    def record_command_transcript(self, entry: CommandTranscriptEntry) -> None:
+        """Remember command execution metadata and keep bounded transcript history."""
+
+        self.command_transcript.append(entry)
+        self._trim_history(self.command_transcript, self.command_transcript_limit)
+
+    @staticmethod
+    def _trim_history(items: list[HistoryItemT], limit: int) -> None:
+        """Trim one history list to the configured maximum size."""
+
+        if limit < 1:
+            items.clear()
+            return
+
+        overflow = len(items) - limit
+        if overflow > 0:
+            del items[:overflow]

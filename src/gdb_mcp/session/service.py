@@ -6,6 +6,7 @@ from ..domain import (
     BacktraceInfo,
     BreakpointInfo,
     BreakpointListInfo,
+    CommandTranscriptEntry,
     CommandExecutionInfo,
     ExpressionValueInfo,
     FrameInfo,
@@ -18,6 +19,7 @@ from ..domain import (
     SessionMessage,
     SessionStartInfo,
     SessionStatusSnapshot,
+    StopEvent,
     ThreadListInfo,
     ThreadSelectionInfo,
     VariablesInfo,
@@ -108,6 +110,24 @@ class SessionService:
         """Expose the current inferior execution state."""
 
         return self.runtime.execution_state
+
+    @property
+    def last_stop_event(self) -> StopEvent | None:
+        """Expose the most recent structured stop event."""
+
+        return self.runtime.last_stop_event
+
+    @property
+    def stop_history(self) -> tuple[StopEvent, ...]:
+        """Expose the bounded structured stop history."""
+
+        return tuple(self.runtime.stop_history)
+
+    @property
+    def command_transcript(self) -> tuple[CommandTranscriptEntry, ...]:
+        """Expose the bounded command transcript."""
+
+        return tuple(self.runtime.command_transcript)
 
     def start(
         self,

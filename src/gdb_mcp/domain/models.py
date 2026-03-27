@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TypedDict, TypeAlias
 
 JsonScalar: TypeAlias = str | int | float | bool | None
@@ -122,6 +122,39 @@ class SessionStartInfo:
     warnings: list[str] | None = None
     env_output: list[StructuredPayload] | None = None
     init_output: list[StructuredPayload] | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class StopEvent:
+    """Structured description of one inferior stop or exit event."""
+
+    execution_state: str
+    reason: str | None = None
+    command: str | None = None
+    thread_id: int | None = None
+    frame: FrameRecord | None = None
+    signal_name: str | None = None
+    signal_meaning: str | None = None
+    breakpoint_number: str | None = None
+    exit_code: int | None = None
+    timestamp: float | None = None
+    details: StructuredPayload = field(default_factory=dict)
+
+
+@dataclass(slots=True, frozen=True)
+class CommandTranscriptEntry:
+    """Structured metadata for one debugger command execution."""
+
+    command: str
+    sent_command: str | None = None
+    status: str = "success"
+    result_class: str | None = None
+    timed_out: bool = False
+    fatal: bool = False
+    error: str | None = None
+    execution_state: str | None = None
+    stop_reason: str | None = None
+    timestamp: float | None = None
 
 
 @dataclass(slots=True, frozen=True)

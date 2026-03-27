@@ -23,6 +23,10 @@ class TestSessionService:
         assert service.controller is None
         assert service.state is SessionState.CREATED
         assert service.config is None
+        assert service.last_stop_event is None
+        assert service.stop_history == ()
+        assert service.command_transcript == ()
+        assert service.runtime.workflow_lock is not None
 
     def test_start_success_uses_injected_controller_factory(self):
         """Startup should use the injected controller factory rather than importing one directly."""
