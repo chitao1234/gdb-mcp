@@ -14,7 +14,7 @@ class ParsedMiResponse:
     output: list[Any] = field(default_factory=list)
     result: Any = None
     result_class: str | None = None
-    notify: list[Any] = field(default_factory=list)
+    notify: list[dict[str, Any]] = field(default_factory=list)
 
     def is_error_result(self) -> bool:
         """Return True when the MI result record reported an error."""

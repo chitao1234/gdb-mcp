@@ -234,15 +234,18 @@ class MiClient:
                         )
                         continue
 
-                    if response_token == token or response_token is None:
+                    if response_token == token:
                         command_responses.append(response)
-                        if (
-                            saw_result_record
-                            and result_class == "running"
-                            and response_type == "notify"
-                            and response.get("message") == "stopped"
-                        ):
-                            saw_stop_after_running = True
+                    elif (
+                        response_type == "notify"
+                        and saw_result_record
+                        and result_class == "running"
+                        and response.get("message") == "stopped"
+                    ):
+                        command_responses.append(response)
+                        saw_stop_after_running = True
+                    elif response_token is None and response_type != "notify":
+                        command_responses.append(response)
                     else:
                         async_notifications.append(response)
                         logger.info(

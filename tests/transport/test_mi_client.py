@@ -153,7 +153,30 @@ class TestMiClient:
         assert result.command_responses[0]["type"] == "console"
         assert result.command_responses[-1]["type"] == "result"
         assert result.async_notifications == [
-            {"type": "notify", "token": 999, "payload": {"msg": "old-command"}}
+            {"type": "notify", "payload": {"msg": "thread-created"}},
+            {"type": "notify", "token": 999, "payload": {"msg": "old-command"}},
+        ]
+
+    def test_send_command_does_not_complete_exec_on_unrelated_tokenless_notify(self):
+        """Token-less async notifications should not satisfy an exec stop wait unless stopped."""
+
+        controller = _FakeController(
+            [
+                [{"type": "result", "token": 1000, "message": "running", "payload": None}],
+                [{"type": "notify", "message": "thread-created", "payload": {"id": "2"}}],
+                [],
+            ]
+        )
+        client = self._make_client(controller)
+
+        result = client.send_command_and_wait_for_prompt("-exec-continue", timeout_sec=0.02)
+
+        assert result.timed_out is True
+        assert result.command_responses == [
+            {"type": "result", "token": 1000, "message": "running", "payload": None}
+        ]
+        assert result.async_notifications == [
+            {"type": "notify", "message": "thread-created", "payload": {"id": "2"}}
         ]
 
     def test_send_command_waits_for_stop_after_running_result(self):
@@ -174,6 +197,50 @@ class TestMiClient:
         assert result.timed_out is False
         assert [record["type"] for record in result.command_responses] == ["result", "notify"]
         assert result.command_responses[0]["message"] == "running"
+        assert result.command_responses[1]["message"] == "stopped"
+
+    def test_send_command_treats_tokenless_stopped_as_exec_completion(self):
+        """The stop event for an exec command should still be attached when token-less."""
+
+        controller = _FakeController(
+            [
+                [{"type": "result", "token": 1000, "message": "running", "payload": None}],
+                [
+                    {
+                        "type": "notify",
+                        "message": "stopped",
+                        "payload": {"reason": "signal-received"},
+                    }
+                ],
+                [],
+            ]
+        )
+        client = self._make_client(controller)
+
+        result = client.send_command_and_wait_for_prompt("-exec-next", timeout_sec=1.0)
+
+        assert result.timed_out is False
+        assert [record["type"] for record in result.command_responses] == ["result", "notify"]
+        assert result.command_responses[1]["message"] == "stopped"
+
+    def test_send_command_treats_tokenless_stopped_as_cli_run_completion(self):
+        """CLI commands that return a running result should also wait for stopped."""
+
+        controller = _FakeController(
+            [
+                [{"type": "result", "token": 1000, "message": "running", "payload": None}],
+                [{"type": "notify", "message": "stopped", "payload": {"reason": "breakpoint-hit"}}],
+                [],
+            ]
+        )
+        client = self._make_client(controller)
+
+        result = client.send_command_and_wait_for_prompt(
+            '-interpreter-exec console "run"', timeout_sec=1.0
+        )
+
+        assert result.timed_out is False
+        assert [record["type"] for record in result.command_responses] == ["result", "notify"]
         assert result.command_responses[1]["message"] == "stopped"
 
     def test_send_command_detects_fatal_error_and_cleans_up(self):

@@ -24,7 +24,15 @@ def parse_mi_responses(responses: list[dict[str, Any]]) -> ParsedMiResponse:
             message = response.get("message")
             parsed.result_class = message if isinstance(message, str) else None
         elif msg_type == "notify":
-            parsed.notify.append(response.get("payload"))
+            payload = response.get("payload")
+            notify_record: dict[str, Any]
+            if isinstance(payload, dict):
+                notify_record = dict(payload)
+            else:
+                notify_record = {"payload": payload}
+
+            notify_record["message"] = response.get("message")
+            parsed.notify.append(notify_record)
 
     return parsed
 

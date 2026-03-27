@@ -22,7 +22,7 @@ class TestMiParser:
         assert "Test output\n" in parsed.console
         assert parsed.result == {"msg": "done"}
         assert parsed.result_class == "done"
-        assert {"msg": "thread-created"} in parsed.notify
+        assert {"msg": "thread-created", "message": None} in parsed.notify
 
     def test_extract_mi_result_payload_from_command_execution_shape(self):
         """Inner MI result payloads should be extracted from command results."""
