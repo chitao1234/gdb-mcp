@@ -488,6 +488,64 @@ class TestExecutionApi:
         assert session.last_stop_event is not None
         assert session.last_stop_event.exit_code == 7
 
+    def test_run_parses_hex_exit_code(self, scripted_running_session, mi_result, mi_notify):
+        """Exit-code parsing should normalize hexadecimal payload values."""
+
+        session, _controller = scripted_running_session(
+            [
+                mi_result(message="running"),
+                mi_notify(
+                    "stopped",
+                    {
+                        "reason": "exited",
+                        "exit-code": "0x0A",
+                    },
+                ),
+            ]
+        )
+
+        result = result_to_mapping(session.run(timeout_sec=5))
+
+        assert result["status"] == "success"
+        status = result_to_mapping(session.get_status())
+        assert status["execution_state"] == "exited"
+        assert status["stop_reason"] == "exited"
+        assert status["exit_code"] == 10
+        assert session.last_stop_event is not None
+        assert session.last_stop_event.exit_code == 10
+
+    def test_wait_for_stop_parses_hex_exit_code(self, running_session):
+        """wait_for_stop should propagate parsed hexadecimal exit-code fields."""
+
+        running_session.runtime.mark_inferior_running()
+        with patch.object(
+            running_session._command_runner,
+            "wait_for_stop",
+            return_value={
+                "command_responses": [
+                    {
+                        "type": "notify",
+                        "message": "stopped",
+                        "payload": {
+                            "reason": "exited",
+                            "exit-code": "0x0B",
+                            "thread-id": "1",
+                        },
+                    }
+                ],
+                "timed_out": False,
+            },
+        ):
+            result = result_to_mapping(running_session.wait_for_stop(timeout_sec=5))
+
+        assert result["status"] == "success"
+        assert result["matched"] is True
+        assert running_session.last_stop_event is not None
+        assert running_session.last_stop_event.exit_code == 11
+        status = result_to_mapping(running_session.get_status())
+        assert status["execution_state"] == "exited"
+        assert status["exit_code"] == 11
+
     def test_attach_process(self, scripted_running_session, mi_console, mi_result, mi_notify):
         """Attach should route through the CLI attach command and mark the target loaded."""
 
