@@ -17,9 +17,27 @@ tests that interact with external processes.
 import json
 import subprocess
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+
+CallGdbTool = Callable[[str, dict[str, object]], dict[str, object]]
+
+
+def _missing_call_gdb_tool(tool_name: str, arguments: dict[str, object]) -> dict[str, object]:
+    """Raise a clear error when the integration fixture injection is missing."""
+
+    del tool_name, arguments
+    raise RuntimeError(
+        "call_gdb_tool fixture was not injected. "
+        "Ensure tests/integration/conftest.py is loaded."
+    )
+
+
+# Replaced at runtime by tests/integration/conftest.py::_install_module_tool_caller.
+call_gdb_tool: CallGdbTool = _missing_call_gdb_tool
+
 
 # Simple C++ program with function calls for testing
 TEST_CPP_PROGRAM = """

@@ -11,8 +11,26 @@ including testing:
 All tests use real GDB processes via the MCP server interface.
 """
 
-import pytest
 import threading
+from collections.abc import Callable
+
+import pytest
+
+CallGdbTool = Callable[[str, dict[str, object]], dict[str, object]]
+
+
+def _missing_call_gdb_tool(tool_name: str, arguments: dict[str, object]) -> dict[str, object]:
+    """Raise a clear error when the integration fixture injection is missing."""
+
+    del tool_name, arguments
+    raise RuntimeError(
+        "call_gdb_tool fixture was not injected. "
+        "Ensure tests/integration/conftest.py is loaded."
+    )
+
+
+# Replaced at runtime by tests/integration/conftest.py::_install_module_tool_caller.
+call_gdb_tool: CallGdbTool = _missing_call_gdb_tool
 
 # Simple C program for testing - different from main test suite
 TEST_PROGRAM_1 = """
