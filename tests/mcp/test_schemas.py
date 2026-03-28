@@ -27,7 +27,6 @@ from gdb_mcp.mcp.schemas import (
     ListSessionsArgs,
     RunUntilFailureArgs,
     RunUntilFailureCaptureArgs,
-    RunUntilFailureFailureArgs,
     RunArgs,
     StartSessionArgs,
     WaitForStopArgs,

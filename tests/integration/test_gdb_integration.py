@@ -575,9 +575,7 @@ def test_inspect_variables(session_id):
     call_gdb_tool("gdb_next", {"session_id": session_id})
 
     # Try to evaluate the parameters
-    eval_result = call_gdb_tool(
-        "gdb_evaluate_expression", {"session_id": session_id, "expression": "a"}
-    )
+    call_gdb_tool("gdb_evaluate_expression", {"session_id": session_id, "expression": "a"})
     # Note: This might not work if we haven't stepped to the right location
     # but we can at least verify the command executes
 
@@ -1067,7 +1065,6 @@ def test_breakpoint_workflow(session_id):
     bp3 = call_gdb_tool("gdb_set_breakpoint", {"session_id": session_id, "location": "multiply"})
     assert all(bp["status"] == "success" for bp in [bp1, bp2, bp3])
 
-    bp1_num = int(bp1["breakpoint"]["number"])
     bp2_num = int(bp2["breakpoint"]["number"])
     bp3_num = int(bp3["breakpoint"]["number"])
 

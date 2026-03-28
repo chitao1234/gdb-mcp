@@ -6,7 +6,6 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import tempfile
-from typing import cast
 
 from ..domain import (
     CaptureArtifactInfo,
@@ -15,7 +14,6 @@ from ..domain import (
     OperationError,
     OperationResult,
     OperationSuccess,
-    StopEvent,
     StructuredPayload,
     payload_to_mapping,
     result_to_mapping,

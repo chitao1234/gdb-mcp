@@ -18,7 +18,6 @@ from gdb_mcp.domain import (
 )
 from gdb_mcp.session.campaign import (
     RunUntilFailureCaptureRequest,
-    RunUntilFailureCriteria,
     RunUntilFailureRequest,
     RunUntilFailureService,
 )

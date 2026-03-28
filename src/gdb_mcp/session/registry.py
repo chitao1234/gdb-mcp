@@ -9,7 +9,6 @@ from typing import ContextManager, cast
 
 from ..domain import (
     OperationError,
-    OperationResult,
     OperationSuccess,
     SessionListInfo,
     SessionMessage,

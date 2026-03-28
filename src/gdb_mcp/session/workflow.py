@@ -13,7 +13,6 @@ from ..domain import (
     OperationResult,
     OperationSuccess,
     StopEvent,
-    StructuredPayload,
     result_to_mapping,
 )
 from .runtime import SessionRuntime
