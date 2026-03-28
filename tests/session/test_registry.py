@@ -135,6 +135,8 @@ class TestSessionRegistry:
         assert isinstance(result, OperationError)
         assert "inconsistent" in result.message.lower()
         assert manager.get_session(session_id) is session
+        assert session_id not in manager._closing_sessions
+        assert manager.resolve_session(session_id) is session
 
     def test_resolve_session_rejects_closing_sessions(self):
         """Closing sessions should reject new command resolution with a clear error."""

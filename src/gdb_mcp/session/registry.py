@@ -195,6 +195,8 @@ class SessionRegistry:
 
         if session.controller is None:
             if session.is_running:
+                with self._lock:
+                    self._closing_sessions.discard(session_id)
                 return OperationError(
                     message=(
                         "Session state is inconsistent: session reports running "
