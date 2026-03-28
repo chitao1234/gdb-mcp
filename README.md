@@ -347,6 +347,15 @@ Contributions welcome! Areas for improvement:
 - Better error handling and recovery
 - Enhanced output formatting
 
+Before opening a PR for code changes, run:
+
+```bash
+uv run ruff check src tests
+uv run mypy src
+uv run pytest -q
+git diff --check
+```
+
 ## License
 
 MIT

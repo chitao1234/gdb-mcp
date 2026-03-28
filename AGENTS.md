@@ -30,6 +30,7 @@ This file defines repository-specific guidance for agents and contributors worki
 
 Run these checks for code changes (and run relevant subsets for docs-only changes):
 
+- `ruff check src tests` or `uv run ruff check src tests`
 - `mypy src` or `uv run mypy src`
 - `pytest -q` or `uv run pytest -q`
 - `git diff --check`

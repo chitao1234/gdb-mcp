@@ -11,6 +11,16 @@ This directory contains unit and integration tests for the GDB MCP Server.
 pip install -e ".[dev]"
 ```
 
+### Run Quality Checks
+
+```bash
+# Lint
+.venv/bin/ruff check src tests
+
+# Type-check
+.venv/bin/mypy src
+```
+
 ### Run All Tests
 
 ```bash
