@@ -300,6 +300,12 @@ class MiClient:
                             response.get("payload"),
                         )
 
+                if saw_result_record and (result_class != "running" or saw_stop_after_running):
+                    return MiTransportResponse(
+                        command_responses=command_responses,
+                        async_notifications=async_notifications,
+                    )
+
             elapsed = time.monotonic() - start_time
             logger.warning(
                 "Timeout: no GDB output for %ss (total elapsed: %.1fs)",

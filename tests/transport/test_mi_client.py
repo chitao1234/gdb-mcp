@@ -333,6 +333,79 @@ class TestMiClient:
         assert result.command_responses == []
         assert len(result.async_notifications) >= 1
 
+    def test_send_command_completes_after_result_even_with_continuous_async_traffic(self):
+        """Non-running commands should return once their result record is parsed."""
+
+        class ContinuousAsyncController:
+            def __init__(self):
+                self.io_manager = MagicMock()
+                self.io_manager.stdin = _FakeStdin()
+                self.gdb_process = MagicMock()
+                self._step = 0
+
+            def get_gdb_response(self, *, timeout_sec: float, raise_error_on_timeout: bool):
+                del timeout_sec, raise_error_on_timeout
+                self._step += 1
+                if self._step == 1:
+                    return [
+                        {"type": "result", "token": 1000, "message": "done", "payload": {"ok": True}},
+                        {"type": "notify", "message": "thread-created", "payload": {"id": "2"}},
+                    ]
+                return [{"type": "notify", "message": "library-loaded", "payload": {"id": self._step}}]
+
+            def exit(self) -> None:
+                pass
+
+        client = self._make_client(ContinuousAsyncController())
+
+        result = client.send_command_and_wait_for_prompt("-thread-info", timeout_sec=0.02)
+
+        assert result.timed_out is False
+        assert result.error is None
+        assert result.command_responses == [
+            {"type": "result", "token": 1000, "message": "done", "payload": {"ok": True}}
+        ]
+        assert result.async_notifications == [
+            {"type": "notify", "message": "thread-created", "payload": {"id": "2"}}
+        ]
+
+    def test_send_command_completes_running_command_after_stop_under_async_noise(self):
+        """Running commands should return once stopped is observed, even if async noise continues."""
+
+        class ContinuousAsyncController:
+            def __init__(self):
+                self.io_manager = MagicMock()
+                self.io_manager.stdin = _FakeStdin()
+                self.gdb_process = MagicMock()
+                self._step = 0
+
+            def get_gdb_response(self, *, timeout_sec: float, raise_error_on_timeout: bool):
+                del timeout_sec, raise_error_on_timeout
+                self._step += 1
+                if self._step == 1:
+                    return [
+                        {"type": "result", "token": 1000, "message": "running", "payload": None},
+                        {"type": "notify", "message": "stopped", "payload": {"reason": "breakpoint-hit"}},
+                        {"type": "notify", "message": "thread-created", "payload": {"id": "2"}},
+                    ]
+                return [{"type": "notify", "message": "library-loaded", "payload": {"id": self._step}}]
+
+            def exit(self) -> None:
+                pass
+
+        client = self._make_client(ContinuousAsyncController())
+
+        result = client.send_command_and_wait_for_prompt("-exec-next", timeout_sec=0.02)
+
+        assert result.timed_out is False
+        assert result.error is None
+        assert [record["type"] for record in result.command_responses] == ["result", "notify"]
+        assert result.command_responses[0]["message"] == "running"
+        assert result.command_responses[1]["message"] == "stopped"
+        assert result.async_notifications == [
+            {"type": "notify", "message": "thread-created", "payload": {"id": "2"}}
+        ]
+
     def test_interrupt_rejects_when_command_is_in_progress(self):
         """Interrupt should fail fast instead of racing another in-flight command."""
 
