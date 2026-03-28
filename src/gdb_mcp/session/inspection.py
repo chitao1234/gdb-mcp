@@ -301,7 +301,7 @@ class SessionInspectionService:
             frame=frame,
         )
         if selection_error is not None:
-            return selection_error
+            return self._selection_error_with_restore(selection, selection_error)
 
         result = self._command_runner.execute_command_result(
             build_evaluate_expression_command(expression), timeout_sec=DEFAULT_TIMEOUT_SEC
@@ -362,19 +362,13 @@ class SessionInspectionService:
         if isinstance(selection, OperationError):
             return selection
 
-        if thread_id is not None and selection.thread_id != thread_id:
-            thread_result = self._command_runner.execute_command_result(
-                f"-thread-select {thread_id}", timeout_sec=DEFAULT_TIMEOUT_SEC
-            )
-            if isinstance(thread_result, OperationError):
-                return thread_result
-
-        if selection.frame_number != frame:
-            frame_result = self._command_runner.execute_command_result(
-                f"-stack-select-frame {frame}", timeout_sec=DEFAULT_TIMEOUT_SEC
-            )
-            if isinstance(frame_result, OperationError):
-                return frame_result
+        selection_error = self._select_for_inspection(
+            selection,
+            thread_id=thread_id,
+            frame=frame,
+        )
+        if selection_error is not None:
+            return self._selection_error_with_restore(selection, selection_error)
 
         result = self._command_runner.execute_command_result(
             "-stack-list-variables --simple-values", timeout_sec=DEFAULT_TIMEOUT_SEC
@@ -420,7 +414,7 @@ class SessionInspectionService:
             frame=frame,
         )
         if selection_error is not None:
-            return selection_error
+            return self._selection_error_with_restore(selection, selection_error)
 
         resolved_numbers = self._resolve_register_number_filters(
             register_numbers=register_numbers or [],
@@ -704,6 +698,28 @@ class SessionInspectionService:
                 return frame_result
 
         return None
+
+    def _selection_error_with_restore(
+        self,
+        selection: _SelectionSnapshot | None,
+        selection_error: OperationError,
+    ) -> OperationError:
+        """Return a selection error, restoring the original context when possible."""
+
+        if selection is None:
+            return selection_error
+
+        restore_error = self._restore_selection(selection)
+        if restore_error is None:
+            return selection_error
+
+        return OperationError(
+            message=(
+                f"{selection_error.message}. "
+                "Also failed to restore the original thread/frame selection: "
+                f"{restore_error.message}"
+            )
+        )
 
     @staticmethod
     def _int_or_none(value: object) -> int | None:

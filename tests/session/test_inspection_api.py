@@ -261,6 +261,32 @@ class TestDataInspectionApi:
         assert written[-2].endswith("-thread-select 1\n")
         assert written[-1].endswith("-stack-select-frame 0\n")
 
+    def test_evaluate_expression_restores_selection_on_frame_switch_error(
+        self,
+        scripted_running_session,
+        mi_result,
+    ):
+        """Failed temporary frame selection should still restore the original context."""
+
+        session, controller = scripted_running_session(
+            [mi_result({"threads": [{"id": "1"}, {"id": "2"}], "current-thread-id": "1"})],
+            [mi_result({"frame": {"level": "0", "func": "main"}})],
+            [mi_result()],
+            [mi_result({"msg": "No frame 999"}, message="error")],
+            [mi_result()],
+            [mi_result()],
+        )
+
+        result = result_to_mapping(session.evaluate_expression("x", thread_id=2, frame=999))
+
+        assert result["status"] == "error"
+        assert result["message"] == "No frame 999"
+        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert written[-2].endswith("-thread-select 1\n")
+        assert written[-1].endswith("-stack-select-frame 0\n")
+        assert session.runtime.current_thread_id == 1
+        assert session.runtime.current_frame == 0
+
     def test_get_variables(self, scripted_running_session, mi_result):
         """Variable inspection should restore the original thread/frame selection."""
 
@@ -354,6 +380,32 @@ class TestDataInspectionApi:
         assert any("-stack-select-frame 1" in command for command in written)
         assert written[-2].endswith("-thread-select 1\n")
         assert written[-1].endswith("-stack-select-frame 0\n")
+
+    def test_get_registers_restores_selection_on_frame_switch_error(
+        self,
+        scripted_running_session,
+        mi_result,
+    ):
+        """Failed temporary frame selection should still restore context for register reads."""
+
+        session, controller = scripted_running_session(
+            [mi_result({"threads": [{"id": "1"}, {"id": "2"}], "current-thread-id": "1"})],
+            [mi_result({"frame": {"level": "0", "func": "main"}})],
+            [mi_result()],
+            [mi_result({"msg": "No frame 999"}, message="error")],
+            [mi_result()],
+            [mi_result()],
+        )
+
+        result = result_to_mapping(session.get_registers(thread_id=2, frame=999))
+
+        assert result["status"] == "error"
+        assert result["message"] == "No frame 999"
+        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert written[-2].endswith("-thread-select 1\n")
+        assert written[-1].endswith("-stack-select-frame 0\n")
+        assert session.runtime.current_thread_id == 1
+        assert session.runtime.current_frame == 0
 
     def test_get_registers_supports_number_filters_and_natural_format(
         self,
@@ -478,3 +530,29 @@ class TestDataInspectionApi:
             .decode()
             .endswith('-data-read-memory-bytes -o 1 "&value" 4\n')
         )
+
+    def test_get_variables_restores_selection_on_frame_switch_error(
+        self,
+        scripted_running_session,
+        mi_result,
+    ):
+        """Failed temporary frame selection should still restore context for variable reads."""
+
+        session, controller = scripted_running_session(
+            [mi_result({"threads": [{"id": "1"}, {"id": "2"}], "current-thread-id": "1"})],
+            [mi_result({"frame": {"level": "0", "func": "main"}})],
+            [mi_result()],
+            [mi_result({"msg": "No frame 999"}, message="error")],
+            [mi_result()],
+            [mi_result()],
+        )
+
+        result = result_to_mapping(session.get_variables(thread_id=2, frame=999))
+
+        assert result["status"] == "error"
+        assert result["message"] == "No frame 999"
+        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert written[-2].endswith("-thread-select 1\n")
+        assert written[-1].endswith("-stack-select-frame 0\n")
+        assert session.runtime.current_thread_id == 1
+        assert session.runtime.current_frame == 0
