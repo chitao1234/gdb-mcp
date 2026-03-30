@@ -370,6 +370,7 @@ Get stack backtrace for a thread.
 **Notes:**
 - `max_frames` is a true upper bound on returned frame count
 - Supplying `thread_id` does not change the selected thread after the call
+- The response `thread_id` reports the thread actually inspected, even when the request omits `thread_id`
 
 ### `gdb_select_frame`
 Select the active stack frame.
@@ -585,6 +586,7 @@ Get local variables for a stack frame.
 **Notes:**
 - This call inspects the requested thread/frame and then restores the prior
   selection
+- The response `thread_id` reports the thread actually inspected, even when the request omits `thread_id`
 - Use `gdb_select_thread` or `gdb_select_frame` when you want to change the
   debugger context for later commands
 

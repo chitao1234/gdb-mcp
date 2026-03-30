@@ -147,12 +147,13 @@ class TestThreadAndStackInspectionApi:
         session, controller = scripted_running_session(
             [mi_result({"stack": [{"level": "0", "func": "main", "file": "test.c"}]})]
         )
+        session.runtime.mark_thread_selected(7)
 
         result = result_to_mapping(session.get_backtrace())
 
         assert result["status"] == "success"
         assert result["count"] == 1
-        assert result["thread_id"] is None
+        assert result["thread_id"] == 7
         assert controller.io_manager.stdin.writes[0].decode().endswith("-stack-list-frames 0 99\n")
 
     def test_get_backtrace_specific_thread(self, scripted_running_session, mi_result):
@@ -325,6 +326,28 @@ class TestDataInspectionApi:
         assert written[-1].endswith("-stack-select-frame 0\n")
         assert session.runtime.current_thread_id == 1
         assert session.runtime.current_frame == 0
+
+    def test_get_variables_reports_current_thread_when_no_override_is_supplied(
+        self,
+        scripted_running_session,
+        mi_result,
+    ):
+        """Variable inspection should report the effective current thread in its payload."""
+
+        session, _controller = scripted_running_session(
+            [mi_result({"threads": [{"id": "1"}], "current-thread-id": "1"})],
+            [mi_result({"frame": {"level": "0", "func": "main"}})],
+            [mi_result({"variables": [{"name": "x", "value": "10"}]})],
+            [mi_result()],
+            [mi_result()],
+        )
+
+        result = result_to_mapping(session.get_variables())
+
+        assert result["status"] == "success"
+        assert result["thread_id"] == 1
+        assert result["frame"] == 0
+        assert len(result["variables"]) == 1
 
     def test_get_registers(self, scripted_running_session, mi_result):
         """Register inspection should surface all returned register values."""

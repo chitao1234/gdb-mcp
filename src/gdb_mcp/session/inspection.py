@@ -221,8 +221,11 @@ class SessionInspectionService:
                     return restore_error
             return result
 
+        effective_thread_id = (
+            thread_id if thread_id is not None else self._runtime.current_thread_id
+        )
         payload = backtrace_info_from_payload(
-            thread_id,
+            effective_thread_id,
             extract_mi_result_payload(command_result_payload(result)),
         )
 
@@ -380,8 +383,9 @@ class SessionInspectionService:
                 return restore_error
             return result
 
+        effective_thread_id = thread_id if thread_id is not None else selection.thread_id
         payload = variables_info_from_payload(
-            thread_id,
+            effective_thread_id,
             frame,
             extract_mi_result_payload(command_result_payload(result)),
         )
