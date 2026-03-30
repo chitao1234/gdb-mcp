@@ -876,6 +876,7 @@ def build_tool_definitions() -> list[Tool]:
             description=(
                 "Get the stack backtrace for a specific thread or the current thread. "
                 "Shows function calls, file locations, and line numbers. "
+                "The response thread_id reports the thread actually inspected. "
                 "If thread_id is provided, the original thread/frame selection is restored after the call. "
                 "The max_frames parameter is an upper bound on the number of frames returned. "
                 "Requires session_id parameter (obtained from gdb_start_session)."
@@ -1070,6 +1071,7 @@ def build_tool_definitions() -> list[Tool]:
                 "Get local variables for a specific stack frame in a thread. "
                 "This is a read-only inspection call: the original thread/frame selection "
                 "is restored after the variables are collected. "
+                "The response thread_id reports the thread actually inspected. "
                 "Requires session_id parameter (obtained from gdb_start_session)."
             ),
             inputSchema=GetVariablesArgs.model_json_schema(),

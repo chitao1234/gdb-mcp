@@ -1,6 +1,6 @@
 [project]
 name = "gdb-mcp-server"
-version = "0.1.0"
+version = "0.1.1"
 description = "MCP server for interacting with GDB debugging sessions"
 authors = [{name = "Andrew Stelter"}]
 requires-python = ">=3.10"
