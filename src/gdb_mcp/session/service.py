@@ -15,13 +15,17 @@ from ..domain import (
     CommandTranscriptEntry,
     CommandExecutionInfo,
     DetachOnForkInfo,
+    DisassemblyInfo,
     ExpressionValueInfo,
+    FinishInfo,
     FrameInfo,
     FrameSelectionInfo,
     FollowForkMode,
     FollowForkModeInfo,
     FunctionCallInfo,
+    InferiorAddInfo,
     InferiorListInfo,
+    InferiorRemoveInfo,
     InferiorSelectionInfo,
     MemoryReadInfo,
     MemoryCaptureRange,
@@ -32,6 +36,7 @@ from ..domain import (
     SessionMessage,
     SessionStartInfo,
     SessionStatusSnapshot,
+    SourceContextInfo,
     StopEvent,
     ThreadListInfo,
     ThreadSelectionInfo,
@@ -191,10 +196,35 @@ class SessionService:
         self,
         args: list[str] | None = None,
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        wait_for_stop: bool = True,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate target start to the execution service."""
 
-        return self._execution.run(args=args, timeout_sec=timeout_sec)
+        return self._execution.run(
+            args=args,
+            timeout_sec=timeout_sec,
+            wait_for_stop=wait_for_stop,
+        )
+
+    def add_inferior(
+        self,
+        *,
+        executable: str | None = None,
+        make_current: bool = False,
+    ) -> OperationSuccess[InferiorAddInfo] | OperationError:
+        """Delegate inferior creation to the execution service."""
+
+        return self._execution.add_inferior(
+            executable=executable,
+            make_current=make_current,
+        )
+
+    def remove_inferior(
+        self, inferior_id: int
+    ) -> OperationSuccess[InferiorRemoveInfo] | OperationError:
+        """Delegate inferior removal to the execution service."""
+
+        return self._execution.remove_inferior(inferior_id)
 
     def attach_process(
         self,
@@ -248,6 +278,13 @@ class SessionService:
         """Delegate next/step-over to the execution service."""
 
         return self._execution.next()
+
+    def finish(
+        self, timeout_sec: int = DEFAULT_TIMEOUT_SEC
+    ) -> OperationSuccess[FinishInfo] | OperationError:
+        """Delegate finish/step-out to the execution service."""
+
+        return self._execution.finish(timeout_sec=timeout_sec)
 
     def interrupt(self) -> OperationSuccess[MessageResult] | OperationError:
         """Delegate interrupt to the execution service."""
@@ -364,6 +401,35 @@ class SessionService:
 
         return self._inspection.get_frame_info()
 
+    def disassemble(
+        self,
+        *,
+        thread_id: int | None = None,
+        frame: int | None = None,
+        function: str | None = None,
+        address: str | None = None,
+        start_address: str | None = None,
+        end_address: str | None = None,
+        file: str | None = None,
+        line: int | None = None,
+        instruction_count: int = 32,
+        mode: Literal["assembly", "mixed"] = "mixed",
+    ) -> OperationSuccess[DisassemblyInfo] | OperationError:
+        """Delegate structured disassembly to the inspection service."""
+
+        return self._inspection.disassemble(
+            thread_id=thread_id,
+            frame=frame,
+            function=function,
+            address=address,
+            start_address=start_address,
+            end_address=end_address,
+            file=file,
+            line=line,
+            instruction_count=instruction_count,
+            mode=mode,
+        )
+
     def select_frame(
         self, frame_number: int
     ) -> OperationSuccess[FrameSelectionInfo] | OperationError:
@@ -398,6 +464,35 @@ class SessionService:
         """Delegate local-variable inspection to the inspection service."""
 
         return self._inspection.get_variables(thread_id, frame)
+
+    def get_source_context(
+        self,
+        *,
+        thread_id: int | None = None,
+        frame: int | None = None,
+        function: str | None = None,
+        address: str | None = None,
+        file: str | None = None,
+        line: int | None = None,
+        start_line: int | None = None,
+        end_line: int | None = None,
+        context_before: int = 5,
+        context_after: int = 5,
+    ) -> OperationSuccess[SourceContextInfo] | OperationError:
+        """Delegate structured source-context retrieval to the inspection service."""
+
+        return self._inspection.get_source_context(
+            thread_id=thread_id,
+            frame=frame,
+            function=function,
+            address=address,
+            file=file,
+            line=line,
+            start_line=start_line,
+            end_line=end_line,
+            context_before=context_before,
+            context_after=context_after,
+        )
 
     def get_registers(
         self,
