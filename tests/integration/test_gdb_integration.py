@@ -656,6 +656,26 @@ def test_finish_steps_out_to_caller(session_id):
 
 
 @pytest.mark.integration
+def test_disassemble_returns_structured_instructions(session_id):
+    """Structured disassembly should flatten MI payloads into instruction records."""
+
+    call_gdb_tool("gdb_set_breakpoint", {"session_id": session_id, "location": "add"})
+    run_result = call_gdb_tool("gdb_run", {"session_id": session_id})
+    assert run_result["status"] == "success"
+
+    disassemble_result = call_gdb_tool(
+        "gdb_disassemble",
+        {"session_id": session_id, "instruction_count": 4, "mode": "mixed"},
+    )
+
+    assert disassemble_result["status"] == "success"
+    assert disassemble_result["mode"] == "mixed"
+    assert disassemble_result["count"] >= 1
+    assert disassemble_result["instructions"][0]["address"].startswith("0x")
+    assert any("add" in instruction.get("function", "") for instruction in disassemble_result["instructions"])
+
+
+@pytest.mark.integration
 def test_next_vs_step(session_id):
     """Test difference between next (step over) and step (step into)."""
     # Set breakpoint at main
