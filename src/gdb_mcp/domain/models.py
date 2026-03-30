@@ -76,6 +76,28 @@ class VariableRecord(TypedDict, total=False):
     arg: str
 
 
+class DisassemblyInstructionRecord(TypedDict, total=False):
+    """Structured disassembly record returned by GDB/MI."""
+
+    address: str
+    instruction: str
+    opcodes: str
+    function: str
+    offset: int
+    file: str
+    fullname: str
+    line: int
+    is_current: bool
+
+
+class SourceLineRecord(TypedDict, total=False):
+    """Structured source-context line record."""
+
+    line_number: int
+    text: str
+    is_current: bool
+
+
 class RegisterRecord(TypedDict, total=False):
     """Structured register payload returned by GDB."""
 
@@ -326,6 +348,31 @@ class InferiorSelectionInfo:
 
 
 @dataclass(slots=True, frozen=True)
+class InferiorAddInfo:
+    """Structured response for inferior creation."""
+
+    inferior_id: int
+    is_current: bool = False
+    display: str | None = None
+    description: str | None = None
+    connection: str | None = None
+    executable: str | None = None
+    current_inferior_id: int | None = None
+    inferior_count: int | None = None
+    message: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class InferiorRemoveInfo:
+    """Structured response for inferior removal."""
+
+    inferior_id: int
+    current_inferior_id: int | None = None
+    inferior_count: int | None = None
+    message: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
 class FollowForkModeInfo:
     """Structured response for follow-fork-mode changes."""
 
@@ -364,6 +411,19 @@ class WaitForStopInfo:
     execution_state: str | None = None
     stop_reason: str | None = None
     reason_filter: list[str] | None = None
+    last_stop_event: StopEvent | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class FinishInfo:
+    """Structured response for finishing the current frame."""
+
+    message: str
+    return_value: str | None = None
+    gdb_result_var: str | None = None
+    frame: FrameRecord | None = None
+    execution_state: str | None = None
+    stop_reason: str | None = None
     last_stop_event: StopEvent | None = None
 
 
@@ -434,6 +494,42 @@ class FrameInfo:
     """Current frame details."""
 
     frame: FrameRecord
+
+
+@dataclass(slots=True, frozen=True)
+class DisassemblyInfo:
+    """Structured disassembly response."""
+
+    scope: str
+    thread_id: int | None
+    frame: int | None
+    function: str | None
+    file: str | None
+    fullname: str | None
+    line: int | None
+    start_address: str | None
+    end_address: str | None
+    mode: str
+    instructions: list[DisassemblyInstructionRecord]
+    count: int
+
+
+@dataclass(slots=True, frozen=True)
+class SourceContextInfo:
+    """Structured source-context response."""
+
+    scope: str
+    thread_id: int | None
+    frame: int | None
+    function: str | None
+    address: str | None
+    file: str
+    fullname: str | None
+    line: int | None
+    start_line: int
+    end_line: int
+    lines: list[SourceLineRecord]
+    count: int
 
 
 @dataclass(slots=True, frozen=True)

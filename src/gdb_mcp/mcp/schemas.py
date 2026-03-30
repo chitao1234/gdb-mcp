@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Literal, Optional, TypeAlias
 
 from mcp.types import Tool
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 
 class StrictArgsModel(BaseModel):
@@ -54,9 +54,23 @@ def _coerce_int_like(
     return parsed
 
 
+def _normalize_optional_text(value: str | None, *, field_name: str) -> str | None:
+    """Normalize optional string selectors while rejecting blanks."""
+
+    if value is None:
+        return None
+
+    text = value.strip()
+    if not text:
+        raise ValueError(f"{field_name} must be a non-empty string")
+    return text
+
+
 BATCH_STEP_TOOL_NAMES = (
     "gdb_execute_command",
     "gdb_run",
+    "gdb_add_inferior",
+    "gdb_remove_inferior",
     "gdb_attach_process",
     "gdb_list_inferiors",
     "gdb_select_inferior",
@@ -81,9 +95,12 @@ BATCH_STEP_TOOL_NAMES = (
     "gdb_wait_for_stop",
     "gdb_step",
     "gdb_next",
+    "gdb_finish",
     "gdb_interrupt",
+    "gdb_disassemble",
     "gdb_evaluate_expression",
     "gdb_read_memory",
+    "gdb_get_source_context",
     "gdb_get_variables",
     "gdb_get_registers",
     "gdb_call_function",
@@ -91,6 +108,8 @@ BATCH_STEP_TOOL_NAMES = (
 BatchStepToolName: TypeAlias = Literal[
     "gdb_execute_command",
     "gdb_run",
+    "gdb_add_inferior",
+    "gdb_remove_inferior",
     "gdb_attach_process",
     "gdb_list_inferiors",
     "gdb_select_inferior",
@@ -115,9 +134,12 @@ BatchStepToolName: TypeAlias = Literal[
     "gdb_wait_for_stop",
     "gdb_step",
     "gdb_next",
+    "gdb_finish",
     "gdb_interrupt",
+    "gdb_disassemble",
     "gdb_evaluate_expression",
     "gdb_read_memory",
+    "gdb_get_source_context",
     "gdb_get_variables",
     "gdb_get_registers",
     "gdb_call_function",
@@ -189,6 +211,42 @@ class RunArgs(StrictArgsModel):
             "Accepts either an explicit argv list or one shell-style string."
         ),
     )
+    timeout_sec: int = Field(30, gt=0, description="Timeout in seconds")
+    wait_for_stop: bool = Field(
+        True,
+        description=(
+            "When true, wait for the next stop/prompt state. "
+            "When false, return as soon as GDB acknowledges that execution is running."
+        ),
+    )
+
+
+class AddInferiorArgs(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    executable: str | None = Field(
+        None,
+        description="Optional executable to associate with the new inferior after creation.",
+    )
+    make_current: bool = Field(
+        False,
+        description="When true, leave the new inferior selected after the call.",
+    )
+
+    @field_validator("executable")
+    @classmethod
+    def validate_executable(cls, value: str | None) -> str | None:
+        """Reject blank executable overrides."""
+
+        return _normalize_optional_text(value, field_name="executable")
+
+
+class RemoveInferiorArgs(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    inferior_id: int = Field(..., gt=0, description="Inferior ID to remove")
+
+
+class FinishArgs(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
     timeout_sec: int = Field(30, gt=0, description="Timeout in seconds")
 
 
@@ -308,6 +366,155 @@ class GetVariablesArgs(StrictArgsModel):
         if normalized is None:
             raise ValueError("frame is required")
         return normalized
+
+
+class DisassembleArgs(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    thread_id: int | str | None = Field(None, description="Optional thread override")
+    frame: int | str | None = Field(None, description="Optional frame override")
+    function: str | None = Field(None, description="Function name to disassemble")
+    address: str | None = Field(None, description="Single address selector")
+    start_address: str | None = Field(None, description="Start of explicit address range")
+    end_address: str | None = Field(None, description="End of explicit address range")
+    file: str | None = Field(None, description="Source file selector")
+    line: int | str | None = Field(None, description="Source line selector")
+    instruction_count: int = Field(32, gt=0, description="Upper bound on returned instructions")
+    mode: Literal["assembly", "mixed"] = Field(
+        "mixed",
+        description="Whether to request assembly only or mixed source/assembly output",
+    )
+
+    @field_validator("thread_id")
+    @classmethod
+    def validate_thread_id(cls, value: int | str | None) -> int | None:
+        """Accept numeric strings while enforcing positive thread IDs."""
+
+        return _coerce_int_like(value, field_name="thread_id", minimum=1, allow_none=True)
+
+    @field_validator("frame")
+    @classmethod
+    def validate_frame(cls, value: int | str | None) -> int | None:
+        """Accept numeric strings while enforcing non-negative frame indices."""
+
+        return _coerce_int_like(value, field_name="frame", minimum=0, allow_none=True)
+
+    @field_validator("line")
+    @classmethod
+    def validate_line(cls, value: int | str | None) -> int | None:
+        """Accept numeric strings while enforcing positive source lines."""
+
+        return _coerce_int_like(value, field_name="line", minimum=1, allow_none=True)
+
+    @field_validator("function", "address", "start_address", "end_address", "file")
+    @classmethod
+    def validate_selector_text(cls, value: str | None, info: ValidationInfo) -> str | None:
+        """Reject blank direct-location selectors."""
+
+        return _normalize_optional_text(value, field_name=info.field_name)
+
+    @model_validator(mode="after")
+    def validate_selector_mode(self) -> "DisassembleArgs":
+        """Require exactly zero or one disassembly selector group."""
+
+        selector_modes: list[str] = []
+        has_context_override = self.thread_id is not None or self.frame is not None
+
+        if self.function is not None:
+            selector_modes.append("function")
+        if self.address is not None:
+            selector_modes.append("address")
+        if self.start_address is not None or self.end_address is not None:
+            if self.start_address is None or self.end_address is None:
+                raise ValueError("start_address and end_address must be provided together")
+            selector_modes.append("address_range")
+        if self.file is not None or self.line is not None:
+            if self.file is None or self.line is None:
+                raise ValueError("file and line must be provided together")
+            selector_modes.append("file_line")
+
+        if len(selector_modes) > 1:
+            raise ValueError("selector groups are mutually exclusive")
+        if has_context_override and selector_modes:
+            raise ValueError("thread_id and frame cannot be combined with direct location selectors")
+        return self
+
+
+class GetSourceContextArgs(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    thread_id: int | str | None = Field(None, description="Optional thread override")
+    frame: int | str | None = Field(None, description="Optional frame override")
+    function: str | None = Field(None, description="Function name selector")
+    address: str | None = Field(None, description="Address selector")
+    file: str | None = Field(None, description="Source file selector")
+    line: int | str | None = Field(None, description="Source line selector")
+    start_line: int | str | None = Field(None, description="Start of explicit line range")
+    end_line: int | str | None = Field(None, description="End of explicit line range")
+    context_before: int = Field(5, ge=0, description="Lines before focal line")
+    context_after: int = Field(5, ge=0, description="Lines after focal line")
+
+    @field_validator("thread_id")
+    @classmethod
+    def validate_thread_id(cls, value: int | str | None) -> int | None:
+        """Accept numeric strings while enforcing positive thread IDs."""
+
+        return _coerce_int_like(value, field_name="thread_id", minimum=1, allow_none=True)
+
+    @field_validator("frame")
+    @classmethod
+    def validate_frame(cls, value: int | str | None) -> int | None:
+        """Accept numeric strings while enforcing non-negative frame indices."""
+
+        return _coerce_int_like(value, field_name="frame", minimum=0, allow_none=True)
+
+    @field_validator("line", "start_line", "end_line")
+    @classmethod
+    def validate_lines(cls, value: int | str | None, info: ValidationInfo) -> int | None:
+        """Accept numeric strings while enforcing positive source lines."""
+
+        return _coerce_int_like(value, field_name=info.field_name, minimum=1, allow_none=True)
+
+    @field_validator("function", "address", "file")
+    @classmethod
+    def validate_selector_text(cls, value: str | None, info: ValidationInfo) -> str | None:
+        """Reject blank direct-location selectors."""
+
+        return _normalize_optional_text(value, field_name=info.field_name)
+
+    @model_validator(mode="after")
+    def validate_selector_mode(self) -> "GetSourceContextArgs":
+        """Require exactly zero or one source-context selector group."""
+
+        selector_modes: list[str] = []
+        has_context_override = self.thread_id is not None or self.frame is not None
+        has_range = self.start_line is not None or self.end_line is not None
+
+        if self.line is not None and has_range:
+            raise ValueError("line cannot be combined with start_line or end_line")
+        if has_range:
+            if self.start_line is None or self.end_line is None:
+                raise ValueError("start_line and end_line must be provided together")
+            if self.start_line > self.end_line:
+                raise ValueError("start_line must be <= end_line")
+
+        if self.function is not None:
+            selector_modes.append("function")
+        if self.address is not None:
+            selector_modes.append("address")
+        if self.file is not None or self.line is not None or has_range:
+            if self.file is None:
+                raise ValueError("file is required when line, start_line, or end_line is provided")
+            if self.line is not None:
+                selector_modes.append("file_line")
+            elif has_range:
+                selector_modes.append("file_range")
+            else:
+                raise ValueError("file selector requires line or start_line and end_line")
+
+        if len(selector_modes) > 1:
+            raise ValueError("selector groups are mutually exclusive")
+        if has_context_override and selector_modes:
+            raise ValueError("thread_id and frame cannot be combined with direct location selectors")
+        return self
 
 
 class ThreadSelectArgs(StrictArgsModel):
@@ -741,9 +948,31 @@ def build_tool_definitions() -> list[Tool]:
                 "Use this instead of raw 'run' text when you want optional argv overrides "
                 "and a dedicated tool for launching execution. "
                 "If args are provided, they replace the inferior arguments for this run. "
+                "When wait_for_stop=false, this becomes the structured replacement for raw "
+                "'run&' and returns as soon as GDB acknowledges that execution is running. "
+                "Use gdb_wait_for_stop or gdb_interrupt to synchronize after a non-blocking run. "
                 "Requires session_id parameter (obtained from gdb_start_session)."
             ),
             inputSchema=RunArgs.model_json_schema(),
+        ),
+        Tool(
+            name="gdb_add_inferior",
+            description=(
+                "Create a new inferior as a structured operation instead of using raw "
+                "'add-inferior'. "
+                "Optionally associate an executable with the new inferior and choose whether "
+                "it should remain selected after the call."
+            ),
+            inputSchema=AddInferiorArgs.model_json_schema(),
+        ),
+        Tool(
+            name="gdb_remove_inferior",
+            description=(
+                "Remove one inferior by its numeric inferior ID. "
+                "Use gdb_list_inferiors first when clients need to inspect the current "
+                "inferior inventory before deleting one."
+            ),
+            inputSchema=RemoveInferiorArgs.model_json_schema(),
         ),
         Tool(
             name="gdb_attach_process",
@@ -1032,6 +1261,15 @@ def build_tool_definitions() -> list[Tool]:
             inputSchema=SessionIdArgs.model_json_schema(),
         ),
         Tool(
+            name="gdb_finish",
+            description=(
+                "Step out of the current frame and stop in the caller. "
+                "This is the structured replacement for raw 'finish' when the inferior is "
+                "paused in the frame you want to exit."
+            ),
+            inputSchema=FinishArgs.model_json_schema(),
+        ),
+        Tool(
             name="gdb_interrupt",
             description=(
                 "Interrupt (pause) a running program. Use this when: "
@@ -1064,6 +1302,24 @@ def build_tool_definitions() -> list[Tool]:
                 "requested range are unreadable."
             ),
             inputSchema=ReadMemoryArgs.model_json_schema(),
+        ),
+        Tool(
+            name="gdb_disassemble",
+            description=(
+                "Return structured assembly or mixed source/assembly for one resolved location. "
+                "Supports current-context disassembly with optional thread/frame overrides, plus "
+                "function, address, address-range, and file/line selectors."
+            ),
+            inputSchema=DisassembleArgs.model_json_schema(),
+        ),
+        Tool(
+            name="gdb_get_source_context",
+            description=(
+                "Return structured source lines for one resolved location. "
+                "Supports current-context lookup with optional thread/frame overrides, plus "
+                "function, address, file/line, and file/range selectors."
+            ),
+            inputSchema=GetSourceContextArgs.model_json_schema(),
         ),
         Tool(
             name="gdb_get_variables",
