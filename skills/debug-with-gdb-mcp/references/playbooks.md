@@ -95,6 +95,7 @@ Notes:
 
 ```json
 {
+  "session_id": 1,
   "location": "main"
 }
 ```

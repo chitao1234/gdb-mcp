@@ -138,6 +138,7 @@ List all currently registered debugger sessions.
 Execute a GDB command. Supports both CLI and MI commands.
 
 **Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
 - `command`: GDB command to execute (CLI or MI format)
 - `timeout_sec`: Timeout in seconds (default: 30)
 
@@ -170,6 +171,7 @@ structured output and can be separately permissioned.
 Run the currently loaded target in a structured way.
 
 **Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
 - `args` (optional): Override inferior arguments for this run. Accepts either:
   - list form: `["--mode", "fast"]`
   - shell-style string form: `"--mode fast"`
@@ -187,6 +189,7 @@ Attach GDB to a running process by PID.
 when possible.
 
 **Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
 - `pid`: PID of the process to attach to
 - `timeout_sec`: Timeout in seconds (default: 30)
 
@@ -200,7 +203,7 @@ when possible.
 List inferiors currently known to this GDB session.
 
 **Parameters:**
-- none beyond `session_id`
+- `session_id`: Session ID from `gdb_start_session`
 
 **Returns:**
 - `inferiors`: Array of inferiors with fields such as `inferior_id`, `is_current`, `description`, and optional `executable`
@@ -211,24 +214,28 @@ List inferiors currently known to this GDB session.
 Select the active inferior by ID.
 
 **Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
 - `inferior_id`: Inferior ID from `gdb_list_inferiors`
 
 ### `gdb_set_follow_fork_mode`
 Set fork-follow behavior for multi-process debugging.
 
 **Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
 - `mode`: `"parent"` or `"child"`
 
 ### `gdb_set_detach_on_fork`
 Configure whether GDB detaches from the non-followed side after fork.
 
 **Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
 - `enabled`: `true` or `false`
 
 ### `gdb_batch`
 Execute a structured sequence of session-scoped tools under one session workflow lock.
 
 **Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
 - `steps`: Ordered list of steps. Each step can be:
   - full object form: `{"tool":"gdb_get_status","arguments":{},"label":"optional"}`
   - shorthand form: `"gdb_get_status"`
@@ -239,14 +246,15 @@ Execute a structured sequence of session-scoped tools under one session workflow
 Write a structured forensic bundle to disk.
 
 **Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
 - `output_dir` (optional): Parent directory for bundle output
 - `bundle_name` (optional): Deterministic bundle directory name
 - `expressions` (optional): Expressions to evaluate into bundle
 - `memory_ranges` (optional): Explicit memory ranges, each entry either:
   - object form: `{"address":"&value","count":16,"offset":0,"name":"label"}`
   - shorthand form: `"&value:16"` or `"&value:16@4"`
-- `max_frames`: Frames per backtrace (default: `100`)
-- `include_threads`, `include_backtraces`, `include_frame`, `include_variables`, `include_registers`, `include_transcript`, `include_stop_history`
+- `max_frames` (optional): Frames per backtrace (default: `100`)
+- `include_threads`, `include_backtraces`, `include_frame`, `include_variables`, `include_registers`, `include_transcript`, `include_stop_history` (all optional booleans)
 
 ### `gdb_run_until_failure`
 Run fresh sessions repeatedly until a failure predicate matches.
@@ -269,6 +277,7 @@ Call a function in the target process.
 **WARNING:** This is a privileged operation that executes code in the debugged program. Use with caution as it may have side effects.
 
 **Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
 - `function_call`: Function call expression (e.g., `printf("hello\n")` or `my_func(arg1, arg2)`)
 - `timeout_sec`: Timeout in seconds (default: 30)
 
@@ -284,15 +293,24 @@ Call a function in the target process.
 
 **Examples:**
 ```json
-{"function_call": "printf(\"value: %d\\n\", x)"}
-{"function_call": "strlen(buffer)"}
-{"function_call": "validate_state()"}
+{"session_id": 3, "function_call": "printf(\"value: %d\\n\", x)"}
+```
+
+```json
+{"session_id": 3, "function_call": "strlen(buffer)"}
+```
+
+```json
+{"session_id": 3, "function_call": "validate_state()"}
 ```
 
 **Note:** This dedicated tool enables MCP clients to implement separate permission controls for function calling, which executes code in the target process with the target's privileges.
 
 ### `gdb_get_status`
 Get the current status of the GDB session.
+
+**Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
 
 **Returns:**
 - `is_running`: Whether the GDB session is still alive and usable
@@ -318,26 +336,53 @@ Get the current status of the GDB session.
 ### `gdb_stop_session`
 Stop the current GDB session.
 
+**Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
+
 ## Thread Inspection
 
 ### `gdb_get_threads`
 Get information about all threads in the debugged process.
+
+**Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
 
 **Returns:**
 - List of threads with IDs and states
 - Current thread ID
 - Thread count
 
+### `gdb_select_thread`
+Select the active thread.
+
+**Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
+- `thread_id`: Thread ID to select (positive integer)
+
 ### `gdb_get_backtrace`
 Get stack backtrace for a thread.
 
 **Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
 - `thread_id` (optional): Thread ID as an integer or numeric string (`None` for current thread)
-- `max_frames`: Maximum number of frames to retrieve (default: 100)
+- `max_frames` (optional): Maximum number of frames to retrieve (default: 100)
 
 **Notes:**
 - `max_frames` is a true upper bound on returned frame count
 - Supplying `thread_id` does not change the selected thread after the call
+
+### `gdb_select_frame`
+Select the active stack frame.
+
+**Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
+- `frame_number`: Frame number to select (non-negative integer, `0` is innermost)
+
+### `gdb_get_frame_info`
+Get information about the currently selected frame.
+
+**Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
 
 ## Breakpoints and Execution Control
 
@@ -345,9 +390,10 @@ Get stack backtrace for a thread.
 Set a breakpoint at a location.
 
 **Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
 - `location`: Function name, file:line, or *address
 - `condition` (optional): Conditional expression
-- `temporary`: Whether breakpoint is temporary (default: false)
+- `temporary` (optional): Whether breakpoint is temporary (default: false)
 
 **Examples:**
 - `location: "main"` - Break at main function
@@ -360,8 +406,9 @@ Set a breakpoint at a location.
 Set a watchpoint on an expression.
 
 **Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
 - `expression`: Expression to watch
-- `access`: Access mode
+- `access` (optional): Access mode
   - `"write"`: break on writes
   - `"read"`: break on reads
   - `"access"`: break on read or write
@@ -369,16 +416,24 @@ Set a watchpoint on an expression.
 ### `gdb_delete_watchpoint`
 Delete a watchpoint by number.
 
+**Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
+- `number`: Watchpoint number (positive integer in the shared breakpoint namespace)
+
 ### `gdb_set_catchpoint`
 Set a catchpoint for debugger events.
 
 **Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
 - `kind`: Event kind (`fork`, `vfork`, `exec`, `signal`, `syscall`, `throw`, `catch`, etc.)
 - `argument` (optional): Kind-specific argument (for example syscall name)
 - `temporary` (optional): Use `tcatch` semantics
 
 ### `gdb_list_breakpoints`
 List all breakpoints with structured data.
+
+**Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
 
 **Returns:**
 - `status`: "success" or "error"
@@ -425,10 +480,34 @@ List all breakpoints with structured data.
 - Find breakpoint numbers for deletion
 - Confirm file paths resolved correctly
 
+### `gdb_delete_breakpoint`
+Delete a breakpoint by number.
+
+**Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
+- `number`: Breakpoint number (positive integer)
+
+### `gdb_enable_breakpoint`
+Enable a previously disabled breakpoint by number.
+
+**Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
+- `number`: Breakpoint number (positive integer)
+
+### `gdb_disable_breakpoint`
+Disable a breakpoint by number without deleting it.
+
+**Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
+- `number`: Breakpoint number (positive integer)
+
 ### `gdb_continue`
 Continue execution until next breakpoint.
 
-If no stop event occurs before timeout, this tool can still return success with the inferior in `running` state.
+**Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
+
+If no stop event occurs before GDB reports back, this tool can still return success with the inferior in `running` state.
 
 **Recommended flow:**
 - use `gdb_continue` to resume execution
@@ -439,7 +518,8 @@ If no stop event occurs before timeout, this tool can still return success with 
 Wait for the inferior to stop without polling loops.
 
 **Parameters:**
-- `timeout_sec`: Maximum wait time
+- `session_id`: Session ID from `gdb_start_session`
+- `timeout_sec` (optional): Maximum wait time
 - `stop_reasons` (optional): Restrict what counts as a match
 
 **Returns:**
@@ -450,15 +530,24 @@ Wait for the inferior to stop without polling loops.
 ### `gdb_step`
 Step into next instruction (enters functions).
 
+**Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
+
 **IMPORTANT:** Only works when program is PAUSED at a specific location.
 
 ### `gdb_next`
 Step over to next line (doesn't enter functions).
 
+**Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
+
 **IMPORTANT:** Only works when program is PAUSED at a specific location.
 
 ### `gdb_interrupt`
 Interrupt (pause) a running program.
+
+**Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
 
 **Use when:**
 - Program is running and hasn't hit a breakpoint
@@ -474,6 +563,7 @@ Interrupt (pause) a running program.
 Evaluate a C/C++ expression in the current context.
 
 **Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
 - `expression`: Expression to evaluate
 - `thread_id` (optional): Thread ID override (integer or numeric string)
 - `frame` (optional): Frame override (integer or numeric string)
@@ -488,8 +578,9 @@ Evaluate a C/C++ expression in the current context.
 Get local variables for a stack frame.
 
 **Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
 - `thread_id` (optional): Thread ID (integer or numeric string)
-- `frame`: Frame number (integer or numeric string, 0 is current, default: 0)
+- `frame` (optional): Frame number (integer or numeric string, `0` is current, default: `0`)
 
 **Notes:**
 - This call inspects the requested thread/frame and then restores the prior
@@ -501,6 +592,7 @@ Get local variables for a stack frame.
 Get CPU register values for the current frame.
 
 **Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
 - `thread_id` (optional): Thread ID override (integer or numeric string)
 - `frame` (optional): Frame override (integer or numeric string)
 - `register_numbers` (optional): Explicit register numbers to query (integers or numeric strings)
@@ -540,6 +632,7 @@ Get CPU register values for the current frame.
 Read raw target memory bytes from an address expression.
 
 **Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
 - `address`: Address expression
 - `count`: Number of addressable units to read
 - `offset` (optional): Offset relative to `address`
