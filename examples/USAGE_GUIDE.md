@@ -40,7 +40,7 @@ User prompt:
 Run the program
 ```
 
-AI will use: `gdb_execute_command` with `command="run"`
+AI will use: `gdb_run`
 
 **Step 4: Inspect variables**
 
@@ -78,7 +78,7 @@ with a breakpoint at worker_thread
 AI actions:
 1. `gdb_start_session` with `program="examples/sample_program"`
 2. `gdb_set_breakpoint` with `location="worker_thread"`
-3. `gdb_execute_command` with `command="run"`
+3. `gdb_run`
 
 **Step 2: Analyze threads**
 
@@ -139,10 +139,8 @@ Load the executable examples/sample_program and the core dump at core.12345
 AI will use: `gdb_start_session` with:
 ```json
 {
-  "init_commands": [
-    "file examples/sample_program",
-    "core-file core.12345"
-  ]
+  "program": "examples/sample_program",
+  "core": "core.12345"
 }
 ```
 
@@ -201,12 +199,12 @@ AI will use: `gdb_start_session` with:
 
 User prompt:
 ```
-What program is loaded and what are the current breakpoints?
+Did the script load a target successfully, and what are the current breakpoints?
 ```
 
 AI actions:
-1. `gdb_execute_command` with `command="info files"` to see loaded program
-2. `gdb_execute_command` with `command="info breakpoints"` to list breakpoints
+1. `gdb_get_status` to confirm `target_loaded` and current execution state
+2. `gdb_list_breakpoints` to list breakpoints
 
 **Step 3: Work with the session**
 
@@ -248,7 +246,7 @@ Run the program and when it hits the breakpoint, tell me:
 ```
 
 AI actions:
-1. `gdb_execute_command` with `command="run"`
+1. `gdb_run`
 2. `gdb_get_threads` to find current thread
 3. `gdb_evaluate_expression` with `expression="counter"`
 4. `gdb_get_variables` to get locals
@@ -270,9 +268,9 @@ tell me which threads are blocked on mutexes
 
 AI actions:
 1. `gdb_start_session` with `program="examples/sample_program"`
-2. `gdb_execute_command` with `command="run &"` (background)
+2. `gdb_run` with `wait_for_stop=false` (background)
 3. Wait a moment (or use timer)
-4. `gdb_execute_command` with `command="interrupt"` to pause
+4. `gdb_interrupt` to pause
 5. `gdb_get_threads` to get all threads
 6. For each thread: `gdb_get_backtrace(thread_id=N)`
 7. Analyze backtraces for pthread_mutex_lock or similar functions
@@ -317,7 +315,7 @@ At the current point, examine the memory at address 0x12345678,
 showing 64 bytes in hexadecimal
 ```
 
-AI will use: `gdb_execute_command` with `command="x/64xb 0x12345678"`
+AI will use: `gdb_read_memory` with `address="0x12345678"` and `count=64`
 
 ### Assembly-Level Debugging
 
@@ -327,8 +325,27 @@ of all CPU registers
 ```
 
 AI actions:
-1. `gdb_execute_command` with `command="disassemble"`
+1. `gdb_disassemble` with the default current-frame selector
 2. `gdb_get_registers` to get register values
+
+### Source Context Inspection
+
+```
+Show me the source around the current frame, including a few lines
+before and after where execution stopped
+```
+
+AI will use: `gdb_get_source_context` with `context_before` and `context_after`
+
+### Stepping Out Of The Current Frame
+
+```
+Finish this helper function and show me the caller frame when we stop
+```
+
+AI actions:
+1. `gdb_finish`
+2. Use the returned `frame` payload or `gdb_get_frame_info` for follow-up detail
 
 ### Calling Functions
 
@@ -337,7 +354,19 @@ In the current context, call the calculate_sum function with
 array and size 5, and tell me what it returns
 ```
 
-AI will use: `gdb_evaluate_expression` with `expression="calculate_sum(array, 5)"`
+AI will use: `gdb_call_function` with `function_call="calculate_sum(array, 5)"`
+
+### Multi-Inferior Workflows
+
+```
+Add a second inferior for /tmp/helper, switch to it, and later remove it
+when we're done
+```
+
+AI actions:
+1. `gdb_add_inferior` with `executable="/tmp/helper"` and `make_current=true`
+2. `gdb_list_inferiors` to confirm the inventory and current inferior
+3. `gdb_remove_inferior` with the returned `inferior_id` during cleanup
 
 ## Common Patterns
 
@@ -380,16 +409,18 @@ AI will use: `gdb_evaluate_expression` with `expression="calculate_sum(array, 5)
 ### No Debug Symbols
 - Recompile with `-g` flag
 - Check with: `file examples/sample_program` (should say "not stripped")
-- Use: `gdb_execute_command` with `command="info sources"` to verify
+- Check the `warnings` field on `gdb_start_session`
+- Use `gdb_execute_command` with `command="info sources"` only when you need GDB's raw source inventory
 
 ### Thread Information Missing
 - Ensure program is compiled with `-pthread`
 - Check if program is actually multi-threaded
-- Use: `gdb_execute_command` with `command="info threads"` for raw output
+- Use `gdb_get_threads` for the structured thread inventory
 
 ### Timeout Errors
 - Increase timeout for slow operations
-- Use `timeout_sec` parameter in `gdb_execute_command`
+- Use the `timeout_sec` parameter on the structured tool you are calling
+- For long-running launches, combine `gdb_run(wait_for_stop=false)` with `gdb_wait_for_stop` or `gdb_interrupt`
 - Some operations may need 10-30 seconds for large programs
 
 ## Tips for Working with AI

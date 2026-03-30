@@ -135,21 +135,26 @@ List all currently registered debugger sessions.
 - `last_failure_message`: Failure detail when the session is in a failed state
 
 ### `gdb_execute_command`
-Execute a GDB command. Supports both CLI and MI commands.
+Execute a GDB command as an escape hatch. Supports both CLI and MI commands.
 
 **Parameters:**
 - `session_id`: Session ID from `gdb_start_session`
 - `command`: GDB command to execute (CLI or MI format)
 - `timeout_sec`: Timeout in seconds (default: 30)
 
-**NOTE:** For calling functions in the target process, prefer using the dedicated
-`gdb_call_function` tool instead of the 'call' command, as it provides better
-structured output and can be separately permissioned.
+**Prefer dedicated structured tools when available:**
+- `gdb_run` instead of raw `run` or `run &`
+- `gdb_interrupt` instead of raw `interrupt`
+- `gdb_list_breakpoints` instead of `info breakpoints`
+- `gdb_get_threads` instead of `info threads`
+- `gdb_disassemble` instead of `disassemble`
+- `gdb_get_source_context` instead of `list`
+- `gdb_call_function` instead of `call ...`
 
 **Automatically handles two types of commands:**
 
 1. **CLI Commands** (traditional GDB commands):
-   - Examples: `info breakpoints`, `list`, `print x`, `run`, `backtrace`
+   - Examples: `info sharedlibrary`, `info sources`, `ptype my_struct`, `set print pretty on`
    - Output is formatted as readable text
    - These are the commands you'd type in interactive GDB
 
@@ -158,14 +163,12 @@ structured output and can be separately permissioned.
    - Return structured data
    - More precise but less human-readable
 
-**Common CLI commands:**
-- `info breakpoints` - List all breakpoints
-- `info threads` - List all threads
-- `run` - Start the program
-- `print variable` - Print a variable's value
-- `backtrace` - Show call stack
-- `list` - Show source code
-- `disassemble` - Show assembly code
+**Common escape-hatch CLI commands:**
+- `info sharedlibrary` - Inspect currently loaded shared libraries
+- `info sources` - Show GDB's raw source-file inventory
+- `ptype variable` - Dump a C/C++ type definition
+- `set print pretty on` - Adjust debugger formatting state
+- `show args` - Inspect the current inferior argv as text
 
 ### `gdb_run`
 Run the currently loaded target in a structured way.
@@ -176,11 +179,55 @@ Run the currently loaded target in a structured way.
   - list form: `["--mode", "fast"]`
   - shell-style string form: `"--mode fast"`
 - `timeout_sec`: Timeout in seconds (default: 30)
+- `wait_for_stop` (optional): When `true`, wait for the next stop/prompt state.
+  When `false`, return as soon as GDB acknowledges that execution is running.
+
+**Returns:**
+- Standard command execution payload with `command`, optional text `output`, and
+  optional MI `result`
+- May include `warnings` when the inferior is now running but no stop event has
+  arrived yet within the timeout window
 
 **Use this when:**
 - The target is loaded but has not started yet
 - You want a structured alternative to raw `run` text
 - You want to override inferior argv without going through raw commands
+- You want a structured alternative to raw `run &` by setting
+  `wait_for_stop=false`
+
+**Recommended flow for background launch:**
+- Call `gdb_run` with `wait_for_stop=false`
+- Call `gdb_wait_for_stop` when you want to wait for the next stop event
+- Call `gdb_interrupt` if you need to pause a still-running inferior
+
+### `gdb_add_inferior`
+Create a new inferior in the current GDB session.
+
+**Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
+- `executable` (optional): Executable path to associate with the new inferior
+- `make_current` (optional): When `true`, leave the new inferior selected after creation
+
+**Returns:**
+- `inferior_id`: Numeric inferior ID created by GDB
+- `is_current`: Whether the created inferior is now selected
+- `display`, `description`, `connection`, `executable`: Refreshed inferior metadata when available
+- `current_inferior_id`: Active inferior after the operation
+- `inferior_count`: Known inferior inventory size after refresh
+- `message`: Human-readable summary
+
+### `gdb_remove_inferior`
+Remove one inferior by its numeric inferior ID.
+
+**Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
+- `inferior_id`: Inferior ID to remove
+
+**Returns:**
+- `inferior_id`: Removed inferior ID
+- `current_inferior_id`: Newly selected inferior after refresh, when one remains
+- `inferior_count`: Known inferior inventory size after removal
+- `message`: Human-readable summary
 
 ### `gdb_attach_process`
 Attach GDB to a running process by PID.
@@ -206,7 +253,9 @@ List inferiors currently known to this GDB session.
 - `session_id`: Session ID from `gdb_start_session`
 
 **Returns:**
-- `inferiors`: Array of inferiors with fields such as `inferior_id`, `is_current`, `description`, and optional `executable`
+- `inferiors`: Array of inferiors with fields such as `inferior_id`, `is_current`,
+  `description`, optional `executable`, and known runtime state fields like
+  `execution_state`, `stop_reason`, and `exit_code`
 - `count`: Number of inferiors
 - `current_inferior_id`: Active inferior ID when known
 
@@ -508,6 +557,7 @@ Continue execution until next breakpoint.
 **Parameters:**
 - `session_id`: Session ID from `gdb_start_session`
 
+If the target has not started yet, use `gdb_run` instead.
 If no stop event occurs before GDB reports back, this tool can still return success with the inferior in `running` state.
 
 **Recommended flow:**
@@ -544,6 +594,20 @@ Step over to next line (doesn't enter functions).
 
 **IMPORTANT:** Only works when program is PAUSED at a specific location.
 
+### `gdb_finish`
+Step out of the current frame and stop in the caller.
+
+**Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
+- `timeout_sec` (optional): Maximum time to wait for the finish operation
+
+**Returns:**
+- `message`: Human-readable summary
+- `return_value`: Return value reported by GDB when available
+- `gdb_result_var`: GDB convenience variable name (for example `$1`) when available
+- `frame`: Caller frame where execution stopped
+- `execution_state`, `stop_reason`, and `last_stop_event`
+
 ### `gdb_interrupt`
 Interrupt (pause) a running program.
 
@@ -574,6 +638,9 @@ Evaluate a C/C++ expression in the current context.
 - `"*ptr"` - Dereference pointer
 - `"array[5]"` - Access array element
 - `"obj->field"` - Access struct field
+
+**Note:** For expressions that intentionally call functions in the target, prefer
+`gdb_call_function` so clients can permission and audit that behavior separately.
 
 ### `gdb_get_variables`
 Get local variables for a stack frame.
@@ -642,3 +709,50 @@ Read raw target memory bytes from an address expression.
 **Returns:**
 - `blocks`: Readable memory blocks (with gaps represented as separate blocks)
 - `captured_bytes`: Total successfully captured bytes
+
+### `gdb_disassemble`
+Return structured assembly or mixed source/assembly for one resolved location.
+
+**Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
+- Current-context selectors:
+  - `thread_id` (optional): Thread override as an integer or numeric string
+  - `frame` (optional): Frame override as an integer or numeric string
+- Direct location selectors (choose exactly one selector group instead of `thread_id`/`frame`):
+  - `function` (optional): Function name to disassemble
+  - `address` (optional): Single address selector
+  - `start_address` and `end_address` (optional): Explicit address range
+  - `file` and `line` (optional): Resolve source file and line to code
+- `instruction_count` (optional): Upper bound on returned instructions (default: `32`)
+- `mode` (optional): `"assembly"` or `"mixed"` (default: `"mixed"`)
+
+**Returns:**
+- `scope`: Which selector mode resolved the request (`current`, `function`, `address`, `address_range`, or `file_line`)
+- `thread_id`, `frame`, `function`, `file`, `fullname`, `line`, `start_address`, `end_address`
+- `mode`: `"assembly"` or `"mixed"`
+- `instructions`: Structured instruction records with fields such as `address`,
+  `instruction`, optional source location, optional function name, and `is_current`
+- `count`: Number of instruction records returned
+
+### `gdb_get_source_context`
+Return structured source lines for one resolved location.
+
+**Parameters:**
+- `session_id`: Session ID from `gdb_start_session`
+- Current-context selectors:
+  - `thread_id` (optional): Thread override as an integer or numeric string
+  - `frame` (optional): Frame override as an integer or numeric string
+- Direct location selectors (choose exactly one selector group instead of `thread_id`/`frame`):
+  - `function` (optional): Function name selector
+  - `address` (optional): Address selector
+  - `file` and `line` (optional): Read context around one source line
+  - `file`, `start_line`, and `end_line` (optional): Read one explicit line range
+- `context_before` (optional): Number of lines before the focal line (default: `5`)
+- `context_after` (optional): Number of lines after the focal line (default: `5`)
+
+**Returns:**
+- `scope`: Which selector mode resolved the request (`current`, `function`, `address`, `file_line`, or `file_range`)
+- `thread_id`, `frame`, `function`, `address`, `file`, `fullname`, and focal `line`
+- `start_line` and `end_line`: Concrete line window returned from disk
+- `lines`: Structured line records with `line_number`, `text`, and `is_current`
+- `count`: Number of lines returned

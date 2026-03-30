@@ -5,8 +5,10 @@ An MCP (Model Context Protocol) server that provides AI assistants with programm
 ## Features
 
 - **Full GDB Control**: Start sessions, execute commands, control program execution
+- **Multi-Inferior Workflows**: Add, remove, and select inferiors while controlling fork-follow behavior
 - **Thread Analysis**: Inspect threads, get backtraces, analyze thread states
 - **Breakpoint Management**: Set conditional breakpoints, temporary breakpoints
+- **Code & Source Inspection**: Read structured disassembly and source context around resolved locations
 - **Variable Inspection**: Evaluate expressions, inspect variables and registers
 - **Core Dump Analysis**: Load and analyze core dumps with custom initialization
 - **Flexible Initialization**: Run GDB scripts or commands on startup
@@ -100,13 +102,15 @@ gdb-mcp-server
 
 ## Available Tools
 
-The GDB MCP Server provides 37 tools for controlling GDB debugging sessions:
+The GDB MCP Server provides 42 tools for controlling GDB debugging sessions:
 
 **Session Management:**
 - `gdb_start_session` - Start a new GDB session with optional initialization
 - `gdb_list_sessions` - List all active sessions with structured metadata
-- `gdb_execute_command` - Execute GDB commands (CLI or MI format)
-- `gdb_run` - Start the loaded program with optional argv overrides
+- `gdb_execute_command` - Execute GDB commands (CLI or MI format) when no dedicated structured tool fits
+- `gdb_run` - Start the loaded program with optional argv overrides and optional non-blocking wait behavior
+- `gdb_add_inferior` - Create a new inferior, optionally associating an executable with it
+- `gdb_remove_inferior` - Remove an inferior by numeric inferior ID
 - `gdb_attach_process` - Attach GDB to a running process by PID
 - `gdb_list_inferiors` - List inferiors in the current debugger session
 - `gdb_select_inferior` - Select the active inferior
@@ -141,15 +145,26 @@ The GDB MCP Server provides 37 tools for controlling GDB debugging sessions:
 - `gdb_wait_for_stop` - Wait for the next stop event without polling
 - `gdb_step` - Step into functions
 - `gdb_next` - Step over functions
+- `gdb_finish` - Step out of the current frame and report caller/return details
 - `gdb_interrupt` - Pause a running program
 
 **Data Inspection:**
 - `gdb_evaluate_expression` - Evaluate expressions, optionally in a specific thread/frame
 - `gdb_read_memory` - Read raw memory bytes using MI memory-read
+- `gdb_disassemble` - Return structured assembly or mixed source/assembly for one resolved location
+- `gdb_get_source_context` - Return structured source lines around one resolved location
 - `gdb_get_variables` - Get local variables without changing the selected thread/frame
 - `gdb_get_registers` - Get CPU registers, optionally in a specific thread/frame, with selector/filter options for large payloads
 
 **For detailed documentation of each tool including parameters, return values, and examples, see [TOOLS.md](TOOLS.md).**
+
+`gdb_execute_command` remains available as an escape hatch for commands that do
+not yet have a dedicated structured tool. Prefer `gdb_run`, `gdb_interrupt`,
+`gdb_list_breakpoints`, `gdb_get_threads`, `gdb_disassemble`,
+`gdb_get_source_context`, and `gdb_call_function` when those structured tools
+fit the workflow.
+`gdb_run` also accepts `wait_for_stop=false` for structured background-launch
+workflows, replacing raw `run &`-style patterns.
 
 `gdb_get_status` reports `target_loaded=false` when GDB started but the requested
 executable or core file did not load successfully. If the underlying GDB process
