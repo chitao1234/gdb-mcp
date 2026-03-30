@@ -676,6 +676,26 @@ def test_disassemble_returns_structured_instructions(session_id):
 
 
 @pytest.mark.integration
+def test_get_source_context_returns_structured_lines(session_id):
+    """Structured source context should read the current stopped source window from disk."""
+
+    call_gdb_tool("gdb_set_breakpoint", {"session_id": session_id, "location": "add"})
+    run_result = call_gdb_tool("gdb_run", {"session_id": session_id})
+    assert run_result["status"] == "success"
+
+    source_result = call_gdb_tool(
+        "gdb_get_source_context",
+        {"session_id": session_id, "context_before": 1, "context_after": 0},
+    )
+
+    assert source_result["status"] == "success"
+    assert source_result["count"] >= 1
+    assert source_result["line"] is not None
+    assert any(line.get("is_current") for line in source_result["lines"])
+    assert any("add" in line["text"] for line in source_result["lines"])
+
+
+@pytest.mark.integration
 def test_next_vs_step(session_id):
     """Test difference between next (step over) and step (step into)."""
     # Set breakpoint at main
