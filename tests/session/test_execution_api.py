@@ -462,6 +462,66 @@ class TestExecutionApi:
         assert '-exec-arguments "--name" "hello world" "quote\\"value"\n' in written[0]
         assert written[1].endswith("-exec-run\n")
 
+    def test_run_wait_for_stop_false_returns_running_success(
+        self,
+        scripted_running_session,
+        mi_result,
+    ):
+        """Non-blocking run should return success once execution is acknowledged as running."""
+
+        session, _controller = scripted_running_session([mi_result(message="running")])
+
+        result = result_to_mapping(session.run(wait_for_stop=False, timeout_sec=1))
+
+        assert result["status"] == "success"
+        assert result["command"] == "-exec-run"
+        assert session.runtime.execution_state == "running"
+
+    def test_add_inferior_updates_inventory(self, scripted_running_session, mi_result, mi_console):
+        """Adding an inferior should refresh and return the structured inferior inventory."""
+
+        session, _controller = scripted_running_session(
+            [mi_result({"inferior": "i2"})],
+            [
+                mi_console("  Num  Description       Connection           Executable        \n"),
+                mi_console("* 1    <null>                                 /tmp/app \n"),
+                mi_console("  2    <null>                                                   \n"),
+                mi_result(),
+            ],
+        )
+
+        result = result_to_mapping(session.add_inferior())
+
+        assert result["status"] == "success"
+        assert result["inferior_id"] == 2
+        assert result["inferior_count"] == 2
+
+    def test_remove_inferior_updates_inventory(
+        self,
+        scripted_running_session,
+        mi_result,
+        mi_console,
+    ):
+        """Removing an inferior should refresh the inventory and current selection."""
+
+        session, _controller = scripted_running_session(
+            [mi_result()],
+            [
+                mi_console("  Num  Description       Connection           Executable        \n"),
+                mi_console("* 1    <null>                                 /tmp/app \n"),
+                mi_result(),
+            ],
+        )
+        session.runtime.update_inferior_inventory(current_inferior_id=2, count=2, inferior_ids=(1, 2))
+        session.runtime.mark_inferior_selected(2)
+
+        result = result_to_mapping(session.remove_inferior(2))
+
+        assert result["status"] == "success"
+        assert result["inferior_id"] == 2
+        assert result["current_inferior_id"] == 1
+        assert result["inferior_count"] == 1
+
     def test_run_parses_zero_padded_exit_code(self, scripted_running_session, mi_result, mi_notify):
         """Exit-code parsing should preserve decimal values from zero-padded fields."""
 
