@@ -5,6 +5,8 @@
 | Situation | Primary tools | Follow-up |
 | --- | --- | --- |
 | New live debug session | `gdb_start_session`, `gdb_set_breakpoint`, `gdb_run` | `gdb_wait_for_stop`, `gdb_get_backtrace`, `gdb_get_variables` |
+| Live launch with custom env/cwd/argv | `gdb_start_session` with `args`, `env`, `working_dir` | `gdb_run` or later `gdb_run` with override args |
+| Attach to running process | `gdb_start_session`, `gdb_attach_process` | `gdb_get_status`, `gdb_get_threads`, `gdb_get_backtrace` |
 | Core dump analysis | `gdb_start_session` with `core` | `gdb_get_threads`, `gdb_get_backtrace`, `gdb_evaluate_expression` |
 | Program appears stuck | `gdb_get_status`, `gdb_interrupt` | `gdb_get_threads`, per-thread `gdb_get_backtrace` |
 | Flaky crash reproduction | `gdb_run_until_failure` | `capture` bundle plus expression and memory snapshots |
@@ -18,12 +20,65 @@ Run immediately after `gdb_start_session`:
 2. Check `target_loaded`.
 3. Check `warnings`.
 4. Check `execution_state`.
+5. Check `env_output` and `init_output` when startup configuration matters.
 
 Treat these outcomes as hard gates:
 
 - `target_loaded=false`: fix target path, symbols, or core inputs first.
 - warning about missing symbols: continue only if limited inspection is acceptable.
 - unexpected `execution_state=running`: use `gdb_interrupt` before inspection.
+
+## Startup Recipes
+
+### Live Launch with Environment, Cwd, and Argv
+
+```json
+{
+  "program": "/path/to/app",
+  "args": ["--mode", "stress"],
+  "working_dir": "/path/to/workdir",
+  "env": {
+    "LD_LIBRARY_PATH": "/opt/app/lib",
+    "APP_CONFIG": "debug",
+    "FEATURE_X": "1"
+  }
+}
+```
+
+Use this when reproducing a bug depends on relative files, a non-default library path, or feature flags. Keep this data in `args`, `working_dir`, and `env` instead of encoding it into `init_commands`.
+
+### Later Rerun with Different Args
+
+After the session already exists, use `gdb_run` for one-off argv overrides:
+
+```json
+{
+  "session_id": 1,
+  "args": ["--mode", "stress", "--seed", "42"]
+}
+```
+
+### Empty Session Bootstrap for Attach
+
+```json
+{
+  "init_commands": []
+}
+```
+
+Then attach:
+
+```json
+{
+  "session_id": 1,
+  "pid": 12345
+}
+```
+
+Notes:
+
+- Attach usually leaves the process paused and inspectable.
+- `env` does not rewrite the environment of a process that is already running.
 
 ## Playbook 1: Live Program Crash Triage
 
@@ -120,7 +175,31 @@ Constraints:
 - Expect startup to be `paused`.
 - Prefer `program + core` together for best symbol/locals fidelity; core-only sessions can have weaker symbol resolution.
 
-## Playbook 3: Hang Investigation
+## Playbook 3: Attach to a Running Process
+
+1. Start an empty session:
+
+```json
+{
+  "init_commands": []
+}
+```
+
+2. Attach to the PID:
+
+```json
+{
+  "session_id": 1,
+  "pid": 12345
+}
+```
+
+3. Confirm stop state with `gdb_get_status`.
+4. Get thread inventory with `gdb_get_threads`.
+5. Pull a first backtrace with `gdb_get_backtrace`.
+6. Resume only if you explicitly want the attached process running again.
+
+## Playbook 4: Hang Investigation
 
 1. Call `gdb_get_status`.
 2. If running, call `gdb_interrupt`.
@@ -135,7 +214,7 @@ Useful capture expressions:
 - `"pthread_self()"`
 - `"*global_state"`
 
-## Playbook 4: Fork and Exec Analysis
+## Playbook 5: Fork and Exec Analysis
 
 1. Set fork policy before run:
 
@@ -182,7 +261,7 @@ Useful capture expressions:
 5. Enumerate inferiors with `gdb_list_inferiors`.
 6. Switch with `gdb_select_inferior` before thread/frame inspection.
 
-## Playbook 5: Flaky Failure Campaign
+## Playbook 6: Flaky Failure Campaign
 
 Use `gdb_run_until_failure` to avoid ad-hoc loops:
 
@@ -286,5 +365,7 @@ For lightweight one-off batches, `steps` also accepts shorthand strings:
 - Calling `gdb_continue` while already running.
 - Calling `gdb_step` or `gdb_next` while not paused.
 - Ignoring startup `warnings` and then trusting variable output.
+- Hiding launch configuration inside `init_commands` instead of `args`, `env`, or `working_dir`.
+- Forgetting that attach sessions keep the target's preexisting environment.
 - Using only raw `gdb_execute_command` and losing structured outputs.
 - Forgetting `gdb_stop_session` and leaking debugger sessions.
