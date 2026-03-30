@@ -311,11 +311,11 @@ class SessionInspectionService:
         location_result: _ResolvedCodeLocation | OperationError
 
         if all(value is None for value in (function, address, start_address, end_address, file, line)):
-            selection = (
-                self._capture_selection() if thread_id is not None or frame is not None else None
-            )
-            if isinstance(selection, OperationError):
-                return selection
+            if thread_id is not None or frame is not None:
+                captured_selection = self._capture_selection()
+                if isinstance(captured_selection, OperationError):
+                    return captured_selection
+                selection = captured_selection
 
             selection_error = self._select_for_inspection(
                 selection,
@@ -420,11 +420,11 @@ class SessionInspectionService:
         location_result: _ResolvedCodeLocation | OperationError
 
         if all(value is None for value in (function, address, file, line, start_line, end_line)):
-            selection = (
-                self._capture_selection() if thread_id is not None or frame is not None else None
-            )
-            if isinstance(selection, OperationError):
-                return selection
+            if thread_id is not None or frame is not None:
+                captured_selection = self._capture_selection()
+                if isinstance(captured_selection, OperationError):
+                    return captured_selection
+                selection = captured_selection
 
             selection_error = self._select_for_inspection(
                 selection,

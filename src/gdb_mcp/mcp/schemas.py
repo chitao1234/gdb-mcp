@@ -410,7 +410,8 @@ class DisassembleArgs(StrictArgsModel):
     def validate_selector_text(cls, value: str | None, info: ValidationInfo) -> str | None:
         """Reject blank direct-location selectors."""
 
-        return _normalize_optional_text(value, field_name=info.field_name)
+        field_name = info.field_name or "selector"
+        return _normalize_optional_text(value, field_name=field_name)
 
     @model_validator(mode="after")
     def validate_selector_mode(self) -> "DisassembleArgs":
@@ -471,14 +472,16 @@ class GetSourceContextArgs(StrictArgsModel):
     def validate_lines(cls, value: int | str | None, info: ValidationInfo) -> int | None:
         """Accept numeric strings while enforcing positive source lines."""
 
-        return _coerce_int_like(value, field_name=info.field_name, minimum=1, allow_none=True)
+        field_name = info.field_name or "line"
+        return _coerce_int_like(value, field_name=field_name, minimum=1, allow_none=True)
 
     @field_validator("function", "address", "file")
     @classmethod
     def validate_selector_text(cls, value: str | None, info: ValidationInfo) -> str | None:
         """Reject blank direct-location selectors."""
 
-        return _normalize_optional_text(value, field_name=info.field_name)
+        field_name = info.field_name or "selector"
+        return _normalize_optional_text(value, field_name=field_name)
 
     @model_validator(mode="after")
     def validate_selector_mode(self) -> "GetSourceContextArgs":
@@ -487,13 +490,15 @@ class GetSourceContextArgs(StrictArgsModel):
         selector_modes: list[str] = []
         has_context_override = self.thread_id is not None or self.frame is not None
         has_range = self.start_line is not None or self.end_line is not None
+        start_line = self.start_line if isinstance(self.start_line, int) else None
+        end_line = self.end_line if isinstance(self.end_line, int) else None
 
         if self.line is not None and has_range:
             raise ValueError("line cannot be combined with start_line or end_line")
         if has_range:
-            if self.start_line is None or self.end_line is None:
+            if start_line is None or end_line is None:
                 raise ValueError("start_line and end_line must be provided together")
-            if self.start_line > self.end_line:
+            if start_line > end_line:
                 raise ValueError("start_line must be <= end_line")
 
         if self.function is not None:

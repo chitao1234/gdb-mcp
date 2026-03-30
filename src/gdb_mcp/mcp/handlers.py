@@ -295,15 +295,27 @@ def _handle_read_memory(session: SessionService, args: ReadMemoryArgs) -> ToolRe
 
 
 def _handle_disassemble(session: SessionService, args: DisassembleArgs) -> ToolResult:
+    thread_id = _normalize_int_argument(args.thread_id, field_name="thread_id", minimum=1)
+    if isinstance(thread_id, OperationError):
+        return thread_id
+
+    frame = _normalize_int_argument(args.frame, field_name="frame", minimum=0)
+    if isinstance(frame, OperationError):
+        return frame
+
+    line = _normalize_int_argument(args.line, field_name="line", minimum=1)
+    if isinstance(line, OperationError):
+        return line
+
     return session.disassemble(
-        thread_id=args.thread_id,
-        frame=args.frame,
+        thread_id=thread_id,
+        frame=frame,
         function=args.function,
         address=args.address,
         start_address=args.start_address,
         end_address=args.end_address,
         file=args.file,
-        line=args.line,
+        line=line,
         instruction_count=args.instruction_count,
         mode=args.mode,
     )
@@ -324,15 +336,35 @@ def _handle_get_variables(session: SessionService, args: GetVariablesArgs) -> To
 
 
 def _handle_get_source_context(session: SessionService, args: GetSourceContextArgs) -> ToolResult:
+    thread_id = _normalize_int_argument(args.thread_id, field_name="thread_id", minimum=1)
+    if isinstance(thread_id, OperationError):
+        return thread_id
+
+    frame = _normalize_int_argument(args.frame, field_name="frame", minimum=0)
+    if isinstance(frame, OperationError):
+        return frame
+
+    line = _normalize_int_argument(args.line, field_name="line", minimum=1)
+    if isinstance(line, OperationError):
+        return line
+
+    start_line = _normalize_int_argument(args.start_line, field_name="start_line", minimum=1)
+    if isinstance(start_line, OperationError):
+        return start_line
+
+    end_line = _normalize_int_argument(args.end_line, field_name="end_line", minimum=1)
+    if isinstance(end_line, OperationError):
+        return end_line
+
     return session.get_source_context(
-        thread_id=args.thread_id,
-        frame=args.frame,
+        thread_id=thread_id,
+        frame=frame,
         function=args.function,
         address=args.address,
         file=args.file,
-        line=args.line,
-        start_line=args.start_line,
-        end_line=args.end_line,
+        line=line,
+        start_line=start_line,
+        end_line=end_line,
         context_before=args.context_before,
         context_after=args.context_after,
     )
