@@ -639,6 +639,23 @@ def test_backtrace_across_functions(session_id):
 
 
 @pytest.mark.integration
+def test_finish_steps_out_to_caller(session_id):
+    """Structured finish should step out of the current frame into its caller."""
+
+    call_gdb_tool("gdb_set_breakpoint", {"session_id": session_id, "location": "add"})
+    run_result = call_gdb_tool("gdb_run", {"session_id": session_id})
+    assert run_result["status"] == "success"
+
+    finish_result = call_gdb_tool("gdb_finish", {"session_id": session_id, "timeout_sec": 10})
+    assert finish_result["status"] == "success"
+    if finish_result["return_value"] is not None:
+        assert finish_result["return_value"] == "15"
+    if finish_result["gdb_result_var"] is not None:
+        assert finish_result["gdb_result_var"].startswith("$")
+    assert "calculate" in finish_result["frame"]["func"]
+
+
+@pytest.mark.integration
 def test_next_vs_step(session_id):
     """Test difference between next (step over) and step (step into)."""
     # Set breakpoint at main

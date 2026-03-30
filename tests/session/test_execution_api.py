@@ -232,6 +232,28 @@ class TestExecutionApi:
         assert result["status"] == "success"
         assert controller.io_manager.stdin.writes[0].decode().endswith("-exec-next\n")
 
+    def test_finish_surfaces_return_value_and_frame(self, scripted_running_session, mi_result):
+        """Finish should return structured caller-frame and return-value details."""
+
+        session, _controller = scripted_running_session(
+            [
+                mi_result(
+                    {
+                        "gdb-result-var": "$1",
+                        "return-value": "42",
+                        "frame": {"level": "0", "func": "caller", "file": "main.c", "line": "12"},
+                    }
+                )
+            ]
+        )
+
+        result = result_to_mapping(session.finish(timeout_sec=9))
+
+        assert result["status"] == "success"
+        assert result["return_value"] == "42"
+        assert result["gdb_result_var"] == "$1"
+        assert result["frame"]["func"] == "caller"
+
     def test_wait_for_stop_returns_existing_stop_immediately(self, session_service):
         """Waiting on an already paused inferior should return the current stop state."""
 

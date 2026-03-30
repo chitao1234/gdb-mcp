@@ -11,8 +11,10 @@ from ..domain import (
     CommandTranscriptEntry,
     CommandExecutionInfo,
     DetachOnForkInfo,
+    FinishInfo,
     FollowForkMode,
     FollowForkModeInfo,
+    FrameRecord,
     FunctionCallInfo,
     InferiorAddInfo,
     InferiorListInfo,
@@ -410,6 +412,41 @@ class SessionExecutionService:
         """Step over the next source line."""
         return self._command_runner.execute_command_result(
             "-exec-next", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
+
+    def finish(
+        self, timeout_sec: int = DEFAULT_TIMEOUT_SEC
+    ) -> OperationSuccess[FinishInfo] | OperationError:
+        """Finish the current frame and stop in the caller."""
+
+        result = self._command_runner.execute_command_result(
+            "-exec-finish",
+            timeout_sec=timeout_sec,
+        )
+        if isinstance(result, OperationError):
+            return result
+
+        raw_payload = extract_mi_result_payload(command_result_payload(result))
+        payload_mapping = raw_payload if isinstance(raw_payload, dict) else {}
+        if not payload_mapping and self._runtime.last_stop_event is not None:
+            payload_mapping = self._runtime.last_stop_event.details
+        frame_payload = payload_mapping.get("frame")
+        frame = cast(FrameRecord | None, frame_payload) if isinstance(frame_payload, dict) else None
+        if frame is None and self._runtime.last_stop_event is not None:
+            frame = self._runtime.last_stop_event.frame
+        return_value = payload_mapping.get("return-value")
+        gdb_result_var = payload_mapping.get("gdb-result-var")
+
+        return OperationSuccess(
+            FinishInfo(
+                message="Frame finished",
+                return_value=return_value if isinstance(return_value, str) else None,
+                gdb_result_var=gdb_result_var if isinstance(gdb_result_var, str) else None,
+                frame=frame,
+                execution_state=self._runtime.execution_state,
+                stop_reason=self._runtime.stop_reason,
+                last_stop_event=self._runtime.last_stop_event,
+            )
         )
 
     def interrupt(self) -> OperationSuccess[MessageResult] | OperationError:
