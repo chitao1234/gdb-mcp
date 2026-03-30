@@ -152,7 +152,9 @@ class SessionCommandRunner:
         if result.get("timed_out"):
             self._update_runtime_after_command(command, parsed)
             timeout_message = f"Timeout waiting for command response after {timeout_sec}s"
-            if allow_running_timeout and parsed.result_class == "running":
+            if allow_running_timeout and (
+                parsed.result_class == "running" or self._runtime.execution_state == "running"
+            ):
                 self._record_command_transcript(
                     command=command,
                     sent_command=actual_command,
@@ -536,6 +538,12 @@ class SessionCommandRunner:
         if isinstance(value, int):
             return str(value)
         return None
+
+    @classmethod
+    def parse_inferior_id_from_thread_group(cls, value: object) -> int | None:
+        """Parse a public or MI inferior identifier into an integer ID."""
+
+        return cls._parse_inferior_id_from_thread_group(value)
 
     @classmethod
     def _parse_inferior_id_from_thread_group(cls, value: object) -> int | None:

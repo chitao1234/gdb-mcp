@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import signal
 from typing import Optional, cast
 
@@ -10,9 +11,15 @@ from ..domain import (
     CommandTranscriptEntry,
     CommandExecutionInfo,
     DetachOnForkInfo,
+    FinishInfo,
     FollowForkMode,
     FollowForkModeInfo,
+    FrameRecord,
     FunctionCallInfo,
+    InferiorAddInfo,
+    InferiorListInfo,
+    InferiorRecord,
+    InferiorRemoveInfo,
     MessageResult,
     OperationError,
     OperationSuccess,
@@ -21,14 +28,20 @@ from ..domain import (
 )
 from ..transport import (
     build_exec_arguments_command,
+    extract_mi_result_payload,
     parse_mi_responses,
+    quote_mi_string,
     wrap_cli_command,
 )
 from .command_runner import SessionCommandRunner
 from .constants import DEFAULT_TIMEOUT_SEC, INTERRUPT_RESPONSE_TIMEOUT_SEC
+from .result_utils import command_result_payload
 from .runtime import SessionRuntime
 
 logger = logging.getLogger(__name__)
+
+_INFERIOR_ROW_RE = re.compile(r"^(?P<current>\*)?\s*(?P<inferior_id>\d+)\s+(?P<columns>.*)$")
+_INFERIOR_COLUMN_SPLIT_RE = re.compile(r"\s{2,}")
 
 
 class SessionExecutionService:
@@ -49,6 +62,8 @@ class SessionExecutionService:
         self,
         args: Optional[list[str]] = None,
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        *,
+        wait_for_stop: bool = True,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Run the program."""
         if not self._runtime.has_controller:
@@ -61,7 +76,130 @@ class SessionExecutionService:
             if isinstance(result, OperationError):
                 return result
 
-        return self._command_runner.execute_command_result("-exec-run", timeout_sec=timeout_sec)
+        return self._command_runner.execute_command_result(
+            "-exec-run",
+            timeout_sec=timeout_sec,
+            allow_running_timeout=not wait_for_stop,
+        )
+
+    def add_inferior(
+        self,
+        *,
+        executable: str | None = None,
+        make_current: bool = False,
+    ) -> OperationSuccess[InferiorAddInfo] | OperationError:
+        """Create a new inferior and return the refreshed inventory summary."""
+
+        add_result = self._command_runner.execute_command_result(
+            "-add-inferior",
+            timeout_sec=DEFAULT_TIMEOUT_SEC,
+        )
+        if isinstance(add_result, OperationError):
+            return add_result
+
+        payload = extract_mi_result_payload(command_result_payload(add_result))
+        payload_mapping = payload if isinstance(payload, dict) else {}
+        inferior_token = payload_mapping.get("inferior")
+        inferior_id = self._command_runner.parse_inferior_id_from_thread_group(inferior_token)
+        if inferior_id is None:
+            return OperationError(message="GDB returned no inferior identifier for -add-inferior")
+
+        previous_inferior_id = self._runtime.current_inferior_id
+        self._runtime.ensure_inferior(inferior_id)
+
+        if executable is not None:
+            selection_result = self._command_runner.execute_command_result(
+                f"inferior {inferior_id}",
+                timeout_sec=DEFAULT_TIMEOUT_SEC,
+            )
+            if isinstance(selection_result, OperationError):
+                return selection_result
+
+            exec_file_result = self._command_runner.execute_command_result(
+                f"exec-file {quote_mi_string(executable)}",
+                timeout_sec=DEFAULT_TIMEOUT_SEC,
+            )
+            if isinstance(exec_file_result, OperationError):
+                return exec_file_result
+
+        if make_current:
+            if executable is None and previous_inferior_id != inferior_id:
+                selection_result = self._command_runner.execute_command_result(
+                    f"inferior {inferior_id}",
+                    timeout_sec=DEFAULT_TIMEOUT_SEC,
+                )
+                if isinstance(selection_result, OperationError):
+                    return selection_result
+        elif (
+            executable is not None
+            and previous_inferior_id is not None
+            and previous_inferior_id != inferior_id
+        ):
+            restore_result = self._command_runner.execute_command_result(
+                f"inferior {previous_inferior_id}",
+                timeout_sec=DEFAULT_TIMEOUT_SEC,
+            )
+            if isinstance(restore_result, OperationError):
+                return restore_result
+
+        inventory_result = self._refresh_inferior_inventory()
+        if isinstance(inventory_result, OperationError):
+            return inventory_result
+
+        record = self._inferior_record(inventory_result.value, inferior_id)
+        if record is None:
+            return OperationSuccess(
+                InferiorAddInfo(
+                    inferior_id=inferior_id,
+                    is_current=make_current,
+                    executable=executable,
+                    current_inferior_id=inventory_result.value.current_inferior_id,
+                    inferior_count=inventory_result.value.count,
+                    message=f"Inferior {inferior_id} added",
+                ),
+                warnings=(
+                    f"Inferior {inferior_id} was added, but it was missing from the refreshed inventory.",
+                ),
+            )
+
+        return OperationSuccess(
+            InferiorAddInfo(
+                inferior_id=inferior_id,
+                is_current=bool(record.get("is_current", False)),
+                display=cast(str | None, record.get("display")),
+                description=cast(str | None, record.get("description")),
+                connection=cast(str | None, record.get("connection")),
+                executable=cast(str | None, record.get("executable")),
+                current_inferior_id=inventory_result.value.current_inferior_id,
+                inferior_count=inventory_result.value.count,
+                message=f"Inferior {inferior_id} added",
+            )
+        )
+
+    def remove_inferior(
+        self, inferior_id: int
+    ) -> OperationSuccess[InferiorRemoveInfo] | OperationError:
+        """Remove one inferior and return the refreshed inventory summary."""
+
+        result = self._command_runner.execute_command_result(
+            f"-remove-inferior i{inferior_id}",
+            timeout_sec=DEFAULT_TIMEOUT_SEC,
+        )
+        if isinstance(result, OperationError):
+            return result
+
+        inventory_result = self._refresh_inferior_inventory()
+        if isinstance(inventory_result, OperationError):
+            return inventory_result
+
+        return OperationSuccess(
+            InferiorRemoveInfo(
+                inferior_id=inferior_id,
+                current_inferior_id=inventory_result.value.current_inferior_id,
+                inferior_count=inventory_result.value.count,
+                message=f"Inferior {inferior_id} removed",
+            )
+        )
 
     def attach_process(
         self, pid: int, timeout_sec: int = DEFAULT_TIMEOUT_SEC
@@ -274,6 +412,41 @@ class SessionExecutionService:
         """Step over the next source line."""
         return self._command_runner.execute_command_result(
             "-exec-next", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
+
+    def finish(
+        self, timeout_sec: int = DEFAULT_TIMEOUT_SEC
+    ) -> OperationSuccess[FinishInfo] | OperationError:
+        """Finish the current frame and stop in the caller."""
+
+        result = self._command_runner.execute_command_result(
+            "-exec-finish",
+            timeout_sec=timeout_sec,
+        )
+        if isinstance(result, OperationError):
+            return result
+
+        raw_payload = extract_mi_result_payload(command_result_payload(result))
+        payload_mapping = raw_payload if isinstance(raw_payload, dict) else {}
+        if not payload_mapping and self._runtime.last_stop_event is not None:
+            payload_mapping = self._runtime.last_stop_event.details
+        frame_payload = payload_mapping.get("frame")
+        frame = cast(FrameRecord | None, frame_payload) if isinstance(frame_payload, dict) else None
+        if frame is None and self._runtime.last_stop_event is not None:
+            frame = self._runtime.last_stop_event.frame
+        return_value = payload_mapping.get("return-value")
+        gdb_result_var = payload_mapping.get("gdb-result-var")
+
+        return OperationSuccess(
+            FinishInfo(
+                message="Frame finished",
+                return_value=return_value if isinstance(return_value, str) else None,
+                gdb_result_var=gdb_result_var if isinstance(gdb_result_var, str) else None,
+                frame=frame,
+                execution_state=self._runtime.execution_state,
+                stop_reason=self._runtime.stop_reason,
+                last_stop_event=self._runtime.last_stop_event,
+            )
         )
 
     def interrupt(self) -> OperationSuccess[MessageResult] | OperationError:
@@ -496,3 +669,99 @@ class SessionExecutionService:
                 f"Inferior stopped for reason {stop_reason}, but it did not match the requested filter"
             )
         return "Inferior is not running and no matching stop reason is available"
+
+    def _refresh_inferior_inventory(self) -> OperationSuccess[InferiorListInfo] | OperationError:
+        """Refresh runtime inferior metadata from `info inferiors` output."""
+
+        result = self._command_runner.execute_command_result(
+            "info inferiors",
+            timeout_sec=DEFAULT_TIMEOUT_SEC,
+        )
+        if isinstance(result, OperationError):
+            return result
+
+        payload = self._parse_inferiors_output(result.value.output or "")
+        self._runtime.update_inferior_inventory(
+            current_inferior_id=payload.current_inferior_id,
+            count=payload.count,
+            inferior_ids=tuple(
+                record["inferior_id"]
+                for record in payload.inferiors
+                if isinstance(record.get("inferior_id"), int)
+            ),
+        )
+        return OperationSuccess(payload)
+
+    def _parse_inferiors_output(self, output: str) -> InferiorListInfo:
+        """Parse `info inferiors` CLI output into a structured inventory snapshot."""
+
+        inferiors: list[InferiorRecord] = []
+        current_inferior_id = self._runtime.current_inferior_id
+
+        for raw_line in output.splitlines():
+            line = raw_line.rstrip()
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith("Num ") or stripped.startswith("Num\t"):
+                continue
+
+            match = _INFERIOR_ROW_RE.match(line)
+            if match is None:
+                continue
+
+            inferior_id = int(match.group("inferior_id"))
+            is_current = match.group("current") == "*"
+            display = match.group("columns").strip()
+            columns = [
+                part.strip()
+                for part in _INFERIOR_COLUMN_SPLIT_RE.split(display)
+                if part.strip()
+            ]
+
+            record: InferiorRecord = {
+                "inferior_id": inferior_id,
+                "is_current": is_current,
+                "display": display,
+            }
+            if columns:
+                record["description"] = columns[0]
+            if len(columns) == 2:
+                if self._looks_like_connection(columns[1]):
+                    record["connection"] = columns[1]
+                else:
+                    record["executable"] = columns[1]
+            elif len(columns) >= 3:
+                record["connection"] = columns[1]
+                record["executable"] = columns[2]
+
+            inferiors.append(record)
+            if is_current:
+                current_inferior_id = inferior_id
+
+        return InferiorListInfo(
+            inferiors=inferiors,
+            count=len(inferiors),
+            current_inferior_id=current_inferior_id,
+        )
+
+    @staticmethod
+    def _inferior_record(payload: InferiorListInfo, inferior_id: int) -> InferiorRecord | None:
+        """Return one inferior record by numeric ID."""
+
+        return next(
+            (
+                record
+                for record in payload.inferiors
+                if record.get("inferior_id") == inferior_id
+            ),
+            None,
+        )
+
+    @staticmethod
+    def _looks_like_connection(value: str) -> bool:
+        """Heuristically identify a connection column from `info inferiors` output."""
+
+        return value.startswith(("target:", "process ", "remote ", "extended-remote")) or value in {
+            "native",
+        }

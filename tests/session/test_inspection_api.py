@@ -288,6 +288,119 @@ class TestDataInspectionApi:
         assert session.runtime.current_thread_id == 1
         assert session.runtime.current_frame == 0
 
+
+class TestStructuredCodeInspectionApi:
+    """Test structured disassembly and source-context helpers."""
+
+    def test_disassemble_current_context(self, scripted_running_session, mi_result):
+        """Disassembly should flatten current-context MI output into instruction records."""
+
+        session, _controller = scripted_running_session(
+            [
+                mi_result(
+                    {
+                        "asm_insns": [
+                            {"address": "0x401000", "inst": "push %rbp"},
+                            {"address": "0x401001", "inst": "mov %rsp,%rbp"},
+                        ]
+                    }
+                )
+            ]
+        )
+
+        result = result_to_mapping(session.disassemble(instruction_count=2, mode="assembly"))
+
+        assert result["status"] == "success"
+        assert result["count"] == 2
+        assert result["instructions"][0]["address"] == "0x401000"
+        assert result["mode"] == "assembly"
+
+    def test_disassemble_with_thread_and_frame_restores_selection(
+        self,
+        scripted_running_session,
+        mi_result,
+    ):
+        """Temporary disassembly context switches should restore thread/frame selection."""
+
+        session, controller = scripted_running_session(
+            [mi_result({"threads": [{"id": "1"}, {"id": "2"}], "current-thread-id": "1"})],
+            [mi_result({"frame": {"level": "0", "func": "main"}})],
+            [mi_result()],
+            [mi_result()],
+            [mi_result({"asm_insns": []})],
+            [mi_result()],
+            [mi_result()],
+        )
+
+        result = result_to_mapping(session.disassemble(thread_id=2, frame=1))
+
+        assert result["status"] == "success"
+        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert written[-2].endswith("-thread-select 1\n")
+        assert written[-1].endswith("-stack-select-frame 0\n")
+
+    def test_get_source_context_file_line_selector(self, tmp_path, session_service):
+        """Source-context reads should return a bounded structured file window."""
+
+        source_file = tmp_path / "main.c"
+        source_file.write_text("int main() {\n    return 0;\n}\n")
+
+        result = result_to_mapping(
+            session_service.get_source_context(
+                file=str(source_file),
+                line=2,
+                context_before=1,
+                context_after=0,
+            )
+        )
+
+        assert result["status"] == "success"
+        assert result["file"] == str(source_file)
+        assert result["start_line"] == 1
+        assert result["end_line"] == 2
+        assert result["lines"][1]["line_number"] == 2
+        assert result["lines"][1]["is_current"] is True
+
+    def test_get_source_context_with_thread_and_frame_restores_selection(
+        self,
+        scripted_running_session,
+        mi_result,
+        tmp_path,
+    ):
+        """Source-context overrides should restore the original thread/frame selection."""
+
+        source_file = tmp_path / "worker.c"
+        source_file.write_text("int worker() {\n    return 1;\n}\n")
+        session, controller = scripted_running_session(
+            [mi_result({"threads": [{"id": "1"}, {"id": "2"}], "current-thread-id": "1"})],
+            [mi_result({"frame": {"level": "0", "func": "main"}})],
+            [mi_result()],
+            [mi_result()],
+            [
+                mi_result(
+                    {
+                        "frame": {
+                            "level": "1",
+                            "func": "worker",
+                            "file": str(source_file),
+                            "fullname": str(source_file),
+                            "line": "2",
+                        }
+                    }
+                )
+            ],
+            [mi_result()],
+            [mi_result()],
+        )
+
+        result = result_to_mapping(session.get_source_context(thread_id=2, frame=1))
+
+        assert result["status"] == "success"
+        assert result["line"] == 2
+        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert written[-2].endswith("-thread-select 1\n")
+        assert written[-1].endswith("-stack-select-frame 0\n")
+
     def test_get_variables(self, scripted_running_session, mi_result):
         """Variable inspection should restore the original thread/frame selection."""
 

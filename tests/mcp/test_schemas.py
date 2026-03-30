@@ -3,6 +3,7 @@
 import pytest
 from pydantic import ValidationError
 from gdb_mcp.mcp.schemas import (
+    AddInferiorArgs,
     AttachProcessArgs,
     BatchArgs,
     BatchStepArgs,
@@ -10,15 +11,19 @@ from gdb_mcp.mcp.schemas import (
     CallFunctionArgs,
     CaptureMemoryRangeArgs,
     CaptureBundleArgs,
+    DisassembleArgs,
     DetachOnForkArgs,
     ExecuteCommandArgs,
+    FinishArgs,
     FollowForkModeArgs,
     FrameSelectArgs,
     GetBacktraceArgs,
+    GetSourceContextArgs,
     ReadMemoryArgs,
     GetRegistersArgs,
     ThreadSelectArgs,
     InferiorSelectArgs,
+    RemoveInferiorArgs,
     SetCatchpointArgs,
     SetBreakpointArgs,
     SetWatchpointArgs,
@@ -125,6 +130,111 @@ class TestRunArgs:
         args = RunArgs(session_id=1, args='--flag "hello world"')
         assert args.args == '--flag "hello world"'
 
+class TestInferiorLifecycleArgs:
+    """Test cases for inferior add/remove request validation."""
+
+    def test_add_inferior_args_defaults(self):
+        """AddInferiorArgs should default executable to None and keep current inferior."""
+
+        args = AddInferiorArgs(session_id=1)
+        assert args.session_id == 1
+        assert args.executable is None
+        assert args.make_current is False
+
+    def test_remove_inferior_args_requires_positive_id(self):
+        """RemoveInferiorArgs should reject non-positive inferior IDs."""
+
+        args = RemoveInferiorArgs(session_id=1, inferior_id=2)
+        assert args.inferior_id == 2
+
+        with pytest.raises(ValidationError):
+            RemoveInferiorArgs(session_id=1, inferior_id=0)
+
+
+class TestFinishArgs:
+    """Test cases for finish/step-out requests."""
+
+    def test_defaults(self):
+        """FinishArgs should use the standard timeout default."""
+
+        args = FinishArgs(session_id=1)
+        assert args.timeout_sec == 30
+
+
+class TestExtendedRunArgs:
+    """Test cases for the new run wait semantics."""
+
+    def test_defaults_wait_for_stop_true(self):
+        """RunArgs should default to waiting for the next stop event."""
+
+        args = RunArgs(session_id=1)
+        assert args.wait_for_stop is True
+
+
+class TestDisassembleArgs:
+    """Test cases for structured disassembly selectors."""
+
+    def test_accepts_current_context_defaults(self):
+        """DisassembleArgs should default to mixed mode around current context."""
+
+        args = DisassembleArgs(session_id=1)
+        assert args.mode == "mixed"
+        assert args.instruction_count == 32
+
+    def test_accepts_numeric_string_thread_and_frame(self):
+        """DisassembleArgs should normalize numeric string selectors."""
+
+        args = DisassembleArgs(session_id=1, thread_id="2", frame="1")
+        assert args.thread_id == 2
+        assert args.frame == 1
+
+    def test_rejects_conflicting_selectors(self):
+        """DisassembleArgs should reject mixed selector modes."""
+
+        with pytest.raises(ValidationError):
+            DisassembleArgs(session_id=1, function="main", address="0x401000")
+
+    def test_requires_complete_address_range(self):
+        """DisassembleArgs should require both range endpoints together."""
+
+        with pytest.raises(ValidationError):
+            DisassembleArgs(session_id=1, start_address="0x401000")
+
+    def test_accepts_file_line_selector(self):
+        """DisassembleArgs should normalize file/line selectors."""
+
+        args = DisassembleArgs(session_id=1, file="main.c", line="12")
+        assert args.line == 12
+
+
+class TestSourceContextArgs:
+    """Test cases for structured source-context selectors."""
+
+    def test_accepts_file_range(self):
+        """GetSourceContextArgs should normalize explicit file ranges."""
+
+        args = GetSourceContextArgs(session_id=1, file="main.c", start_line="10", end_line="20")
+        assert args.start_line == 10
+        assert args.end_line == 20
+
+    def test_rejects_line_and_range_together(self):
+        """GetSourceContextArgs should reject simultaneous line and range selectors."""
+
+        with pytest.raises(ValidationError):
+            GetSourceContextArgs(
+                session_id=1,
+                file="main.c",
+                line=12,
+                start_line=10,
+                end_line=20,
+            )
+
+    def test_rejects_mixed_selector_modes(self):
+        """GetSourceContextArgs should reject mixed function and file selectors."""
+
+        with pytest.raises(ValidationError):
+            GetSourceContextArgs(session_id=1, function="main", file="main.c", line=12)
+
 
 class TestAttachProcessArgs:
     """Test cases for AttachProcessArgs model."""
@@ -212,6 +322,14 @@ class TestBatchArgs:
 
         assert step.tool == "gdb_wait_for_stop"
         assert step.arguments == {"timeout_sec": 5}
+
+    def test_batch_step_accepts_tool_expansion_names(self):
+        """Batch steps should allow the new inferior, finish, and inspection tools."""
+
+        step = BatchStepArgs(tool="gdb_disassemble", arguments={"instruction_count": 8})
+
+        assert step.tool == "gdb_disassemble"
+        assert step.arguments == {"instruction_count": 8}
 
     def test_batch_allows_string_step_shorthand(self):
         """Batch steps should allow shorthand tool-name strings."""

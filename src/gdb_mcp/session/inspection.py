@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
+from pathlib import Path
 import re
 from typing import Literal, Optional, cast
 
 from ..domain import (
     BacktraceInfo,
+    DisassemblyInfo,
+    DisassemblyInstructionRecord,
     ExpressionValueInfo,
     FrameInfo,
     FrameSelectionInfo,
@@ -20,6 +23,8 @@ from ..domain import (
     OperationSuccess,
     RegisterRecord,
     RegistersInfo,
+    SourceContextInfo,
+    SourceLineRecord,
     ThreadListInfo,
     ThreadSelectionInfo,
     VariablesInfo,
@@ -36,6 +41,7 @@ from ..transport import (
     build_evaluate_expression_command,
     build_read_memory_command,
     extract_mi_result_payload,
+    quote_mi_string,
 )
 from .command_runner import SessionCommandRunner
 from .constants import DEFAULT_MAX_BACKTRACE_FRAMES, DEFAULT_TIMEOUT_SEC
@@ -46,6 +52,11 @@ logger = logging.getLogger(__name__)
 
 _INFERIOR_ROW_RE = re.compile(r"^(?P<current>\*)?\s*(?P<inferior_id>\d+)\s+(?P<columns>.*)$")
 _INFERIOR_COLUMN_SPLIT_RE = re.compile(r"\s{2,}")
+_INFO_LINE_RE = re.compile(
+    r'^Line (?P<line>\d+) of "(?P<file>.+)" starts at address '
+    r'(?P<start>0x[0-9a-fA-F]+)(?: <[^>]+>)? and ends at (?P<end>0x[0-9a-fA-F]+)',
+    re.MULTILINE,
+)
 _VECTOR_REGISTER_NAME_RE = re.compile(
     r"^(?:xmm[0-9]+|ymm[0-9]+|zmm[0-9]+|mm[0-9]+|st(?:\([0-9]+\)|[0-9]+)?|k[0-9]+|v[0-9]+|q[0-9]+|d[0-9]+|s[0-9]+)$",
     re.IGNORECASE,
@@ -58,6 +69,33 @@ class _SelectionSnapshot:
 
     thread_id: int | None
     frame_number: int | None
+
+
+@dataclass(frozen=True)
+class _ResolvedCodeLocation:
+    """One normalized code location used by disassembly and source lookup helpers."""
+
+    scope: str
+    thread_id: int | None = None
+    frame: int | None = None
+    function: str | None = None
+    address: str | None = None
+    file: str | None = None
+    fullname: str | None = None
+    line: int | None = None
+    start_address: str | None = None
+    end_address: str | None = None
+
+
+@dataclass(frozen=True)
+class _ResolvedSourceWindow:
+    """A concrete source-file line window ready for serialization."""
+
+    file: str
+    fullname: str | None
+    start_line: int
+    end_line: int
+    lines: list[SourceLineRecord]
 
 
 class SessionInspectionService:
@@ -252,6 +290,224 @@ class SessionInspectionService:
         self._runtime.mark_frame_selected(self._int_or_none(level))
 
         return OperationSuccess(frame_info)
+
+    def disassemble(
+        self,
+        *,
+        thread_id: int | None = None,
+        frame: int | None = None,
+        function: str | None = None,
+        address: str | None = None,
+        start_address: str | None = None,
+        end_address: str | None = None,
+        file: str | None = None,
+        line: int | None = None,
+        instruction_count: int = 32,
+        mode: Literal["assembly", "mixed"] = "mixed",
+    ) -> OperationSuccess[DisassemblyInfo] | OperationError:
+        """Return structured disassembly for one resolved code location."""
+
+        selection: _SelectionSnapshot | None = None
+        location_result: _ResolvedCodeLocation | OperationError
+
+        if all(value is None for value in (function, address, start_address, end_address, file, line)):
+            if thread_id is not None or frame is not None:
+                captured_selection = self._capture_selection()
+                if isinstance(captured_selection, OperationError):
+                    return captured_selection
+                selection = captured_selection
+
+            selection_error = self._select_for_inspection(
+                selection,
+                thread_id=thread_id,
+                frame=frame,
+            )
+            if selection_error is not None:
+                return self._selection_error_with_restore(selection, selection_error)
+
+            location_result = _ResolvedCodeLocation(
+                scope="current_context",
+                thread_id=(
+                    thread_id
+                    if thread_id is not None
+                    else selection.thread_id if selection is not None else self._runtime.current_thread_id
+                ),
+                frame=frame if frame is not None else selection.frame_number if selection is not None else self._runtime.current_frame,
+                address="$pc",
+            )
+        elif function is not None:
+            location_result = _ResolvedCodeLocation(scope="function", function=function)
+        elif address is not None:
+            location_result = _ResolvedCodeLocation(scope="address", address=address)
+        elif start_address is not None and end_address is not None:
+            location_result = _ResolvedCodeLocation(
+                scope="address_range",
+                start_address=start_address,
+                end_address=end_address,
+            )
+        elif file is not None and line is not None:
+            location_result = _ResolvedCodeLocation(scope="file_line", file=file, fullname=file, line=line)
+        else:
+            return OperationError(message="Invalid disassembly selector combination")
+
+        if isinstance(location_result, OperationError):
+            if selection is None:
+                return location_result
+            return self._selection_error_with_restore(selection, location_result)
+
+        command = self._build_disassemble_command(
+            location_result,
+            instruction_count=instruction_count,
+            mode=mode,
+        )
+        if isinstance(command, OperationError):
+            if selection is None:
+                return command
+            return self._selection_error_with_restore(selection, command)
+
+        result = self._command_runner.execute_command_result(command, timeout_sec=DEFAULT_TIMEOUT_SEC)
+        if isinstance(result, OperationError):
+            if selection is None:
+                return result
+            return self._selection_error_with_restore(selection, result)
+
+        raw_payload = extract_mi_result_payload(command_result_payload(result))
+        instructions = self._normalize_disassembly_payload(
+            raw_payload,
+            current_address=location_result.address,
+        )
+        instructions = instructions[:instruction_count]
+
+        info = DisassemblyInfo(
+            scope=location_result.scope,
+            thread_id=location_result.thread_id,
+            frame=location_result.frame,
+            function=location_result.function or self._first_instruction_function(instructions),
+            file=location_result.file or self._first_instruction_file(instructions),
+            fullname=location_result.fullname or self._first_instruction_fullname(instructions),
+            line=location_result.line or self._first_instruction_line(instructions),
+            start_address=location_result.start_address or self._first_instruction_address(instructions),
+            end_address=location_result.end_address or self._last_instruction_address(instructions),
+            mode=mode,
+            instructions=instructions,
+            count=len(instructions),
+        )
+
+        if selection is not None:
+            restore_error = self._restore_selection(selection)
+            if restore_error is not None:
+                return restore_error
+
+        return OperationSuccess(info)
+
+    def get_source_context(
+        self,
+        *,
+        thread_id: int | None = None,
+        frame: int | None = None,
+        function: str | None = None,
+        address: str | None = None,
+        file: str | None = None,
+        line: int | None = None,
+        start_line: int | None = None,
+        end_line: int | None = None,
+        context_before: int = 5,
+        context_after: int = 5,
+    ) -> OperationSuccess[SourceContextInfo] | OperationError:
+        """Return structured source lines for one resolved code location."""
+
+        selection: _SelectionSnapshot | None = None
+        location_result: _ResolvedCodeLocation | OperationError
+
+        if all(value is None for value in (function, address, file, line, start_line, end_line)):
+            if thread_id is not None or frame is not None:
+                captured_selection = self._capture_selection()
+                if isinstance(captured_selection, OperationError):
+                    return captured_selection
+                selection = captured_selection
+
+            selection_error = self._select_for_inspection(
+                selection,
+                thread_id=thread_id,
+                frame=frame,
+            )
+            if selection_error is not None:
+                return self._selection_error_with_restore(selection, selection_error)
+
+            location_result = self._current_frame_location(
+                thread_id=thread_id,
+                frame=frame,
+                selection=selection,
+            )
+        elif function is not None:
+            location_result = self._resolve_info_line_location(
+                command=f"info line {function}",
+                scope="function",
+                function=function,
+                address=None,
+            )
+        elif address is not None:
+            location_result = self._resolve_info_line_location(
+                command=f"info line *{address}",
+                scope="address",
+                function=None,
+                address=address,
+            )
+        elif file is not None and line is not None:
+            location_result = _ResolvedCodeLocation(
+                scope="file_line",
+                file=file,
+                fullname=file,
+                line=line,
+            )
+        elif file is not None and start_line is not None and end_line is not None:
+            location_result = _ResolvedCodeLocation(
+                scope="file_range",
+                file=file,
+                fullname=file,
+                line=None,
+            )
+        else:
+            return OperationError(message="Invalid source context selector combination")
+
+        if isinstance(location_result, OperationError):
+            if selection is None:
+                return location_result
+            return self._selection_error_with_restore(selection, location_result)
+
+        read_result = self._read_source_context(
+            location_result,
+            requested_start_line=start_line,
+            requested_end_line=end_line,
+            context_before=context_before,
+            context_after=context_after,
+        )
+        if isinstance(read_result, OperationError):
+            if selection is None:
+                return read_result
+            return self._selection_error_with_restore(selection, read_result)
+
+        if selection is not None:
+            restore_error = self._restore_selection(selection)
+            if restore_error is not None:
+                return restore_error
+
+        return OperationSuccess(
+            SourceContextInfo(
+                scope=location_result.scope,
+                thread_id=location_result.thread_id,
+                frame=location_result.frame,
+                function=location_result.function,
+                address=location_result.address,
+                file=read_result.file,
+                fullname=read_result.fullname,
+                line=location_result.line,
+                start_line=read_result.start_line,
+                end_line=read_result.end_line,
+                lines=read_result.lines,
+                count=len(read_result.lines),
+            )
+        )
 
     def select_frame(
         self, frame_number: int
@@ -613,6 +869,354 @@ class SessionInspectionService:
             return f"-data-list-register-values {format_token}"
         numbers = " ".join(str(number) for number in register_numbers)
         return f"-data-list-register-values {format_token} {numbers}"
+
+    def _current_frame_location(
+        self,
+        *,
+        thread_id: int | None,
+        frame: int | None,
+        selection: _SelectionSnapshot | None,
+    ) -> _ResolvedCodeLocation | OperationError:
+        """Resolve the current frame into a normalized code location."""
+
+        result = self._command_runner.execute_command_result(
+            "-stack-info-frame",
+            timeout_sec=DEFAULT_TIMEOUT_SEC,
+        )
+        if isinstance(result, OperationError):
+            return result
+
+        raw_payload = extract_mi_result_payload(command_result_payload(result))
+        if not isinstance(raw_payload, dict):
+            return OperationError(message="GDB returned malformed frame data")
+
+        frame_payload = raw_payload.get("frame")
+        if not isinstance(frame_payload, dict):
+            return OperationError(message="GDB did not return frame data")
+
+        resolved_thread_id = (
+            thread_id
+            if thread_id is not None
+            else selection.thread_id if selection is not None else self._runtime.current_thread_id
+        )
+        resolved_frame = (
+            frame if frame is not None else self._int_or_none(frame_payload.get("level"))
+        )
+        return _ResolvedCodeLocation(
+            scope="current_context",
+            thread_id=resolved_thread_id,
+            frame=resolved_frame,
+            function=self._str_or_none(frame_payload.get("func")),
+            address=self._str_or_none(frame_payload.get("addr")),
+            file=self._str_or_none(frame_payload.get("file")),
+            fullname=self._str_or_none(frame_payload.get("fullname")),
+            line=self._int_or_none(frame_payload.get("line")),
+        )
+
+    def _build_disassemble_command(
+        self,
+        location: _ResolvedCodeLocation,
+        *,
+        instruction_count: int,
+        mode: Literal["assembly", "mixed"],
+    ) -> str | OperationError:
+        """Build one MI disassembly command for the resolved selector mode."""
+
+        mode_token = "0" if mode == "assembly" else "1"
+        if location.scope in {"current_context", "file_line"}:
+            file_selector = location.fullname or location.file
+            if file_selector is not None and location.line is not None:
+                return (
+                    f"-data-disassemble -f {quote_mi_string(file_selector)} "
+                    f"-l {location.line} -n {instruction_count} -- {mode_token}"
+                )
+            if location.address is not None:
+                return f"-data-disassemble -a {quote_mi_string(location.address)} -- {mode_token}"
+            return OperationError(message="Unable to resolve a current source line or address for disassembly")
+
+        if location.scope == "function" and location.function is not None:
+            return f"-data-disassemble -a {quote_mi_string(location.function)} -- {mode_token}"
+        if location.scope == "address" and location.address is not None:
+            return f"-data-disassemble -a {quote_mi_string(location.address)} -- {mode_token}"
+        if (
+            location.scope == "address_range"
+            and location.start_address is not None
+            and location.end_address is not None
+        ):
+            return (
+                f"-data-disassemble -s {quote_mi_string(location.start_address)} "
+                f"-e {quote_mi_string(location.end_address)} -- {mode_token}"
+            )
+        return OperationError(message="Unable to build a disassembly command for the resolved selector")
+
+    def _normalize_disassembly_payload(
+        self,
+        payload: object,
+        *,
+        current_address: str | None,
+    ) -> list[DisassemblyInstructionRecord]:
+        """Flatten MI disassembly payloads into stable instruction records."""
+
+        if not isinstance(payload, dict):
+            return []
+
+        raw_instructions = payload.get("asm_insns")
+        if not isinstance(raw_instructions, list):
+            return []
+
+        instructions: list[DisassemblyInstructionRecord] = []
+        for entry in raw_instructions:
+            if not isinstance(entry, dict):
+                continue
+
+            nested = entry.get("line_asm_insn")
+            if isinstance(nested, list):
+                line = self._int_or_none(entry.get("line"))
+                file = self._str_or_none(entry.get("file"))
+                fullname = self._str_or_none(entry.get("fullname"))
+                for raw_instruction in nested:
+                    record = self._normalize_disassembly_instruction(
+                        raw_instruction,
+                        file=file,
+                        fullname=fullname,
+                        line=line,
+                        current_address=current_address,
+                    )
+                    if record is not None:
+                        instructions.append(record)
+                continue
+
+            record = self._normalize_disassembly_instruction(
+                entry,
+                file=None,
+                fullname=None,
+                line=None,
+                current_address=current_address,
+            )
+            if record is not None:
+                instructions.append(record)
+
+        return instructions
+
+    def _normalize_disassembly_instruction(
+        self,
+        payload: object,
+        *,
+        file: str | None,
+        fullname: str | None,
+        line: int | None,
+        current_address: str | None,
+    ) -> DisassemblyInstructionRecord | None:
+        """Normalize one MI disassembly instruction record."""
+
+        if not isinstance(payload, dict):
+            return None
+
+        address = self._str_or_none(payload.get("address"))
+        instruction = self._str_or_none(payload.get("inst"))
+        if address is None or instruction is None:
+            return None
+
+        record: DisassemblyInstructionRecord = {
+            "address": address,
+            "instruction": instruction,
+        }
+        function = self._str_or_none(payload.get("func-name")) or self._str_or_none(payload.get("func"))
+        if function is not None:
+            record["function"] = function
+        offset = self._int_or_none(payload.get("offset"))
+        if offset is not None:
+            record["offset"] = offset
+        opcodes = self._str_or_none(payload.get("opcodes"))
+        if opcodes is not None:
+            record["opcodes"] = opcodes
+        if file is not None:
+            record["file"] = file
+        if fullname is not None:
+            record["fullname"] = fullname
+        if line is not None:
+            record["line"] = line
+        if current_address is not None and self._addresses_equal(address, current_address):
+            record["is_current"] = True
+        return record
+
+    def _resolve_info_line_location(
+        self,
+        *,
+        command: str,
+        scope: str,
+        function: str | None,
+        address: str | None,
+    ) -> _ResolvedCodeLocation | OperationError:
+        """Resolve `info line ...` output into a normalized code location."""
+
+        result = self._command_runner.execute_command_result(
+            command,
+            timeout_sec=DEFAULT_TIMEOUT_SEC,
+        )
+        if isinstance(result, OperationError):
+            return result
+
+        output = result.value.output or ""
+        match = _INFO_LINE_RE.search(output)
+        if match is None:
+            return OperationError(message=f"GDB did not return source information for {command!r}")
+
+        line = int(match.group("line"))
+        file = match.group("file")
+        return _ResolvedCodeLocation(
+            scope=scope,
+            function=function,
+            address=address,
+            file=file,
+            fullname=file,
+            line=line,
+            start_address=match.group("start"),
+            end_address=match.group("end"),
+        )
+
+    def _read_source_context(
+        self,
+        location: _ResolvedCodeLocation,
+        *,
+        requested_start_line: int | None,
+        requested_end_line: int | None,
+        context_before: int,
+        context_after: int,
+    ) -> _ResolvedSourceWindow | OperationError:
+        """Read one source window from disk for the resolved location."""
+
+        file_selector = location.fullname or location.file
+        if file_selector is None:
+            return OperationError(message="Resolved source location has no file path")
+
+        path = Path(file_selector).expanduser()
+        if not path.exists():
+            return OperationError(message=f"Source file not found: {file_selector}")
+
+        source_lines = path.read_text().splitlines()
+        if requested_start_line is not None and requested_end_line is not None:
+            start_line = requested_start_line
+            end_line = requested_end_line
+            current_line = None
+        else:
+            current_line = location.line
+            if current_line is None:
+                return OperationError(message="Resolved source location has no source line")
+            start_line = max(1, current_line - context_before)
+            end_line = current_line + context_after
+
+        if start_line > len(source_lines):
+            return OperationError(message=f"Source line {start_line} is outside {file_selector}")
+
+        end_line = min(end_line, len(source_lines))
+        lines: list[SourceLineRecord] = []
+        for line_number in range(start_line, end_line + 1):
+            record: SourceLineRecord = {
+                "line_number": line_number,
+                "text": source_lines[line_number - 1],
+            }
+            if current_line is not None and line_number == current_line:
+                record["is_current"] = True
+            lines.append(record)
+
+        resolved_fullname = location.fullname or str(path.resolve())
+        return _ResolvedSourceWindow(
+            file=location.file or str(path),
+            fullname=resolved_fullname,
+            start_line=start_line,
+            end_line=end_line,
+            lines=lines,
+        )
+
+    @staticmethod
+    def _first_instruction_address(
+        instructions: list[DisassemblyInstructionRecord],
+    ) -> str | None:
+        """Return the first instruction address when available."""
+
+        if not instructions:
+            return None
+        address = instructions[0].get("address")
+        return address if isinstance(address, str) else None
+
+    @staticmethod
+    def _last_instruction_address(
+        instructions: list[DisassemblyInstructionRecord],
+    ) -> str | None:
+        """Return the last instruction address when available."""
+
+        if not instructions:
+            return None
+        address = instructions[-1].get("address")
+        return address if isinstance(address, str) else None
+
+    @staticmethod
+    def _first_instruction_function(
+        instructions: list[DisassemblyInstructionRecord],
+    ) -> str | None:
+        """Return the first function label present in the instruction list."""
+
+        for instruction in instructions:
+            function = instruction.get("function")
+            if isinstance(function, str):
+                return function
+        return None
+
+    @staticmethod
+    def _first_instruction_file(
+        instructions: list[DisassemblyInstructionRecord],
+    ) -> str | None:
+        """Return the first source file present in the instruction list."""
+
+        for instruction in instructions:
+            file = instruction.get("file")
+            if isinstance(file, str):
+                return file
+        return None
+
+    @staticmethod
+    def _first_instruction_fullname(
+        instructions: list[DisassemblyInstructionRecord],
+    ) -> str | None:
+        """Return the first full source path present in the instruction list."""
+
+        for instruction in instructions:
+            fullname = instruction.get("fullname")
+            if isinstance(fullname, str):
+                return fullname
+        return None
+
+    @staticmethod
+    def _first_instruction_line(
+        instructions: list[DisassemblyInstructionRecord],
+    ) -> int | None:
+        """Return the first source line present in the instruction list."""
+
+        for instruction in instructions:
+            line = instruction.get("line")
+            if isinstance(line, int):
+                return line
+        return None
+
+    @staticmethod
+    def _addresses_equal(left: str, right: str) -> bool:
+        """Compare address strings while tolerating formatting differences."""
+
+        try:
+            return int(left, 0) == int(right, 0)
+        except ValueError:
+            return left == right
+
+    @staticmethod
+    def _str_or_none(value: object) -> str | None:
+        """Return a string-compatible scalar as text when possible."""
+
+        if isinstance(value, str):
+            return value
+        if isinstance(value, int):
+            return str(value)
+        return None
 
     def _capture_selection(self) -> _SelectionSnapshot | OperationError:
         """Capture the currently selected thread and frame for later restoration."""

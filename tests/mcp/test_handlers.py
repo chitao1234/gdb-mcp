@@ -270,7 +270,11 @@ class TestHandlerDispatch:
         )
 
         manager.resolve_session.assert_called_once_with(5)
-        session.run.assert_called_once_with(args=["--flag", "value"], timeout_sec=7)
+        session.run.assert_called_once_with(
+            args=["--flag", "value"],
+            timeout_sec=7,
+            wait_for_stop=True,
+        )
 
     def test_run_accepts_shell_style_string_args(self):
         """String-form run args should be shell-split before forwarding."""
@@ -286,7 +290,74 @@ class TestHandlerDispatch:
             manager,
         )
 
-        session.run.assert_called_once_with(args=["--flag", "hello world"], timeout_sec=7)
+        session.run.assert_called_once_with(
+            args=["--flag", "hello world"],
+            timeout_sec=7,
+            wait_for_stop=True,
+        )
+
+    def test_add_inferior_routes_to_correct_session(self):
+        """Inferior creation requests should forward executable and selection policy."""
+
+        manager = Mock()
+        session = Mock()
+        session.add_inferior.return_value = OperationSuccess({"inferior_id": 2})
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_add_inferior",
+            {"session_id": 4, "executable": "/tmp/app", "make_current": True},
+            manager,
+        )
+
+        session.add_inferior.assert_called_once_with(
+            executable="/tmp/app",
+            make_current=True,
+        )
+
+    def test_remove_inferior_routes_to_correct_session(self):
+        """Inferior removal requests should forward the normalized inferior ID."""
+
+        manager = Mock()
+        session = Mock()
+        session.remove_inferior.return_value = OperationSuccess({"inferior_id": 2})
+        manager.resolve_session.return_value = session
+
+        dispatch("gdb_remove_inferior", {"session_id": 4, "inferior_id": 2}, manager)
+
+        session.remove_inferior.assert_called_once_with(inferior_id=2)
+
+    def test_run_forwards_wait_for_stop(self):
+        """Run requests should forward the non-blocking launch flag."""
+
+        manager = Mock()
+        session = Mock()
+        session.run.return_value = OperationSuccess({"command": "-exec-run"})
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_run",
+            {"session_id": 4, "args": "--flag value", "wait_for_stop": False, "timeout_sec": 5},
+            manager,
+        )
+
+        session.run.assert_called_once_with(
+            args=["--flag", "value"],
+            timeout_sec=5,
+            wait_for_stop=False,
+        )
+
+    def test_finish_routes_to_execution_service(self):
+        """Finish requests should forward timeout to the session execution API."""
+
+        manager = Mock()
+        session = Mock()
+        session.finish.return_value = OperationSuccess({"message": "finished"})
+        manager.resolve_session.return_value = session
+
+        dispatch("gdb_finish", {"session_id": 4, "timeout_sec": 9}, manager)
+
+        session.finish.assert_called_once_with(timeout_sec=9)
 
     def test_attach_process_routes_to_correct_session(self):
         """Attach requests should forward pid and timeout."""
@@ -1019,6 +1090,33 @@ class TestHandlerDispatch:
 
         session.get_backtrace.assert_called_once_with(thread_id=2, max_frames=5)
 
+    def test_disassemble_routes_normalized_selectors(self):
+        """Disassembly requests should forward normalized selector values."""
+
+        manager = Mock()
+        session = Mock()
+        session.disassemble.return_value = OperationSuccess({"count": 0, "instructions": []})
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_disassemble",
+            {"session_id": 4, "thread_id": "2", "frame": "1", "instruction_count": 12},
+            manager,
+        )
+
+        session.disassemble.assert_called_once_with(
+            thread_id=2,
+            frame=1,
+            function=None,
+            address=None,
+            start_address=None,
+            end_address=None,
+            file=None,
+            line=None,
+            instruction_count=12,
+            mode="mixed",
+        )
+
     def test_get_variables_accepts_numeric_string_context(self):
         """Variable requests should accept numeric-string thread/frame selectors."""
 
@@ -1034,6 +1132,39 @@ class TestHandlerDispatch:
         )
 
         session.get_variables.assert_called_once_with(thread_id=2, frame=3)
+
+    def test_get_source_context_routes_normalized_selectors(self):
+        """Source-context requests should forward normalized selector values."""
+
+        manager = Mock()
+        session = Mock()
+        session.get_source_context.return_value = OperationSuccess({"count": 0, "lines": []})
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_get_source_context",
+            {
+                "session_id": 4,
+                "file": "main.c",
+                "line": "12",
+                "context_before": 2,
+                "context_after": 3,
+            },
+            manager,
+        )
+
+        session.get_source_context.assert_called_once_with(
+            thread_id=None,
+            frame=None,
+            function=None,
+            address=None,
+            file="main.c",
+            line=12,
+            start_line=None,
+            end_line=None,
+            context_before=2,
+            context_after=3,
+        )
 
     def test_tool_definitions_match_dispatch_registry(self):
         """Every exported tool should have a matching dispatch path and vice versa."""

@@ -232,6 +232,28 @@ class TestExecutionApi:
         assert result["status"] == "success"
         assert controller.io_manager.stdin.writes[0].decode().endswith("-exec-next\n")
 
+    def test_finish_surfaces_return_value_and_frame(self, scripted_running_session, mi_result):
+        """Finish should return structured caller-frame and return-value details."""
+
+        session, _controller = scripted_running_session(
+            [
+                mi_result(
+                    {
+                        "gdb-result-var": "$1",
+                        "return-value": "42",
+                        "frame": {"level": "0", "func": "caller", "file": "main.c", "line": "12"},
+                    }
+                )
+            ]
+        )
+
+        result = result_to_mapping(session.finish(timeout_sec=9))
+
+        assert result["status"] == "success"
+        assert result["return_value"] == "42"
+        assert result["gdb_result_var"] == "$1"
+        assert result["frame"]["func"] == "caller"
+
     def test_wait_for_stop_returns_existing_stop_immediately(self, session_service):
         """Waiting on an already paused inferior should return the current stop state."""
 
@@ -461,6 +483,66 @@ class TestExecutionApi:
         written = [command.decode() for command in controller.io_manager.stdin.writes]
         assert '-exec-arguments "--name" "hello world" "quote\\"value"\n' in written[0]
         assert written[1].endswith("-exec-run\n")
+
+    def test_run_wait_for_stop_false_returns_running_success(
+        self,
+        scripted_running_session,
+        mi_result,
+    ):
+        """Non-blocking run should return success once execution is acknowledged as running."""
+
+        session, _controller = scripted_running_session([mi_result(message="running")])
+
+        result = result_to_mapping(session.run(wait_for_stop=False, timeout_sec=1))
+
+        assert result["status"] == "success"
+        assert result["command"] == "-exec-run"
+        assert session.runtime.execution_state == "running"
+
+    def test_add_inferior_updates_inventory(self, scripted_running_session, mi_result, mi_console):
+        """Adding an inferior should refresh and return the structured inferior inventory."""
+
+        session, _controller = scripted_running_session(
+            [mi_result({"inferior": "i2"})],
+            [
+                mi_console("  Num  Description       Connection           Executable        \n"),
+                mi_console("* 1    <null>                                 /tmp/app \n"),
+                mi_console("  2    <null>                                                   \n"),
+                mi_result(),
+            ],
+        )
+
+        result = result_to_mapping(session.add_inferior())
+
+        assert result["status"] == "success"
+        assert result["inferior_id"] == 2
+        assert result["inferior_count"] == 2
+
+    def test_remove_inferior_updates_inventory(
+        self,
+        scripted_running_session,
+        mi_result,
+        mi_console,
+    ):
+        """Removing an inferior should refresh the inventory and current selection."""
+
+        session, _controller = scripted_running_session(
+            [mi_result()],
+            [
+                mi_console("  Num  Description       Connection           Executable        \n"),
+                mi_console("* 1    <null>                                 /tmp/app \n"),
+                mi_result(),
+            ],
+        )
+        session.runtime.update_inferior_inventory(current_inferior_id=2, count=2, inferior_ids=(1, 2))
+        session.runtime.mark_inferior_selected(2)
+
+        result = result_to_mapping(session.remove_inferior(2))
+
+        assert result["status"] == "success"
+        assert result["inferior_id"] == 2
+        assert result["current_inferior_id"] == 1
+        assert result["inferior_count"] == 1
 
     def test_run_parses_zero_padded_exit_code(self, scripted_running_session, mi_result, mi_notify):
         """Exit-code parsing should preserve decimal values from zero-padded fields."""

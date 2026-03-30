@@ -31,23 +31,28 @@ from ..session.registry import SessionRegistry
 from ..session.service import SessionService
 from ..session.workflow import BatchStepTemplate
 from .schemas import (
+    AddInferiorArgs,
     AttachProcessArgs,
     BatchArgs,
     BatchStepArgs,
     BreakpointNumberArgs,
     CallFunctionArgs,
     CaptureBundleArgs,
+    DisassembleArgs,
     DetachOnForkArgs,
     EvaluateExpressionArgs,
     ExecuteCommandArgs,
+    FinishArgs,
     FollowForkModeArgs,
     FrameSelectArgs,
     GetBacktraceArgs,
+    GetSourceContextArgs,
     ReadMemoryArgs,
     GetRegistersArgs,
     GetVariablesArgs,
     InferiorSelectArgs,
     ListSessionsArgs,
+    RemoveInferiorArgs,
     RunUntilFailureArgs,
     RunArgs,
     SessionIdArgs,
@@ -120,7 +125,22 @@ def _handle_run(session: SessionService, args: RunArgs) -> ToolResult:
     run_args = _normalize_run_args(args.args)
     if isinstance(run_args, OperationError):
         return run_args
-    return session.run(args=run_args, timeout_sec=args.timeout_sec)
+    return session.run(
+        args=run_args,
+        timeout_sec=args.timeout_sec,
+        wait_for_stop=args.wait_for_stop,
+    )
+
+
+def _handle_add_inferior(session: SessionService, args: AddInferiorArgs) -> ToolResult:
+    return session.add_inferior(
+        executable=args.executable,
+        make_current=args.make_current,
+    )
+
+
+def _handle_remove_inferior(session: SessionService, args: RemoveInferiorArgs) -> ToolResult:
+    return session.remove_inferior(inferior_id=args.inferior_id)
 
 
 def _handle_attach_process(session: SessionService, args: AttachProcessArgs) -> ToolResult:
@@ -239,6 +259,10 @@ def _handle_next(session: SessionService, args: SessionIdArgs) -> ToolResult:
     return session.next()
 
 
+def _handle_finish(session: SessionService, args: FinishArgs) -> ToolResult:
+    return session.finish(timeout_sec=args.timeout_sec)
+
+
 def _handle_interrupt(session: SessionService, args: SessionIdArgs) -> ToolResult:
     del args
     return session.interrupt()
@@ -270,6 +294,33 @@ def _handle_read_memory(session: SessionService, args: ReadMemoryArgs) -> ToolRe
     )
 
 
+def _handle_disassemble(session: SessionService, args: DisassembleArgs) -> ToolResult:
+    thread_id = _normalize_int_argument(args.thread_id, field_name="thread_id", minimum=1)
+    if isinstance(thread_id, OperationError):
+        return thread_id
+
+    frame = _normalize_int_argument(args.frame, field_name="frame", minimum=0)
+    if isinstance(frame, OperationError):
+        return frame
+
+    line = _normalize_int_argument(args.line, field_name="line", minimum=1)
+    if isinstance(line, OperationError):
+        return line
+
+    return session.disassemble(
+        thread_id=thread_id,
+        frame=frame,
+        function=args.function,
+        address=args.address,
+        start_address=args.start_address,
+        end_address=args.end_address,
+        file=args.file,
+        line=line,
+        instruction_count=args.instruction_count,
+        mode=args.mode,
+    )
+
+
 def _handle_get_variables(session: SessionService, args: GetVariablesArgs) -> ToolResult:
     thread_id = _normalize_int_argument(args.thread_id, field_name="thread_id", minimum=1)
     if isinstance(thread_id, OperationError):
@@ -282,6 +333,41 @@ def _handle_get_variables(session: SessionService, args: GetVariablesArgs) -> To
         return OperationError(message="Invalid frame: value is required", code="validation_error")
 
     return session.get_variables(thread_id=thread_id, frame=frame_value)
+
+
+def _handle_get_source_context(session: SessionService, args: GetSourceContextArgs) -> ToolResult:
+    thread_id = _normalize_int_argument(args.thread_id, field_name="thread_id", minimum=1)
+    if isinstance(thread_id, OperationError):
+        return thread_id
+
+    frame = _normalize_int_argument(args.frame, field_name="frame", minimum=0)
+    if isinstance(frame, OperationError):
+        return frame
+
+    line = _normalize_int_argument(args.line, field_name="line", minimum=1)
+    if isinstance(line, OperationError):
+        return line
+
+    start_line = _normalize_int_argument(args.start_line, field_name="start_line", minimum=1)
+    if isinstance(start_line, OperationError):
+        return start_line
+
+    end_line = _normalize_int_argument(args.end_line, field_name="end_line", minimum=1)
+    if isinstance(end_line, OperationError):
+        return end_line
+
+    return session.get_source_context(
+        thread_id=thread_id,
+        frame=frame,
+        function=args.function,
+        address=args.address,
+        file=args.file,
+        line=line,
+        start_line=start_line,
+        end_line=end_line,
+        context_before=args.context_before,
+        context_after=args.context_after,
+    )
 
 
 def _handle_get_registers(session: SessionService, args: GetRegistersArgs) -> ToolResult:
@@ -664,6 +750,8 @@ def _build_batch_step_templates(
 SESSION_TOOL_SPECS: dict[str, SessionToolSpec] = {
     "gdb_execute_command": session_tool_spec(ExecuteCommandArgs, _handle_execute_command),
     "gdb_run": session_tool_spec(RunArgs, _handle_run),
+    "gdb_add_inferior": session_tool_spec(AddInferiorArgs, _handle_add_inferior),
+    "gdb_remove_inferior": session_tool_spec(RemoveInferiorArgs, _handle_remove_inferior),
     "gdb_attach_process": session_tool_spec(AttachProcessArgs, _handle_attach_process),
     "gdb_list_inferiors": session_tool_spec(SessionIdArgs, _handle_list_inferiors),
     "gdb_select_inferior": session_tool_spec(InferiorSelectArgs, _handle_select_inferior),
@@ -693,11 +781,16 @@ SESSION_TOOL_SPECS: dict[str, SessionToolSpec] = {
     "gdb_wait_for_stop": session_tool_spec(WaitForStopArgs, _handle_wait_for_stop),
     "gdb_step": session_tool_spec(SessionIdArgs, _handle_step),
     "gdb_next": session_tool_spec(SessionIdArgs, _handle_next),
+    "gdb_finish": session_tool_spec(FinishArgs, _handle_finish),
     "gdb_interrupt": session_tool_spec(SessionIdArgs, _handle_interrupt),
     "gdb_evaluate_expression": session_tool_spec(
         EvaluateExpressionArgs, _handle_evaluate_expression
     ),
     "gdb_read_memory": session_tool_spec(ReadMemoryArgs, _handle_read_memory),
+    "gdb_disassemble": session_tool_spec(DisassembleArgs, _handle_disassemble),
+    "gdb_get_source_context": session_tool_spec(
+        GetSourceContextArgs, _handle_get_source_context
+    ),
     "gdb_get_variables": session_tool_spec(GetVariablesArgs, _handle_get_variables),
     "gdb_get_registers": session_tool_spec(GetRegistersArgs, _handle_get_registers),
     "gdb_call_function": session_tool_spec(CallFunctionArgs, _handle_call_function),

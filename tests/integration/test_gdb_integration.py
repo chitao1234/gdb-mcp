@@ -469,7 +469,7 @@ def test_read_memory_tool_reads_global_bytes(compile_program, start_session, sto
 def test_wait_for_stop_tool_observes_background_exit(
     compile_program, start_session, stop_session
 ):
-    """Wait helpers should observe a later stop after a background run command."""
+    """Wait helpers should observe a later stop after a non-blocking structured run."""
 
     program = compile_program(
         DELAY_EXIT_C_PROGRAM,
@@ -479,11 +479,12 @@ def test_wait_for_stop_tool_observes_background_exit(
     session_id = start_session(program)
     try:
         background_run = call_gdb_tool(
-            "gdb_execute_command",
-            {"session_id": session_id, "command": "run&", "timeout_sec": 1},
+            "gdb_run",
+            {"session_id": session_id, "wait_for_stop": False, "timeout_sec": 1},
         )
-        assert background_run["status"] == "error"
-        assert "Timeout" in background_run["message"]
+        assert background_run["status"] == "success"
+        assert background_run["command"] == "-exec-run"
+        assert "warnings" in background_run
 
         wait_result = call_gdb_tool(
             "gdb_wait_for_stop",
@@ -504,7 +505,7 @@ def test_wait_for_stop_tool_observes_background_exit(
 
 @pytest.mark.integration
 def test_multi_inferior_and_fork_tools_update_status_metadata(session_id):
-    """Multi-inferior and fork helpers should expose stable status metadata."""
+    """Structured inferior and fork helpers should expose stable status metadata."""
 
     status = call_gdb_tool("gdb_get_status", {"session_id": session_id})
     assert status["current_inferior_id"] == 1
@@ -512,11 +513,11 @@ def test_multi_inferior_and_fork_tools_update_status_metadata(session_id):
     assert status["follow_fork_mode"] == "parent"
     assert status["detach_on_fork"] is True
 
-    add_result = call_gdb_tool(
-        "gdb_execute_command",
-        {"session_id": session_id, "command": "add-inferior"},
-    )
+    add_result = call_gdb_tool("gdb_add_inferior", {"session_id": session_id})
     assert add_result["status"] == "success"
+    assert add_result["inferior_id"] == 2
+    assert add_result["inferior_count"] == 2
+    assert add_result["current_inferior_id"] == 1
 
     inferiors = call_gdb_tool("gdb_list_inferiors", {"session_id": session_id})
     assert inferiors["status"] == "success"
@@ -543,19 +544,35 @@ def test_multi_inferior_and_fork_tools_update_status_metadata(session_id):
         {"session_id": session_id, "enabled": False},
     )
     assert detach_result["status"] == "success"
+
+    select_back_result = call_gdb_tool(
+        "gdb_select_inferior",
+        {"session_id": session_id, "inferior_id": 1},
+    )
+    assert select_back_result["status"] == "success"
+    assert select_back_result["inferior_id"] == 1
+
+    remove_result = call_gdb_tool(
+        "gdb_remove_inferior",
+        {"session_id": session_id, "inferior_id": 2},
+    )
+    assert remove_result["status"] == "success"
+    assert remove_result["inferior_id"] == 2
+    assert remove_result["current_inferior_id"] == 1
+    assert remove_result["inferior_count"] == 1
     assert detach_result["enabled"] is False
 
     updated_status = call_gdb_tool("gdb_get_status", {"session_id": session_id})
-    assert updated_status["current_inferior_id"] == 2
-    assert updated_status["inferior_count"] == 2
+    assert updated_status["current_inferior_id"] == 1
+    assert updated_status["inferior_count"] == 1
     assert updated_status["follow_fork_mode"] == "child"
     assert updated_status["detach_on_fork"] is False
 
     sessions = call_gdb_tool("gdb_list_sessions", {})
     assert sessions["status"] == "success"
     summary = next(item for item in sessions["sessions"] if item["session_id"] == session_id)
-    assert summary["current_inferior_id"] == 2
-    assert summary["inferior_count"] == 2
+    assert summary["current_inferior_id"] == 1
+    assert summary["inferior_count"] == 1
     assert summary["follow_fork_mode"] == "child"
     assert summary["detach_on_fork"] is False
 
@@ -619,6 +636,63 @@ def test_backtrace_across_functions(session_id):
     frame_funcs = [f.get("func", "") for f in frames]
     # Check if add is in the backtrace (with or without signature)
     assert any("add" in func for func in frame_funcs if func)
+
+
+@pytest.mark.integration
+def test_finish_steps_out_to_caller(session_id):
+    """Structured finish should step out of the current frame into its caller."""
+
+    call_gdb_tool("gdb_set_breakpoint", {"session_id": session_id, "location": "add"})
+    run_result = call_gdb_tool("gdb_run", {"session_id": session_id})
+    assert run_result["status"] == "success"
+
+    finish_result = call_gdb_tool("gdb_finish", {"session_id": session_id, "timeout_sec": 10})
+    assert finish_result["status"] == "success"
+    if finish_result["return_value"] is not None:
+        assert finish_result["return_value"] == "15"
+    if finish_result["gdb_result_var"] is not None:
+        assert finish_result["gdb_result_var"].startswith("$")
+    assert "calculate" in finish_result["frame"]["func"]
+
+
+@pytest.mark.integration
+def test_disassemble_returns_structured_instructions(session_id):
+    """Structured disassembly should flatten MI payloads into instruction records."""
+
+    call_gdb_tool("gdb_set_breakpoint", {"session_id": session_id, "location": "add"})
+    run_result = call_gdb_tool("gdb_run", {"session_id": session_id})
+    assert run_result["status"] == "success"
+
+    disassemble_result = call_gdb_tool(
+        "gdb_disassemble",
+        {"session_id": session_id, "instruction_count": 4, "mode": "mixed"},
+    )
+
+    assert disassemble_result["status"] == "success"
+    assert disassemble_result["mode"] == "mixed"
+    assert disassemble_result["count"] >= 1
+    assert disassemble_result["instructions"][0]["address"].startswith("0x")
+    assert any("add" in instruction.get("function", "") for instruction in disassemble_result["instructions"])
+
+
+@pytest.mark.integration
+def test_get_source_context_returns_structured_lines(session_id):
+    """Structured source context should read the current stopped source window from disk."""
+
+    call_gdb_tool("gdb_set_breakpoint", {"session_id": session_id, "location": "add"})
+    run_result = call_gdb_tool("gdb_run", {"session_id": session_id})
+    assert run_result["status"] == "success"
+
+    source_result = call_gdb_tool(
+        "gdb_get_source_context",
+        {"session_id": session_id, "context_before": 1, "context_after": 0},
+    )
+
+    assert source_result["status"] == "success"
+    assert source_result["count"] >= 1
+    assert source_result["line"] is not None
+    assert any(line.get("is_current") for line in source_result["lines"])
+    assert any("add" in line["text"] for line in source_result["lines"])
 
 
 @pytest.mark.integration
