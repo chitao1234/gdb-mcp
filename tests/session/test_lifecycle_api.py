@@ -466,6 +466,49 @@ class TestLifecycleApi:
         assert result["target_loaded"] is True
         assert executed_commands == ["set confirm off", "source setup.gdb"]
 
+    @patch("gdb_mcp.session.factory.GdbController")
+    def test_start_session_warns_when_target_loaded_refresh_fails(
+        self,
+        mock_controller_class,
+        session_service,
+        prompt_response,
+        command_result,
+    ):
+        """Startup should keep the last known target_loaded value but surface probe failure."""
+
+        mock_controller_class.return_value = MagicMock()
+
+        with patch.object(
+            session_service.runtime.transport,
+            "read_initial_output",
+            return_value=[{"type": "console", "payload": "Reading symbols from /bin/ls...\n"}],
+        ):
+            with patch.object(
+                session_service._command_runner,
+                "send_command_and_wait_for_prompt",
+                return_value=prompt_response(
+                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
+                ),
+            ):
+                with patch.object(
+                    session_service._command_runner,
+                    "execute_command_result",
+                    side_effect=[
+                        command_result("set confirm off", output=""),
+                        OperationError(message="info files failed"),
+                    ],
+                ):
+                    result = result_to_mapping(session_service.start(program="/bin/ls"))
+
+        assert result["status"] == "success"
+        assert result["target_loaded"] is True
+        assert "warnings" in result
+        assert any(
+            warning
+            == "Could not refresh target_loaded from GDB after startup commands: info files failed"
+            for warning in result["warnings"]
+        )
+
     def test_stop_active_session(self, running_session):
         """Stopping an active session should clear the controller and running flag."""
 

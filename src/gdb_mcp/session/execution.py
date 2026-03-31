@@ -212,11 +212,6 @@ class SessionExecutionService:
         if isinstance(result, OperationError):
             return result
 
-        self._runtime.target_loaded = True
-        self._runtime.mark_attached(pid)
-        if self._runtime.execution_state != "paused" or self._runtime.stop_reason is None:
-            self._runtime.mark_inferior_paused("attached")
-
         return result
 
     def set_follow_fork_mode(

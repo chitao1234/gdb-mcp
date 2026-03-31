@@ -220,9 +220,14 @@ class SessionLifecycleService:
                                 details={"init_output": payload_to_mapping(init_output)},
                             )
 
-                self._runtime.target_loaded = self._probe_target_loaded(
-                    fallback=self._runtime.target_loaded
-                )
+                target_loaded_probe = self._probe_target_loaded()
+                if isinstance(target_loaded_probe, OperationError):
+                    warnings.append(
+                        "Could not refresh target_loaded from GDB after startup commands: "
+                        f"{target_loaded_probe.message}"
+                    )
+                else:
+                    self._runtime.target_loaded = target_loaded_probe
                 if self._runtime.execution_state == "unknown":
                     if core or any(
                         command.lower().strip().startswith("core-file ")
@@ -397,19 +402,15 @@ class SessionLifecycleService:
         )
         return not any(marker in startup_output for marker in failure_markers)
 
-    def _probe_target_loaded(self, *, fallback: bool) -> bool:
+    def _probe_target_loaded(self) -> bool | OperationError:
         """Probe whether GDB currently has an executable or core file loaded."""
 
         result = self._command_runner.execute_command_result(
             "info files", timeout_sec=DEFAULT_TIMEOUT_SEC
         )
         if isinstance(result, OperationError):
-            logger.debug(
-                "Falling back to heuristic target_loaded=%s after probe error: %s",
-                fallback,
-                result.message,
-            )
-            return fallback
+            logger.debug("Unable to refresh target_loaded from GDB: %s", result.message)
+            return result
 
         output = (result.value.output or "").strip()
         if not output or output == "(no output)":
