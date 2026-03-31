@@ -143,6 +143,91 @@ class TestExecutionApi:
         assert session.last_stop_event is not None
         assert session.last_stop_event.inferior_id == 2
 
+    def test_continue_execution_refreshes_current_inferior_after_fork_topology_change(
+        self,
+        scripted_running_session,
+        mi_result,
+        mi_notify,
+        mi_console,
+    ):
+        """Fork-driven inferior changes should refresh the selected inferior from GDB."""
+
+        session, controller = scripted_running_session(
+            [
+                mi_result(message="running"),
+                mi_notify(
+                    "stopped",
+                    {
+                        "reason": "breakpoint-hit",
+                        "thread-group": "i2",
+                        "thread-id": "2",
+                    },
+                ),
+                mi_notify("thread-group-added", {"id": "i2"}),
+            ],
+            [
+                mi_console("  Num  Description       Connection           Executable        \n"),
+                mi_console("  1    <null>                                 /tmp/app \n"),
+                mi_console("* 2    <null>                                 /tmp/app \n"),
+                mi_result(),
+            ],
+        )
+
+        result = result_to_mapping(session.continue_execution())
+
+        assert result["status"] == "success"
+        status = result_to_mapping(session.get_status())
+        assert status["current_inferior_id"] == 2
+        assert status["inferior_count"] == 2
+        assert status["execution_state"] == "paused"
+        assert controller.io_manager.stdin.writes[-1].decode().endswith(
+            '-interpreter-exec console "info inferiors"\n'
+        )
+
+    def test_continue_execution_attributes_stop_without_thread_group_after_fork_refresh(
+        self,
+        scripted_running_session,
+        mi_result,
+        mi_notify,
+        mi_console,
+    ):
+        """Stopped notifications without thread-group should still identify the child inferior."""
+
+        session, _controller = scripted_running_session(
+            [
+                mi_result(message="running"),
+                mi_notify(
+                    "stopped",
+                    {
+                        "reason": "breakpoint-hit",
+                        "thread-id": "2",
+                    },
+                ),
+                mi_notify("thread-group-added", {"id": "i2"}),
+            ],
+            [
+                mi_console("  Num  Description       Connection           Executable        \n"),
+                mi_console("  1    <null>                                 /tmp/app \n"),
+                mi_console("* 2    <null>                                 /tmp/app \n"),
+                mi_result(),
+            ],
+        )
+
+        result = result_to_mapping(session.continue_execution())
+
+        assert result["status"] == "success"
+        status = result_to_mapping(session.get_status())
+        assert status["current_inferior_id"] == 2
+        assert status["execution_state"] == "paused"
+        assert status["inferior_states"] is not None
+        inferior_state = next(
+            record for record in status["inferior_states"] if record["inferior_id"] == 2
+        )
+        assert inferior_state["execution_state"] == "paused"
+        assert inferior_state["stop_reason"] == "breakpoint-hit"
+        assert session.last_stop_event is not None
+        assert session.last_stop_event.inferior_id == 2
+
     def test_execute_command_tracks_thread_group_exit_notifications(
         self,
         scripted_running_session,

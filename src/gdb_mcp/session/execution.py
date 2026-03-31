@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import re
 import signal
 from typing import Optional, cast
 
@@ -35,13 +34,11 @@ from ..transport import (
 )
 from .command_runner import SessionCommandRunner
 from .constants import DEFAULT_TIMEOUT_SEC, INTERRUPT_RESPONSE_TIMEOUT_SEC
+from .inferiors import inferior_ids, looks_like_connection, parse_inferiors_output
 from .result_utils import command_result_payload
 from .runtime import SessionRuntime
 
 logger = logging.getLogger(__name__)
-
-_INFERIOR_ROW_RE = re.compile(r"^(?P<current>\*)?\s*(?P<inferior_id>\d+)\s+(?P<columns>.*)$")
-_INFERIOR_COLUMN_SPLIT_RE = re.compile(r"\s{2,}")
 
 
 class SessionExecutionService:
@@ -684,65 +681,16 @@ class SessionExecutionService:
         self._runtime.update_inferior_inventory(
             current_inferior_id=payload.current_inferior_id,
             count=payload.count,
-            inferior_ids=tuple(
-                record["inferior_id"]
-                for record in payload.inferiors
-                if isinstance(record.get("inferior_id"), int)
-            ),
+            inferior_ids=inferior_ids(payload),
         )
         return OperationSuccess(payload)
 
     def _parse_inferiors_output(self, output: str) -> InferiorListInfo:
         """Parse `info inferiors` CLI output into a structured inventory snapshot."""
 
-        inferiors: list[InferiorRecord] = []
-        current_inferior_id = self._runtime.current_inferior_id
-
-        for raw_line in output.splitlines():
-            line = raw_line.rstrip()
-            stripped = line.strip()
-            if not stripped:
-                continue
-            if stripped.startswith("Num ") or stripped.startswith("Num\t"):
-                continue
-
-            match = _INFERIOR_ROW_RE.match(line)
-            if match is None:
-                continue
-
-            inferior_id = int(match.group("inferior_id"))
-            is_current = match.group("current") == "*"
-            display = match.group("columns").strip()
-            columns = [
-                part.strip()
-                for part in _INFERIOR_COLUMN_SPLIT_RE.split(display)
-                if part.strip()
-            ]
-
-            record: InferiorRecord = {
-                "inferior_id": inferior_id,
-                "is_current": is_current,
-                "display": display,
-            }
-            if columns:
-                record["description"] = columns[0]
-            if len(columns) == 2:
-                if self._looks_like_connection(columns[1]):
-                    record["connection"] = columns[1]
-                else:
-                    record["executable"] = columns[1]
-            elif len(columns) >= 3:
-                record["connection"] = columns[1]
-                record["executable"] = columns[2]
-
-            inferiors.append(record)
-            if is_current:
-                current_inferior_id = inferior_id
-
-        return InferiorListInfo(
-            inferiors=inferiors,
-            count=len(inferiors),
-            current_inferior_id=current_inferior_id,
+        return parse_inferiors_output(
+            output,
+            current_inferior_id=self._runtime.current_inferior_id,
         )
 
     @staticmethod
@@ -762,6 +710,4 @@ class SessionExecutionService:
     def _looks_like_connection(value: str) -> bool:
         """Heuristically identify a connection column from `info inferiors` output."""
 
-        return value.startswith(("target:", "process ", "remote ", "extended-remote")) or value in {
-            "native",
-        }
+        return looks_like_connection(value)

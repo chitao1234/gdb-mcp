@@ -19,6 +19,7 @@ from ..domain import (
 )
 from ..transport import ParsedMiResponse, is_cli_command, parse_mi_responses, wrap_cli_command
 from .constants import DEFAULT_TIMEOUT_SEC
+from .inferiors import inferior_ids, parse_inferiors_output
 from .runtime import SessionRuntime
 
 logger = logging.getLogger(__name__)
@@ -231,6 +232,10 @@ class SessionCommandRunner:
         stopped_inferior_id: int | None = None
         saw_stopped = False
         stop_event: StopEvent | None = None
+        stopped_payload: object = None
+        saw_inferior_topology_change = False
+        stopped_thread_id: int | None = None
+        stopped_frame_level: int | None = None
         for notify in parsed.notify:
             message = notify.get("message")
             payload = notify.get("payload")
@@ -240,6 +245,7 @@ class SessionCommandRunner:
                 inferior_id = self._parse_inferior_id_from_thread_group(payload_dict.get("id"))
                 if inferior_id is not None:
                     self._runtime.ensure_inferior(inferior_id)
+                    saw_inferior_topology_change = True
                 continue
 
             if message == "thread-group-started":
@@ -263,12 +269,17 @@ class SessionCommandRunner:
                 inferior_id = self._parse_inferior_id_from_thread_group(payload_dict.get("id"))
                 if inferior_id is not None:
                     self._runtime.remove_inferior(inferior_id)
+                    saw_inferior_topology_change = True
                 continue
 
             if message != "stopped":
                 continue
 
+            if saw_stopped:
+                continue
+
             saw_stopped = True
+            stopped_payload = payload
             if isinstance(payload, dict):
                 reason_value = payload.get("reason")
                 if isinstance(reason_value, str):
@@ -279,18 +290,19 @@ class SessionCommandRunner:
                 )
                 frame_payload = payload.get("frame")
                 if isinstance(frame_payload, dict):
-                    self._runtime.mark_frame_selected(self._int_or_none(frame_payload.get("level")))
-                thread_id = self._int_or_none(payload.get("thread-id"))
-                if thread_id is not None:
-                    self._runtime.mark_thread_selected(thread_id)
-            stop_event = self._build_stop_event(
-                command,
-                payload,
-                stopped_reason,
-                exit_code,
-                stopped_inferior_id,
-            )
-            break
+                    stopped_frame_level = self._int_or_none(frame_payload.get("level"))
+                stopped_thread_id = self._int_or_none(payload.get("thread-id"))
+
+        if saw_stopped and saw_inferior_topology_change:
+            self._refresh_inferior_inventory_from_gdb()
+
+        if saw_stopped:
+            if stopped_inferior_id is None:
+                stopped_inferior_id = self._runtime.current_inferior_id
+            if stopped_thread_id is not None:
+                self._runtime.mark_thread_selected(stopped_thread_id)
+            if stopped_frame_level is not None:
+                self._runtime.mark_frame_selected(stopped_frame_level)
 
         if saw_stopped:
             if stopped_reason in {"exited", "exited-normally", "exited-signalled"}:
@@ -304,6 +316,13 @@ class SessionCommandRunner:
                     stopped_reason,
                     inferior_id=stopped_inferior_id,
                 )
+            stop_event = self._build_stop_event(
+                command,
+                stopped_payload,
+                stopped_reason,
+                exit_code,
+                stopped_inferior_id,
+            )
             if stop_event is not None:
                 self._runtime.record_stop_event(stop_event)
         elif parsed.result_class == "running":
@@ -344,6 +363,44 @@ class SessionCommandRunner:
         elif normalized_command.startswith("set detach-on-fork ") and not parsed.is_error_result():
             detach_on_fork = self._parse_detach_on_fork(normalized_command)
             self._runtime.mark_detach_on_fork(detach_on_fork)
+
+    def _refresh_inferior_inventory_from_gdb(self) -> None:
+        """Refresh cached inferior selection/inventory from authoritative GDB output."""
+
+        if not self._runtime.has_controller:
+            return
+
+        result = self.send_command_and_wait_for_prompt(
+            wrap_cli_command("info inferiors"),
+            timeout_sec=DEFAULT_TIMEOUT_SEC,
+        )
+        if "error" in result:
+            logger.debug("Skipping inferior refresh after async topology change: %s", result["error"])
+            return
+        if bool(result.get("timed_out", False)):
+            logger.debug("Skipping inferior refresh after async topology change due to timeout")
+            return
+
+        raw_responses = result.get("command_responses", [])
+        command_responses = raw_responses if isinstance(raw_responses, list) else []
+        parsed = parse_mi_responses(command_responses)
+        if parsed.is_error_result():
+            logger.debug(
+                "Skipping inferior refresh after async topology change: %s",
+                parsed.error_message(),
+            )
+            return
+
+        console_output = "".join(item for item in parsed.console if isinstance(item, str))
+        payload = parse_inferiors_output(
+            console_output,
+            current_inferior_id=self._runtime.current_inferior_id,
+        )
+        self._runtime.update_inferior_inventory(
+            current_inferior_id=payload.current_inferior_id,
+            count=payload.count,
+            inferior_ids=inferior_ids(payload),
+        )
 
     @staticmethod
     def _loads_target(command: str) -> bool:
