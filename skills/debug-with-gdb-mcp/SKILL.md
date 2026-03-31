@@ -25,9 +25,9 @@ Use a different approach when the task is not GDB-based or when some other debug
 1. Start the right kind of session: live launch, attach, or core-dump analysis.
 2. Validate startup immediately with `target_loaded`, `warnings`, and `execution_state`.
 3. Configure stop conditions before running: breakpoints, watchpoints, catchpoints, and fork policy.
-4. Transition execution with `gdb_run`, `gdb_continue`, `gdb_step`, `gdb_next`, or `gdb_interrupt`.
+4. Transition execution with `gdb_run`, `gdb_continue`, `gdb_step`, `gdb_next`, `gdb_finish`, or `gdb_interrupt`.
 5. Wait for stops with `gdb_wait_for_stop` instead of polling loops.
-6. Inspect state with thread, frame, variable, register, expression, and memory tools.
+6. Inspect state with thread, frame, source, disassembly, variable, register, expression, and memory tools.
 7. Capture artifacts with `gdb_capture_bundle` when findings matter.
 8. End with `gdb_stop_session`.
 
@@ -59,6 +59,7 @@ Use a different approach when the task is not GDB-based or when some other debug
 - Pair `env` with `working_dir` when launch behavior depends on both environment and cwd.
 - Keep `init_commands` for GDB configuration, symbol paths, and one-off debugger commands.
 - If you need different argv on a later rerun, prefer `gdb_run.args` instead of recreating the whole session.
+- If you need a background-style launch, prefer `gdb_run(wait_for_stop=false)` over raw `run &`.
 - `env` affects launches from this GDB session; it does not retroactively change a process you attach to later.
 
 ### Copy-Ready Startup Patterns
@@ -109,11 +110,16 @@ Treat these outcomes as hard gates:
 
 ## Tool Selection Rules
 
-- Prefer structured tools such as `gdb_run`, `gdb_get_status`, `gdb_get_backtrace`, `gdb_get_variables`, and `gdb_list_breakpoints`.
+- Prefer structured tools such as `gdb_run`, `gdb_get_status`, `gdb_get_backtrace`, `gdb_get_variables`, `gdb_disassemble`, `gdb_get_source_context`, and `gdb_list_breakpoints`.
 - Use `gdb_execute_command` only for GDB features not covered by dedicated tools.
+- Use `gdb_run(wait_for_stop=false)` when you need the structured replacement for background `run &`; follow it with `gdb_wait_for_stop` or `gdb_interrupt`.
 - Use `gdb_wait_for_stop` after `gdb_continue` to block for the next event.
 - Use `gdb_interrupt` before inspection when the inferior is still running.
 - Use `gdb_step` and `gdb_next` only when execution is paused.
+- Use `gdb_finish` when you want to step out of the current frame and stop in the caller.
+- Use `gdb_disassemble` for structured assembly or mixed source/assembly instead of raw `disassemble`.
+- Use `gdb_get_source_context` for structured source windows instead of raw `list`.
+- Use `gdb_add_inferior` and `gdb_remove_inferior` when explicit inferior lifecycle management matters.
 - Use `gdb_call_function` only when active code execution side effects are acceptable.
 - Use `gdb_batch` when ordering matters and you want one structured transcript of the whole sequence.
 - Use `gdb_run_until_failure` when you would otherwise write an ad-hoc rerun loop.
@@ -123,6 +129,7 @@ Treat these outcomes as hard gates:
 - Treat `execution_state` as authoritative for the currently selected inferior.
 - In fork or multi-inferior workflows, also inspect `inferior_states` from `gdb_get_status` or `gdb_list_sessions` for full process state.
 - Run `gdb_run` only when target startup has completed and execution is not already running.
+- After `gdb_run(wait_for_stop=false)` or any resume that leaves the inferior running, synchronize with `gdb_wait_for_stop` or `gdb_interrupt` before inspection.
 - Run `gdb_continue` only from a paused state.
 - For core dumps, expect `execution_state=paused` at startup.
 - For live programs, expect `execution_state=not_started` before the first run.
@@ -138,8 +145,16 @@ Treat these outcomes as hard gates:
 3. Set breakpoints or watchpoints before running.
 4. Launch with `gdb_run`.
 5. Block for the next stop with `gdb_wait_for_stop`.
-6. Inspect `gdb_get_threads`, `gdb_get_backtrace`, `gdb_get_variables`, and focused `gdb_get_registers`.
+6. Inspect `gdb_get_threads`, `gdb_get_backtrace`, `gdb_get_source_context`, `gdb_get_variables`, and focused `gdb_get_registers`.
 7. Capture a bundle if the stop matters.
+
+### Background Launch and Later Synchronization
+
+1. Start the session and configure breakpoints or catchpoints first.
+2. Launch with `gdb_run(wait_for_stop=false)` when you intentionally want the inferior to keep running.
+3. Use `gdb_wait_for_stop` when you expect a later stop event and want a blocking handoff point.
+4. Use `gdb_interrupt` if you need to force a pause before inspection.
+5. Do not inspect threads, frames, locals, or source context until execution is paused again.
 
 ### Attach to a Running Process
 
@@ -166,6 +181,14 @@ Treat these outcomes as hard gates:
 5. Use registers, expressions, and memory reads to confirm wait conditions or state corruption.
 6. Capture a bundle once you have a useful snapshot.
 
+### Focused Source and Assembly Inspection
+
+1. Stop at the code region you care about.
+2. Use `gdb_get_source_context` around the current stop, or resolve by `function`, `address`, or `file` plus line selectors.
+3. Use `gdb_disassemble` with `mode="mixed"` when you need source and assembly aligned in one structured payload.
+4. Use `gdb_finish` when the current frame is just a helper and the caller context matters more.
+5. Re-run `gdb_get_source_context` or `gdb_disassemble` after stepping if you need updated code context.
+
 ### Fork and Multi-Inferior Debugging
 
 1. Set `gdb_set_follow_fork_mode` before running.
@@ -174,6 +197,13 @@ Treat these outcomes as hard gates:
 4. After stops, inspect `current_inferior_id` and `inferior_states`.
 5. Use `gdb_list_inferiors` and `gdb_select_inferior` before thread or frame inspection.
 6. Avoid assuming the currently selected inferior is still the one you care about after process events.
+
+### Manual Inferior Lifecycle
+
+1. Use `gdb_add_inferior` when one GDB session needs an extra explicit inferior before process events create one for you.
+2. Use `gdb_list_inferiors` to confirm the returned `inferior_id`, executable association, and current selection.
+3. Use `gdb_select_inferior` before thread or frame inspection on the new inferior.
+4. Use `gdb_remove_inferior` when that explicit inferior is no longer needed.
 
 ### Flaky Failure Reproduction
 
@@ -189,23 +219,28 @@ Treat these outcomes as hard gates:
 - `gdb_get_threads`: inventory before choosing a thread to study
 - `gdb_get_backtrace`: preferred for stack inspection because it does not require changing the selected thread
 - `gdb_select_thread` + `gdb_select_frame`: use when you need persistent context for multiple follow-up commands
+- `gdb_get_source_context`: inspect source windows around the current stop or a resolved location without raw `list`
+- `gdb_disassemble`: inspect structured assembly or mixed source/assembly instead of raw `disassemble`
 - `gdb_get_variables`: inspect locals in a target thread or frame without disturbing selection
 - `gdb_evaluate_expression`: use for specific expressions or globals when you already know what to ask
 - `gdb_get_registers`: request only the registers you need when payload size matters
 - `gdb_read_memory`: use when raw bytes matter more than pretty-printed values
 - `gdb_list_breakpoints`: verify actual installed breakpoint or watchpoint state instead of assuming setup succeeded
+- `gdb_finish`: use when the top frame is a noisy helper and you want the caller context next
 
 ## Troubleshooting and Common Mistakes
 
 - Ignoring `warnings` and then trusting broken symbols or empty locals
 - Forgetting that `args` and `core` are mutually exclusive
 - Using `init_commands` to fake launch configuration that belongs in `args`, `env`, or `working_dir`
+- Launching a background-style run with raw `run &` instead of `gdb_run(wait_for_stop=false)`
 - Inspecting while the inferior is still running instead of interrupting first
 - Calling `gdb_continue` when execution is already running
 - Calling `gdb_step` or `gdb_next` when the inferior is not paused
+- Forgetting `gdb_finish` when stepping out is simpler than repeated `gdb_next`
 - Forgetting that attach workflows inherit the target's existing environment; `env` only affects future launches
 - Losing track of the active inferior after fork or exec stops
-- Relying on raw `gdb_execute_command` output when a structured tool exists
+- Relying on raw `gdb_execute_command` output when structured tools such as `gdb_disassemble`, `gdb_get_source_context`, or `gdb_add_inferior` exist
 - Forgetting `gdb_stop_session` and leaking debugger sessions
 
 ## Reference Material

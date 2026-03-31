@@ -6,11 +6,14 @@
 | --- | --- | --- |
 | New live debug session | `gdb_start_session`, `gdb_set_breakpoint`, `gdb_run` | `gdb_wait_for_stop`, `gdb_get_backtrace`, `gdb_get_variables` |
 | Live launch with custom env/cwd/argv | `gdb_start_session` with `args`, `env`, `working_dir` | `gdb_run` or later `gdb_run` with override args |
+| Background launch and inspect later | `gdb_run` with `wait_for_stop=false` | `gdb_wait_for_stop` or `gdb_interrupt`, then thread/frame inspection |
 | Attach to running process | `gdb_start_session`, `gdb_attach_process` | `gdb_get_status`, `gdb_get_threads`, `gdb_get_backtrace` |
 | Core dump analysis | `gdb_start_session` with `core` | `gdb_get_threads`, `gdb_get_backtrace`, `gdb_evaluate_expression` |
 | Program appears stuck | `gdb_get_status`, `gdb_interrupt` | `gdb_get_threads`, per-thread `gdb_get_backtrace` |
+| Need source or assembly around a stop | `gdb_get_source_context`, `gdb_disassemble` | `gdb_finish`, `gdb_get_frame_info`, focused register or variable reads |
 | Flaky crash reproduction | `gdb_run_until_failure` | `capture` bundle plus expression and memory snapshots |
 | Fork-heavy behavior | `gdb_set_follow_fork_mode`, `gdb_set_detach_on_fork`, `gdb_set_catchpoint` | `gdb_get_status` (`inferior_states`), `gdb_list_inferiors`, `gdb_select_inferior` |
+| Manual inferior lifecycle | `gdb_add_inferior`, `gdb_list_inferiors`, `gdb_select_inferior` | `gdb_remove_inferior` when cleanup matters |
 
 ## Startup Checklist
 
@@ -55,6 +58,27 @@ After the session already exists, use `gdb_run` for one-off argv overrides:
 {
   "session_id": 1,
   "args": ["--mode", "stress", "--seed", "42"]
+}
+```
+
+### Background Launch Then Wait Later
+
+Use this when you want the structured replacement for raw `run &`:
+
+```json
+{
+  "session_id": 1,
+  "wait_for_stop": false,
+  "timeout_sec": 1
+}
+```
+
+Then synchronize later with:
+
+```json
+{
+  "session_id": 1,
+  "timeout_sec": 30
 }
 ```
 
@@ -262,7 +286,64 @@ Useful capture expressions:
 5. Enumerate inferiors with `gdb_list_inferiors`.
 6. Switch with `gdb_select_inferior` before thread/frame inspection.
 
-## Playbook 6: Flaky Failure Campaign
+## Playbook 6: Focused Source and Assembly Inspection
+
+1. Stop where you want code context.
+2. Read source around the current frame:
+
+```json
+{
+  "session_id": 1,
+  "context_before": 3,
+  "context_after": 3
+}
+```
+
+3. Read mixed source and assembly for the same stop:
+
+```json
+{
+  "session_id": 1,
+  "mode": "mixed",
+  "instruction_count": 24
+}
+```
+
+4. If the current frame is a helper and you want the caller next, use:
+
+```json
+{
+  "session_id": 1,
+  "timeout_sec": 30
+}
+```
+
+5. Re-run `gdb_get_source_context` or `gdb_disassemble` after the stop changes.
+
+## Playbook 7: Manual Inferior Lifecycle
+
+1. Add a new inferior:
+
+```json
+{
+  "session_id": 1,
+  "executable": "/path/to/helper",
+  "make_current": true
+}
+```
+
+2. Confirm inventory and current selection with `gdb_list_inferiors`.
+3. Switch later with `gdb_select_inferior` if needed.
+4. Remove the extra inferior when done:
+
+```json
+{
+  "session_id": 1,
+  "inferior_id": 2
+}
+```
+
+## Playbook 8: Flaky Failure Campaign
 
 Use `gdb_run_until_failure` to avoid ad-hoc loops:
 
@@ -367,6 +448,8 @@ For lightweight one-off batches, `steps` also accepts shorthand strings:
 - Calling `gdb_step` or `gdb_next` while not paused.
 - Ignoring startup `warnings` and then trusting variable output.
 - Hiding launch configuration inside `init_commands` instead of `args`, `env`, or `working_dir`.
+- Using raw `run &` instead of `gdb_run(wait_for_stop=false)` and losing structured state transitions.
 - Forgetting that attach sessions keep the target's preexisting environment.
+- Using raw `disassemble`, `list`, or `add-inferior` flows instead of `gdb_disassemble`, `gdb_get_source_context`, or `gdb_add_inferior`.
 - Using only raw `gdb_execute_command` and losing structured outputs.
 - Forgetting `gdb_stop_session` and leaking debugger sessions.
