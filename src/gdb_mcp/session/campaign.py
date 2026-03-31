@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from contextlib import nullcontext
 from dataclasses import dataclass, field
 import json
 import re
@@ -20,6 +19,7 @@ from ..domain import (
     StructuredPayload,
     result_to_mapping,
 )
+from .locking import session_workflow_context
 from .service import SessionService
 from .workflow import BatchStepTemplate
 
@@ -382,16 +382,7 @@ class RunUntilFailureService:
 
         if session.controller is None:
             return
-        workflow_lock = getattr(session.runtime, "workflow_lock", None)
-        if (
-            workflow_lock is None
-            or not hasattr(workflow_lock, "__enter__")
-            or not hasattr(workflow_lock, "__exit__")
-        ):
-            context = nullcontext()
-        else:
-            context = workflow_lock
-        with context:
+        with session_workflow_context(session):
             try:
                 session.stop()
             except Exception:

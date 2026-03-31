@@ -1,7 +1,7 @@
 """Unit tests for SessionRegistry lifecycle behavior."""
 
 import threading
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 from gdb_mcp.domain import (
     OperationError,
@@ -15,6 +15,17 @@ from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.registry import SessionRegistry
 from gdb_mcp.session.service import SessionService
 from gdb_mcp.session.state import SessionState
+
+
+def _session_double() -> Mock:
+    """Create a registry session double with a usable workflow lock."""
+
+    session = Mock(spec=SessionService)
+    workflow_lock = MagicMock()
+    workflow_lock.__enter__.return_value = None
+    workflow_lock.__exit__.return_value = None
+    session.runtime = Mock(workflow_lock=workflow_lock)
+    return session
 
 
 class TestSessionRegistry:
@@ -81,7 +92,7 @@ class TestSessionRegistry:
     def test_discard_session_rejects_active_sessions(self):
         """Active sessions must be closed explicitly instead of discarded."""
 
-        session = Mock(spec=SessionService)
+        session = _session_double()
         session.controller = object()
         session.is_running = True
         manager = SessionRegistry(session_factory=lambda: session)
@@ -94,7 +105,7 @@ class TestSessionRegistry:
     def test_close_session_stops_and_removes_active_session(self):
         """close_session should stop and remove active sessions atomically."""
 
-        session = Mock(spec=SessionService)
+        session = _session_double()
         session.controller = object()
         session.stop.return_value = OperationSuccess(SessionMessage(message="stopped"))
         manager = SessionRegistry(session_factory=lambda: session)
@@ -109,7 +120,7 @@ class TestSessionRegistry:
     def test_close_session_keeps_session_when_stop_fails(self):
         """Failed close operations should retain registry ownership for retry/inspection."""
 
-        session = Mock(spec=SessionService)
+        session = _session_double()
         session.controller = object()
         session.stop.return_value = OperationError(message="stop failed")
         manager = SessionRegistry(session_factory=lambda: session)
@@ -124,7 +135,7 @@ class TestSessionRegistry:
     def test_close_session_rejects_inconsistent_running_session_without_controller(self):
         """close_session should not silently drop a logically running session."""
 
-        session = Mock(spec=SessionService)
+        session = _session_double()
         session.controller = None
         session.is_running = True
         manager = SessionRegistry(session_factory=lambda: session)
@@ -141,7 +152,7 @@ class TestSessionRegistry:
     def test_resolve_session_rejects_closing_sessions(self):
         """Closing sessions should reject new command resolution with a clear error."""
 
-        session = Mock(spec=SessionService)
+        session = _session_double()
         manager = SessionRegistry(session_factory=lambda: session)
         session_id = manager.create_session()
 
@@ -154,7 +165,7 @@ class TestSessionRegistry:
     def test_list_sessions_returns_structured_summaries(self):
         """Session inventory should expose metadata useful for multi-session clients."""
 
-        session = Mock(spec=SessionService)
+        session = _session_double()
         session.get_status.return_value = OperationSuccess(
             SessionStatusSnapshot(
                 is_running=True,
@@ -219,7 +230,7 @@ class TestSessionRegistry:
     def test_close_session_removes_failed_dead_session_without_stop(self):
         """Dead failed sessions should be removable without another stop attempt."""
 
-        session = Mock(spec=SessionService)
+        session = _session_double()
         session.controller = None
         session.is_running = False
         session.state = SessionState.FAILED
@@ -274,7 +285,7 @@ class TestSessionRegistry:
     def test_start_session_stores_successful_session(self):
         """Atomic startup should publish the session only after success."""
 
-        session = Mock(spec=SessionService)
+        session = _session_double()
         session.start.return_value = OperationSuccess(SessionStartInfo(message="started"))
         manager = SessionRegistry(session_factory=lambda: session)
 
@@ -287,7 +298,7 @@ class TestSessionRegistry:
     def test_shutdown_all_stops_and_clears_sessions(self):
         """Shutdown should stop every registered session and clear the registry."""
 
-        sessions = [Mock(spec=SessionService), Mock(spec=SessionService)]
+        sessions = [_session_double(), _session_double()]
         for session in sessions:
             session.stop.return_value = OperationSuccess(SessionMessage(message="stopped"))
 
@@ -312,7 +323,7 @@ class TestSessionRegistry:
     def test_shutdown_all_removes_failed_dead_sessions_without_stop(self):
         """Shutdown should not try to stop sessions whose transport has already died."""
 
-        session = Mock(spec=SessionService)
+        session = _session_double()
         session.controller = None
         session.is_running = False
         session.state = SessionState.FAILED

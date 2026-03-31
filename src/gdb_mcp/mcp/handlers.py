@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from contextlib import nullcontext
 from dataclasses import dataclass
 import logging
 import re
 import shlex
 from collections.abc import Callable, Sequence
-from typing import ContextManager, Protocol, TypeAlias, TypeVar, cast
+from typing import Protocol, TypeAlias, TypeVar, cast
 
 from pydantic import BaseModel
 from mcp.types import TextContent
@@ -27,6 +26,7 @@ from ..session.campaign import (
     RunUntilFailureRequest,
     RunUntilFailureService,
 )
+from ..session.locking import session_workflow_context
 from ..session.registry import SessionRegistry
 from ..session.service import SessionService
 from ..session.workflow import BatchStepTemplate
@@ -670,22 +670,8 @@ def _dispatch_session_tool(
     session = session_manager.resolve_session(args.session_id)
     if isinstance(session, OperationError):
         return session
-    with _session_workflow_context(session):
+    with session_workflow_context(session):
         return tool_spec.handler(session, cast(BaseModel, args))
-
-
-def _session_workflow_context(session: SessionService) -> ContextManager[object]:
-    """Return the session workflow lock when it is available."""
-
-    runtime = getattr(session, "runtime", None)
-    workflow_lock = getattr(runtime, "workflow_lock", None)
-    if (
-        workflow_lock is None
-        or not hasattr(workflow_lock, "__enter__")
-        or not hasattr(workflow_lock, "__exit__")
-    ):
-        return nullcontext()
-    return cast(ContextManager[object], workflow_lock)
 
 
 def _build_batch_step_templates(

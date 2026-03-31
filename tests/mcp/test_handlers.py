@@ -24,8 +24,30 @@ from gdb_mcp.mcp.schemas import build_tool_definitions
 from gdb_mcp.session.factory import create_default_session_service
 
 
+def _attach_workflow_lock(session: object) -> None:
+    """Make lightweight session doubles satisfy the workflow-lock contract."""
+
+    if not isinstance(session, Mock):
+        return
+
+    runtime = getattr(session, "runtime", None)
+    workflow_lock = getattr(runtime, "workflow_lock", None) if runtime is not None else None
+    if workflow_lock is not None and hasattr(workflow_lock, "__enter__") and hasattr(
+        workflow_lock, "__exit__"
+    ):
+        return
+
+    workflow_lock = MagicMock()
+    workflow_lock.__enter__.return_value = None
+    workflow_lock.__exit__.return_value = None
+    session.runtime = Mock(workflow_lock=workflow_lock)
+
+
 def dispatch(name: str, arguments, session_manager) -> dict[str, object]:
     """Call the structured MCP dispatcher and parse its JSON payload."""
+
+    _attach_workflow_lock(getattr(session_manager.resolve_session, "return_value", None))
+    _attach_workflow_lock(getattr(session_manager.create_untracked_session, "return_value", None))
 
     result = asyncio.run(
         dispatch_tool_call(
@@ -926,10 +948,12 @@ class TestHandlerDispatch:
         session_1.get_status.return_value = OperationSuccess(
             SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=True)
         )
+        _attach_workflow_lock(session_1)
         session_2 = Mock()
         session_2.get_status.return_value = OperationSuccess(
             SessionStatusSnapshot(is_running=True, target_loaded=True, has_controller=True)
         )
+        _attach_workflow_lock(session_2)
 
         def resolve_session_side_effect(session_id):
             if session_id == 1:
