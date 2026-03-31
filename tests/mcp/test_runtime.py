@@ -3,10 +3,21 @@
 import asyncio
 import json
 import logging
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 from gdb_mcp.domain import OperationSuccess, SessionMessage, SessionStatusSnapshot
 from gdb_mcp.mcp.runtime import create_server_runtime
+
+
+def _session_double() -> Mock:
+    """Create a runtime test double that satisfies the workflow-lock contract."""
+
+    session = Mock()
+    workflow_lock = MagicMock()
+    workflow_lock.__enter__.return_value = None
+    workflow_lock.__exit__.return_value = None
+    session.runtime = Mock(workflow_lock=workflow_lock)
+    return session
 
 
 class TestServerRuntime:
@@ -16,7 +27,7 @@ class TestServerRuntime:
         """The runtime should dispatch tool calls using the injected registry provider."""
 
         mock_manager = Mock()
-        mock_session = Mock()
+        mock_session = _session_double()
         mock_session.get_status.return_value = OperationSuccess(
             SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=True)
         )
