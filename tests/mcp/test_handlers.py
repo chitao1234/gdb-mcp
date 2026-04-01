@@ -24,30 +24,21 @@ from gdb_mcp.mcp.schemas import build_tool_definitions
 from gdb_mcp.session.factory import create_default_session_service
 
 
-def _attach_workflow_lock(session: object) -> None:
-    """Make lightweight session doubles satisfy the workflow-lock contract."""
+def _session_double() -> Mock:
+    """Create a handler test double that satisfies the workflow-lock contract."""
 
-    if not isinstance(session, Mock):
-        return
-
-    runtime = getattr(session, "runtime", None)
-    workflow_lock = getattr(runtime, "workflow_lock", None) if runtime is not None else None
-    if workflow_lock is not None and hasattr(workflow_lock, "__enter__") and hasattr(
-        workflow_lock, "__exit__"
-    ):
-        return
-
+    session = Mock()
     workflow_lock = MagicMock()
     workflow_lock.__enter__.return_value = None
     workflow_lock.__exit__.return_value = None
     session.runtime = Mock(workflow_lock=workflow_lock)
+    session.controller = None
+    session.is_running = False
+    return session
 
 
 def dispatch(name: str, arguments, session_manager) -> dict[str, object]:
     """Call the structured MCP dispatcher and parse its JSON payload."""
-
-    _attach_workflow_lock(getattr(session_manager.resolve_session, "return_value", None))
-    _attach_workflow_lock(getattr(session_manager.create_untracked_session, "return_value", None))
 
     result = asyncio.run(
         dispatch_tool_call(
@@ -149,7 +140,7 @@ class TestHandlerDispatch:
         """Session-scoped tools should route to the retrieved session."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.get_status.return_value = OperationSuccess(
             SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=True)
         )
@@ -262,7 +253,7 @@ class TestHandlerDispatch:
         """Execute-command requests should forward the command payload."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.execute_command.return_value = OperationSuccess(
             CommandExecutionInfo(command="info threads", output="Thread info")
         )
@@ -281,7 +272,7 @@ class TestHandlerDispatch:
         """Structured run requests should forward argv and timeout."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
         manager.resolve_session.return_value = session
 
@@ -302,7 +293,7 @@ class TestHandlerDispatch:
         """String-form run args should be shell-split before forwarding."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
         manager.resolve_session.return_value = session
 
@@ -322,7 +313,7 @@ class TestHandlerDispatch:
         """Inferior creation requests should forward executable and selection policy."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.add_inferior.return_value = OperationSuccess({"inferior_id": 2})
         manager.resolve_session.return_value = session
 
@@ -341,7 +332,7 @@ class TestHandlerDispatch:
         """Inferior removal requests should forward the normalized inferior ID."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.remove_inferior.return_value = OperationSuccess({"inferior_id": 2})
         manager.resolve_session.return_value = session
 
@@ -353,7 +344,7 @@ class TestHandlerDispatch:
         """Run requests should forward the non-blocking launch flag."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.run.return_value = OperationSuccess({"command": "-exec-run"})
         manager.resolve_session.return_value = session
 
@@ -373,7 +364,7 @@ class TestHandlerDispatch:
         """Finish requests should forward timeout to the session execution API."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.finish.return_value = OperationSuccess({"message": "finished"})
         manager.resolve_session.return_value = session
 
@@ -385,7 +376,7 @@ class TestHandlerDispatch:
         """Attach requests should forward pid and timeout."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.attach_process.return_value = OperationSuccess(
             CommandExecutionInfo(command="attach 42")
         )
@@ -404,7 +395,7 @@ class TestHandlerDispatch:
         """Watchpoint requests should forward expression and access mode."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.set_watchpoint.return_value = OperationSuccess(
             BreakpointInfo(breakpoint={"number": "2", "type": "hw watchpoint"})
         )
@@ -423,7 +414,7 @@ class TestHandlerDispatch:
         """Watchpoint deletion should forward the shared breakpoint number."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.delete_watchpoint.return_value = OperationSuccess(
             SessionMessage(message="Watchpoint 2 deleted")
         )
@@ -438,7 +429,7 @@ class TestHandlerDispatch:
         """Catchpoint requests should forward kind, argument, and temporary flag."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.set_catchpoint.return_value = OperationSuccess(
             BreakpointInfo(breakpoint={"number": "3", "type": "catchpoint"})
         )
@@ -466,7 +457,7 @@ class TestHandlerDispatch:
         """Wait requests should forward timeout and optional reason filters."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.wait_for_stop.return_value = OperationSuccess({"matched": True})
         manager.resolve_session.return_value = session
 
@@ -486,7 +477,7 @@ class TestHandlerDispatch:
         """Memory read requests should forward address, count, and offset."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.read_memory.return_value = OperationSuccess({"captured_bytes": 4})
         manager.resolve_session.return_value = session
 
@@ -503,7 +494,7 @@ class TestHandlerDispatch:
         """Inferior inventory requests should route to the resolved session."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.list_inferiors.return_value = OperationSuccess({"count": 1, "inferiors": []})
         manager.resolve_session.return_value = session
 
@@ -516,7 +507,7 @@ class TestHandlerDispatch:
         """Inferior selection should forward the requested inferior ID."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.select_inferior.return_value = OperationSuccess({"inferior_id": 2})
         manager.resolve_session.return_value = session
 
@@ -529,7 +520,7 @@ class TestHandlerDispatch:
         """Follow-fork-mode requests should forward the selected mode."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.set_follow_fork_mode.return_value = OperationSuccess({"mode": "child"})
         manager.resolve_session.return_value = session
 
@@ -546,7 +537,7 @@ class TestHandlerDispatch:
         """Detach-on-fork requests should forward the selected boolean value."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.set_detach_on_fork.return_value = OperationSuccess({"enabled": False})
         manager.resolve_session.return_value = session
 
@@ -563,7 +554,7 @@ class TestHandlerDispatch:
         """Breakpoint requests should be routed to the resolved session."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.set_breakpoint.return_value = OperationSuccess(
             BreakpointInfo(breakpoint={"number": 1, "location": "main"})
         )
@@ -709,7 +700,7 @@ class TestHandlerDispatch:
         """Session-scoped tools should serialize through the workflow lock."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         workflow_lock = MagicMock()
         workflow_lock.__enter__.return_value = None
         workflow_lock.__exit__.return_value = None
@@ -752,7 +743,7 @@ class TestHandlerDispatch:
         """Capture requests should forward the bundle options to the resolved session."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.capture_bundle.return_value = OperationSuccess(
             SessionMessage(message="bundle written")
         )
@@ -795,7 +786,7 @@ class TestHandlerDispatch:
         """Capture requests should parse shorthand memory-range strings."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.capture_bundle.return_value = OperationSuccess(SessionMessage(message="bundle written"))
         manager.resolve_session.return_value = session
 
@@ -817,7 +808,7 @@ class TestHandlerDispatch:
         """Campaign capture settings should forward explicit memory ranges to bundle capture."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.start.return_value = OperationSuccess(SessionMessage(message="started"))
         session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
         session.get_status.return_value = OperationSuccess(
@@ -858,7 +849,7 @@ class TestHandlerDispatch:
         """Campaign capture should accept bundle_name alias for deterministic naming."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.start.return_value = OperationSuccess(SessionMessage(message="started"))
         session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
         session.get_status.return_value = OperationSuccess(
@@ -895,7 +886,7 @@ class TestHandlerDispatch:
         """Campaign requests should create fresh untracked sessions and return campaign data."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.start.return_value = OperationSuccess(SessionMessage(message="started"))
         session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
         session.get_status.return_value = OperationSuccess(
@@ -944,16 +935,14 @@ class TestHandlerDispatch:
         """Separate session IDs should be routed independently."""
 
         manager = Mock()
-        session_1 = Mock()
+        session_1 = _session_double()
         session_1.get_status.return_value = OperationSuccess(
             SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=True)
         )
-        _attach_workflow_lock(session_1)
-        session_2 = Mock()
+        session_2 = _session_double()
         session_2.get_status.return_value = OperationSuccess(
             SessionStatusSnapshot(is_running=True, target_loaded=True, has_controller=True)
         )
-        _attach_workflow_lock(session_2)
 
         def resolve_session_side_effect(session_id):
             if session_id == 1:
@@ -979,7 +968,7 @@ class TestHandlerDispatch:
         """Expression requests should forward optional context overrides."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.evaluate_expression.return_value = OperationSuccess(
             CommandExecutionInfo(command="-data-evaluate-expression")
         )
@@ -997,7 +986,7 @@ class TestHandlerDispatch:
         """Expression context overrides should accept numeric-string values."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.evaluate_expression.return_value = OperationSuccess(
             CommandExecutionInfo(command="-data-evaluate-expression")
         )
@@ -1015,7 +1004,7 @@ class TestHandlerDispatch:
         """Register requests should forward optional context overrides."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.get_registers.return_value = OperationSuccess(
             CommandExecutionInfo(command="-data-list-register-values x")
         )
@@ -1041,7 +1030,7 @@ class TestHandlerDispatch:
         """Register context overrides should accept numeric-string values."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.get_registers.return_value = OperationSuccess(
             CommandExecutionInfo(command="-data-list-register-values x")
         )
@@ -1067,7 +1056,7 @@ class TestHandlerDispatch:
         """Register requests should forward selector and rendering options."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.get_registers.return_value = OperationSuccess(
             CommandExecutionInfo(command="-data-list-register-values N")
         )
@@ -1100,7 +1089,7 @@ class TestHandlerDispatch:
         """Backtrace requests should accept numeric-string thread IDs."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.get_backtrace.return_value = OperationSuccess(
             CommandExecutionInfo(command="-stack-list-frames")
         )
@@ -1118,7 +1107,7 @@ class TestHandlerDispatch:
         """Disassembly requests should forward normalized selector values."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.disassemble.return_value = OperationSuccess({"count": 0, "instructions": []})
         manager.resolve_session.return_value = session
 
@@ -1145,7 +1134,7 @@ class TestHandlerDispatch:
         """Variable requests should accept numeric-string thread/frame selectors."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.get_variables.return_value = OperationSuccess({"variables": []})
         manager.resolve_session.return_value = session
 
@@ -1161,7 +1150,7 @@ class TestHandlerDispatch:
         """Source-context requests should forward normalized selector values."""
 
         manager = Mock()
-        session = Mock()
+        session = _session_double()
         session.get_source_context.return_value = OperationSuccess({"count": 0, "lines": []})
         manager.resolve_session.return_value = session
 

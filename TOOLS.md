@@ -455,6 +455,8 @@ Set a breakpoint at a location.
 ### `gdb_set_watchpoint`
 Set a watchpoint on an expression.
 
+If GDB reports a created watchpoint number but the follow-up breakpoint inventory refresh fails or does not include that number, this tool returns an error instead of synthetic success.
+
 **Parameters:**
 - `session_id`: Session ID from `gdb_start_session`
 - `expression`: Expression to watch
@@ -472,6 +474,8 @@ Delete a watchpoint by number.
 
 ### `gdb_set_catchpoint`
 Set a catchpoint for debugger events.
+
+If GDB reports or infers a created catchpoint number but a refreshed breakpoint inventory cannot confirm it, this tool returns an error so the client can inspect or clean up manually.
 
 **Parameters:**
 - `session_id`: Session ID from `gdb_start_session`

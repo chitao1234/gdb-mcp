@@ -1158,7 +1158,9 @@ def build_tool_definitions() -> list[Tool]:
                 "Set a watchpoint on an expression and stop when the watched memory is written, "
                 "read, or accessed. "
                 "Use access='write' for ordinary watchpoints, 'read' for rwatch, and "
-                "'access' for awatch-style behavior."
+                "'access' for awatch-style behavior. "
+                "If GDB reports a created watchpoint number but a refreshed breakpoint list "
+                "cannot confirm it, this tool returns an error."
             ),
             inputSchema=SetWatchpointArgs.model_json_schema(),
         ),
@@ -1177,7 +1179,9 @@ def build_tool_definitions() -> list[Tool]:
                 "Set a catchpoint for debugger events such as fork, vfork, exec, syscall, "
                 "C++ exception throw/catch, shared-library load/unload, or signals. "
                 "Use argument when the selected kind supports an extra filter such as a syscall "
-                "name, signal name, shared-library regex, or exception type regex."
+                "name, signal name, shared-library regex, or exception type regex. "
+                "If the created catchpoint number cannot be confirmed in a refreshed breakpoint "
+                "inventory, this tool returns an error."
             ),
             inputSchema=SetCatchpointArgs.model_json_schema(),
         ),

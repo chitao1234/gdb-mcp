@@ -23,7 +23,8 @@ class SessionRegistry:
     Thread-safe registry for debugger sessions.
 
     `start_session` publishes sessions atomically so failed startup never leaks
-    a reachable half-initialized session.
+    a reachable half-initialized session. `create_untracked_session` remains
+    available for ephemeral flows that should never publish a tracked session.
     """
 
     def __init__(self, session_factory: Callable[[], SessionService] | None = None):
@@ -42,17 +43,6 @@ class SessionRegistry:
             session_id = self._next_session_id
             self._next_session_id += 1
             return session_id
-
-    def create_session(self) -> int:
-        """
-        Create and store a new empty session.
-        """
-
-        session_id = self._allocate_session_id()
-        session = self._session_factory()
-        with self._lock:
-            self._sessions[session_id] = session
-        return session_id
 
     def create_untracked_session(self) -> SessionService:
         """Create a fresh session without publishing it in the registry."""
@@ -165,18 +155,6 @@ class SessionRegistry:
             )
 
         return OperationSuccess(SessionListInfo(sessions=summaries, count=len(summaries)))
-
-    def discard_session(self, session_id: int) -> bool:
-        """Discard an already-inactive session without attempting shutdown."""
-
-        with self._lock:
-            session = self._sessions.get(session_id)
-            if session is None:
-                return False
-            if session.controller is not None or session.is_running:
-                return False
-            del self._sessions[session_id]
-            return True
 
     def close_session(self, session_id: int) -> OperationSuccess[SessionMessage] | OperationError:
         """Stop and remove a session in one explicit lifecycle operation."""

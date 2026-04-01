@@ -14,10 +14,12 @@ from ..domain import (
     OperationError,
     OperationSuccess,
     SessionMessage,
+    StructuredPayload,
     WatchpointAccessType,
     breakpoint_list_info_from_payload,
     breakpoint_record,
     payload_to_mapping,
+    result_to_mapping,
 )
 from ..transport import extract_mi_result_payload, quote_mi_string
 from .command_runner import SessionCommandRunner
@@ -110,7 +112,10 @@ class SessionBreakpointService:
 
         return self._breakpoint_info_for_number(
             number,
-            fallback_record={"number": str(number), "exp": expression},
+            create_details={
+                "created_breakpoint_number": number,
+                "create_payload": payload_to_mapping(payload),
+            },
         )
 
     def delete_watchpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
@@ -155,7 +160,10 @@ class SessionBreakpointService:
 
         return self._breakpoint_info_for_number(
             number,
-            fallback_record={"number": str(number), "type": "catchpoint"},
+            create_details={
+                "created_breakpoint_number": number,
+                "create_output": (result.value.output or "").strip(),
+            },
         )
 
     def list_breakpoints(self) -> OperationSuccess[BreakpointListInfo] | OperationError:
@@ -210,17 +218,35 @@ class SessionBreakpointService:
         self,
         number: int,
         *,
-        fallback_record: BreakpointRecord,
+        create_details: StructuredPayload,
     ) -> OperationSuccess[BreakpointInfo] | OperationError:
-        """Resolve one breakpoint number from the current breakpoint inventory."""
+        """Confirm one breakpoint number from the current breakpoint inventory."""
 
         list_result = self.list_breakpoints()
         if isinstance(list_result, OperationError):
-            return OperationSuccess(BreakpointInfo(breakpoint=fallback_record))
+            return OperationError(
+                message=(
+                    f"Breakpoint {number} could not be confirmed because "
+                    "gdb_list_breakpoints failed"
+                ),
+                details={
+                    **create_details,
+                    "refresh_error": result_to_mapping(list_result),
+                },
+            )
 
         breakpoint_info = self._find_breakpoint_record(list_result.value.breakpoints, number)
         if breakpoint_info is None:
-            return OperationSuccess(BreakpointInfo(breakpoint=fallback_record))
+            return OperationError(
+                message=(
+                    f"Breakpoint {number} could not be confirmed because "
+                    f"gdb_list_breakpoints did not return breakpoint {number}"
+                ),
+                details={
+                    **create_details,
+                    "refreshed_breakpoints": payload_to_mapping(list_result.value.breakpoints),
+                },
+            )
 
         return OperationSuccess(BreakpointInfo(breakpoint=breakpoint_info))
 

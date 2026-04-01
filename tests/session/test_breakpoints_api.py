@@ -148,6 +148,27 @@ class TestBreakpointApi:
         assert result["breakpoint"]["number"] == "2"
         assert result["breakpoint"]["type"] == "acc watchpoint"
 
+    def test_set_watchpoint_errors_when_breakpoint_refresh_fails(
+        self, scripted_running_session, mi_result
+    ):
+        """Watchpoint creation should error when the follow-up inventory refresh fails."""
+
+        session, controller = scripted_running_session(
+            [mi_result({"wpt": {"number": "2", "exp": "value"}})],
+            [mi_result({"msg": "break-list failed"}, message="error")],
+        )
+
+        result = result_to_mapping(session.set_watchpoint("value"))
+
+        assert result["status"] == "error"
+        assert "could not be confirmed" in result["message"]
+        assert result["created_breakpoint_number"] == 2
+        assert result["create_payload"] == {"wpt": {"number": "2", "exp": "value"}}
+        assert result["refresh_error"]["message"] == "break-list failed"
+        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert written[0].endswith('-break-watch "value"\n')
+        assert written[1].endswith("-break-list\n")
+
     def test_delete_watchpoint(self, scripted_running_session, mi_result):
         """Watchpoint deletion should reuse GDB's shared breakpoint namespace."""
 
@@ -246,4 +267,58 @@ class TestBreakpointApi:
         written = [command.decode() for command in controller.io_manager.stdin.writes]
         assert written[0].endswith("-break-list\n")
         assert written[1].endswith('-interpreter-exec console "tcatch throw"\n')
+        assert written[2].endswith("-break-list\n")
+
+    def test_set_catchpoint_errors_when_refreshed_inventory_misses_created_number(
+        self, scripted_running_session, mi_console, mi_result
+    ):
+        """Catchpoint creation should error if the refreshed inventory omits the created number."""
+
+        session, controller = scripted_running_session(
+            [
+                mi_result(
+                    {
+                        "BreakpointTable": {
+                            "body": [],
+                        }
+                    }
+                )
+            ],
+            [
+                mi_console("Catchpoint 3 (fork)\n"),
+                mi_result(),
+            ],
+            [
+                mi_result(
+                    {
+                        "BreakpointTable": {
+                            "body": [
+                                {
+                                    "number": "7",
+                                    "type": "catchpoint",
+                                    "catch-type": "fork",
+                                }
+                            ]
+                        }
+                    }
+                )
+            ],
+        )
+
+        result = result_to_mapping(session.set_catchpoint("fork"))
+
+        assert result["status"] == "error"
+        assert "did not return breakpoint 3" in result["message"]
+        assert result["created_breakpoint_number"] == 3
+        assert result["create_output"] == "Catchpoint 3 (fork)"
+        assert result["refreshed_breakpoints"] == [
+            {
+                "number": "7",
+                "type": "catchpoint",
+                "catch-type": "fork",
+            }
+        ]
+        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert written[0].endswith("-break-list\n")
+        assert written[1].endswith('-interpreter-exec console "catch fork"\n')
         assert written[2].endswith("-break-list\n")
