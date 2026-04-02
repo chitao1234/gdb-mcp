@@ -80,7 +80,7 @@ class TestExecutionApi:
                 timed_out=True,
             ),
         ):
-            result = result_to_mapping(running_session.continue_execution())
+            result = result_to_mapping(running_session.continue_execution(wait_for_stop=False))
 
         assert result["status"] == "success"
         assert result["result"]["result_class"] == "running"
@@ -512,7 +512,7 @@ class TestExecutionApi:
         result = result_to_mapping(session.execute_command("-thread-select 999"))
 
         assert result["status"] == "error"
-        assert result["command"] == "-thread-select 999"
+        assert result["details"]["command"] == "-thread-select 999"
         assert "Thread ID 999 not known" in result["message"]
         assert controller.io_manager.stdin.writes[0].decode().endswith("-thread-select 999\n")
 

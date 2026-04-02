@@ -14,7 +14,7 @@ class TestDomainResults:
         assert payload == {"status": "success", "value": 42}
 
     def test_result_to_mapping_serializes_error_details(self):
-        """Structured error details should be merged into the external payload."""
+        """Structured error details should remain nested under the error envelope."""
 
         payload = result_to_mapping(
             OperationError(
@@ -26,9 +26,12 @@ class TestDomainResults:
 
         assert payload == {
             "status": "error",
+            "code": "error",
             "message": "boom",
             "fatal": True,
-            "command": "-thread-info",
+            "details": {
+                "command": "-thread-info",
+            },
         }
 
     def test_result_to_mapping_adds_warnings_for_dataclass_payloads(self):
@@ -84,13 +87,14 @@ class TestDomainResults:
             ],
         }
 
-    def test_result_to_mapping_does_not_serialize_error_code_field(self):
-        """Internal error codes should not leak into the external payload shape by default."""
+    def test_result_to_mapping_serializes_error_code_field(self):
+        """Error payloads should always expose a machine-readable code."""
 
         payload = result_to_mapping(OperationError(message="boom", code="unknown_tool"))
 
         assert payload == {
             "status": "error",
+            "code": "unknown_tool",
             "message": "boom",
         }
 
@@ -107,6 +111,7 @@ class TestDomainResults:
 
         assert payload == {
             "status": "error",
+            "code": "error",
             "message": "boom",
             "fatal": True,
             "tool": "x",

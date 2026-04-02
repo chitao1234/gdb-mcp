@@ -157,13 +157,13 @@ class StartSessionArgs(StrictArgsModel):
 
 
 class ExecuteCommandArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     command: str = Field(..., description="GDB command to execute")
     timeout_sec: int = Field(30, gt=0, description="Timeout in seconds")
 
 
 class RunArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     args: Optional[list[str] | str] = Field(
         None,
         description=(
@@ -182,7 +182,7 @@ class RunArgs(StrictArgsModel):
 
 
 class AddInferiorArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     executable: str | None = Field(
         None,
         description="Optional executable to associate with the new inferior after creation.",
@@ -201,23 +201,23 @@ class AddInferiorArgs(StrictArgsModel):
 
 
 class RemoveInferiorArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     inferior_id: int = Field(..., gt=0, description="Inferior ID to remove")
 
 
 class FinishArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     timeout_sec: int = Field(30, gt=0, description="Timeout in seconds")
 
 
 class AttachProcessArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     pid: int = Field(..., gt=0, description="PID of the process to attach to")
     timeout_sec: int = Field(30, gt=0, description="Timeout in seconds")
 
 
 class GetBacktraceArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     thread_id: Optional[int | str] = Field(
         None,
         description="Thread ID as an integer or numeric string (None for current thread)",
@@ -233,14 +233,14 @@ class GetBacktraceArgs(StrictArgsModel):
 
 
 class SetBreakpointArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     location: str = Field(..., description="Breakpoint location (function, file:line, or *address)")
     condition: Optional[str] = Field(None, description="Conditional expression")
     temporary: bool = Field(False, description="Whether breakpoint is temporary")
 
 
 class SetWatchpointArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     expression: str = Field(..., description="Expression to watch for memory access")
     access: Literal["write", "read", "access"] = Field(
         "write",
@@ -249,7 +249,7 @@ class SetWatchpointArgs(StrictArgsModel):
 
 
 class SetCatchpointArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     kind: Literal[
         "throw",
         "rethrow",
@@ -273,7 +273,7 @@ class SetCatchpointArgs(StrictArgsModel):
 
 
 class EvaluateExpressionArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     expression: str = Field(..., description="C/C++ expression to evaluate")
     thread_id: Optional[int | str] = Field(
         None,
@@ -300,7 +300,7 @@ class EvaluateExpressionArgs(StrictArgsModel):
 
 
 class GetVariablesArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     thread_id: Optional[int | str] = Field(
         None,
         description="Thread ID as an integer or numeric string (None for current)",
@@ -329,7 +329,7 @@ class GetVariablesArgs(StrictArgsModel):
 
 
 class DisassembleArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     thread_id: int | str | None = Field(None, description="Optional thread override")
     frame: int | str | None = Field(None, description="Optional frame override")
     function: str | None = Field(None, description="Function name to disassemble")
@@ -401,7 +401,7 @@ class DisassembleArgs(StrictArgsModel):
 
 
 class GetSourceContextArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     thread_id: int | str | None = Field(None, description="Optional thread override")
     frame: int | str | None = Field(None, description="Optional frame override")
     function: str | None = Field(None, description="Function name selector")
@@ -483,22 +483,22 @@ class GetSourceContextArgs(StrictArgsModel):
 
 
 class ThreadSelectArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     thread_id: int = Field(..., gt=0, description="Thread ID to select")
 
 
 class BreakpointNumberArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     number: int = Field(..., gt=0, description="Breakpoint number")
 
 
 class FrameSelectArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     frame_number: int = Field(..., ge=0, description="Frame number (0 is current/innermost frame)")
 
 
 class CallFunctionArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     function_call: str = Field(
         ...,
         description="Function call expression (e.g., 'printf(\"hello\\n\")' or 'my_func(arg1, arg2)')",
@@ -507,7 +507,7 @@ class CallFunctionArgs(StrictArgsModel):
 
 
 class GetRegistersArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     thread_id: Optional[int | str] = Field(
         None,
         description="Thread ID override as an integer or numeric string",
@@ -593,7 +593,7 @@ class GetRegistersArgs(StrictArgsModel):
 
 
 class ReadMemoryArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     address: str = Field(..., description="Address expression to read from")
     count: int = Field(..., gt=0, description="Number of addressable memory units to read")
     offset: int = Field(0, ge=0, description="Optional offset relative to address")
@@ -602,13 +602,13 @@ class ReadMemoryArgs(StrictArgsModel):
 class SessionIdArgs(StrictArgsModel):
     """Arguments for tools that only need session_id."""
 
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
 
 
 class InferiorSelectArgs(StrictArgsModel):
     """Arguments for selecting one inferior by its GDB-visible numeric ID."""
 
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     inferior_id: int = Field(
         ...,
         gt=0,
@@ -619,7 +619,7 @@ class InferiorSelectArgs(StrictArgsModel):
 class FollowForkModeArgs(StrictArgsModel):
     """Arguments for configuring follow-fork-mode."""
 
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     mode: Literal["parent", "child"] = Field(
         ...,
         description="Whether GDB should follow the parent or child after fork/vfork.",
@@ -629,7 +629,7 @@ class FollowForkModeArgs(StrictArgsModel):
 class DetachOnForkArgs(StrictArgsModel):
     """Arguments for configuring detach-on-fork."""
 
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     enabled: bool = Field(
         ...,
         description="Whether GDB should detach from the non-followed side of a fork.",
@@ -639,7 +639,7 @@ class DetachOnForkArgs(StrictArgsModel):
 class WaitForStopArgs(StrictArgsModel):
     """Arguments for waiting on the next stop notification."""
 
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     timeout_sec: int = Field(30, gt=0, description="Maximum time to wait for a stop event")
     stop_reasons: list[str] = Field(
         default_factory=list,
@@ -683,7 +683,7 @@ BatchStepInput: TypeAlias = BatchStepArgs | BatchStepToolName
 class BatchArgs(StrictArgsModel):
     """Arguments for executing a structured batch against one live session."""
 
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     steps: list[BatchStepInput] = Field(
         ...,
         min_length=1,
@@ -707,7 +707,7 @@ class BatchArgs(StrictArgsModel):
 class CaptureBundleArgs(StrictArgsModel):
     """Arguments for writing a structured capture bundle to disk."""
 
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_start_session")
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     output_dir: Optional[str] = Field(
         None,
         description="Directory in which to create the capture bundle. Defaults to artifact_root or the system temp directory.",
@@ -1724,7 +1724,7 @@ def build_tool_definitions() -> list[Tool]:
                 "structured output and can be separately permissioned. "
                 "Common examples: 'info breakpoints', 'info threads', 'run', 'print variable', "
                 "'list main', 'disassemble func'. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
+                "Requires session_id parameter (obtained from gdb_session_start)."
             ),
             inputSchema=ExecuteCommandArgs.model_json_schema(),
         ),
@@ -1735,7 +1735,7 @@ def build_tool_definitions() -> list[Tool]:
                 "This is a privileged operation that should be separately permissioned from "
                 "general command execution when possible. "
                 "On success, the attached process is typically paused and inspectable. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
+                "Requires session_id parameter (obtained from gdb_session_start)."
             ),
             inputSchema=AttachProcessArgs.model_json_schema(),
         ),
@@ -1752,7 +1752,7 @@ def build_tool_definitions() -> list[Tool]:
                 "Use with caution as it may have side effects and modify program state. "
                 "Supports an optional timeout_sec override. "
                 "Examples: 'printf(\"debug: x=%d\\n\", x)', 'my_cleanup_func()', 'strlen(str)'. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
+                "Requires session_id parameter (obtained from gdb_session_start)."
             ),
             inputSchema=CallFunctionArgs.model_json_schema(),
         ),

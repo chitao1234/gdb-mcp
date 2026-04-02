@@ -277,11 +277,12 @@ def test_batch_can_set_breakpoint_run_and_capture_backtrace(session_id):
     assert batch_result["stopped_early"] is False
     assert batch_result["final_execution_state"] == "paused"
     assert batch_result["final_stop_reason"] == "breakpoint-hit"
-    assert batch_result["steps"][0]["tool"] == "gdb_set_breakpoint"
-    assert batch_result["steps"][1]["tool"] == "gdb_run"
+    assert batch_result["steps"][0]["tool"] == "gdb_breakpoint_manage"
+    assert batch_result["steps"][1]["tool"] == "gdb_execution_manage"
     assert batch_result["steps"][1]["stop_event"]["reason"] == "breakpoint-hit"
-    assert batch_result["steps"][2]["tool"] == "gdb_get_backtrace"
-    assert batch_result["steps"][2]["result"]["count"] > 0
+    assert batch_result["steps"][2]["tool"] == "gdb_context_query"
+    assert batch_result["steps"][2]["action"] == "backtrace"
+    assert batch_result["steps"][2]["result"]["result"]["count"] > 0
 
 
 @pytest.mark.integration

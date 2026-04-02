@@ -1210,7 +1210,7 @@ def _invalid_session_result(session_id: object) -> OperationError:
     """Return the standard invalid-session error response."""
 
     return OperationError(
-        message=f"Invalid session_id: {session_id}. Use gdb_start_session to create a new session."
+        message=f"Invalid session_id: {session_id}. Use gdb_session_start to create a new session."
     )
 
 

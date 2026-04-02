@@ -1,762 +1,723 @@
 # GDB MCP Server - Tools Reference
 
-This document provides detailed documentation for all available tools in the GDB MCP Server.
+This document describes the current v2 MCP interface. The public surface is a clean break from the earlier one-tool-per-operation inventory.
 
-## Input Typing Rules
+## Response Conventions
 
-- Prefer JSON numbers for numeric fields such as `session_id`, `thread_id`, `frame`, `max_frames`, and breakpoint/watchpoint numbers.
-- Some fields intentionally accept numeric strings for compatibility with clients that preserve MI-style IDs as text.
-- When both are accepted, numbers remain the recommended shape for new clients.
+### Direct Success Payloads
 
-## Session Management
+Tools without an `action` field return direct structured success payloads:
 
-### `gdb_start_session`
-Start a new GDB debugging session.
+- `gdb_session_start`
+- `gdb_workflow_batch`
+- `gdb_capture_bundle`
+- `gdb_run_until_failure`
+- `gdb_execute_command`
+- `gdb_attach_process`
+- `gdb_call_function`
 
-**Parameters:**
-- `program` (optional): Path to executable to debug
-- `args` (optional): Command-line arguments for the program. Accepts either:
-  - list form: `["--mode", "fast"]`
-  - shell-style string form: `"--mode fast"`
-  Only valid for live program launches, not core-dump analysis.
-- `core` (optional): Path to core dump file (uses --core flag for proper symbol resolution)
-- `init_commands` (optional): List of GDB commands to run on startup after environment variables have been applied
-- `env` (optional): Environment variables to set for the debugged program before any init command can run the inferior (dictionary of name-value pairs)
-- `gdb_path` (optional): Path to GDB executable (default: "gdb")
-- `working_dir` (optional): Working directory to use when starting GDB
-
-**Returns:**
-- `status`: "success" or "error"
-- `message`: Status message
-- `program` (optional): Program path if specified
-- `core` (optional): Core dump path if specified
-- `target_loaded`: Whether GDB finished startup with an executable or core file loaded
-- `execution_state`: Inferior state after startup (`not_started`, `paused`, `running`, `exited`, or `unknown`)
-- `stop_reason` (optional): Stop reason if startup left the inferior paused
-- `exit_code` (optional): Exit code if startup completed with an exited inferior
-- `startup_output` (optional): GDB's initial output when loading the program
-- `warnings` (optional): Array of critical warnings detected, such as:
-  - "No debugging symbols found - program was not compiled with -g"
-  - "File is not an executable"
-  - "Program file not found"
-- `env_output` (optional): Output from setting environment variables if env was provided
-- `init_output` (optional): Output from init_commands if provided
-
-**Important:** Always check the `warnings` field! Missing debug symbols will prevent breakpoints from working and variable inspection from showing useful information.
-Also check `target_loaded`: GDB itself can start successfully while the requested executable or core file still fails to load.
-By default, sessions apply `set confirm off` during startup so CLI commands remain non-interactive for automation.
-
-**Core Dump Debugging:**
-
-When debugging core dumps with a sysroot, the order of operations matters for proper symbol resolution. Set `sysroot` and `solib-search-path` **AFTER** loading the core:
+Example:
 
 ```json
 {
-  "program": "/path/to/executable",
-  "core": "/path/to/core.dump",
-  "init_commands": [
-    "set sysroot /path/to/sysroot",
-    "set solib-search-path /path/to/libs"
-  ]
+  "status": "success",
+  "session_id": 7,
+  "message": "GDB session started successfully",
+  "target_loaded": true,
+  "execution_state": "not_started"
 }
 ```
 
-If using `core-file` in init_commands instead of the `core` parameter, ensure it comes before sysroot:
-```python
-[
-    "core-file /path/to/core.dump",
-    "set sysroot /path/to/sysroot",
-    "set solib-search-path /path/to/libs"
-]
-```
+### Action-Based Success Envelope
 
-`args` and `core` cannot be used together in the same startup request. Use `args` for live launches, or `core` for post-mortem analysis.
+Action-based tools return:
 
-For best symbol and locals fidelity in post-mortem debugging, prefer supplying both `program` and `core`.
-Core-only startup remains supported, but symbol resolution quality depends on what binaries and debug info GDB can infer from the core and environment. If frames show `??`, load the executable explicitly with `file /path/to/executable`.
-
-**Example with custom GDB path:**
 ```json
 {
-  "program": "/path/to/myprogram",
-  "gdb_path": "/usr/local/bin/gdb-custom"
-}
-```
-
-Use `gdb_path` when you need to use a specific GDB version or when GDB is not in your PATH.
-
-**Example with environment variables:**
-```json
-{
-  "program": "/path/to/myprogram",
-  "env": {
-    "LD_LIBRARY_PATH": "/custom/libs:/opt/libs",
-    "DEBUG_MODE": "1",
-    "LOG_LEVEL": "verbose"
+  "status": "success",
+  "action": "status",
+  "result": {
+    "is_running": true,
+    "target_loaded": true,
+    "execution_state": "paused"
   }
 }
 ```
 
-Environment variables are applied before any `init_commands` run. This is useful for:
-- Setting library search paths (LD_LIBRARY_PATH, DYLD_LIBRARY_PATH)
-- Configuring application behavior (DEBUG_MODE, LOG_LEVEL, etc.)
-- Testing with different environment configurations
+The wrapped `result` object is action-specific.
 
-### `gdb_list_sessions`
-List all currently registered debugger sessions.
+### Error Envelope
 
-**Parameters:**
-- none
+Errors are uniform across all tools:
 
-**Returns:**
-- `status`: "success" or "error"
-- `sessions`: Array of session summary objects
-- `count`: Total number of active sessions
-
-**Each session summary contains:**
-- `session_id`: Session identifier
-- `lifecycle_state`: Session lifecycle state (`created`, `starting`, `ready`, `failed`, `stopped`, or `closing`)
-- `execution_state`: Inferior execution state (`not_started`, `running`, `paused`, `exited`, or `unknown`)
-- `target_loaded`: Whether an executable or core is loaded
-- `has_controller`: Whether the underlying GDB controller is still active
-- `program`: Loaded executable path when known
-- `core`: Loaded core path when known
-- `working_dir`: Startup working directory when known
-- `attached_pid`: Attached process PID when relevant
-- `current_thread_id`: Last known selected thread
-- `current_frame`: Last known selected frame
-- `current_inferior_id`: Last known selected inferior ID
-- `inferior_count`: Last known inferior inventory size
-- `inferior_states`: Optional array of per-inferior state records (`inferior_id`, `is_current`, `execution_state`, `stop_reason`, `exit_code`)
-- `stop_reason`: Last stop reason when known
-- `exit_code`: Inferior exit code when known
-- `follow_fork_mode`: Last configured follow-fork-mode (`parent` or `child`) when known
-- `detach_on_fork`: Last configured detach-on-fork value when known
-- `last_failure_message`: Failure detail when the session is in a failed state
-
-### `gdb_execute_command`
-Execute a GDB command as an escape hatch. Supports both CLI and MI commands.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `command`: GDB command to execute (CLI or MI format)
-- `timeout_sec`: Timeout in seconds (default: 30)
-
-**Prefer dedicated structured tools when available:**
-- `gdb_run` instead of raw `run` or `run &`
-- `gdb_interrupt` instead of raw `interrupt`
-- `gdb_list_breakpoints` instead of `info breakpoints`
-- `gdb_get_threads` instead of `info threads`
-- `gdb_disassemble` instead of `disassemble`
-- `gdb_get_source_context` instead of `list`
-- `gdb_call_function` instead of `call ...`
-
-**Automatically handles two types of commands:**
-
-1. **CLI Commands** (traditional GDB commands):
-   - Examples: `info sharedlibrary`, `info sources`, `ptype my_struct`, `set print pretty on`
-   - Output is formatted as readable text
-   - These are the commands you'd type in interactive GDB
-
-2. **MI Commands** (Machine Interface commands, start with `-`):
-   - Examples: `-break-list`, `-exec-run`, `-data-evaluate-expression`
-   - Return structured data
-   - More precise but less human-readable
-
-**Common escape-hatch CLI commands:**
-- `info sharedlibrary` - Inspect currently loaded shared libraries
-- `info sources` - Show GDB's raw source-file inventory
-- `ptype variable` - Dump a C/C++ type definition
-- `set print pretty on` - Adjust debugger formatting state
-- `show args` - Inspect the current inferior argv as text
-
-### `gdb_run`
-Run the currently loaded target in a structured way.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `args` (optional): Override inferior arguments for this run. Accepts either:
-  - list form: `["--mode", "fast"]`
-  - shell-style string form: `"--mode fast"`
-- `timeout_sec`: Timeout in seconds (default: 30)
-- `wait_for_stop` (optional): When `true`, wait for the next stop/prompt state.
-  When `false`, return as soon as GDB acknowledges that execution is running.
-
-**Returns:**
-- Standard command execution payload with `command`, optional text `output`, and
-  optional MI `result`
-- May include `warnings` when the inferior is now running but no stop event has
-  arrived yet within the timeout window
-
-**Use this when:**
-- The target is loaded but has not started yet
-- You want a structured alternative to raw `run` text
-- You want to override inferior argv without going through raw commands
-- You want a structured alternative to raw `run &` by setting
-  `wait_for_stop=false`
-
-**Recommended flow for background launch:**
-- Call `gdb_run` with `wait_for_stop=false`
-- Call `gdb_wait_for_stop` when you want to wait for the next stop event
-- Call `gdb_interrupt` if you need to pause a still-running inferior
-
-### `gdb_add_inferior`
-Create a new inferior in the current GDB session.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `executable` (optional): Executable path to associate with the new inferior
-- `make_current` (optional): When `true`, leave the new inferior selected after creation
-
-**Returns:**
-- `inferior_id`: Numeric inferior ID created by GDB
-- `is_current`: Whether the created inferior is now selected
-- `display`, `description`, `connection`, `executable`: Refreshed inferior metadata when available
-- `current_inferior_id`: Active inferior after the operation
-- `inferior_count`: Known inferior inventory size after refresh
-- `message`: Human-readable summary
-
-### `gdb_remove_inferior`
-Remove one inferior by its numeric inferior ID.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `inferior_id`: Inferior ID to remove
-
-**Returns:**
-- `inferior_id`: Removed inferior ID
-- `current_inferior_id`: Newly selected inferior after refresh, when one remains
-- `inferior_count`: Known inferior inventory size after removal
-- `message`: Human-readable summary
-
-### `gdb_attach_process`
-Attach GDB to a running process by PID.
-
-**WARNING:** This is a privileged operation and should be separately permissioned
-when possible.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `pid`: PID of the process to attach to
-- `timeout_sec`: Timeout in seconds (default: 30)
-
-**Returns:**
-- Standard command execution payload
-
-**Typical result:**
-- The process becomes paused and inspectable after attach succeeds
-
-### `gdb_list_inferiors`
-List inferiors currently known to this GDB session.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-
-**Returns:**
-- `inferiors`: Array of inferiors with fields such as `inferior_id`, `is_current`,
-  `description`, optional `executable`, and known runtime state fields like
-  `execution_state`, `stop_reason`, and `exit_code`
-- `count`: Number of inferiors
-- `current_inferior_id`: Active inferior ID when known
-
-### `gdb_select_inferior`
-Select the active inferior by ID.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `inferior_id`: Inferior ID from `gdb_list_inferiors`
-
-### `gdb_set_follow_fork_mode`
-Set fork-follow behavior for multi-process debugging.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `mode`: `"parent"` or `"child"`
-
-### `gdb_set_detach_on_fork`
-Configure whether GDB detaches from the non-followed side after fork.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `enabled`: `true` or `false`
-
-### `gdb_batch`
-Execute a structured sequence of session-scoped tools under one session workflow lock.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `steps`: Ordered list of steps. Each step can be:
-  - full object form: `{"tool":"gdb_get_status","arguments":{},"label":"optional"}`
-  - shorthand form: `"gdb_get_status"`
-- `fail_fast`: Stop after first failed step (default: `true`)
-- `capture_stop_events`: Include per-step stop events when available (default: `true`)
-
-### `gdb_capture_bundle`
-Write a structured forensic bundle to disk.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `output_dir` (optional): Parent directory for bundle output
-- `bundle_name` (optional): Deterministic bundle directory name
-- `expressions` (optional): Expressions to evaluate into bundle
-- `memory_ranges` (optional): Explicit memory ranges, each entry either:
-  - object form: `{"address":"&value","count":16,"offset":0,"name":"label"}`
-  - shorthand form: `"&value:16"` or `"&value:16@4"`
-- `max_frames` (optional): Frames per backtrace (default: `100`)
-- `include_threads`, `include_backtraces`, `include_frame`, `include_variables`, `include_registers`, `include_transcript`, `include_stop_history` (all optional booleans)
-
-### `gdb_run_until_failure`
-Run fresh sessions repeatedly until a failure predicate matches.
-
-**Parameters:**
-- `startup`: Session startup settings for each iteration
-- `setup_steps` (optional): Same step forms as `gdb_batch.steps`
-- `run_args` (optional): List form or shell-style string form, same as `gdb_run.args`
-- `run_timeout_sec`: Timeout for each run attempt
-- `max_iterations`: Maximum attempts
-- `failure`: Matching predicates (stop reasons, exit codes, regex, etc.)
-- `capture`: Bundle options for the matching iteration, including:
-  - `bundle_name_prefix` for iteration-suffixed naming
-  - `bundle_name` for an exact fixed bundle name (mutually exclusive with prefix)
-  - `memory_ranges` in object or shorthand string form
-
-### `gdb_call_function`
-Call a function in the target process.
-
-**WARNING:** This is a privileged operation that executes code in the debugged program. Use with caution as it may have side effects.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `function_call`: Function call expression (e.g., `printf("hello\n")` or `my_func(arg1, arg2)`)
-- `timeout_sec`: Timeout in seconds (default: 30)
-
-**Returns:**
-- `status`: "success" or "error"
-- `function_call`: The function call expression that was executed
-- `result`: The return value or output from the function call
-
-**Use this for:**
-- Calling standard library functions: `printf("debug: x=%d\n", x)`, `strlen(str)`
-- Calling program functions: `my_cleanup_func()`, `reset_state()`
-- Inspecting complex data structures via helper functions
-
-**Examples:**
-```json
-{"session_id": 3, "function_call": "printf(\"value: %d\\n\", x)"}
-```
-
-```json
-{"session_id": 3, "function_call": "strlen(buffer)"}
-```
-
-```json
-{"session_id": 3, "function_call": "validate_state()"}
-```
-
-**Note:** This dedicated tool enables MCP clients to implement separate permission controls for function calling, which executes code in the target process with the target's privileges.
-
-### `gdb_get_status`
-Get the current status of the GDB session.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-
-**Returns:**
-- `is_running`: Whether the GDB session is still alive and usable
-- `target_loaded`: Whether GDB successfully loaded an executable or core file
-- `has_controller`: Whether the session still has an active GDB controller
-- `execution_state`: Inferior state (`not_started`, `running`, `paused`, `exited`, or `unknown`)
-- `stop_reason`: Stop reason when the inferior is paused or has exited
-- `exit_code`: Exit code when the inferior exited and GDB reported one
-- `current_inferior_id`: Selected inferior ID when known
-- `inferior_count`: Known inferior count when available
-- `inferior_states`: Optional array of per-inferior state records (`inferior_id`, `is_current`, `execution_state`, `stop_reason`, `exit_code`)
-- `follow_fork_mode`: Current follow-fork-mode when known
-- `detach_on_fork`: Current detach-on-fork setting when known
-
-**Notes:**
-- If the GDB process has exited unexpectedly, `is_running` becomes `false`
-  and `has_controller` becomes `false`
-- If startup succeeded but the requested executable or core file did not load,
-  `target_loaded` remains `false`
-- `execution_state`, `stop_reason`, and `exit_code` reflect the currently selected
-  inferior when multiple inferiors exist; use `inferior_states` for full visibility
-
-### `gdb_stop_session`
-Stop the current GDB session.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-
-## Thread Inspection
-
-### `gdb_get_threads`
-Get information about all threads in the debugged process.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-
-**Returns:**
-- List of threads with IDs and states
-- Current thread ID
-- Thread count
-
-### `gdb_select_thread`
-Select the active thread.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `thread_id`: Thread ID to select (positive integer)
-
-### `gdb_get_backtrace`
-Get stack backtrace for a thread.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `thread_id` (optional): Thread ID as an integer or numeric string (`None` for current thread)
-- `max_frames` (optional): Maximum number of frames to retrieve (default: 100)
-
-**Notes:**
-- `max_frames` is a true upper bound on returned frame count
-- Supplying `thread_id` does not change the selected thread after the call
-- The response `thread_id` reports the thread actually inspected, even when the request omits `thread_id`
-
-### `gdb_select_frame`
-Select the active stack frame.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `frame_number`: Frame number to select (non-negative integer, `0` is innermost)
-
-### `gdb_get_frame_info`
-Get information about the currently selected frame.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-
-## Breakpoints and Execution Control
-
-### `gdb_set_breakpoint`
-Set a breakpoint at a location.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `location`: Function name, file:line, or *address
-- `condition` (optional): Conditional expression
-- `temporary` (optional): Whether breakpoint is temporary (default: false)
-
-**Examples:**
-- `location: "main"` - Break at main function
-- `location: "foo.c:42"` - Break at line 42 of foo.c
-- `location: "/tmp/my project/foo.c:42"` - Break at a source path containing spaces
-- `location: "*0x12345678"` - Break at memory address
-- `condition: "x > 10"` - Only break when x > 10
-
-### `gdb_set_watchpoint`
-Set a watchpoint on an expression.
-
-If GDB reports a created watchpoint number but the follow-up breakpoint inventory refresh fails or does not include that number, this tool returns an error instead of synthetic success.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `expression`: Expression to watch
-- `access` (optional): Access mode
-  - `"write"`: break on writes
-  - `"read"`: break on reads
-  - `"access"`: break on read or write
-
-### `gdb_delete_watchpoint`
-Delete a watchpoint by number.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `number`: Watchpoint number (positive integer in the shared breakpoint namespace)
-
-### `gdb_set_catchpoint`
-Set a catchpoint for debugger events.
-
-If GDB reports or infers a created catchpoint number but a refreshed breakpoint inventory cannot confirm it, this tool returns an error so the client can inspect or clean up manually.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `kind`: Event kind (`fork`, `vfork`, `exec`, `signal`, `syscall`, `throw`, `catch`, etc.)
-- `argument` (optional): Kind-specific argument (for example syscall name)
-- `temporary` (optional): Use `tcatch` semantics
-
-### `gdb_list_breakpoints`
-List all breakpoints with structured data.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-
-**Returns:**
-- `status`: "success" or "error"
-- `breakpoints`: Array of breakpoint objects
-- `count`: Total number of breakpoints
-
-**Each breakpoint object contains:**
-- `number`: Breakpoint number (string)
-- `type`: "breakpoint", "watchpoint", etc.
-- `enabled`: "y" or "n"
-- `addr`: Memory address (e.g., "0x0000000000401234")
-- `func`: Function name (if available)
-- `file`: Source file name (if available)
-- `fullname`: Full path to source file (if available)
-- `line`: Line number (if available)
-- `times`: Number of times this breakpoint has been hit (string)
-- `original-location`: Original location string used to set the breakpoint
-
-**Example output:**
 ```json
 {
-  "status": "success",
-  "breakpoints": [
-    {
-      "number": "1",
-      "type": "breakpoint",
-      "enabled": "y",
-      "addr": "0x0000000000016cd5",
-      "func": "HeapColorStrategy::operator()",
-      "file": "color_strategy.hpp",
-      "fullname": "/home/user/project/src/color_strategy.hpp",
-      "line": "119",
-      "times": "3",
-      "original-location": "color_strategy.hpp:119"
-    }
-  ],
-  "count": 1
+  "status": "error",
+  "code": "validation_error",
+  "message": "breakpoint.location is required for kind=code",
+  "action": "create",
+  "details": {
+    "field_errors": [
+      {
+        "field": "breakpoint.location",
+        "issue": "missing"
+      }
+    ]
+  }
 }
 ```
 
-**Use this to:**
-- Verify breakpoints were set at correct locations
-- Check which breakpoints have been hit (times > 0)
-- Find breakpoint numbers for deletion
-- Confirm file paths resolved correctly
+Common machine-readable codes include:
 
-### `gdb_delete_breakpoint`
-Delete a breakpoint by number.
+- `validation_error`
+- `unknown_action`
+- `unsupported_combination`
+- `invalid_state`
+- `not_found`
+- `timeout`
+- `permission_denied`
+- `transport_error`
+- `gdb_error`
+- `internal_error`
 
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `number`: Breakpoint number (positive integer)
+## Shared Request Patterns
 
-### `gdb_enable_breakpoint`
-Enable a previously disabled breakpoint by number.
+### `session_id`
 
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `number`: Breakpoint number (positive integer)
+Every session-scoped tool takes a `session_id` returned by `gdb_session_start`.
 
-### `gdb_disable_breakpoint`
-Disable a breakpoint by number without deleting it.
+### Action-Scoped Payloads
 
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `number`: Breakpoint number (positive integer)
+Action families use one nested payload object per domain:
 
-### `gdb_continue`
-Continue execution until next breakpoint.
+- `query`
+- `session`
+- `inferior`
+- `execution`
+- `breakpoint`
+- `changes`
+- `context`
 
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
+### Empty Payload Objects
 
-If the target has not started yet, use `gdb_run` instead.
-If no stop event occurs before GDB reports back, this tool can still return success with the inferior in `running` state.
+Some actions still require an explicit empty object for strict validation:
 
-**Recommended flow:**
-- use `gdb_continue` to resume execution
-- use `gdb_wait_for_stop` to block for a stop event
-- use `gdb_interrupt` if you need to force a pause
+- `gdb_session_query(action="list", query={})`
+- `gdb_session_manage(action="stop", session={})`
+- `gdb_context_query(action="threads", query={})`
 
-### `gdb_wait_for_stop`
-Wait for the inferior to stop without polling loops.
+### Thread/Frame Context
 
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `timeout_sec` (optional): Maximum wait time
-- `stop_reasons` (optional): Restrict what counts as a match
+Inspection requests may carry an optional context override:
 
-**Returns:**
-- `matched`: Whether observed stop matched optional reason filter
-- `timed_out`: Whether wait timed out without a matching stop
-- `execution_state`, `stop_reason`, and `last_stop_event`
-
-### `gdb_step`
-Step into next instruction (enters functions).
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-
-**IMPORTANT:** Only works when program is PAUSED at a specific location.
-
-### `gdb_next`
-Step over to next line (doesn't enter functions).
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-
-**IMPORTANT:** Only works when program is PAUSED at a specific location.
-
-### `gdb_finish`
-Step out of the current frame and stop in the caller.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `timeout_sec` (optional): Maximum time to wait for the finish operation
-
-**Returns:**
-- `message`: Human-readable summary
-- `return_value`: Return value reported by GDB when available
-- `gdb_result_var`: GDB convenience variable name (for example `$1`) when available
-- `frame`: Caller frame where execution stopped
-- `execution_state`, `stop_reason`, and `last_stop_event`
-
-### `gdb_interrupt`
-Interrupt (pause) a running program.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-
-**Use when:**
-- Program is running and hasn't hit a breakpoint
-- You want to pause execution to inspect state
-- Program appears stuck and you want to see where it is
-- Commands are timing out because program is running
-
-**After interrupting:** You can use `gdb_get_backtrace`, `gdb_get_variables`, etc.
-
-## Data Inspection
-
-### `gdb_evaluate_expression`
-Evaluate a C/C++ expression in the current context.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `expression`: Expression to evaluate
-- `thread_id` (optional): Thread ID override (integer or numeric string)
-- `frame` (optional): Frame override (integer or numeric string)
-
-**Examples:**
-- `"x"` - Get value of variable x
-- `"*ptr"` - Dereference pointer
-- `"array[5]"` - Access array element
-- `"obj->field"` - Access struct field
-
-**Note:** For expressions that intentionally call functions in the target, prefer
-`gdb_call_function` so clients can permission and audit that behavior separately.
-
-### `gdb_get_variables`
-Get local variables for a stack frame.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `thread_id` (optional): Thread ID (integer or numeric string)
-- `frame` (optional): Frame number (integer or numeric string, `0` is current, default: `0`)
-
-**Notes:**
-- This call inspects the requested thread/frame and then restores the prior
-  selection
-- The response `thread_id` reports the thread actually inspected, even when the request omits `thread_id`
-- Use `gdb_select_thread` or `gdb_select_frame` when you want to change the
-  debugger context for later commands
-
-### `gdb_get_registers`
-Get CPU register values for the current frame.
-
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `thread_id` (optional): Thread ID override (integer or numeric string)
-- `frame` (optional): Frame override (integer or numeric string)
-- `register_numbers` (optional): Explicit register numbers to query (integers or numeric strings)
-- `register_names` (optional): Explicit register names to query (resolved to numbers)
-- `include_vector_registers` (optional): When `false`, omit vector/SIMD-style registers when names are available (default: `true`)
-- `max_registers` (optional): Upper bound on returned register records
-- `value_format` (optional): Value rendering mode (`"hex"` or `"natural"`, default: `"hex"`)
-
-**Notes:**
-- Like `gdb_evaluate_expression`, this can inspect a specific thread/frame
-  without changing the selected debugger context permanently
-- `register_numbers` and `register_names` can be combined; duplicates are removed
-- `max_registers` is applied after any vector-register filtering
-
-**Examples:**
-- Lightweight status-focused read:
 ```json
 {
-  "session_id": 3,
-  "register_names": ["rip", "rsp", "rbp"],
-  "include_vector_registers": false,
-  "value_format": "natural"
-}
-```
-- Full forensic dump for one frame:
-```json
-{
-  "session_id": 3,
-  "thread_id": 5,
-  "frame": 0,
-  "include_vector_registers": true,
-  "value_format": "hex"
+  "context": {
+    "thread_id": 3,
+    "frame": 1
+  }
 }
 ```
 
-### `gdb_read_memory`
-Read raw target memory bytes from an address expression.
+### Location Selector Union
 
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- `address`: Address expression
-- `count`: Number of addressable units to read
-- `offset` (optional): Offset relative to `address`
+`gdb_inspect_query(action="disassembly" | "source")` uses an explicit `location` union:
 
-**Returns:**
-- `blocks`: Readable memory blocks (with gaps represented as separate blocks)
-- `captured_bytes`: Total successfully captured bytes
+- `{"kind":"current"}`
+- `{"kind":"function","function":"main"}`
+- `{"kind":"address","address":"0x401000"}`
+- `{"kind":"address_range","start_address":"0x401000","end_address":"0x401040"}`
+- `{"kind":"file_line","file":"src/main.c","line":42}`
+- `{"kind":"file_range","file":"src/main.c","start_line":40,"end_line":48}`
 
-### `gdb_disassemble`
-Return structured assembly or mixed source/assembly for one resolved location.
+### Batch Steps
 
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- Current-context selectors:
-  - `thread_id` (optional): Thread override as an integer or numeric string
-  - `frame` (optional): Frame override as an integer or numeric string
-- Direct location selectors (choose exactly one selector group instead of `thread_id`/`frame`):
-  - `function` (optional): Function name to disassemble
-  - `address` (optional): Single address selector
-  - `start_address` and `end_address` (optional): Explicit address range
-  - `file` and `line` (optional): Resolve source file and line to code
-- `instruction_count` (optional): Upper bound on returned instructions (default: `32`)
-- `mode` (optional): `"assembly"` or `"mixed"` (default: `"mixed"`)
+`gdb_workflow_batch.steps` and `gdb_run_until_failure.setup_steps` use this format:
 
-**Returns:**
-- `scope`: Which selector mode resolved the request (`current`, `function`, `address`, `address_range`, or `file_line`)
-- `thread_id`, `frame`, `function`, `file`, `fullname`, `line`, `start_address`, `end_address`
-- `mode`: `"assembly"` or `"mixed"`
-- `instructions`: Structured instruction records with fields such as `address`,
-  `instruction`, optional source location, optional function name, and `is_current`
-- `count`: Number of instruction records returned
+```json
+{
+  "tool": "gdb_context_query",
+  "label": "stack",
+  "arguments": {
+    "action": "backtrace",
+    "query": {}
+  }
+}
+```
 
-### `gdb_get_source_context`
-Return structured source lines for one resolved location.
+Shorthand string steps are also allowed:
 
-**Parameters:**
-- `session_id`: Session ID from `gdb_start_session`
-- Current-context selectors:
-  - `thread_id` (optional): Thread override as an integer or numeric string
-  - `frame` (optional): Frame override as an integer or numeric string
-- Direct location selectors (choose exactly one selector group instead of `thread_id`/`frame`):
-  - `function` (optional): Function name selector
-  - `address` (optional): Address selector
-  - `file` and `line` (optional): Read context around one source line
-  - `file`, `start_line`, and `end_line` (optional): Read one explicit line range
-- `context_before` (optional): Number of lines before the focal line (default: `5`)
-- `context_after` (optional): Number of lines after the focal line (default: `5`)
+```json
+"gdb_context_query"
+```
 
-**Returns:**
-- `scope`: Which selector mode resolved the request (`current`, `function`, `address`, `file_line`, or `file_range`)
-- `thread_id`, `frame`, `function`, `address`, `file`, `fullname`, and focal `line`
-- `start_line` and `end_line`: Concrete line window returned from disk
-- `lines`: Structured line records with `line_number`, `text`, and `is_current`
-- `count`: Number of lines returned
+Batch steps never include `session_id`; the enclosing workflow injects it.
+
+## Tool Inventory
+
+| Tool | Role |
+| --- | --- |
+| `gdb_session_start` | Start a new GDB session |
+| `gdb_session_query` | Query session inventory or one live session |
+| `gdb_session_manage` | Mutate session lifecycle |
+| `gdb_inferior_query` | Query inferior inventory or current inferior |
+| `gdb_inferior_manage` | Create, remove, select, or reconfigure inferiors |
+| `gdb_execution_manage` | Run, continue, interrupt, step, next, finish, or wait |
+| `gdb_breakpoint_query` | List or fetch breakpoints |
+| `gdb_breakpoint_manage` | Create, update, delete, enable, or disable breakpoints |
+| `gdb_context_query` | List threads, backtraces, or frame info |
+| `gdb_context_manage` | Select thread or frame |
+| `gdb_inspect_query` | Evaluate expressions and inspect program state |
+| `gdb_workflow_batch` | Execute a structured multi-step workflow in one session |
+| `gdb_capture_bundle` | Write a forensic bundle to disk |
+| `gdb_run_until_failure` | Repeat fresh runs until failure predicates match |
+| `gdb_execute_command` | Escape hatch for CLI or MI commands |
+| `gdb_attach_process` | Privileged attach-by-PID |
+| `gdb_call_function` | Privileged function execution in the target |
+
+## `gdb_session_start`
+
+Dedicated startup tool. This is not action-based.
+
+### Request Fields
+
+- `program`: optional executable path
+- `args`: optional argv override as `list[str]` or shell-style string
+- `core`: optional core-dump path
+- `init_commands`: optional list of GDB commands to run after environment setup
+- `env`: optional environment mapping applied before `init_commands`
+- `gdb_path`: optional GDB binary override
+- `working_dir`: optional working directory for the GDB process
+
+`args` and `core` are mutually exclusive.
+
+### Success Fields
+
+- `status`
+- `session_id`
+- `message`
+- `program`
+- `core`
+- `target_loaded`
+- `execution_state`
+- `stop_reason`
+- `exit_code`
+- `startup_output`
+- `warnings`
+- `env_output`
+- `init_output`
+
+### Example
+
+```json
+{
+  "program": "/path/to/app",
+  "args": ["--mode", "fast"],
+  "init_commands": [
+    "set pagination off"
+  ]
+}
+```
+
+## `gdb_session_query`
+
+Query session inventory or inspect one live session.
+
+### Actions
+
+| Action | Request Shape | Success `result` |
+| --- | --- | --- |
+| `list` | `{"action":"list","query":{}}` | `sessions`, `count` |
+| `status` | `{"session_id":7,"action":"status","query":{}}` | `is_running`, `target_loaded`, `has_controller`, `execution_state`, `stop_reason`, `exit_code`, `current_inferior_id`, `inferior_count`, `inferior_states`, `follow_fork_mode`, `detach_on_fork` |
+
+### Example
+
+```json
+{
+  "session_id": 7,
+  "action": "status",
+  "query": {}
+}
+```
+
+## `gdb_session_manage`
+
+Mutate session lifecycle state.
+
+### Actions
+
+| Action | Request Shape | Success `result` |
+| --- | --- | --- |
+| `stop` | `{"session_id":7,"action":"stop","session":{}}` | `message` |
+
+## `gdb_inferior_query`
+
+Query inferior state inside one live session.
+
+### Actions
+
+| Action | Request Shape | Success `result` |
+| --- | --- | --- |
+| `list` | `{"session_id":7,"action":"list","query":{}}` | `inferiors`, `count`, `current_inferior_id` |
+| `current` | `{"session_id":7,"action":"current","query":{}}` | `inferior` |
+
+## `gdb_inferior_manage`
+
+Create, remove, select, or reconfigure inferiors.
+
+### Actions
+
+| Action | Request Shape | Success `result` |
+| --- | --- | --- |
+| `create` | `{"session_id":7,"action":"create","inferior":{"executable":"/path/app","make_current":true}}` | `inferior_id`, `is_current`, `display`, `description`, `connection`, `executable`, `current_inferior_id`, `inferior_count`, `message` |
+| `remove` | `{"session_id":7,"action":"remove","inferior":{"inferior_id":2}}` | `inferior_id`, `current_inferior_id`, `inferior_count`, `message` |
+| `select` | `{"session_id":7,"action":"select","inferior":{"inferior_id":2}}` | `inferior_id`, `is_current`, `display`, `description`, `connection`, `executable`, `message` |
+| `set_follow_fork_mode` | `{"session_id":7,"action":"set_follow_fork_mode","inferior":{"mode":"child"}}` | `mode`, `message` |
+| `set_detach_on_fork` | `{"session_id":7,"action":"set_detach_on_fork","inferior":{"enabled":false}}` | `enabled`, `message` |
+
+## `gdb_execution_manage`
+
+Run or synchronize execution state.
+
+### Actions
+
+| Action | Request Shape | Success `result` |
+| --- | --- | --- |
+| `run` | `{"session_id":7,"action":"run","execution":{"args":["--mode","fast"],"wait":{"until":"stop","timeout_sec":30}}}` | direct execution payload under `result` |
+| `continue` | `{"session_id":7,"action":"continue","execution":{"wait":{"until":"acknowledged"}}}` | direct execution payload under `result` |
+| `interrupt` | `{"session_id":7,"action":"interrupt","execution":{}}` | direct execution payload under `result` |
+| `step` | `{"session_id":7,"action":"step","execution":{"wait":{"until":"stop","timeout_sec":30}}}` | direct execution payload under `result` |
+| `next` | `{"session_id":7,"action":"next","execution":{"wait":{"until":"stop","timeout_sec":30}}}` | direct execution payload under `result` |
+| `finish` | `{"session_id":7,"action":"finish","execution":{"wait":{"until":"stop","timeout_sec":30}}}` | `message`, `return_value`, `gdb_result_var`, `frame`, `execution_state`, `stop_reason`, `last_stop_event` |
+| `wait_for_stop` | `{"session_id":7,"action":"wait_for_stop","execution":{"timeout_sec":10,"stop_reasons":["breakpoint-hit"]}}` | `message`, `matched`, `timed_out`, `source`, `execution_state`, `stop_reason`, `reason_filter`, `last_stop_event` |
+
+### Wait Policy
+
+`run`, `continue`, `step`, `next`, and `finish` accept:
+
+```json
+{
+  "wait": {
+    "until": "acknowledged",
+    "timeout_sec": 30
+  }
+}
+```
+
+`until` can be:
+
+- `acknowledged`
+- `stop`
+
+### Notes
+
+- `run`, `continue`, `step`, `next`, and `interrupt` wrap the structured command result produced by GDB. Inside `result`, expect `command`, optional text `output`, and optional machine-readable `result`.
+- `wait_for_stop` is the structured replacement for manual polling.
+
+## `gdb_breakpoint_query`
+
+Query breakpoints.
+
+### Actions
+
+| Action | Request Shape | Success `result` |
+| --- | --- | --- |
+| `list` | `{"session_id":7,"action":"list","query":{"kinds":["code","watch"],"enabled":true}}` | `breakpoints`, `count` |
+| `get` | `{"session_id":7,"action":"get","query":{"number":4}}` | `breakpoint` |
+
+`list` filters are optional.
+
+## `gdb_breakpoint_manage`
+
+Create or mutate code breakpoints, watchpoints, and catchpoints.
+
+### Actions
+
+| Action | Request Shape | Success `result` |
+| --- | --- | --- |
+| `create` | `{"session_id":7,"action":"create","breakpoint":{...}}` | `breakpoint` |
+| `update` | `{"session_id":7,"action":"update","breakpoint":{"number":4},"changes":{"condition":"count > 100","clear_condition":false}}` | `breakpoint` |
+| `delete` | `{"session_id":7,"action":"delete","breakpoint":{"number":4}}` | `message` |
+| `enable` | `{"session_id":7,"action":"enable","breakpoint":{"number":4}}` | `message` |
+| `disable` | `{"session_id":7,"action":"disable","breakpoint":{"number":4}}` | `message` |
+
+### `create` Variants
+
+Code breakpoint:
+
+```json
+{
+  "session_id": 7,
+  "action": "create",
+  "breakpoint": {
+    "kind": "code",
+    "location": "src/main.c:42",
+    "condition": "count > 100",
+    "temporary": false
+  }
+}
+```
+
+Watchpoint:
+
+```json
+{
+  "session_id": 7,
+  "action": "create",
+  "breakpoint": {
+    "kind": "watch",
+    "expression": "state->ready",
+    "access": "write"
+  }
+}
+```
+
+Catchpoint:
+
+```json
+{
+  "session_id": 7,
+  "action": "create",
+  "breakpoint": {
+    "kind": "catch",
+    "event": "syscall",
+    "argument": "open",
+    "temporary": false
+  }
+}
+```
+
+### `update` Semantics
+
+`changes` currently supports:
+
+- `condition`
+- `clear_condition`
+
+`condition` and `clear_condition=true` are mutually exclusive.
+
+## `gdb_context_query`
+
+Read thread and frame state without mutating selection.
+
+### Actions
+
+| Action | Request Shape | Success `result` |
+| --- | --- | --- |
+| `threads` | `{"session_id":7,"action":"threads","query":{}}` | `threads`, `current_thread_id`, `count` |
+| `backtrace` | `{"session_id":7,"action":"backtrace","query":{"thread_id":3,"max_frames":20}}` | `thread_id`, `frames`, `count` |
+| `frame` | `{"session_id":7,"action":"frame","query":{"thread_id":3,"frame":1}}` | `frame` |
+
+All `backtrace` and `frame` selectors are optional. If omitted, the current selection is used without mutating it.
+
+## `gdb_context_manage`
+
+Mutate the current thread or frame selection.
+
+### Actions
+
+| Action | Request Shape | Success `result` |
+| --- | --- | --- |
+| `select_thread` | `{"session_id":7,"action":"select_thread","context":{"thread_id":3}}` | `thread_id`, `new_thread_id`, `frame` |
+| `select_frame` | `{"session_id":7,"action":"select_frame","context":{"frame":1}}` | `frame_number`, `frame`, `message` |
+
+## `gdb_inspect_query`
+
+Read program state without using raw debugger commands.
+
+### Actions
+
+| Action | Request Shape | Success `result` |
+| --- | --- | --- |
+| `evaluate` | `{"session_id":7,"action":"evaluate","query":{"context":{"thread_id":3,"frame":1},"expression":"node->count"}}` | `expression`, `value` |
+| `variables` | `{"session_id":7,"action":"variables","query":{"context":{"thread_id":3,"frame":0}}}` | `thread_id`, `frame`, `variables` |
+| `registers` | `{"session_id":7,"action":"registers","query":{"context":{"thread_id":3,"frame":0},"register_names":["rax","rip"],"value_format":"hex"}}` | `registers` |
+| `memory` | `{"session_id":7,"action":"memory","query":{"address":"buffer","count":64,"offset":0}}` | `address`, `count`, `offset`, `blocks`, `block_count`, `captured_bytes` |
+| `disassembly` | `{"session_id":7,"action":"disassembly","query":{"location":{"kind":"function","function":"process_data"},"instruction_count":24,"mode":"mixed"}}` | `scope`, `thread_id`, `frame`, `function`, `file`, `fullname`, `line`, `start_address`, `end_address`, `mode`, `instructions`, `count` |
+| `source` | `{"session_id":7,"action":"source","query":{"location":{"kind":"file_line","file":"src/main.c","line":42},"context_before":5,"context_after":5}}` | `scope`, `thread_id`, `frame`, `function`, `address`, `file`, `fullname`, `line`, `start_line`, `end_line`, `lines`, `count` |
+
+### Register Filters
+
+`registers` supports these optional selectors:
+
+- `register_numbers`
+- `register_names`
+- `include_vector_registers`
+- `max_registers`
+- `value_format`
+
+### Location Notes
+
+- `disassembly` accepts `function`, `address`, `address_range`, `file_line`, `file_range`, or `current`.
+- `source` accepts the same location union.
+
+## `gdb_workflow_batch`
+
+Execute a structured sequence of session-scoped tools under one workflow lock.
+
+### Request Fields
+
+- `session_id`
+- `steps`
+- `fail_fast`
+- `capture_stop_events`
+
+### Step Rules
+
+- `session_id` is inherited from the batch and must not appear in any step.
+- `gdb_session_query(action="list")` is not allowed inside a batch.
+- `gdb_session_manage` is not allowed inside a batch.
+- Nested `gdb_workflow_batch` and `gdb_run_until_failure` steps are not allowed.
+
+### Success Fields
+
+- `status`
+- `steps`
+- `count`
+- `completed_steps`
+- `error_count`
+- `stopped_early`
+- `failure_step_index`
+- `final_execution_state`
+- `final_stop_reason`
+- `last_stop_event`
+
+Each step result includes:
+
+- `index`
+- `tool`
+- `label`
+- `status`
+- `action`
+- `code`
+- `result`
+- `stop_event`
+
+`steps[].result` preserves the full wrapped result of the inner action-based tool call.
+
+## `gdb_capture_bundle`
+
+Write a structured forensic bundle to disk for one live session.
+
+### Request Fields
+
+- `session_id`
+- `output_dir`
+- `bundle_name`
+- `expressions`
+- `memory_ranges`
+- `max_frames`
+- `include_threads`
+- `include_backtraces`
+- `include_frame`
+- `include_variables`
+- `include_registers`
+- `include_transcript`
+- `include_stop_history`
+
+`memory_ranges` accepts either object form:
+
+```json
+{
+  "address": "&value",
+  "count": 16,
+  "offset": 0,
+  "name": "value-bytes"
+}
+```
+
+or shorthand string form:
+
+```json
+"&value:16@0"
+```
+
+### Success Fields
+
+- `status`
+- `message`
+- `bundle_dir`
+- `bundle_name`
+- `manifest_path`
+- `artifacts`
+- `artifact_count`
+- `failed_sections`
+- `execution_state`
+- `stop_reason`
+- `last_stop_event`
+
+Each artifact contains `name`, `path`, `status`, and `kind`.
+
+## `gdb_run_until_failure`
+
+Repeat fresh debugger sessions until failure predicates match or the iteration limit is reached.
+
+### Request Fields
+
+- `startup`: full `gdb_session_start` payload reused for every iteration
+- `setup_steps`: optional batch-style setup steps run before `run`
+- `run_args`: optional argv override for the run phase
+- `run_timeout_sec`
+- `max_iterations`
+- `failure`
+- `capture`
+
+### `failure` Fields
+
+- `failure_on_error`
+- `failure_on_timeout`
+- `stop_reasons`
+- `execution_states`
+- `exit_codes`
+- `result_text_regex`
+
+### `capture` Fields
+
+- `enabled`
+- `output_dir`
+- `bundle_name_prefix`
+- `bundle_name`
+- `expressions`
+- `memory_ranges`
+- `max_frames`
+- `include_threads`
+- `include_backtraces`
+- `include_frame`
+- `include_variables`
+- `include_registers`
+- `include_transcript`
+- `include_stop_history`
+
+`capture.bundle_name` and `capture.bundle_name_prefix` are mutually exclusive.
+
+### Success Fields
+
+- `status`
+- `message`
+- `matched_failure`
+- `iterations_requested`
+- `iterations_completed`
+- `failure_iteration`
+- `trigger`
+- `execution_state`
+- `stop_reason`
+- `exit_code`
+- `capture_bundle`
+- `capture_error`
+- `last_result`
+- `iterations`
+
+Each `iterations[]` entry contains:
+
+- `iteration`
+- `status`
+- `execution_state`
+- `stop_reason`
+- `exit_code`
+- `matched_failure`
+- `trigger`
+- `message`
+
+## `gdb_execute_command`
+
+Escape hatch for CLI or MI commands. This is not action-based.
+
+### Request Fields
+
+- `session_id`
+- `command`
+- `timeout_sec`
+
+### Success Fields
+
+- `status`
+- `command`
+- `output`
+- `result`
+
+Use this when no dedicated structured tool exists. Prefer the structured families when they already cover the operation.
+
+## `gdb_attach_process`
+
+Attach to a running process by PID. This is a privileged tool.
+
+### Request Fields
+
+- `session_id`
+- `pid`
+- `timeout_sec`
+
+### Success Fields
+
+- `status`
+- `command`
+- `output`
+- `result`
+
+## `gdb_call_function`
+
+Execute a function call in the target process. This is a privileged tool.
+
+### Request Fields
+
+- `session_id`
+- `function_call`
+- `timeout_sec`
+
+### Success Fields
+
+- `status`
+- `function_call`
+- `result`
+
+Example:
+
+```json
+{
+  "session_id": 7,
+  "function_call": "printf(\"debug: x=%d\\n\", x)",
+  "timeout_sec": 30
+}
+```
+
+## Migration Appendix
+
+Legacy tool names map to the v2 surface as follows:
+
+- `gdb_start_session` -> `gdb_session_start`
+- `gdb_list_sessions` -> `gdb_session_query(action="list")`
+- `gdb_get_status` -> `gdb_session_query(action="status")`
+- `gdb_stop_session` -> `gdb_session_manage(action="stop")`
+- `gdb_list_inferiors` -> `gdb_inferior_query(action="list")`
+- `gdb_select_inferior` -> `gdb_inferior_manage(action="select")`
+- `gdb_add_inferior` -> `gdb_inferior_manage(action="create")`
+- `gdb_remove_inferior` -> `gdb_inferior_manage(action="remove")`
+- `gdb_set_follow_fork_mode` -> `gdb_inferior_manage(action="set_follow_fork_mode")`
+- `gdb_set_detach_on_fork` -> `gdb_inferior_manage(action="set_detach_on_fork")`
+- `gdb_run` -> `gdb_execution_manage(action="run")`
+- `gdb_continue` -> `gdb_execution_manage(action="continue")`
+- `gdb_interrupt` -> `gdb_execution_manage(action="interrupt")`
+- `gdb_step` -> `gdb_execution_manage(action="step")`
+- `gdb_next` -> `gdb_execution_manage(action="next")`
+- `gdb_finish` -> `gdb_execution_manage(action="finish")`
+- `gdb_wait_for_stop` -> `gdb_execution_manage(action="wait_for_stop")`
+- `gdb_set_breakpoint` -> `gdb_breakpoint_manage(action="create", breakpoint.kind="code")`
+- `gdb_set_watchpoint` -> `gdb_breakpoint_manage(action="create", breakpoint.kind="watch")`
+- `gdb_set_catchpoint` -> `gdb_breakpoint_manage(action="create", breakpoint.kind="catch")`
+- `gdb_list_breakpoints` -> `gdb_breakpoint_query(action="list")`
+- `gdb_delete_breakpoint` -> `gdb_breakpoint_manage(action="delete")`
+- `gdb_delete_watchpoint` -> `gdb_breakpoint_manage(action="delete")`
+- `gdb_enable_breakpoint` -> `gdb_breakpoint_manage(action="enable")`
+- `gdb_disable_breakpoint` -> `gdb_breakpoint_manage(action="disable")`
+- `gdb_get_threads` -> `gdb_context_query(action="threads")`
+- `gdb_get_backtrace` -> `gdb_context_query(action="backtrace")`
+- `gdb_get_frame_info` -> `gdb_context_query(action="frame")`
+- `gdb_select_thread` -> `gdb_context_manage(action="select_thread")`
+- `gdb_select_frame` -> `gdb_context_manage(action="select_frame")`
+- `gdb_evaluate_expression` -> `gdb_inspect_query(action="evaluate")`
+- `gdb_get_variables` -> `gdb_inspect_query(action="variables")`
+- `gdb_get_registers` -> `gdb_inspect_query(action="registers")`
+- `gdb_read_memory` -> `gdb_inspect_query(action="memory")`
+- `gdb_disassemble` -> `gdb_inspect_query(action="disassembly")`
+- `gdb_get_source_context` -> `gdb_inspect_query(action="source")`
+- `gdb_batch` -> `gdb_workflow_batch`

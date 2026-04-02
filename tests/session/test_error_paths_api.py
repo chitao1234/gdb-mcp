@@ -54,7 +54,7 @@ class TestSessionErrorPaths:
             result = result_to_mapping(running_session.call_function("foo()"))
 
         assert result["status"] == "error"
-        assert result["function_call"] == "foo()"
+        assert result["details"]["function_call"] == "foo()"
         assert "Cannot evaluate function" in result["message"]
 
     def test_set_breakpoint_no_result(self, running_session, command_result):

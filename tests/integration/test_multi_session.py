@@ -201,8 +201,8 @@ def test_invalid_session_id_returns_error():
     assert result["status"] == "error"
     assert "Invalid session_id: 999" in result["message"]
     assert (
-        "gdb_start_session" in result["message"]
-    ), "Error message should mention gdb_start_session"
+        "gdb_session_start" in result["message"]
+    ), "Error message should mention gdb_session_start"
 
 
 @pytest.mark.integration

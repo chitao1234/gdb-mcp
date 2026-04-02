@@ -1,46 +1,44 @@
 # GDB MCP Server
 
-An MCP (Model Context Protocol) server that provides AI assistants with programmatic access to GDB debugging sessions. This allows AI models to interact with debuggers in the same way IDEs like VS Code and CLion do, using the GDB/MI (Machine Interface) protocol.
+An MCP (Model Context Protocol) server that gives AI assistants structured access to GDB debugging sessions. The server speaks to GDB over GDB/MI and exposes a domain-oriented MCP surface for session lifecycle, execution control, breakpoints, context navigation, inspection, and higher-level workflows.
 
 ## Features
 
-- **Full GDB Control**: Start sessions, execute commands, control program execution
-- **Multi-Inferior Workflows**: Add, remove, and select inferiors while controlling fork-follow behavior
-- **Thread Analysis**: Inspect threads, get backtraces, analyze thread states
-- **Breakpoint Management**: Set conditional breakpoints, temporary breakpoints
-- **Code & Source Inspection**: Read structured disassembly and source context around resolved locations
-- **Variable Inspection**: Evaluate expressions, inspect variables and registers
-- **Core Dump Analysis**: Load and analyze core dumps with custom initialization
-- **Flexible Initialization**: Run GDB scripts or commands on startup
+- Structured GDB control with machine-readable success and error payloads
+- Multi-session support with explicit `session_id` routing
+- Multi-inferior workflows, including inferior creation/selection and fork-follow controls
+- Read/write split by domain instead of one tool per operation
+- Workflow helpers for batch execution, capture bundles, and repeat-until-failure campaigns
+- Dedicated privileged tools for attach and function-call operations
+- `gdb_execute_command` escape hatch for CLI and MI commands that do not yet have a dedicated structured tool
 
 ## Architecture
 
-This server uses the **GDB/MI (Machine Interface)** protocol, which is the same interface used by professional IDEs. It provides:
+This server uses the GDB Machine Interface (GDB/MI), the same protocol family used by IDEs such as VS Code and CLion. The MCP layer sits on top of that transport and provides:
 
-- Structured, machine-parseable output
-- Full access to GDB's debugging capabilities
-- Reliable command execution and response handling
+- strict JSON-schema validation for tool inputs
+- explicit success/error envelopes for automation clients
+- stable domain-oriented tool names
+- structured session state snapshots instead of screen-scraped terminal output
 
 ## Installation
 
 ### Prerequisites
 
 - Python 3.10 or higher
-- GDB installed and available in PATH
+- GDB installed and available on `PATH`
 
 ### Quick Start
 
 ```bash
-# Install pipx if needed
 python3 -m pip install --user pipx
 python3 -m pipx ensurepath
 
-# Install gdb-mcp-server
 cd /path/to/gdb-mcp
 pipx install .
 ```
 
-**For alternative installation methods (virtual environment, manual setup), see [INSTALL.md](INSTALL.md).**
+For virtual-environment and manual-install variants, see [INSTALL.md](INSTALL.md).
 
 ## Configuration
 
@@ -48,12 +46,6 @@ pipx install .
 
 Add this to your Claude Desktop configuration file:
 
-**Location:**
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Linux**: `~/.config/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-
-**Configuration:**
 ```json
 {
   "mcpServers": {
@@ -64,133 +56,137 @@ Add this to your Claude Desktop configuration file:
 }
 ```
 
-**For other installation methods and MCP clients, see [INSTALL.md](INSTALL.md#step-5-configure-your-mcp-client).**
+Typical config file locations:
+
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Linux: `~/.config/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\\Claude\\claude_desktop_config.json`
+
+For other MCP clients, see [INSTALL.md](INSTALL.md#step-5-configure-your-mcp-client).
 
 ## Environment Variables
 
-The GDB MCP Server supports the following environment variables:
-
 ### `GDB_PATH`
 
-Specify the path to the GDB executable to use. This is useful when:
-- You have multiple GDB versions installed
-- GDB is installed in a non-standard location
-- You want to use a custom or patched GDB build
+Overrides the default GDB binary. This is useful when multiple GDB versions are installed or when GDB is not on the default `PATH`.
 
-**Default**: `gdb` (resolved via system PATH)
-
-**Example**:
 ```bash
 export GDB_PATH=/usr/local/bin/gdb-13.2
 gdb-mcp-server
 ```
 
-**Note**: The `gdb_path` parameter in the `gdb_start_session` tool overrides this environment variable if both are specified.
+If both are present, `gdb_session_start.gdb_path` overrides `GDB_PATH`.
 
 ### `GDB_MCP_LOG_LEVEL`
 
-Set the logging level for the server.
+Controls server logging.
 
-**Default**: `INFO`
-**Options**: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`
-
-**Example**:
 ```bash
 export GDB_MCP_LOG_LEVEL=DEBUG
 gdb-mcp-server
 ```
 
-## Available Tools
+Valid values: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`.
 
-The GDB MCP Server provides 42 tools for controlling GDB debugging sessions:
+## Tool Surface
 
-**Session Management:**
-- `gdb_start_session` - Start a new GDB session with optional initialization
-- `gdb_list_sessions` - List all active sessions with structured metadata
-- `gdb_execute_command` - Execute GDB commands (CLI or MI format) when no dedicated structured tool fits
-- `gdb_run` - Start the loaded program with optional argv overrides and optional non-blocking wait behavior
-- `gdb_add_inferior` - Create a new inferior, optionally associating an executable with it
-- `gdb_remove_inferior` - Remove an inferior by numeric inferior ID
-- `gdb_attach_process` - Attach GDB to a running process by PID
-- `gdb_list_inferiors` - List inferiors in the current debugger session
-- `gdb_select_inferior` - Select the active inferior
-- `gdb_set_follow_fork_mode` - Configure fork-follow behavior (`parent`/`child`)
-- `gdb_set_detach_on_fork` - Configure detach-on-fork behavior
-- `gdb_batch` - Execute a structured sequence of session-scoped tools
-- `gdb_capture_bundle` - Capture structured forensic artifacts to disk
-- `gdb_run_until_failure` - Repeat fresh runs until failure criteria match
-- `gdb_call_function` - Call a function in the target process (dedicated tool for separate permissioning)
-- `gdb_get_status` - Get current session status, including target load state, execution state, and per-inferior state summaries when available
-- `gdb_stop_session` - Stop the current session
+The current public interface exposes 17 tools:
 
-**Thread & Frame Navigation:**
-- `gdb_get_threads` - List all threads
-- `gdb_select_thread` - Select a specific thread
-- `gdb_get_backtrace` - Get stack trace for a thread without changing the selected thread
-- `gdb_select_frame` - Select a specific stack frame
-- `gdb_get_frame_info` - Get information about the current frame
+- `gdb_session_start`
+- `gdb_session_query`
+- `gdb_session_manage`
+- `gdb_inferior_query`
+- `gdb_inferior_manage`
+- `gdb_execution_manage`
+- `gdb_breakpoint_query`
+- `gdb_breakpoint_manage`
+- `gdb_context_query`
+- `gdb_context_manage`
+- `gdb_inspect_query`
+- `gdb_workflow_batch`
+- `gdb_capture_bundle`
+- `gdb_run_until_failure`
+- `gdb_execute_command`
+- `gdb_attach_process`
+- `gdb_call_function`
 
-**Breakpoint Management:**
-- `gdb_set_breakpoint` - Set breakpoints with optional conditions, including source paths with spaces
-- `gdb_set_watchpoint` - Set write/read/access watchpoints
-- `gdb_delete_watchpoint` - Delete watchpoints by number
-- `gdb_set_catchpoint` - Set catchpoints for debugger events (fork, signal, syscall, etc.)
-- `gdb_list_breakpoints` - List all breakpoints with structured data
-- `gdb_delete_breakpoint` - Delete a breakpoint by number
-- `gdb_enable_breakpoint` - Enable a breakpoint
-- `gdb_disable_breakpoint` - Disable a breakpoint
+The interface follows three rules:
 
-**Execution Control:**
-- `gdb_continue` - Continue execution
-- `gdb_wait_for_stop` - Wait for the next stop event without polling
-- `gdb_step` - Step into functions
-- `gdb_next` - Step over functions
-- `gdb_finish` - Step out of the current frame and report caller/return details
-- `gdb_interrupt` - Pause a running program
+- Domain consolidation: related operations share one tool family.
+- Read/write split: query-style actions and mutating actions are separate tools.
+- Action-scoped payloads: action-based tools take `action` plus one nested payload object such as `query`, `context`, `execution`, `inferior`, or `breakpoint`.
 
-**Data Inspection:**
-- `gdb_evaluate_expression` - Evaluate expressions, optionally in a specific thread/frame
-- `gdb_read_memory` - Read raw memory bytes using MI memory-read
-- `gdb_disassemble` - Return structured assembly or mixed source/assembly for one resolved location
-- `gdb_get_source_context` - Return structured source lines around one resolved location
-- `gdb_get_variables` - Get local variables without changing the selected thread/frame
-- `gdb_get_registers` - Get CPU registers, optionally in a specific thread/frame, with selector/filter options for large payloads
+Examples:
 
-**For detailed documentation of each tool including parameters, return values, and examples, see [TOOLS.md](TOOLS.md).**
+- `gdb_session_query(action="list")`
+- `gdb_execution_manage(action="continue")`
+- `gdb_breakpoint_manage(action="create")`
+- `gdb_context_query(action="backtrace")`
+- `gdb_inspect_query(action="registers")`
 
-`gdb_execute_command` remains available as an escape hatch for commands that do
-not yet have a dedicated structured tool. Prefer `gdb_run`, `gdb_interrupt`,
-`gdb_list_breakpoints`, `gdb_get_threads`, `gdb_disassemble`,
-`gdb_get_source_context`, and `gdb_call_function` when those structured tools
-fit the workflow.
-`gdb_run` also accepts `wait_for_stop=false` for structured background-launch
-workflows, replacing raw `run &`-style patterns.
+`gdb_session_start` remains separate because startup has a unique request shape. `gdb_execute_command`, `gdb_attach_process`, and `gdb_call_function` also remain separate so escape-hatch and privileged operations are easy to permission independently.
 
-`gdb_get_status` reports `target_loaded=false` when GDB started but the requested
-executable or core file did not load successfully. If the underlying GDB process
-dies unexpectedly, later status checks report the session as no longer running.
-The `gdb_start_session` response also includes `target_loaded` so callers can tell
-immediately whether startup loaded a usable target.
-It also includes the initial `execution_state` when startup leaves the inferior
-in a known state, such as `not_started` for a loaded executable or `paused` for
-a loaded core dump.
-When multiple sessions are active, `gdb_list_sessions` provides an inventory view
-with session IDs, lifecycle/execution state, and basic target metadata so MCP
-clients can recover or render session state without maintaining all bookkeeping
-out of band.
-Both `gdb_get_status` and `gdb_list_sessions` include `inferior_states` when known,
-so clients can reason about forked/multi-inferior state without extra polling glue.
-`gdb_get_status` also reports the inferior execution state as `not_started`,
-`running`, `paused`, `exited`, or `unknown`.
+Detailed request and response documentation lives in [TOOLS.md](TOOLS.md).
+
+## Response Model
+
+There are two success shapes:
+
+### Dedicated Tools Without `action`
+
+`gdb_session_start`, `gdb_workflow_batch`, `gdb_capture_bundle`, `gdb_run_until_failure`, `gdb_execute_command`, `gdb_attach_process`, and `gdb_call_function` return direct structured success payloads:
+
+```json
+{
+  "status": "success",
+  "session_id": 7,
+  "message": "GDB session started successfully",
+  "target_loaded": true,
+  "execution_state": "not_started"
+}
+```
+
+### Action-Based Tools
+
+Action-based tools return a uniform envelope:
+
+```json
+{
+  "status": "success",
+  "action": "status",
+  "result": {
+    "is_running": true,
+    "target_loaded": true,
+    "execution_state": "paused"
+  }
+}
+```
+
+Errors always use a machine-readable envelope:
+
+```json
+{
+  "status": "error",
+  "code": "validation_error",
+  "message": "breakpoint.location is required for kind=code",
+  "action": "create",
+  "details": {
+    "field_errors": [
+      {
+        "field": "breakpoint.location",
+        "issue": "missing"
+      }
+    ]
+  }
+}
+```
 
 ## Usage Examples
 
-### Example 1: Analyzing a Core Dump
+### Example 1: Core Dump Inspection
 
-**User**: "Load the core dump at /tmp/core.12345, set the sysroot to /opt/sysroot, and tell me how many threads there were when it crashed."
+Start a post-mortem session:
 
-**AI Actions**:
-1. Start session with init commands:
 ```json
 {
   "program": "/path/to/executable",
@@ -200,168 +196,198 @@ so clients can reason about forked/multi-inferior state without extra polling gl
   ]
 }
 ```
-2. Get threads: `gdb_get_threads`
-3. Report: "There were 8 threads when the program crashed."
 
-### Example 2: Conditional Breakpoint Investigation
+Then inspect thread inventory:
 
-**User**: "Set a breakpoint at process_data but only when the count variable is greater than 100, then continue execution."
-
-**AI Actions**:
-1. Set conditional breakpoint:
 ```json
 {
-  "location": "process_data",
-  "condition": "count > 100"
+  "session_id": 7,
+  "action": "threads",
+  "query": {}
 }
 ```
-2. Continue execution: `gdb_continue`
-3. When hit, inspect state
 
-**For more detailed usage examples and workflows, see [examples/USAGE_GUIDE.md](examples/USAGE_GUIDE.md) and [examples/README.md](examples/README.md).**
+The second payload is a `gdb_context_query` call.
+
+### Example 2: Set A Conditional Breakpoint And Continue
+
+Create a code breakpoint:
+
+```json
+{
+  "session_id": 7,
+  "action": "create",
+  "breakpoint": {
+    "kind": "code",
+    "location": "process_data",
+    "condition": "count > 100",
+    "temporary": false
+  }
+}
+```
+
+Continue execution:
+
+```json
+{
+  "session_id": 7,
+  "action": "continue",
+  "execution": {
+    "wait": {
+      "until": "stop",
+      "timeout_sec": 30
+    }
+  }
+}
+```
+
+The first payload is `gdb_breakpoint_manage`. The second is `gdb_execution_manage`.
+
+### Example 3: One Locked Batch
+
+Execute a breakpoint, run, and backtrace flow under one workflow lock:
+
+```json
+{
+  "session_id": 7,
+  "steps": [
+    {
+      "tool": "gdb_breakpoint_manage",
+      "label": "break main",
+      "arguments": {
+        "action": "create",
+        "breakpoint": {
+          "kind": "code",
+          "location": "main"
+        }
+      }
+    },
+    {
+      "tool": "gdb_execution_manage",
+      "label": "run",
+      "arguments": {
+        "action": "run",
+        "execution": {}
+      }
+    },
+    {
+      "tool": "gdb_context_query",
+      "label": "stack",
+      "arguments": {
+        "action": "backtrace",
+        "query": {}
+      }
+    }
+  ]
+}
+```
+
+That payload is a `gdb_workflow_batch` call. Step arguments never include `session_id`; the batch injects it automatically.
 
 ## Advanced Usage
 
-### Custom GDB Initialization Scripts
+### Custom Initialization Commands
 
-Create a `.gdb` file with your setup commands:
-
-```gdb
-# setup.gdb
-file /path/to/myprogram
-core-file /path/to/core
-
-# Set up symbol paths
-set sysroot /opt/sysroot
-set solib-search-path /opt/libs:/usr/local/lib
-
-# Convenience settings
-set print pretty on
-set print array on
-set pagination off
-```
-
-Then use it:
-```json
-{
-  "init_commands": ["source setup.gdb"]
-}
-```
-
-If you provide `env`, those environment variables are applied before any `init_commands` run.
-
-`args` and `core` are intentionally mutually exclusive in one startup request: use `args` for a live program launch, or `core` for post-mortem analysis. `args` accepts either an explicit list (`["--mode","fast"]`) or a shell-style string (`"--mode fast"`).
-
-For post-mortem sessions, prefer providing both `program` and `core` for better symbol and locals resolution. Core-only mode is supported, but debug fidelity depends on what symbol files GDB can discover from the core and environment.
-
-By default, startup applies `set confirm off` so CLI commands stay non-interactive in automation workflows.
-
-### Python Initialization Scripts
-
-You can also use GDB's Python API:
-
-```python
-# init.py
-import gdb
-gdb.execute("file /path/to/program")
-gdb.execute("core-file /path/to/core")
-# Custom analysis
-```
-
-Use with:
-```json
-{
-  "init_commands": ["source init.py"]
-}
-```
-
-### Working with Running Processes
-
-While this server primarily works with core dumps and executables, you can also
-attach to running processes with the dedicated `gdb_attach_process` tool:
+Use `init_commands` to configure GDB before normal debugging begins:
 
 ```json
 {
-  "session_id": 1,
-  "pid": 12345
+  "program": "/path/to/myprogram",
+  "init_commands": [
+    "set print pretty on",
+    "set pagination off"
+  ]
 }
 ```
 
-Note: This requires appropriate permissions (usually root or same user).
+If you provide `env`, those variables are applied before any `init_commands` run.
+
+`args` and `core` are intentionally mutually exclusive in one startup request. Use `args` for live launches and `core` for post-mortem analysis.
+
+### Working With Running Processes
+
+Attach with the dedicated privileged tool:
+
+```json
+{
+  "session_id": 7,
+  "pid": 12345,
+  "timeout_sec": 30
+}
+```
+
+That payload is a `gdb_attach_process` call.
 
 ## Troubleshooting
 
-### Common Issues
+### GDB Not Found
 
-**GDB Not Found**
 ```bash
 which gdb
 gdb --version
 ```
 
-**Timeout Errors / Commands Not Responding**
+### Commands Time Out While The Program Is Running
 
-The program is likely still running! When a program is running, GDB is busy and won't respond to other commands.
+GDB is usually busy because the inferior is still running.
 
-**Solution:** Use `gdb_interrupt` to pause the running program, then other commands will work.
+- Inspect state with `gdb_session_query(action="status")`
+- Wait for a stop with `gdb_execution_manage(action="wait_for_stop")`
+- Force a pause with `gdb_execution_manage(action="interrupt")`
 
-**Program States:**
-- **Not started**: Use `gdb_run`
-- **Running**: Program is executing. `gdb_continue` may return success with a running state if no stop event occurred yet; use `gdb_wait_for_stop` to block for the next stop, or `gdb_interrupt` to force a pause.
-- **Paused** (at breakpoint): Use `gdb_continue`, `gdb_step`, `gdb_next`, inspect variables
-- **Finished**: Program has exited - restart with "run" if needed
+Common execution states:
 
-**Missing Debug Symbols**
+- `not_started`
+- `running`
+- `paused`
+- `exited`
+- `unknown`
 
-Always check the `warnings` field in `gdb_start_session` response! Compile your programs with the `-g` flag.
+### Missing Debug Symbols
 
-**For detailed troubleshooting, installation issues, and more solutions, see [INSTALL.md](INSTALL.md#troubleshooting).**
+Always inspect the `warnings` array returned by `gdb_session_start`. Build targets with `-g` if you need source-level breakpoints, locals, and meaningful backtraces.
+
+For additional troubleshooting and installation help, see [INSTALL.md](INSTALL.md#troubleshooting).
 
 ## How It Works
 
-1. **GDB/MI Protocol**: The server communicates with GDB using the Machine Interface (MI) protocol, the same interface used by IDEs.
-
-2. **pygdbmi Library**: We use the excellent `pygdbmi` library to handle the low-level protocol details and response parsing.
-
-3. **MCP Integration**: The server exposes GDB functionality as MCP tools, allowing AI assistants to:
-   - Understand the available debugging operations
-   - Execute commands with proper parameters
-   - Interpret structured responses
-
-4. **Session Management**: The registry supports multiple concurrent GDB sessions per server instance. Each tool call uses an explicit `session_id` for isolation.
+1. The server talks to GDB over GDB/MI.
+2. Session services normalize GDB behavior into structured Python domain models.
+3. The MCP layer validates input against Pydantic schemas and returns JSON payloads through `call_tool`.
+4. Clients keep track of `session_id` and use the returned state snapshots as the source of truth.
 
 ## MCP Client Contract
 
-This server currently exposes MCP context to clients via:
+This server currently exposes MCP context through:
 
-- `list_tools`: Returns tool name, description, and input JSON schema.
-- `call_tool`: Returns one JSON payload encoded in MCP `TextContent`.
+- `list_tools`
+- `call_tool`
 
-The response payload always contains:
+Every `call_tool` response is returned as one JSON payload encoded in MCP `TextContent`.
 
-- `status`: `"success"` or `"error"`
-- `message`: Present on errors and many success payloads
-- Tool-specific fields for structured results
+Clients should expect:
 
-The server does not currently publish MCP `outputSchema`, resource endpoints, or event streams. Clients should treat tool responses as the authoritative runtime state and keep track of `session_id` explicitly.
+- `status` on every response
+- `action` plus nested `result` on action-based tools
+- direct structured success payloads on dedicated tools without `action`
+- `code` plus `message` on every error payload
 
-## Migration Notes
+The server does not currently publish MCP `outputSchema`, resources, prompts, or event streams. Clients should treat tool responses as authoritative runtime state and manage `session_id` explicitly.
 
-For client maintainers upgrading from earlier revisions:
+## Migration
 
-- `gdb_continue` may return success with `execution_state="running"` when execution was acknowledged but no stop happened yet. Use `gdb_wait_for_stop` for blocking stop detection.
-- `gdb_get_status` and `gdb_list_sessions` now include `current_inferior_id`, `inferior_count`, and `inferior_states` for fork/multi-inferior workflows.
-- `gdb_get_backtrace` and `gdb_get_variables` now report the thread actually inspected in response `thread_id` when callers omit a thread override.
-- `gdb_run.args` and `gdb_start_session.args` accept either `list[str]` or a shell-style string.
-- `gdb_batch.steps` and `gdb_capture_bundle.memory_ranges` accept structured forms and shorthand string forms.
-- `gdb_get_registers` supports payload-slimming options (`register_numbers`, `register_names`, `include_vector_registers`, `max_registers`, `value_format`).
+This interface is a clean break from the earlier one-tool-per-operation surface.
+
+- `gdb_start_session` is now `gdb_session_start`
+- `gdb_get_status` is now `gdb_session_query(action="status")`
+- `gdb_run` is now `gdb_execution_manage(action="run")`
+- `gdb_set_breakpoint` is now `gdb_breakpoint_manage(action="create", breakpoint.kind="code")`
+- `gdb_get_backtrace` is now `gdb_context_query(action="backtrace")`
+- `gdb_batch` is now `gdb_workflow_batch`
+
+The full migration appendix is in [TOOLS.md](TOOLS.md#migration-appendix).
 
 ## Contributing
-
-Contributions welcome! Areas for improvement:
-- Additional GDB commands (e.g., watchpoints, memory inspection)
-- Better error handling and recovery
-- Enhanced output formatting
 
 Before opening a PR for code changes, run:
 

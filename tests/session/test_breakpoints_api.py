@@ -162,9 +162,9 @@ class TestBreakpointApi:
 
         assert result["status"] == "error"
         assert "could not be confirmed" in result["message"]
-        assert result["created_breakpoint_number"] == 2
-        assert result["create_payload"] == {"wpt": {"number": "2", "exp": "value"}}
-        assert result["refresh_error"]["message"] == "break-list failed"
+        assert result["details"]["created_breakpoint_number"] == 2
+        assert result["details"]["create_payload"] == {"wpt": {"number": "2", "exp": "value"}}
+        assert result["details"]["refresh_error"]["message"] == "break-list failed"
         written = [command.decode() for command in controller.io_manager.stdin.writes]
         assert written[0].endswith('-break-watch "value"\n')
         assert written[1].endswith("-break-list\n")
@@ -309,9 +309,9 @@ class TestBreakpointApi:
 
         assert result["status"] == "error"
         assert "did not return breakpoint 3" in result["message"]
-        assert result["created_breakpoint_number"] == 3
-        assert result["create_output"] == "Catchpoint 3 (fork)"
-        assert result["refreshed_breakpoints"] == [
+        assert result["details"]["created_breakpoint_number"] == 3
+        assert result["details"]["create_output"] == "Catchpoint 3 (fork)"
+        assert result["details"]["refreshed_breakpoints"] == [
             {
                 "number": "7",
                 "type": "catchpoint",
