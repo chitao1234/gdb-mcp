@@ -4,6 +4,8 @@ This directory contains example programs and scripts to help you test and unders
 
 **For detailed step-by-step workflows and usage patterns, see [USAGE_GUIDE.md](USAGE_GUIDE.md).**
 
+The examples and usage guide assume the current v2 interface described in [TOOLS.md](../TOOLS.md): `gdb_session_start`, action-based query/manage tool families, and dedicated workflow tools such as `gdb_workflow_batch`.
+
 ## Files
 
 - `sample_program.c` - A multi-threaded C program with various debugging scenarios

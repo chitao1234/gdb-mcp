@@ -1,23 +1,25 @@
 # gdb-mcp Playbooks
 
+This file contains copy-ready payloads for the current v2 gdb-mcp interface. Use the action-based family tools directly; historical one-tool-per-operation names are retired.
+
 ## Fast Decision Map
 
 | Situation | Primary tools | Follow-up |
 | --- | --- | --- |
-| New live debug session | `gdb_start_session`, `gdb_set_breakpoint`, `gdb_run` | `gdb_wait_for_stop`, `gdb_get_backtrace`, `gdb_get_variables` |
-| Live launch with custom env/cwd/argv | `gdb_start_session` with `args`, `env`, `working_dir` | `gdb_run` or later `gdb_run` with override args |
-| Background launch and inspect later | `gdb_run` with `wait_for_stop=false` | `gdb_wait_for_stop` or `gdb_interrupt`, then thread/frame inspection |
-| Attach to running process | `gdb_start_session`, `gdb_attach_process` | `gdb_get_status`, `gdb_get_threads`, `gdb_get_backtrace` |
-| Core dump analysis | `gdb_start_session` with `core` | `gdb_get_threads`, `gdb_get_backtrace`, `gdb_evaluate_expression` |
-| Program appears stuck | `gdb_get_status`, `gdb_interrupt` | `gdb_get_threads`, per-thread `gdb_get_backtrace` |
-| Need source or assembly around a stop | `gdb_get_source_context`, `gdb_disassemble` | `gdb_finish`, `gdb_get_frame_info`, focused register or variable reads |
+| New live debug session | `gdb_session_start`, `gdb_breakpoint_manage(action="create")`, `gdb_execution_manage(action="run")` | `gdb_context_query(action="backtrace")`, `gdb_inspect_query(action="variables")` |
+| Live launch with custom env, cwd, or argv | `gdb_session_start` with `args`, `env`, `working_dir` | later `gdb_execution_manage(action="run", execution.args=...)` if rerun args change |
+| Background launch and inspect later | `gdb_execution_manage(action="run", execution.wait.until="acknowledged")` | `gdb_execution_manage(action="wait_for_stop" | "interrupt")`, then thread and frame inspection |
+| Attach to running process | `gdb_session_start`, `gdb_attach_process` | `gdb_session_query(action="status")`, `gdb_context_query(action="threads" | "backtrace")` |
+| Core dump analysis | `gdb_session_start` with `core` | `gdb_context_query(action="threads" | "backtrace")`, `gdb_inspect_query(action="evaluate")` |
+| Program appears stuck | `gdb_session_query(action="status")`, `gdb_execution_manage(action="interrupt")` | `gdb_context_query(action="threads" | "backtrace")` |
+| Need source or assembly around a stop | `gdb_inspect_query(action="source" | "disassembly")` | `gdb_execution_manage(action="finish")`, `gdb_context_query(action="frame")`, focused register or variable reads |
 | Flaky crash reproduction | `gdb_run_until_failure` | `capture` bundle plus expression and memory snapshots |
-| Fork-heavy behavior | `gdb_set_follow_fork_mode`, `gdb_set_detach_on_fork`, `gdb_set_catchpoint` | `gdb_get_status` (`inferior_states`), `gdb_list_inferiors`, `gdb_select_inferior` |
-| Manual inferior lifecycle | `gdb_add_inferior`, `gdb_list_inferiors`, `gdb_select_inferior` | `gdb_remove_inferior` when cleanup matters |
+| Fork-heavy behavior | `gdb_inferior_manage(action="set_follow_fork_mode" | "set_detach_on_fork")`, `gdb_breakpoint_manage(action="create", breakpoint.kind="catch")` | `gdb_session_query(action="status")`, `gdb_inferior_query(action="list")`, `gdb_inferior_manage(action="select")` |
+| Manual inferior lifecycle | `gdb_inferior_manage(action="create")`, `gdb_inferior_query(action="list")`, `gdb_inferior_manage(action="select")` | `gdb_inferior_manage(action="remove")` |
 
 ## Startup Checklist
 
-Run immediately after `gdb_start_session`:
+Run immediately after `gdb_session_start`:
 
 1. Check `status`.
 2. Check `target_loaded`.
@@ -29,11 +31,13 @@ Treat these outcomes as hard gates:
 
 - `target_loaded=false`: fix target path, symbols, or core inputs first.
 - warning about missing symbols: continue only if limited inspection is acceptable.
-- unexpected `execution_state=running`: use `gdb_interrupt` before inspection.
+- unexpected `execution_state=running`: use `gdb_execution_manage(action="interrupt")` before inspection.
 
 ## Startup Recipes
 
 ### Live Launch with Environment, Cwd, and Argv
+
+`gdb_session_start`
 
 ```json
 {
@@ -48,41 +52,52 @@ Treat these outcomes as hard gates:
 }
 ```
 
-Use this when reproducing a bug depends on relative files, a non-default library path, or feature flags. Keep this data in `args`, `working_dir`, and `env` instead of encoding it into `init_commands`.
-
 ### Later Rerun with Different Args
 
-After the session already exists, use `gdb_run` for one-off argv overrides:
+`gdb_execution_manage(action="run")`
 
 ```json
 {
   "session_id": 1,
-  "args": ["--mode", "stress", "--seed", "42"]
+  "action": "run",
+  "execution": {
+    "args": ["--mode", "stress", "--seed", "42"]
+  }
 }
 ```
 
 ### Background Launch Then Wait Later
 
-Use this when you want the structured replacement for raw `run &`:
+`gdb_execution_manage(action="run")`
 
 ```json
 {
   "session_id": 1,
-  "wait_for_stop": false,
-  "timeout_sec": 1
+  "action": "run",
+  "execution": {
+    "wait": {
+      "until": "acknowledged",
+      "timeout_sec": 1
+    }
+  }
 }
 ```
 
-Then synchronize later with:
+Then synchronize with `gdb_execution_manage(action="wait_for_stop")`:
 
 ```json
 {
   "session_id": 1,
-  "timeout_sec": 30
+  "action": "wait_for_stop",
+  "execution": {
+    "timeout_sec": 30
+  }
 }
 ```
 
 ### Empty Session Bootstrap for Attach
+
+`gdb_session_start`
 
 ```json
 {
@@ -90,23 +105,19 @@ Then synchronize later with:
 }
 ```
 
-Then attach:
+Then attach with `gdb_attach_process`:
 
 ```json
 {
   "session_id": 1,
-  "pid": 12345
+  "pid": 12345,
+  "timeout_sec": 30
 }
 ```
 
-Notes:
-
-- Attach usually leaves the process paused and inspectable.
-- `env` does not rewrite the environment of a process that is already running.
-
 ## Playbook 1: Live Program Crash Triage
 
-1. Start session:
+1. Start session with `gdb_session_start`:
 
 ```json
 {
@@ -115,53 +126,59 @@ Notes:
 }
 ```
 
-2. Add breakpoints:
+2. Add a breakpoint with `gdb_breakpoint_manage(action="create")`:
 
 ```json
 {
   "session_id": 1,
-  "location": "main"
+  "action": "create",
+  "breakpoint": {
+    "kind": "code",
+    "location": "main"
+  }
 }
 ```
 
-3. Launch:
-
-```json
-{
-  "session_id": 1
-}
-```
-
-4. Block for stop:
+3. Launch with `gdb_execution_manage(action="run")`:
 
 ```json
 {
   "session_id": 1,
-  "timeout_sec": 60
+  "action": "run",
+  "execution": {}
 }
 ```
 
-5. Inspect crash context:
+4. If needed, block for a later stop with `gdb_execution_manage(action="wait_for_stop")`.
 
-- `gdb_get_threads`
-- `gdb_get_backtrace` for current thread
-- `gdb_get_variables` frame 0
-- `gdb_get_registers` with focused selectors for lighter payloads:
+5. Inspect crash context with:
+
+- `gdb_context_query(action="threads")`
+- `gdb_context_query(action="backtrace")`
+- `gdb_inspect_query(action="variables")`
+- `gdb_inspect_query(action="registers")`
+
+Register example:
 
 ```json
 {
   "session_id": 1,
-  "register_names": ["rip", "rsp", "rbp"],
-  "include_vector_registers": false,
-  "value_format": "natural"
+  "action": "registers",
+  "query": {
+    "register_names": ["rip", "rsp", "rbp"],
+    "include_vector_registers": false,
+    "value_format": "natural"
+  }
 }
 ```
 
-6. Persist evidence:
+6. Persist evidence with `gdb_capture_bundle`:
 
 ```json
 {
   "session_id": 1,
+  "output_dir": "/tmp/gdb-captures",
+  "bundle_name": "live-crash",
   "include_threads": true,
   "include_backtraces": true,
   "include_frame": true,
@@ -174,7 +191,7 @@ Notes:
 
 ## Playbook 2: Core Dump Workflow
 
-Start with `program` and `core` together, then set symbol paths in `init_commands` after core load:
+Start with `program` and `core` together:
 
 ```json
 {
@@ -189,20 +206,20 @@ Start with `program` and `core` together, then set symbol paths in `init_command
 
 Then:
 
-1. Run `gdb_get_threads`.
-2. Run `gdb_get_backtrace` for suspicious threads.
-3. Run `gdb_select_thread` + `gdb_select_frame` when you need persistent context.
-4. Run `gdb_evaluate_expression` for candidate root-cause variables.
+1. Run `gdb_context_query(action="threads")`.
+2. Run `gdb_context_query(action="backtrace")` for suspicious threads.
+3. Run `gdb_context_manage(action="select_thread" | "select_frame")` when you need persistent context.
+4. Run `gdb_inspect_query(action="evaluate")` for candidate root-cause variables.
 
 Constraints:
 
 - Do not pass `args` when using `core`.
 - Expect startup to be `paused`.
-- Prefer `program + core` together for best symbol/locals fidelity; core-only sessions can have weaker symbol resolution.
+- Prefer `program + core` together for best symbol and locals fidelity.
 
 ## Playbook 3: Attach to a Running Process
 
-1. Start an empty session:
+1. Start an empty session with `gdb_session_start`:
 
 ```json
 {
@@ -210,26 +227,27 @@ Constraints:
 }
 ```
 
-2. Attach to the PID:
+2. Attach with `gdb_attach_process`:
 
 ```json
 {
   "session_id": 1,
-  "pid": 12345
+  "pid": 12345,
+  "timeout_sec": 30
 }
 ```
 
-3. Confirm stop state with `gdb_get_status`.
-4. Get thread inventory with `gdb_get_threads`.
-5. Pull a first backtrace with `gdb_get_backtrace`.
+3. Confirm stop state with `gdb_session_query(action="status")`.
+4. Get thread inventory with `gdb_context_query(action="threads")`.
+5. Pull a first backtrace with `gdb_context_query(action="backtrace")`.
 6. Resume only if you explicitly want the attached process running again.
 
 ## Playbook 4: Hang Investigation
 
-1. Call `gdb_get_status`.
-2. If running, call `gdb_interrupt`.
-3. Call `gdb_get_threads`.
-4. Call `gdb_get_backtrace` for each thread id.
+1. Call `gdb_session_query(action="status")`.
+2. If running, call `gdb_execution_manage(action="interrupt")`.
+3. Call `gdb_context_query(action="threads")`.
+4. Call `gdb_context_query(action="backtrace")` for each interesting thread id.
 5. Identify lock waits, futex syscalls, or deadlock cycles.
 6. Capture a bundle with backtraces and registers.
 
@@ -241,105 +259,125 @@ Useful capture expressions:
 
 ## Playbook 5: Fork and Exec Analysis
 
-1. Set fork policy before run:
+1. Set fork policy before run with `gdb_inferior_manage`:
 
 ```json
 {
   "session_id": 1,
-  "mode": "child"
+  "action": "set_follow_fork_mode",
+  "inferior": {
+    "mode": "child"
+  }
 }
 ```
 
 ```json
 {
   "session_id": 1,
-  "enabled": false
+  "action": "set_detach_on_fork",
+  "inferior": {
+    "enabled": false
+  }
 }
 ```
 
-2. Add catchpoints:
+2. Add catchpoints with `gdb_breakpoint_manage(action="create")`:
 
 ```json
 {
   "session_id": 1,
-  "kind": "fork"
+  "action": "create",
+  "breakpoint": {
+    "kind": "catch",
+    "event": "fork"
+  }
 }
 ```
 
 ```json
 {
   "session_id": 1,
-  "kind": "exec"
+  "action": "create",
+  "breakpoint": {
+    "kind": "catch",
+    "event": "exec"
+  }
 }
 ```
 
-3. Resume and wait:
+3. Resume and wait with:
 
-- `gdb_continue`
-- `gdb_wait_for_stop` with optional `stop_reasons`
+- `gdb_execution_manage(action="continue")`
+- `gdb_execution_manage(action="wait_for_stop")`
 
-4. Read multi-inferior runtime state from `gdb_get_status`:
-
-- Confirm `current_inferior_id`.
-- Inspect `inferior_states` to see running/paused/exited transitions for each inferior.
-
-5. Enumerate inferiors with `gdb_list_inferiors`.
-6. Switch with `gdb_select_inferior` before thread/frame inspection.
+4. Read multi-inferior runtime state from `gdb_session_query(action="status")`.
+5. Enumerate inferiors with `gdb_inferior_query(action="list")`.
+6. Switch with `gdb_inferior_manage(action="select")` before thread or frame inspection.
 
 ## Playbook 6: Focused Source and Assembly Inspection
 
 1. Stop where you want code context.
-2. Read source around the current frame:
+2. Read source around the current frame with `gdb_inspect_query(action="source")`:
 
 ```json
 {
   "session_id": 1,
-  "context_before": 3,
-  "context_after": 3
+  "action": "source",
+  "query": {
+    "location": {
+      "kind": "current"
+    },
+    "context_before": 3,
+    "context_after": 3
+  }
 }
 ```
 
-3. Read mixed source and assembly for the same stop:
+3. Read mixed source and assembly with `gdb_inspect_query(action="disassembly")`:
 
 ```json
 {
   "session_id": 1,
-  "mode": "mixed",
-  "instruction_count": 24
+  "action": "disassembly",
+  "query": {
+    "location": {
+      "kind": "current"
+    },
+    "mode": "mixed",
+    "instruction_count": 24
+  }
 }
 ```
 
-4. If the current frame is a helper and you want the caller next, use:
-
-```json
-{
-  "session_id": 1,
-  "timeout_sec": 30
-}
-```
-
-5. Re-run `gdb_get_source_context` or `gdb_disassemble` after the stop changes.
+4. If the current frame is a helper and you want the caller next, use `gdb_execution_manage(action="finish")`.
+5. Re-run source or disassembly after the stop changes.
 
 ## Playbook 7: Manual Inferior Lifecycle
 
-1. Add a new inferior:
+1. Add a new inferior with `gdb_inferior_manage(action="create")`:
 
 ```json
 {
   "session_id": 1,
-  "executable": "/path/to/helper",
-  "make_current": true
+  "action": "create",
+  "inferior": {
+    "executable": "/path/to/helper",
+    "make_current": true
+  }
 }
 ```
 
-2. Confirm inventory and current selection with `gdb_list_inferiors`.
-3. Switch later with `gdb_select_inferior` if needed.
+2. Confirm inventory and current selection with `gdb_inferior_query(action="list")`.
+3. Switch later with `gdb_inferior_manage(action="select")` if needed.
 4. Remove the extra inferior when done:
 
 ```json
 {
   "session_id": 1,
-  "inferior_id": 2
+  "action": "remove",
+  "inferior": {
+    "inferior_id": 2
+  }
 }
 ```
 
@@ -355,9 +393,13 @@ Use `gdb_run_until_failure` to avoid ad-hoc loops:
   },
   "setup_steps": [
     {
-      "tool": "gdb_set_breakpoint",
+      "tool": "gdb_breakpoint_manage",
       "arguments": {
-        "location": "critical_path"
+        "action": "create",
+        "breakpoint": {
+          "kind": "code",
+          "location": "critical_path"
+        }
       }
     }
   ],
@@ -368,6 +410,7 @@ Use `gdb_run_until_failure` to avoid ad-hoc loops:
     "stop_reasons": ["signal-received", "watchpoint-trigger"]
   },
   "capture": {
+    "enabled": true,
     "bundle_name_prefix": "flaky-critical-path",
     "include_threads": true,
     "include_backtraces": true,
@@ -376,26 +419,11 @@ Use `gdb_run_until_failure` to avoid ad-hoc loops:
 }
 ```
 
-When you need a deterministic single output directory name (no iteration suffix), use `capture.bundle_name` instead of `bundle_name_prefix`:
+When you need a deterministic single output directory name, use `capture.bundle_name` instead of `bundle_name_prefix`.
 
-```json
-{
-  "startup": {
-    "program": "/path/to/app"
-  },
-  "max_iterations": 20,
-  "failure": {
-    "stop_reasons": ["signal-received"]
-  },
-  "capture": {
-    "bundle_name": "latest-signal-failure"
-  }
-}
-```
+## `gdb_workflow_batch` Template
 
-## `gdb_batch` Template
-
-Use `gdb_batch` when strict ordering and one-shot orchestration are needed:
+Use `gdb_workflow_batch` when strict ordering and one-shot orchestration are needed:
 
 ```json
 {
@@ -404,52 +432,43 @@ Use `gdb_batch` when strict ordering and one-shot orchestration are needed:
   "capture_stop_events": true,
   "steps": [
     {
-      "tool": "gdb_set_breakpoint",
+      "tool": "gdb_breakpoint_manage",
       "arguments": {
-        "location": "main"
+        "action": "create",
+        "breakpoint": {
+          "kind": "code",
+          "location": "main"
+        }
       },
       "label": "set-main-breakpoint"
     },
     {
-      "tool": "gdb_run",
-      "arguments": {}
-    },
-    {
-      "tool": "gdb_wait_for_stop",
+      "tool": "gdb_execution_manage",
       "arguments": {
-        "timeout_sec": 10
+        "action": "run",
+        "execution": {}
       }
     },
     {
-      "tool": "gdb_get_backtrace",
+      "tool": "gdb_context_query",
       "arguments": {
-        "max_frames": 20
+        "action": "backtrace",
+        "query": {
+          "max_frames": 20
+        }
       }
     }
   ]
 }
 ```
 
-For lightweight one-off batches, `steps` also accepts shorthand strings:
-
-```json
-{
-  "session_id": 1,
-  "steps": [
-    "gdb_get_status",
-    "gdb_get_threads"
-  ]
-}
-```
-
 ## Common Failure Modes
 
-- Calling `gdb_continue` while already running.
-- Calling `gdb_step` or `gdb_next` while not paused.
-- Ignoring startup `warnings` and then trusting variable output.
-- Hiding launch configuration inside `init_commands` instead of `args`, `env`, or `working_dir`.
-- Using raw `run &` instead of `gdb_run(wait_for_stop=false)` and losing structured state transitions.
-- Forgetting that attach sessions keep the target's preexisting environment.
-- Using raw `disassemble`, `list`, or `add-inferior` flows instead of `gdb_disassemble`, `gdb_get_source_context`, or `gdb_add_inferior`.
-- Using only raw `gdb_execute_command` and losing structured outputs.
-- Forgetting `gdb_stop_session` and leaking debugger sessions.
+- Calling `gdb_execution_manage(action="continue")` while already running
+- Calling `gdb_execution_manage(action="step" | "next")` while not paused
+- Ignoring startup `warnings` and then trusting variable output
+- Hiding launch configuration inside `init_commands` instead of `args`, `env`, or `working_dir`
+- Using raw `run &` instead of `gdb_execution_manage(action="run", execution.wait.until="acknowledged")`
+- Forgetting that attach sessions keep the target's preexisting environment
+- Using only raw `gdb_execute_command` and losing structured outputs
+- Forgetting `gdb_session_manage(action="stop")` and leaking debugger sessions

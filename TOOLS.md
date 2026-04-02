@@ -2,6 +2,8 @@
 
 This document describes the current v2 MCP interface. The public surface is a clean break from the earlier one-tool-per-operation inventory.
 
+All examples in this file use current v2 tool names. Historical names appear only in the migration appendix at the end.
+
 ## Response Conventions
 
 ### Direct Success Payloads
@@ -98,6 +100,8 @@ Action families use one nested payload object per domain:
 - `changes`
 - `context`
 
+Dedicated workflow tools use their own top-level objects such as `startup`, `failure`, `capture`, and `steps`.
+
 ### Empty Payload Objects
 
 Some actions still require an explicit empty object for strict validation:
@@ -152,6 +156,7 @@ Shorthand string steps are also allowed:
 ```
 
 Batch steps never include `session_id`; the enclosing workflow injects it.
+In practice, string shorthand is most useful for dedicated tools with empty or defaultable arguments. Action-based tools usually need full object form so `action` is explicit.
 
 ## Tool Inventory
 
@@ -682,7 +687,7 @@ Example:
 
 ## Migration Appendix
 
-Legacy tool names map to the v2 surface as follows:
+Historical tool names map to the v2 surface as follows. Keep new clients, prompts, skills, and examples on the v2 names above.
 
 - `gdb_start_session` -> `gdb_session_start`
 - `gdb_list_sessions` -> `gdb_session_query(action="list")`

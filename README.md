@@ -116,6 +116,8 @@ The interface follows three rules:
 - Read/write split: query-style actions and mutating actions are separate tools.
 - Action-scoped payloads: action-based tools take `action` plus one nested payload object such as `query`, `context`, `execution`, `inferior`, or `breakpoint`.
 
+All examples in this repository use the v2 tool surface. Historical one-tool-per-operation names appear only in the migration notes in this file and in the migration appendix in [TOOLS.md](TOOLS.md#migration-appendix).
+
 Examples:
 
 - `gdb_session_query(action="list")`
@@ -127,6 +129,7 @@ Examples:
 `gdb_session_start` remains separate because startup has a unique request shape. `gdb_execute_command`, `gdb_attach_process`, and `gdb_call_function` also remain separate so escape-hatch and privileged operations are easy to permission independently.
 
 Detailed request and response documentation lives in [TOOLS.md](TOOLS.md).
+Representative end-to-end prompts and workflows live in [examples/USAGE_GUIDE.md](examples/USAGE_GUIDE.md) and [skills/debug-with-gdb-mcp/SKILL.md](skills/debug-with-gdb-mcp/SKILL.md).
 
 ## Response Model
 
@@ -374,7 +377,7 @@ Clients should expect:
 
 The server does not currently publish MCP `outputSchema`, resources, prompts, or event streams. Clients should treat tool responses as authoritative runtime state and manage `session_id` explicitly.
 
-## Migration
+## Historical Name Mapping
 
 This interface is a clean break from the earlier one-tool-per-operation surface.
 
