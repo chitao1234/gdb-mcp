@@ -13,27 +13,6 @@ class TestDomainResults:
 
         assert payload == {"status": "success", "value": 42}
 
-    def test_result_to_mapping_serializes_error_details(self):
-        """Structured error details should remain nested under the error envelope."""
-
-        payload = result_to_mapping(
-            OperationError(
-                message="boom",
-                fatal=True,
-                details={"command": "-thread-info"},
-            )
-        )
-
-        assert payload == {
-            "status": "error",
-            "code": "error",
-            "message": "boom",
-            "fatal": True,
-            "details": {
-                "command": "-thread-info",
-            },
-        }
-
     def test_result_to_mapping_adds_warnings_for_dataclass_payloads(self):
         """Warnings should be surfaced when the payload itself has no warnings field."""
 
@@ -48,21 +27,6 @@ class TestDomainResults:
             "status": "success",
             "message": "started",
             "warnings": ["debug symbols missing"],
-        }
-
-    def test_result_to_mapping_preserves_existing_payload_warnings(self):
-        """Payload-defined warnings should take precedence over wrapper warnings."""
-
-        payload = result_to_mapping(
-            OperationSuccess(
-                {"status": "success", "warnings": ["payload-warning"]},
-                warnings=("wrapper-warning",),
-            )
-        )
-
-        assert payload == {
-            "status": "success",
-            "warnings": ["payload-warning"],
         }
 
     def test_result_to_mapping_normalizes_nested_dataclasses_and_tuples(self):
@@ -87,32 +51,23 @@ class TestDomainResults:
             ],
         }
 
-    def test_result_to_mapping_serializes_error_code_field(self):
-        """Error payloads should always expose a machine-readable code."""
-
-        payload = result_to_mapping(OperationError(message="boom", code="unknown_tool"))
-
-        assert payload == {
-            "status": "error",
-            "code": "unknown_tool",
-            "message": "boom",
-        }
-
-    def test_result_to_mapping_preserves_reserved_error_envelope_keys(self):
-        """Error details should not overwrite reserved top-level error fields."""
+    def test_result_to_mapping_serializes_error_code_and_nested_details(self):
+        """Error payloads should preserve machine-readable code and nested details."""
 
         payload = result_to_mapping(
             OperationError(
                 message="boom",
+                code="unknown_tool",
                 fatal=True,
-                details={"status": "success", "message": "shadowed", "fatal": False, "tool": "x"},
+                details={"tool": "x", "command": "-thread-info"},
             )
         )
 
         assert payload == {
             "status": "error",
-            "code": "error",
+            "code": "unknown_tool",
             "message": "boom",
             "fatal": True,
             "tool": "x",
+            "details": {"command": "-thread-info"},
         }

@@ -1,6 +1,6 @@
 # GDB MCP Server Tests
 
-This directory contains unit and integration tests for the GDB MCP Server.
+This directory contains the test suites for the GDB MCP server.
 
 ## Running Tests
 
@@ -34,6 +34,12 @@ pip install -e ".[dev]"
 .venv/bin/pytest --cov=gdb_mcp --cov-report=html
 ```
 
+### Run Integration Coverage
+
+```bash
+uv run pytest -q tests/integration
+```
+
 ### Run Specific Tests
 
 ```bash
@@ -53,11 +59,19 @@ pip install -e ".[dev]"
 
 ## Test Structure
 
-- `domain/` - Typed result and domain-model tests
-- `mcp/` - MCP schemas, handlers, runtime, and serializer tests
-- `session/` - Session service, registry, config/state, and split session API tests
-- `transport/` - Low-level GDB/MI transport and parser tests
-- `integration/` - Real GDB workflow tests backed by a shared runtime harness
+- `domain/` - Narrow result-mapping tests that are not better owned by the MCP serializer layer
+- `mcp/` - Public MCP tool inventory, schemas, routing, envelopes, and runtime dispatch
+- `session/` - Session service semantics and transport-normalized behavior
+- `transport/` - Low-level GDB/MI transport and parser behavior
+- `integration/` - Representative direct-v2 real-GDB workflows
+
+## Ownership Rules
+
+1. Prefer the true ownership boundary.
+2. `tests/mcp/` owns request and response shape plus action routing.
+3. `tests/session/` owns debugger semantics and error details.
+4. `tests/integration/` proves only representative cross-layer workflows.
+5. Integration tests must not use legacy tool names or response-flattening helpers.
 
 ## Test Categories
 
@@ -72,9 +86,10 @@ When adding new tests:
 
 1. Follow the existing naming conventions (`test_*.py`, `Test*`, `test_*`)
 2. Use descriptive test names that explain what is being tested
-3. Mock external dependencies (GdbController) when possible
+3. Mock external dependencies when possible
 4. Prefer testing the true ownership boundary instead of routing through `server.py`
-5. Mark integration tests appropriately
+5. Keep integration coverage representative rather than exhaustive
+6. Mark integration tests appropriately
 
 ## Continuous Integration
 
