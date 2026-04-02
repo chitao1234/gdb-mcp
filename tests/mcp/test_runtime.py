@@ -23,8 +23,8 @@ def _session_double() -> Mock:
 class TestServerRuntime:
     """Test runtime-level dependency injection."""
 
-    def test_runtime_routes_through_injected_session_manager(self):
-        """The runtime should dispatch tool calls using the injected registry provider."""
+    def test_runtime_dispatches_v2_status_query(self):
+        """The runtime should dispatch v2 status queries using the injected registry provider."""
 
         mock_manager = Mock()
         mock_session = _session_double()
@@ -38,23 +38,17 @@ class TestServerRuntime:
             logger=logging.getLogger("test-runtime"),
         )
 
-        result = asyncio.run(runtime.call_tool("gdb_get_status", {"session_id": 7}))
+        result = asyncio.run(
+            runtime.call_tool(
+                "gdb_session_query",
+                {"session_id": 7, "action": "status", "query": {}},
+            )
+        )
         result_data = json.loads(result[0].text)
 
-        assert result_data == {
-            "status": "success",
-            "is_running": False,
-            "target_loaded": False,
-            "has_controller": True,
-            "execution_state": "unknown",
-            "stop_reason": None,
-            "exit_code": None,
-            "current_inferior_id": None,
-            "inferior_count": None,
-            "inferior_states": None,
-            "follow_fork_mode": None,
-            "detach_on_fork": None,
-        }
+        assert result_data["status"] == "success"
+        assert result_data["action"] == "status"
+        assert result_data["result"]["is_running"] is False
         mock_manager.resolve_session.assert_called_once_with(7)
         mock_session.get_status.assert_called_once()
 

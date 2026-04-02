@@ -255,7 +255,12 @@ class SessionExecutionService:
             )
         )
 
-    def continue_execution(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+    def continue_execution(
+        self,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Continue execution of the program."""
         if not self._runtime.has_controller:
             return OperationError(message="No active GDB session")
@@ -268,8 +273,8 @@ class SessionExecutionService:
             )
         return self._command_runner.execute_command_result(
             "-exec-continue",
-            timeout_sec=DEFAULT_TIMEOUT_SEC,
-            allow_running_timeout=True,
+            timeout_sec=timeout_sec,
+            allow_running_timeout=not wait_for_stop,
         )
 
     def wait_for_stop(
@@ -394,26 +399,44 @@ class SessionExecutionService:
             )
         )
 
-    def step(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+    def step(
+        self,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Step into the next source line."""
         return self._command_runner.execute_command_result(
-            "-exec-step", timeout_sec=DEFAULT_TIMEOUT_SEC
+            "-exec-step",
+            timeout_sec=timeout_sec,
+            allow_running_timeout=not wait_for_stop,
         )
 
-    def next(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+    def next(
+        self,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Step over the next source line."""
         return self._command_runner.execute_command_result(
-            "-exec-next", timeout_sec=DEFAULT_TIMEOUT_SEC
+            "-exec-next",
+            timeout_sec=timeout_sec,
+            allow_running_timeout=not wait_for_stop,
         )
 
     def finish(
-        self, timeout_sec: int = DEFAULT_TIMEOUT_SEC
+        self,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        *,
+        wait_for_stop: bool = True,
     ) -> OperationSuccess[FinishInfo] | OperationError:
         """Finish the current frame and stop in the caller."""
 
         result = self._command_runner.execute_command_result(
             "-exec-finish",
             timeout_sec=timeout_sec,
+            allow_running_timeout=not wait_for_stop,
         )
         if isinstance(result, OperationError):
             return result

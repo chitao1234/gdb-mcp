@@ -181,6 +181,7 @@ class RunUntilFailureService:
                 run_result = session.run(
                     args=list(request.run_args) or None,
                     timeout_sec=request.run_timeout_sec,
+                    wait_for_stop=True,
                 )
                 run_payload = result_to_mapping(run_result)
                 status_snapshot = self._status_snapshot(session)

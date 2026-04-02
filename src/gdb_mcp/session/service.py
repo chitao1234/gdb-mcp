@@ -251,10 +251,18 @@ class SessionService:
 
         return self._execution.set_detach_on_fork(enabled)
 
-    def continue_execution(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+    def continue_execution(
+        self,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate continue to the execution service."""
 
-        return self._execution.continue_execution()
+        return self._execution.continue_execution(
+            wait_for_stop=wait_for_stop,
+            timeout_sec=timeout_sec,
+        )
 
     def wait_for_stop(
         self,
@@ -269,22 +277,44 @@ class SessionService:
             stop_reasons=stop_reasons,
         )
 
-    def step(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+    def step(
+        self,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate single-step to the execution service."""
 
-        return self._execution.step()
+        return self._execution.step(
+            wait_for_stop=wait_for_stop,
+            timeout_sec=timeout_sec,
+        )
 
-    def next(self) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+    def next(
+        self,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate next/step-over to the execution service."""
 
-        return self._execution.next()
+        return self._execution.next(
+            wait_for_stop=wait_for_stop,
+            timeout_sec=timeout_sec,
+        )
 
     def finish(
-        self, timeout_sec: int = DEFAULT_TIMEOUT_SEC
+        self,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        *,
+        wait_for_stop: bool = True,
     ) -> OperationSuccess[FinishInfo] | OperationError:
         """Delegate finish/step-out to the execution service."""
 
-        return self._execution.finish(timeout_sec=timeout_sec)
+        return self._execution.finish(
+            timeout_sec=timeout_sec,
+            wait_for_stop=wait_for_stop,
+        )
 
     def interrupt(self) -> OperationSuccess[MessageResult] | OperationError:
         """Delegate interrupt to the execution service."""
@@ -396,10 +426,15 @@ class SessionService:
 
         return self._inspection.get_backtrace(thread_id, max_frames)
 
-    def get_frame_info(self) -> OperationSuccess[FrameInfo] | OperationError:
+    def get_frame_info(
+        self,
+        *,
+        thread_id: int | None = None,
+        frame: int | None = None,
+    ) -> OperationSuccess[FrameInfo] | OperationError:
         """Delegate current-frame inspection to the inspection service."""
 
-        return self._inspection.get_frame_info()
+        return self._inspection.get_frame_info(thread_id=thread_id, frame=frame)
 
     def disassemble(
         self,
@@ -558,6 +593,11 @@ class SessionService:
 
         return self._breakpoints.list_breakpoints()
 
+    def get_breakpoint(self, number: int) -> OperationSuccess[BreakpointInfo] | OperationError:
+        """Delegate breakpoint lookup to the breakpoint service."""
+
+        return self._breakpoints.get_breakpoint(number)
+
     def delete_breakpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
         """Delegate breakpoint deletion to the breakpoint service."""
 
@@ -572,3 +612,18 @@ class SessionService:
         """Delegate breakpoint disabling to the breakpoint service."""
 
         return self._breakpoints.disable_breakpoint(number)
+
+    def update_breakpoint(
+        self,
+        number: int,
+        *,
+        condition: str | None = None,
+        clear_condition: bool = False,
+    ) -> OperationSuccess[BreakpointInfo] | OperationError:
+        """Delegate breakpoint updates to the breakpoint service."""
+
+        return self._breakpoints.update_breakpoint(
+            number,
+            condition=condition,
+            clear_condition=clear_condition,
+        )

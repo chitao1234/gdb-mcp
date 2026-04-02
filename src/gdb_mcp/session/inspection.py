@@ -268,20 +268,43 @@ class SessionInspectionService:
 
         return OperationSuccess(payload)
 
-    def get_frame_info(self) -> OperationSuccess[FrameInfo] | OperationError:
-        """Get information about the current stack frame."""
+    def get_frame_info(
+        self,
+        *,
+        thread_id: int | None = None,
+        frame: int | None = None,
+    ) -> OperationSuccess[FrameInfo] | OperationError:
+        """Get information about the current stack frame or an overridden context."""
+
+        selection = self._capture_selection() if thread_id is not None or frame is not None else None
+        if isinstance(selection, OperationError):
+            return selection
+
+        selection_error = self._select_for_inspection(
+            selection,
+            thread_id=thread_id,
+            frame=frame,
+        )
+        if selection_error is not None:
+            return self._selection_error_with_restore(selection, selection_error)
+
         result = self._command_runner.execute_command_result(
             "-stack-info-frame", timeout_sec=DEFAULT_TIMEOUT_SEC
         )
 
         if isinstance(result, OperationError):
-            return result
+            return self._selection_error_with_restore(selection, result)
 
         frame_info = frame_info_from_payload(
             extract_mi_result_payload(command_result_payload(result))
         )
         level = frame_info.frame.get("level")
         self._runtime.mark_frame_selected(self._int_or_none(level))
+
+        if selection is not None:
+            restore_error = self._restore_selection(selection)
+            if restore_error is not None:
+                return restore_error
 
         return OperationSuccess(frame_info)
 

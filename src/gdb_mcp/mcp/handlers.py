@@ -7,17 +7,20 @@ import logging
 import re
 import shlex
 from collections.abc import Callable, Sequence
-from typing import Protocol, TypeAlias, TypeVar, cast
+from typing import Literal, Protocol, TypeAlias, TypeVar, cast
 
 from pydantic import BaseModel
 from mcp.types import TextContent
 
 from ..domain import (
+    CatchpointType,
+    FollowForkMode,
     MemoryCaptureRange,
     OperationError,
     OperationResult,
     OperationSuccess,
     StructuredPayload,
+    WatchpointAccessType,
     payload_to_mapping,
 )
 from ..session.campaign import (
@@ -26,6 +29,7 @@ from ..session.campaign import (
     RunUntilFailureRequest,
     RunUntilFailureService,
 )
+from ..session.constants import DEFAULT_TIMEOUT_SEC
 from ..session.locking import session_workflow_context
 from ..session.registry import SessionRegistry
 from ..session.service import SessionService
@@ -35,26 +39,46 @@ from .schemas import (
     AttachProcessArgs,
     BatchArgs,
     BatchStepArgs,
+    BreakpointManageArgs,
     BreakpointNumberArgs,
+    BreakpointQueryArgs,
     CallFunctionArgs,
     CaptureBundleArgs,
+    ContextManageArgs,
+    ContextQueryArgs,
     DisassembleArgs,
     DetachOnForkArgs,
     EvaluateExpressionArgs,
+    ExecutionContinueAction,
+    ExecutionFinishAction,
+    ExecutionInterruptAction,
+    ExecutionManageArgs,
+    ExecutionNextAction,
+    ExecutionRunAction,
+    ExecutionStepAction,
+    ExecutionWaitArgs,
+    ExecutionWaitForStopAction,
     ExecuteCommandArgs,
     FinishArgs,
     FollowForkModeArgs,
     FrameSelectArgs,
     GetBacktraceArgs,
     GetSourceContextArgs,
-    ReadMemoryArgs,
     GetRegistersArgs,
     GetVariablesArgs,
+    InferiorManageArgs,
+    InferiorQueryArgs,
     InferiorSelectArgs,
-    ListSessionsArgs,
+    InspectQueryArgs,
+    ReadMemoryArgs,
     RemoveInferiorArgs,
     RunUntilFailureArgs,
     RunArgs,
+    SessionManageArgs,
+    SessionManageStopAction,
+    SessionQueryArgs,
+    SessionQueryListAction,
+    SessionQueryStatusAction,
     SessionIdArgs,
     SetCatchpointArgs,
     SetBreakpointArgs,
@@ -81,7 +105,7 @@ class MemoryRangeArgsProtocol(Protocol):
     name: str | None
 
 
-SessionArgsT = TypeVar("SessionArgsT", bound=SessionArgsProtocol)
+SessionToolArgsT = TypeVar("SessionToolArgsT", bound=BaseModel)
 ToolArguments: TypeAlias = StructuredPayload
 ToolResult: TypeAlias = OperationResult[object]
 _MEMORY_RANGE_SHORTHAND_RE = re.compile(r"^(?P<address>.+):(?P<count>\d+)(?:@(?P<offset>\d+))?$")
@@ -96,13 +120,13 @@ class SessionToolSpec:
 
 
 def session_tool_spec(
-    model: type[BaseModel],
-    handler: Callable[[SessionService, SessionArgsT], ToolResult],
+    model: type[SessionToolArgsT],
+    handler: Callable[[SessionService, SessionToolArgsT], ToolResult],
 ) -> SessionToolSpec:
     """Wrap a typed handler for storage in the session tool registry."""
 
     def invoke(session: SessionService, args: BaseModel) -> ToolResult:
-        return handler(session, cast(SessionArgsT, args))
+        return handler(session, cast(SessionToolArgsT, args))
 
     return SessionToolSpec(model=model, handler=invoke)
 
@@ -117,6 +141,46 @@ def _normalize_arguments(arguments: object) -> ToolArguments:
     return cast(ToolArguments, arguments)
 
 
+def _unwrap_action_args(args: BaseModel) -> BaseModel:
+    """Return the discriminated action payload for root-model tool schemas."""
+
+    root = getattr(args, "root", None)
+    return cast(BaseModel, root if root is not None else args)
+
+
+def _wrap_action_result(action: str, result: ToolResult) -> ToolResult:
+    """Wrap a tool result in the v2 action envelope."""
+
+    if isinstance(result, OperationError):
+        details_payload = payload_to_mapping(result.details)
+        details: StructuredPayload = dict(details_payload) if isinstance(details_payload, dict) else {}
+        details.setdefault("action", action)
+        return OperationError(
+            message=result.message,
+            code=result.code,
+            fatal=result.fatal,
+            details=details,
+        )
+
+    return OperationSuccess(
+        {
+            "action": action,
+            "result": payload_to_mapping(result.value),
+        },
+        warnings=result.warnings,
+    )
+
+
+def _execution_wait_policy(wait: ExecutionWaitArgs | None) -> tuple[int, bool]:
+    """Translate an execution wait payload into service-layer arguments."""
+
+    timeout_sec = DEFAULT_TIMEOUT_SEC
+    if wait is not None and wait.timeout_sec is not None:
+        timeout_sec = wait.timeout_sec
+    wait_for_stop = wait is None or wait.until == "stop"
+    return timeout_sec, wait_for_stop
+
+
 def _handle_execute_command(session: SessionService, args: ExecuteCommandArgs) -> ToolResult:
     return session.execute_command(command=args.command, timeout_sec=args.timeout_sec)
 
@@ -129,6 +193,527 @@ def _handle_run(session: SessionService, args: RunArgs) -> ToolResult:
         args=run_args,
         timeout_sec=args.timeout_sec,
         wait_for_stop=args.wait_for_stop,
+    )
+
+
+def _handle_execution_manage(session: SessionService, args: ExecutionManageArgs) -> ToolResult:
+    """Route v2 execution actions to the session execution API."""
+
+    action_args = _unwrap_action_args(args)
+
+    if isinstance(action_args, ExecutionRunAction):
+        timeout_sec, wait_for_stop = _execution_wait_policy(action_args.execution.wait)
+        run_args = _normalize_run_args(action_args.execution.args)
+        if isinstance(run_args, OperationError):
+            return _wrap_action_result("run", run_args)
+        return _wrap_action_result(
+            "run",
+            session.run(
+                args=run_args,
+                timeout_sec=timeout_sec,
+                wait_for_stop=wait_for_stop,
+            ),
+        )
+
+    if isinstance(action_args, ExecutionContinueAction):
+        timeout_sec, wait_for_stop = _execution_wait_policy(action_args.execution.wait)
+        return _wrap_action_result(
+            "continue",
+            session.continue_execution(
+                wait_for_stop=wait_for_stop,
+                timeout_sec=timeout_sec,
+            ),
+        )
+
+    if isinstance(action_args, ExecutionInterruptAction):
+        return _wrap_action_result("interrupt", session.interrupt())
+
+    if isinstance(action_args, ExecutionStepAction):
+        timeout_sec, wait_for_stop = _execution_wait_policy(action_args.execution.wait)
+        return _wrap_action_result(
+            "step",
+            session.step(
+                wait_for_stop=wait_for_stop,
+                timeout_sec=timeout_sec,
+            ),
+        )
+
+    if isinstance(action_args, ExecutionNextAction):
+        timeout_sec, wait_for_stop = _execution_wait_policy(action_args.execution.wait)
+        return _wrap_action_result(
+            "next",
+            session.next(
+                wait_for_stop=wait_for_stop,
+                timeout_sec=timeout_sec,
+            ),
+        )
+
+    if isinstance(action_args, ExecutionFinishAction):
+        timeout_sec, wait_for_stop = _execution_wait_policy(action_args.execution.wait)
+        return _wrap_action_result(
+            "finish",
+            session.finish(
+                timeout_sec=timeout_sec,
+                wait_for_stop=wait_for_stop,
+            ),
+        )
+
+    if isinstance(action_args, ExecutionWaitForStopAction):
+        return _wrap_action_result(
+            "wait_for_stop",
+            session.wait_for_stop(
+                timeout_sec=action_args.execution.timeout_sec,
+                stop_reasons=tuple(action_args.execution.stop_reasons),
+            ),
+        )
+
+    return OperationError(
+        message=f"Unsupported execution action: {type(action_args).__name__}",
+        code="validation_error",
+    )
+
+
+def _handle_inferior_query(session: SessionService, args: BaseModel) -> ToolResult:
+    """Route v2 inferior query actions to the inspection service."""
+
+    action_args = _unwrap_action_args(args)
+    action = cast(str, getattr(action_args, "action"))
+
+    if action == "list":
+        return _wrap_action_result("list", session.list_inferiors())
+
+    if action == "current":
+        result = session.list_inferiors()
+        if isinstance(result, OperationError):
+            return _wrap_action_result("current", result)
+
+        current_inferior_id = result.value.current_inferior_id
+        current_inferior = next(
+            (
+                inferior
+                for inferior in result.value.inferiors
+                if inferior.get("inferior_id") == current_inferior_id
+            ),
+            None,
+        )
+        if current_inferior is None:
+            return _wrap_action_result(
+                "current",
+                OperationError(
+                    message="Current inferior could not be determined",
+                    code="not_found",
+                    details={"current_inferior_id": current_inferior_id},
+                ),
+            )
+        return _wrap_action_result("current", OperationSuccess({"inferior": current_inferior}))
+
+    return OperationError(
+        message=f"Unsupported inferior query action: {type(action_args).__name__}",
+        code="validation_error",
+    )
+
+
+def _handle_inferior_manage(session: SessionService, args: BaseModel) -> ToolResult:
+    """Route v2 inferior mutation actions to the inspection/execution services."""
+
+    action_args = _unwrap_action_args(args)
+    action = cast(str, getattr(action_args, "action"))
+
+    if action == "create":
+        payload = getattr(action_args, "inferior")
+        return _wrap_action_result(
+            "create",
+            session.add_inferior(
+                executable=cast(str | None, getattr(payload, "executable")),
+                make_current=cast(bool, getattr(payload, "make_current")),
+            ),
+        )
+
+    if action == "remove":
+        payload = getattr(action_args, "inferior")
+        return _wrap_action_result(
+            "remove",
+            session.remove_inferior(inferior_id=cast(int, getattr(payload, "inferior_id"))),
+        )
+
+    if action == "select":
+        payload = getattr(action_args, "inferior")
+        return _wrap_action_result(
+            "select",
+            session.select_inferior(inferior_id=cast(int, getattr(payload, "inferior_id"))),
+        )
+
+    if action == "set_follow_fork_mode":
+        payload = getattr(action_args, "inferior")
+        return _wrap_action_result(
+            "set_follow_fork_mode",
+            session.set_follow_fork_mode(mode=cast(FollowForkMode, getattr(payload, "mode"))),
+        )
+
+    if action == "set_detach_on_fork":
+        payload = getattr(action_args, "inferior")
+        return _wrap_action_result(
+            "set_detach_on_fork",
+            session.set_detach_on_fork(enabled=cast(bool, getattr(payload, "enabled"))),
+        )
+
+    return OperationError(
+        message=f"Unsupported inferior manage action: {type(action_args).__name__}",
+        code="validation_error",
+    )
+
+
+def _handle_breakpoint_query(session: SessionService, args: BaseModel) -> ToolResult:
+    """Route v2 breakpoint query actions to the breakpoint service."""
+
+    action_args = _unwrap_action_args(args)
+    action = cast(str, getattr(action_args, "action"))
+
+    if action == "list":
+        result = session.list_breakpoints()
+        if isinstance(result, OperationError):
+            return _wrap_action_result("list", result)
+
+        query = getattr(action_args, "query")
+        kinds = set(cast(list[str], getattr(query, "kinds")))
+        enabled_filter = cast(bool | None, getattr(query, "enabled"))
+        if not kinds and enabled_filter is None:
+            return _wrap_action_result("list", result)
+
+        filtered_breakpoints = []
+        for breakpoint_info in result.value.breakpoints:
+            breakpoint_type = str(breakpoint_info.get("type", "")).lower()
+            breakpoint_kind = "code"
+            if "watch" in breakpoint_type:
+                breakpoint_kind = "watch"
+            elif "catch" in breakpoint_type:
+                breakpoint_kind = "catch"
+
+            if kinds and breakpoint_kind not in kinds:
+                continue
+
+            enabled_value = breakpoint_info.get("enabled")
+            is_enabled = enabled_value in {True, "y", "Y", "1", 1}
+            if enabled_filter is not None and is_enabled != enabled_filter:
+                continue
+
+            filtered_breakpoints.append(breakpoint_info)
+
+        return _wrap_action_result(
+            "list",
+            OperationSuccess(
+                {
+                    "breakpoints": filtered_breakpoints,
+                    "count": len(filtered_breakpoints),
+                }
+            ),
+        )
+
+    if action == "get":
+        query = getattr(action_args, "query")
+        return _wrap_action_result(
+            "get",
+            session.get_breakpoint(cast(int, getattr(query, "number"))),
+        )
+
+    return OperationError(
+        message=f"Unsupported breakpoint query action: {type(action_args).__name__}",
+        code="validation_error",
+    )
+
+
+def _handle_breakpoint_manage(session: SessionService, args: BaseModel) -> ToolResult:
+    """Route v2 breakpoint mutation actions to the breakpoint service."""
+
+    action_args = _unwrap_action_args(args)
+    action = cast(str, getattr(action_args, "action"))
+
+    if action == "create":
+        payload = getattr(action_args, "breakpoint")
+        kind = cast(str, getattr(payload, "kind"))
+        if kind == "code":
+            return _wrap_action_result(
+                "create",
+                session.set_breakpoint(
+                    location=cast(str, getattr(payload, "location")),
+                    condition=cast(str | None, getattr(payload, "condition")),
+                    temporary=cast(bool, getattr(payload, "temporary")),
+                ),
+            )
+        if kind == "watch":
+            return _wrap_action_result(
+                "create",
+                session.set_watchpoint(
+                    expression=cast(str, getattr(payload, "expression")),
+                    access=cast(WatchpointAccessType, getattr(payload, "access")),
+                ),
+            )
+        return _wrap_action_result(
+            "create",
+            session.set_catchpoint(
+                cast(CatchpointType, getattr(payload, "event")),
+                argument=cast(str | None, getattr(payload, "argument")),
+                temporary=cast(bool, getattr(payload, "temporary")),
+            ),
+        )
+
+    if action == "update":
+        selector = getattr(action_args, "breakpoint")
+        changes = getattr(action_args, "changes")
+        return _wrap_action_result(
+            "update",
+            session.update_breakpoint(
+                cast(int, getattr(selector, "number")),
+                condition=cast(str | None, getattr(changes, "condition")),
+                clear_condition=cast(bool, getattr(changes, "clear_condition")),
+            ),
+        )
+
+    selector = getattr(action_args, "breakpoint")
+    number = cast(int, getattr(selector, "number"))
+    if action == "delete":
+        return _wrap_action_result("delete", session.delete_breakpoint(number=number))
+    if action == "enable":
+        return _wrap_action_result("enable", session.enable_breakpoint(number=number))
+    if action == "disable":
+        return _wrap_action_result("disable", session.disable_breakpoint(number=number))
+
+    return OperationError(
+        message=f"Unsupported breakpoint manage action: {type(action_args).__name__}",
+        code="validation_error",
+    )
+
+
+def _location_kwargs(location: BaseModel) -> dict[str, object]:
+    """Translate a location union payload into inspection keyword arguments."""
+
+    kind = cast(str, getattr(location, "kind"))
+    if kind == "current":
+        return {
+            "function": None,
+            "address": None,
+            "start_address": None,
+            "end_address": None,
+            "file": None,
+            "line": None,
+            "start_line": None,
+            "end_line": None,
+        }
+    if kind == "function":
+        return {
+            "function": getattr(location, "function"),
+            "address": None,
+            "start_address": None,
+            "end_address": None,
+            "file": None,
+            "line": None,
+            "start_line": None,
+            "end_line": None,
+        }
+    if kind == "address":
+        return {
+            "function": None,
+            "address": getattr(location, "address"),
+            "start_address": None,
+            "end_address": None,
+            "file": None,
+            "line": None,
+            "start_line": None,
+            "end_line": None,
+        }
+    if kind == "address_range":
+        return {
+            "function": None,
+            "address": None,
+            "start_address": getattr(location, "start_address"),
+            "end_address": getattr(location, "end_address"),
+            "file": None,
+            "line": None,
+            "start_line": None,
+            "end_line": None,
+        }
+    if kind == "file_line":
+        return {
+            "function": None,
+            "address": None,
+            "start_address": None,
+            "end_address": None,
+            "file": getattr(location, "file"),
+            "line": getattr(location, "line"),
+            "start_line": None,
+            "end_line": None,
+        }
+    return {
+        "function": None,
+        "address": None,
+        "start_address": None,
+        "end_address": None,
+        "file": getattr(location, "file"),
+        "line": None,
+        "start_line": getattr(location, "start_line"),
+        "end_line": getattr(location, "end_line"),
+    }
+
+
+def _handle_context_query(session: SessionService, args: BaseModel) -> ToolResult:
+    """Route v2 context query actions to the inspection service."""
+
+    action_args = _unwrap_action_args(args)
+    action = cast(str, getattr(action_args, "action"))
+
+    if action == "threads":
+        return _wrap_action_result("threads", session.get_threads())
+
+    if action == "backtrace":
+        query = getattr(action_args, "query")
+        return _wrap_action_result(
+            "backtrace",
+            session.get_backtrace(
+                thread_id=cast(int | None, getattr(query, "thread_id")),
+                max_frames=cast(int, getattr(query, "max_frames")),
+            ),
+        )
+
+    if action == "frame":
+        query = getattr(action_args, "query")
+        return _wrap_action_result(
+            "frame",
+            session.get_frame_info(
+                thread_id=cast(int | None, getattr(query, "thread_id")),
+                frame=cast(int | None, getattr(query, "frame")),
+            ),
+        )
+
+    return OperationError(
+        message=f"Unsupported context query action: {type(action_args).__name__}",
+        code="validation_error",
+    )
+
+
+def _handle_context_manage(session: SessionService, args: BaseModel) -> ToolResult:
+    """Route v2 context mutation actions to the inspection service."""
+
+    action_args = _unwrap_action_args(args)
+    action = cast(str, getattr(action_args, "action"))
+    context = getattr(action_args, "context")
+
+    if action == "select_thread":
+        return _wrap_action_result(
+            "select_thread",
+            session.select_thread(thread_id=cast(int, getattr(context, "thread_id"))),
+        )
+
+    if action == "select_frame":
+        return _wrap_action_result(
+            "select_frame",
+            session.select_frame(frame_number=cast(int, getattr(context, "frame"))),
+        )
+
+    return OperationError(
+        message=f"Unsupported context manage action: {type(action_args).__name__}",
+        code="validation_error",
+    )
+
+
+def _handle_inspect_query(session: SessionService, args: BaseModel) -> ToolResult:
+    """Route v2 inspect query actions to the inspection service."""
+
+    action_args = _unwrap_action_args(args)
+    action = cast(str, getattr(action_args, "action"))
+    query = getattr(action_args, "query")
+
+    if action == "evaluate":
+        context = cast(BaseModel | None, getattr(query, "context"))
+        return _wrap_action_result(
+            "evaluate",
+            session.evaluate_expression(
+                cast(str, getattr(query, "expression")),
+                thread_id=cast(int | None, getattr(context, "thread_id")) if context is not None else None,
+                frame=cast(int | None, getattr(context, "frame")) if context is not None else None,
+            ),
+        )
+
+    if action == "variables":
+        context = cast(BaseModel | None, getattr(query, "context"))
+        frame = 0
+        if context is not None and getattr(context, "frame") is not None:
+            frame = cast(int, getattr(context, "frame"))
+        return _wrap_action_result(
+            "variables",
+            session.get_variables(
+                thread_id=cast(int | None, getattr(context, "thread_id")) if context is not None else None,
+                frame=frame,
+            ),
+        )
+
+    if action == "registers":
+        context = cast(BaseModel | None, getattr(query, "context"))
+        register_numbers = list(cast(list[int], getattr(query, "register_numbers")))
+        register_names = list(cast(list[str], getattr(query, "register_names")))
+        return _wrap_action_result(
+            "registers",
+            session.get_registers(
+                thread_id=cast(int | None, getattr(context, "thread_id")) if context is not None else None,
+                frame=cast(int | None, getattr(context, "frame")) if context is not None else None,
+                register_numbers=register_numbers or None,
+                register_names=register_names or None,
+                include_vector_registers=cast(bool, getattr(query, "include_vector_registers")),
+                max_registers=cast(int | None, getattr(query, "max_registers")),
+                value_format=cast(Literal["hex", "natural"], getattr(query, "value_format")),
+            ),
+        )
+
+    if action == "memory":
+        return _wrap_action_result(
+            "memory",
+            session.read_memory(
+                address=cast(str, getattr(query, "address")),
+                count=cast(int, getattr(query, "count")),
+                offset=cast(int, getattr(query, "offset")),
+            ),
+        )
+
+    if action == "disassembly":
+        context = cast(BaseModel | None, getattr(query, "context"))
+        location = _location_kwargs(cast(BaseModel, getattr(query, "location")))
+        return _wrap_action_result(
+            "disassembly",
+            session.disassemble(
+                thread_id=cast(int | None, getattr(context, "thread_id")) if context is not None else None,
+                frame=cast(int | None, getattr(context, "frame")) if context is not None else None,
+                function=cast(str | None, location["function"]),
+                address=cast(str | None, location["address"]),
+                start_address=cast(str | None, location["start_address"]),
+                end_address=cast(str | None, location["end_address"]),
+                file=cast(str | None, location["file"]),
+                line=cast(int | None, location["line"]),
+                instruction_count=cast(int, getattr(query, "instruction_count")),
+                mode=cast(Literal["assembly", "mixed"], getattr(query, "mode")),
+            ),
+        )
+
+    if action == "source":
+        context = cast(BaseModel | None, getattr(query, "context"))
+        location = _location_kwargs(cast(BaseModel, getattr(query, "location")))
+        return _wrap_action_result(
+            "source",
+            session.get_source_context(
+                thread_id=cast(int | None, getattr(context, "thread_id")) if context is not None else None,
+                frame=cast(int | None, getattr(context, "frame")) if context is not None else None,
+                function=cast(str | None, location["function"]),
+                address=cast(str | None, location["address"]),
+                file=cast(str | None, location["file"]),
+                line=cast(int | None, location["line"]),
+                start_line=cast(int | None, location["start_line"]),
+                end_line=cast(int | None, location["end_line"]),
+                context_before=cast(int, getattr(query, "context_before")),
+                context_after=cast(int, getattr(query, "context_after")),
+            ),
+        )
+
+    return OperationError(
+        message=f"Unsupported inspect query action: {type(action_args).__name__}",
+        code="validation_error",
     )
 
 
@@ -659,6 +1244,64 @@ def _handle_start_session(
     return result
 
 
+def _handle_session_query(
+    arguments: ToolArguments,
+    session_manager: SessionRegistry,
+) -> ToolResult:
+    """Validate and route one v2 session query action."""
+
+    args = SessionQueryArgs.model_validate(arguments)
+    action_args = _unwrap_action_args(args)
+
+    if isinstance(action_args, SessionQueryListAction):
+        return _wrap_action_result("list", session_manager.list_sessions())
+
+    if isinstance(action_args, SessionQueryStatusAction):
+        session = session_manager.resolve_session(action_args.session_id)
+        if isinstance(session, OperationError):
+            return _wrap_action_result("status", session)
+        with session_workflow_context(session):
+            return _wrap_action_result("status", session.get_status())
+
+    return OperationError(
+        message=f"Unsupported session query action: {type(action_args).__name__}",
+        code="validation_error",
+    )
+
+
+def _handle_session_manage(
+    arguments: ToolArguments,
+    session_manager: SessionRegistry,
+) -> ToolResult:
+    """Validate and route one v2 session lifecycle mutation."""
+
+    args = SessionManageArgs.model_validate(arguments)
+    action_args = _unwrap_action_args(args)
+
+    if isinstance(action_args, SessionManageStopAction):
+        return _wrap_action_result(
+            "stop",
+            session_manager.close_session(action_args.session_id),
+        )
+
+    return OperationError(
+        message=f"Unsupported session manage action: {type(action_args).__name__}",
+        code="validation_error",
+    )
+
+
+def _handle_session_query_for_session(session: SessionService, args: SessionQueryArgs) -> ToolResult:
+    """Route batch-safe session query actions against an already resolved session."""
+
+    action_args = _unwrap_action_args(args)
+    if isinstance(action_args, SessionQueryStatusAction):
+        return _wrap_action_result("status", session.get_status())
+    return OperationError(
+        message="gdb_session_query(action=list) is not valid inside gdb_workflow_batch",
+        code="unsupported_combination",
+    )
+
+
 def _dispatch_session_tool(
     arguments: ToolArguments,
     session_manager: SessionRegistry,
@@ -666,12 +1309,13 @@ def _dispatch_session_tool(
 ) -> ToolResult:
     """Validate one session-scoped request and invoke its handler."""
 
-    args = cast(SessionArgsProtocol, tool_spec.model.model_validate(arguments))
-    session = session_manager.resolve_session(args.session_id)
+    validated_args = tool_spec.model.model_validate(arguments)
+    session_args = cast(SessionArgsProtocol, _unwrap_action_args(validated_args))
+    session = session_manager.resolve_session(session_args.session_id)
     if isinstance(session, OperationError):
         return session
     with session_workflow_context(session):
-        return tool_spec.handler(session, cast(BaseModel, args))
+        return tool_spec.handler(session, validated_args)
 
 
 def _build_batch_step_templates(
@@ -692,16 +1336,28 @@ def _build_batch_step_templates(
             return OperationError(
                 message=(
                     f"Batch step {index} ({step.tool}) must not include session_id. "
-                    "Use the outer batch session_id instead."
+                    "It is inherited from gdb_workflow_batch."
                 ),
                 code="validation_error",
             )
 
+        if step.tool == "gdb_session_query" and step.arguments.get("action") == "list":
+            return OperationError(
+                message="gdb_session_query(action=list) is not valid inside gdb_workflow_batch",
+                code="unsupported_combination",
+            )
+
+        if step.tool == "gdb_session_manage":
+            return OperationError(
+                message="gdb_session_manage is not valid inside gdb_workflow_batch",
+                code="unsupported_combination",
+            )
+
         tool_spec = SESSION_TOOL_SPECS.get(step.tool)
-        if tool_spec is None or step.tool in {"gdb_batch", "gdb_run_until_failure"}:
+        if tool_spec is None or step.tool in {"gdb_workflow_batch", "gdb_run_until_failure"}:
             return OperationError(
                 message=f"Unsupported batch step tool: {step.tool}",
-                code="validation_error",
+                code="unknown_tool",
             )
         resolved_tool_spec = tool_spec
 
@@ -735,50 +1391,18 @@ def _build_batch_step_templates(
 
 SESSION_TOOL_SPECS: dict[str, SessionToolSpec] = {
     "gdb_execute_command": session_tool_spec(ExecuteCommandArgs, _handle_execute_command),
-    "gdb_run": session_tool_spec(RunArgs, _handle_run),
-    "gdb_add_inferior": session_tool_spec(AddInferiorArgs, _handle_add_inferior),
-    "gdb_remove_inferior": session_tool_spec(RemoveInferiorArgs, _handle_remove_inferior),
+    "gdb_session_query": session_tool_spec(SessionQueryArgs, _handle_session_query_for_session),
+    "gdb_inferior_query": session_tool_spec(InferiorQueryArgs, _handle_inferior_query),
+    "gdb_inferior_manage": session_tool_spec(InferiorManageArgs, _handle_inferior_manage),
+    "gdb_execution_manage": session_tool_spec(ExecutionManageArgs, _handle_execution_manage),
+    "gdb_breakpoint_query": session_tool_spec(BreakpointQueryArgs, _handle_breakpoint_query),
+    "gdb_breakpoint_manage": session_tool_spec(BreakpointManageArgs, _handle_breakpoint_manage),
+    "gdb_context_query": session_tool_spec(ContextQueryArgs, _handle_context_query),
+    "gdb_context_manage": session_tool_spec(ContextManageArgs, _handle_context_manage),
+    "gdb_inspect_query": session_tool_spec(InspectQueryArgs, _handle_inspect_query),
+    "gdb_workflow_batch": session_tool_spec(BatchArgs, _handle_batch),
     "gdb_attach_process": session_tool_spec(AttachProcessArgs, _handle_attach_process),
-    "gdb_list_inferiors": session_tool_spec(SessionIdArgs, _handle_list_inferiors),
-    "gdb_select_inferior": session_tool_spec(InferiorSelectArgs, _handle_select_inferior),
-    "gdb_set_follow_fork_mode": session_tool_spec(
-        FollowForkModeArgs, _handle_set_follow_fork_mode
-    ),
-    "gdb_set_detach_on_fork": session_tool_spec(DetachOnForkArgs, _handle_set_detach_on_fork),
-    "gdb_batch": session_tool_spec(BatchArgs, _handle_batch),
     "gdb_capture_bundle": session_tool_spec(CaptureBundleArgs, _handle_capture_bundle),
-    "gdb_get_status": session_tool_spec(SessionIdArgs, _handle_get_status),
-    "gdb_get_threads": session_tool_spec(SessionIdArgs, _handle_get_threads),
-    "gdb_select_thread": session_tool_spec(ThreadSelectArgs, _handle_select_thread),
-    "gdb_get_backtrace": session_tool_spec(GetBacktraceArgs, _handle_get_backtrace),
-    "gdb_select_frame": session_tool_spec(FrameSelectArgs, _handle_select_frame),
-    "gdb_get_frame_info": session_tool_spec(SessionIdArgs, _handle_get_frame_info),
-    "gdb_set_breakpoint": session_tool_spec(SetBreakpointArgs, _handle_set_breakpoint),
-    "gdb_set_watchpoint": session_tool_spec(SetWatchpointArgs, _handle_set_watchpoint),
-    "gdb_delete_watchpoint": session_tool_spec(
-        BreakpointNumberArgs, _handle_delete_watchpoint
-    ),
-    "gdb_set_catchpoint": session_tool_spec(SetCatchpointArgs, _handle_set_catchpoint),
-    "gdb_list_breakpoints": session_tool_spec(SessionIdArgs, _handle_list_breakpoints),
-    "gdb_delete_breakpoint": session_tool_spec(BreakpointNumberArgs, _handle_delete_breakpoint),
-    "gdb_enable_breakpoint": session_tool_spec(BreakpointNumberArgs, _handle_enable_breakpoint),
-    "gdb_disable_breakpoint": session_tool_spec(BreakpointNumberArgs, _handle_disable_breakpoint),
-    "gdb_continue": session_tool_spec(SessionIdArgs, _handle_continue),
-    "gdb_wait_for_stop": session_tool_spec(WaitForStopArgs, _handle_wait_for_stop),
-    "gdb_step": session_tool_spec(SessionIdArgs, _handle_step),
-    "gdb_next": session_tool_spec(SessionIdArgs, _handle_next),
-    "gdb_finish": session_tool_spec(FinishArgs, _handle_finish),
-    "gdb_interrupt": session_tool_spec(SessionIdArgs, _handle_interrupt),
-    "gdb_evaluate_expression": session_tool_spec(
-        EvaluateExpressionArgs, _handle_evaluate_expression
-    ),
-    "gdb_read_memory": session_tool_spec(ReadMemoryArgs, _handle_read_memory),
-    "gdb_disassemble": session_tool_spec(DisassembleArgs, _handle_disassemble),
-    "gdb_get_source_context": session_tool_spec(
-        GetSourceContextArgs, _handle_get_source_context
-    ),
-    "gdb_get_variables": session_tool_spec(GetVariablesArgs, _handle_get_variables),
-    "gdb_get_registers": session_tool_spec(GetRegistersArgs, _handle_get_registers),
     "gdb_call_function": session_tool_spec(CallFunctionArgs, _handle_call_function),
 }
 
@@ -795,16 +1419,14 @@ async def dispatch_tool_call(
     try:
         normalized_args = _normalize_arguments(arguments)
 
-        if name == "gdb_start_session":
+        if name == "gdb_session_start":
             return serialize_result(_handle_start_session(normalized_args, session_manager))
+        if name == "gdb_session_query":
+            return serialize_result(_handle_session_query(normalized_args, session_manager))
+        if name == "gdb_session_manage":
+            return serialize_result(_handle_session_manage(normalized_args, session_manager))
         if name == "gdb_run_until_failure":
             return serialize_result(_handle_run_until_failure(normalized_args, session_manager))
-        if name == "gdb_list_sessions":
-            ListSessionsArgs.model_validate(normalized_args)
-            return serialize_result(session_manager.list_sessions())
-        if name == "gdb_stop_session":
-            args = SessionIdArgs.model_validate(normalized_args)
-            return serialize_result(session_manager.close_session(args.session_id))
 
         tool_spec = SESSION_TOOL_SPECS.get(name)
         if tool_spec is None:

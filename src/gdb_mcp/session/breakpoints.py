@@ -181,6 +181,23 @@ class SessionBreakpointService:
             )
         )
 
+    def get_breakpoint(self, number: int) -> OperationSuccess[BreakpointInfo] | OperationError:
+        """Return one breakpoint by its numeric identifier."""
+
+        list_result = self.list_breakpoints()
+        if isinstance(list_result, OperationError):
+            return list_result
+
+        breakpoint_info = self._find_breakpoint_record(list_result.value.breakpoints, number)
+        if breakpoint_info is None:
+            return OperationError(
+                message=f"Breakpoint {number} not found",
+                code="not_found",
+                details={"breakpoint_number": number},
+            )
+
+        return OperationSuccess(BreakpointInfo(breakpoint=breakpoint_info))
+
     def delete_breakpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
         """Delete a breakpoint by its number."""
         result = self._command_runner.execute_command_result(
@@ -213,6 +230,42 @@ class SessionBreakpointService:
             return result
 
         return OperationSuccess(SessionMessage(message=f"Breakpoint {number} disabled"))
+
+    def update_breakpoint(
+        self,
+        number: int,
+        *,
+        condition: str | None = None,
+        clear_condition: bool = False,
+    ) -> OperationSuccess[BreakpointInfo] | OperationError:
+        """Update one existing breakpoint and return the refreshed record."""
+
+        if condition is not None and clear_condition:
+            return OperationError(
+                message="condition and clear_condition are mutually exclusive",
+                code="unsupported_combination",
+            )
+        if condition is None and clear_condition is False:
+            return OperationError(
+                message="At least one breakpoint change is required",
+                code="validation_error",
+            )
+
+        command = f"-break-condition {number}"
+        if condition is not None:
+            command = f"{command} {quote_mi_string(condition)}"
+
+        result = self._command_runner.execute_command_result(
+            command,
+            timeout_sec=DEFAULT_TIMEOUT_SEC,
+        )
+        if isinstance(result, OperationError):
+            return result
+
+        return self._breakpoint_info_for_number(
+            number,
+            create_details={"updated_breakpoint_number": number},
+        )
 
     def _breakpoint_info_for_number(
         self,

@@ -248,6 +248,8 @@ class BatchStepResult:
     status: str
     result: StructuredPayload
     label: str | None = None
+    action: str | None = None
+    code: str | None = None
     stop_event: StopEvent | None = None
 
 
