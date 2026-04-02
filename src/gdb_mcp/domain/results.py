@@ -28,7 +28,8 @@ class OperationError:
 
 
 OperationResult = OperationSuccess[PayloadT] | OperationError
-_RESERVED_ERROR_KEYS = {"status", "message", "fatal"}
+_RESERVED_ERROR_KEYS = {"status", "code", "message", "fatal"}
+_ERROR_TOP_LEVEL_DETAIL_KEYS = {"action", "tool"}
 
 
 def payload_to_mapping(value: object) -> JsonValue:
@@ -64,13 +65,19 @@ def result_to_mapping(result: OperationResult[object]) -> StructuredPayload:
 
     error_payload: StructuredPayload = {
         "status": "error",
+        "code": result.code,
         "message": result.message,
     }
     if result.fatal:
         error_payload["fatal"] = True
     details_payload = payload_to_mapping(result.details)
     if isinstance(details_payload, dict):
+        nested_details: StructuredPayload = {}
         for key, value in details_payload.items():
-            if key not in _RESERVED_ERROR_KEYS:
+            if key in _ERROR_TOP_LEVEL_DETAIL_KEYS:
                 error_payload[key] = value
+            elif key not in _RESERVED_ERROR_KEYS:
+                nested_details[key] = value
+        if nested_details:
+            error_payload["details"] = nested_details
     return error_payload

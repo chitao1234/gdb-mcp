@@ -9,6 +9,66 @@ from gdb_mcp.mcp.serializer import result_to_payload, serialize_exception, seria
 class TestMcpSerializer:
     """Test serialization of typed MCP results."""
 
+    def test_result_to_payload_preserves_v2_success_envelope(self):
+        """The serializer should preserve explicit v2 success envelope fields."""
+
+        payload = result_to_payload(
+            OperationSuccess(
+                {
+                    "action": "status",
+                    "result": {
+                        "session": {
+                            "execution_state": "paused",
+                        }
+                    },
+                }
+            )
+        )
+
+        assert payload == {
+            "status": "success",
+            "action": "status",
+            "result": {
+                "session": {
+                    "execution_state": "paused",
+                }
+            },
+        }
+
+    def test_result_to_payload_includes_error_code_and_nested_details(self):
+        """Error payloads should expose a stable code and nested details object."""
+
+        payload = result_to_payload(
+            OperationError(
+                message="breakpoint.location is required for kind=code",
+                code="validation_error",
+                details={
+                    "action": "create",
+                    "field_errors": [
+                        {
+                            "field": "breakpoint.location",
+                            "issue": "missing",
+                        }
+                    ],
+                },
+            )
+        )
+
+        assert payload == {
+            "status": "error",
+            "code": "validation_error",
+            "message": "breakpoint.location is required for kind=code",
+            "action": "create",
+            "details": {
+                "field_errors": [
+                    {
+                        "field": "breakpoint.location",
+                        "issue": "missing",
+                    }
+                ]
+            },
+        }
+
     def test_result_to_payload_for_success(self):
         """OperationSuccess should serialize its payload unchanged."""
 
@@ -29,6 +89,7 @@ class TestMcpSerializer:
 
         assert payload == {
             "status": "error",
+            "code": "error",
             "message": "boom",
             "fatal": True,
             "tool": "gdb_get_status",
@@ -47,6 +108,7 @@ class TestMcpSerializer:
 
         assert payload == {
             "status": "error",
+            "code": "error",
             "message": "boom",
             "fatal": True,
             "tool": "x",
@@ -60,6 +122,7 @@ class TestMcpSerializer:
 
         assert payload == {
             "status": "error",
+            "code": "internal_error",
             "message": "bad",
             "tool": "gdb_get_status",
         }

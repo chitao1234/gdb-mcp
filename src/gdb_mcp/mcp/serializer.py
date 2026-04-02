@@ -28,5 +28,9 @@ def serialize_result(
 def serialize_exception(tool_name: str, exc: Exception) -> list[TextContent]:
     """Serialize an unexpected exception into the standard MCP error shape."""
 
-    error_result = OperationError(message=str(exc), details={"tool": tool_name})
+    error_result = OperationError(
+        message=str(exc),
+        code="internal_error",
+        details={"tool": tool_name},
+    )
     return serialize_result(error_result)
