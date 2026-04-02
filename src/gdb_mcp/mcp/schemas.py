@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Literal, Optional, TypeAlias
+from typing import Annotated, Literal, Optional, TypeAlias
 
 from mcp.types import Tool
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 
 class StrictArgsModel(BaseModel):
@@ -67,81 +75,33 @@ def _normalize_optional_text(value: str | None, *, field_name: str) -> str | Non
 
 
 BATCH_STEP_TOOL_NAMES = (
-    "gdb_execute_command",
-    "gdb_run",
-    "gdb_add_inferior",
-    "gdb_remove_inferior",
-    "gdb_attach_process",
-    "gdb_list_inferiors",
-    "gdb_select_inferior",
-    "gdb_set_follow_fork_mode",
-    "gdb_set_detach_on_fork",
-    "gdb_get_status",
-    "gdb_get_threads",
+    "gdb_session_query",
+    "gdb_inferior_query",
+    "gdb_inferior_manage",
+    "gdb_execution_manage",
+    "gdb_breakpoint_query",
+    "gdb_breakpoint_manage",
+    "gdb_context_query",
+    "gdb_context_manage",
+    "gdb_inspect_query",
     "gdb_capture_bundle",
-    "gdb_select_thread",
-    "gdb_get_backtrace",
-    "gdb_select_frame",
-    "gdb_get_frame_info",
-    "gdb_set_breakpoint",
-    "gdb_set_watchpoint",
-    "gdb_delete_watchpoint",
-    "gdb_set_catchpoint",
-    "gdb_list_breakpoints",
-    "gdb_delete_breakpoint",
-    "gdb_enable_breakpoint",
-    "gdb_disable_breakpoint",
-    "gdb_continue",
-    "gdb_wait_for_stop",
-    "gdb_step",
-    "gdb_next",
-    "gdb_finish",
-    "gdb_interrupt",
-    "gdb_disassemble",
-    "gdb_evaluate_expression",
-    "gdb_read_memory",
-    "gdb_get_source_context",
-    "gdb_get_variables",
-    "gdb_get_registers",
+    "gdb_execute_command",
+    "gdb_attach_process",
     "gdb_call_function",
 )
 BatchStepToolName: TypeAlias = Literal[
-    "gdb_execute_command",
-    "gdb_run",
-    "gdb_add_inferior",
-    "gdb_remove_inferior",
-    "gdb_attach_process",
-    "gdb_list_inferiors",
-    "gdb_select_inferior",
-    "gdb_set_follow_fork_mode",
-    "gdb_set_detach_on_fork",
-    "gdb_get_status",
-    "gdb_get_threads",
+    "gdb_session_query",
+    "gdb_inferior_query",
+    "gdb_inferior_manage",
+    "gdb_execution_manage",
+    "gdb_breakpoint_query",
+    "gdb_breakpoint_manage",
+    "gdb_context_query",
+    "gdb_context_manage",
+    "gdb_inspect_query",
     "gdb_capture_bundle",
-    "gdb_select_thread",
-    "gdb_get_backtrace",
-    "gdb_select_frame",
-    "gdb_get_frame_info",
-    "gdb_set_breakpoint",
-    "gdb_set_watchpoint",
-    "gdb_delete_watchpoint",
-    "gdb_set_catchpoint",
-    "gdb_list_breakpoints",
-    "gdb_delete_breakpoint",
-    "gdb_enable_breakpoint",
-    "gdb_disable_breakpoint",
-    "gdb_continue",
-    "gdb_wait_for_stop",
-    "gdb_step",
-    "gdb_next",
-    "gdb_finish",
-    "gdb_interrupt",
-    "gdb_disassemble",
-    "gdb_evaluate_expression",
-    "gdb_read_memory",
-    "gdb_get_source_context",
-    "gdb_get_variables",
-    "gdb_get_registers",
+    "gdb_execute_command",
+    "gdb_attach_process",
     "gdb_call_function",
 ]
 
@@ -901,12 +861,734 @@ class RunUntilFailureArgs(StrictArgsModel):
     )
 
 
+class EmptyQuery(StrictArgsModel):
+    """Empty object payload for query and no-op action wrappers."""
+
+
+class BreakpointSelectorArgs(StrictArgsModel):
+    """Selector for one existing breakpoint/watchpoint/catchpoint number."""
+
+    number: int = Field(..., gt=0, description="Breakpoint number")
+
+
+class ThreadSelectorArgs(StrictArgsModel):
+    """Selector for one thread by numeric thread ID."""
+
+    thread_id: int = Field(..., gt=0, description="Thread ID")
+
+
+class FrameSelectorArgs(StrictArgsModel):
+    """Selector for one frame by zero-based frame index."""
+
+    frame: int = Field(..., ge=0, description="Frame number (0 is innermost/current)")
+
+
+class ThreadFrameContextArgs(StrictArgsModel):
+    """Optional thread/frame inspection context override."""
+
+    thread_id: int | None = Field(None, gt=0, description="Optional thread override")
+    frame: int | None = Field(None, ge=0, description="Optional frame override")
+
+
+class SessionQueryListAction(StrictArgsModel):
+    action: Literal["list"] = Field(..., description="List all active sessions")
+    query: EmptyQuery = Field(default_factory=EmptyQuery)
+
+
+class SessionQueryStatusAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["status"] = Field(..., description="Query one live session")
+    query: EmptyQuery = Field(default_factory=EmptyQuery)
+
+
+class SessionQueryArgs(
+    RootModel[
+        Annotated[
+            SessionQueryListAction | SessionQueryStatusAction,
+            Field(discriminator="action"),
+        ]
+    ]
+):
+    """Public v2 request model for session queries."""
+
+
+class SessionManageStopAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["stop"] = Field(..., description="Stop one live session")
+    session: EmptyQuery = Field(default_factory=EmptyQuery)
+
+
+class SessionManageArgs(
+    RootModel[
+        Annotated[
+            SessionManageStopAction,
+            Field(discriminator="action"),
+        ]
+    ]
+):
+    """Public v2 request model for session lifecycle mutations."""
+
+
+class InferiorQueryListAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["list"] = Field(..., description="List inferiors in one live session")
+    query: EmptyQuery = Field(default_factory=EmptyQuery)
+
+
+class InferiorQueryCurrentAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["current"] = Field(..., description="Inspect the selected inferior")
+    query: EmptyQuery = Field(default_factory=EmptyQuery)
+
+
+class InferiorQueryArgs(
+    RootModel[
+        Annotated[
+            InferiorQueryListAction | InferiorQueryCurrentAction,
+            Field(discriminator="action"),
+        ]
+    ]
+):
+    """Public v2 request model for inferior queries."""
+
+
+class InferiorCreatePayload(StrictArgsModel):
+    executable: str | None = Field(
+        None,
+        description="Optional executable to associate with the new inferior.",
+    )
+    make_current: bool = Field(
+        False,
+        description="Whether to leave the new inferior selected after creation.",
+    )
+
+    @field_validator("executable")
+    @classmethod
+    def validate_executable(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, field_name="executable")
+
+
+class InferiorIdPayload(StrictArgsModel):
+    inferior_id: int = Field(..., gt=0, description="Inferior ID")
+
+
+class InferiorFollowForkPayload(StrictArgsModel):
+    mode: Literal["parent", "child"] = Field(
+        ...,
+        description="Whether GDB should follow the parent or child after fork/vfork.",
+    )
+
+
+class InferiorDetachOnForkPayload(StrictArgsModel):
+    enabled: bool = Field(..., description="Whether GDB should detach from the non-followed fork.")
+
+
+class InferiorManageCreateAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["create"] = Field(..., description="Create a new inferior")
+    inferior: InferiorCreatePayload
+
+
+class InferiorManageRemoveAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["remove"] = Field(..., description="Remove one inferior")
+    inferior: InferiorIdPayload
+
+
+class InferiorManageSelectAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["select"] = Field(..., description="Select the active inferior")
+    inferior: InferiorIdPayload
+
+
+class InferiorManageFollowForkAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["set_follow_fork_mode"] = Field(..., description="Change follow-fork-mode")
+    inferior: InferiorFollowForkPayload
+
+
+class InferiorManageDetachOnForkAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["set_detach_on_fork"] = Field(..., description="Change detach-on-fork")
+    inferior: InferiorDetachOnForkPayload
+
+
+class InferiorManageArgs(
+    RootModel[
+        Annotated[
+            InferiorManageCreateAction
+            | InferiorManageRemoveAction
+            | InferiorManageSelectAction
+            | InferiorManageFollowForkAction
+            | InferiorManageDetachOnForkAction,
+            Field(discriminator="action"),
+        ]
+    ]
+):
+    """Public v2 request model for inferior mutations."""
+
+
+class ExecutionWaitArgs(StrictArgsModel):
+    until: Literal["acknowledged", "stop"] = Field(
+        "stop",
+        description="Whether to return when GDB acknowledges running or when a stop is observed.",
+    )
+    timeout_sec: int | None = Field(
+        None,
+        gt=0,
+        description="Optional timeout override for the execution command.",
+    )
+
+
+class ExecutionRunPayload(StrictArgsModel):
+    args: list[str] | str | None = Field(
+        None,
+        description="Optional inferior argv override for this run.",
+    )
+    wait: ExecutionWaitArgs | None = Field(
+        None,
+        description="Optional wait policy for the run command.",
+    )
+
+
+class ExecutionControlPayload(StrictArgsModel):
+    wait: ExecutionWaitArgs | None = Field(
+        None,
+        description="Optional wait policy for the execution command.",
+    )
+
+
+class ExecutionWaitForStopPayload(StrictArgsModel):
+    timeout_sec: int = Field(30, gt=0, description="Maximum time to wait for a stop event")
+    stop_reasons: list[str] = Field(
+        default_factory=list,
+        description="Optional stop reasons that should count as a match",
+    )
+
+
+class ExecutionRunAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["run"] = Field(..., description="Start the inferior")
+    execution: ExecutionRunPayload
+
+
+class ExecutionContinueAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["continue"] = Field(..., description="Continue execution")
+    execution: ExecutionControlPayload = Field(
+        default_factory=lambda: ExecutionControlPayload.model_validate({})
+    )
+
+
+class ExecutionInterruptAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["interrupt"] = Field(..., description="Interrupt the running inferior")
+    execution: EmptyQuery = Field(default_factory=EmptyQuery)
+
+
+class ExecutionStepAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["step"] = Field(..., description="Step into the next line or instruction")
+    execution: ExecutionControlPayload = Field(
+        default_factory=lambda: ExecutionControlPayload.model_validate({})
+    )
+
+
+class ExecutionNextAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["next"] = Field(..., description="Step over the next line or instruction")
+    execution: ExecutionControlPayload = Field(
+        default_factory=lambda: ExecutionControlPayload.model_validate({})
+    )
+
+
+class ExecutionFinishAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["finish"] = Field(..., description="Finish the current frame")
+    execution: ExecutionControlPayload = Field(
+        default_factory=lambda: ExecutionControlPayload.model_validate({})
+    )
+
+
+class ExecutionWaitForStopAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["wait_for_stop"] = Field(..., description="Wait for the next stop event")
+    execution: ExecutionWaitForStopPayload
+
+
+class ExecutionManageArgs(
+    RootModel[
+        Annotated[
+            ExecutionRunAction
+            | ExecutionContinueAction
+            | ExecutionInterruptAction
+            | ExecutionStepAction
+            | ExecutionNextAction
+            | ExecutionFinishAction
+            | ExecutionWaitForStopAction,
+            Field(discriminator="action"),
+        ]
+    ]
+):
+    """Public v2 request model for execution control."""
+
+
+class BreakpointCodeCreateArgs(StrictArgsModel):
+    kind: Literal["code"] = Field(..., description="Create a code breakpoint")
+    location: str = Field(..., description="Function, file:line, or *address")
+    condition: str | None = Field(None, description="Optional breakpoint condition")
+    temporary: bool = Field(False, description="Whether the breakpoint is temporary")
+
+    @field_validator("location")
+    @classmethod
+    def validate_location(cls, value: str) -> str:
+        normalized = _normalize_optional_text(value, field_name="location")
+        if normalized is None:
+            raise ValueError("location is required")
+        return normalized
+
+
+class BreakpointWatchCreateArgs(StrictArgsModel):
+    kind: Literal["watch"] = Field(..., description="Create a watchpoint")
+    expression: str = Field(..., description="Expression to watch")
+    access: Literal["write", "read", "access"] = Field(
+        "write",
+        description="Whether to stop on writes only, reads only, or any access",
+    )
+
+    @field_validator("expression")
+    @classmethod
+    def validate_expression(cls, value: str) -> str:
+        normalized = _normalize_optional_text(value, field_name="expression")
+        if normalized is None:
+            raise ValueError("expression is required")
+        return normalized
+
+
+class BreakpointCatchCreateArgs(StrictArgsModel):
+    kind: Literal["catch"] = Field(..., description="Create a catchpoint")
+    event: Literal[
+        "throw",
+        "rethrow",
+        "catch",
+        "exec",
+        "fork",
+        "vfork",
+        "load",
+        "unload",
+        "signal",
+        "syscall",
+    ] = Field(..., description="Debugger event kind to catch")
+    argument: str | None = Field(
+        None,
+        description="Optional event filter such as a syscall name or signal name.",
+    )
+    temporary: bool = Field(False, description="Use a temporary catchpoint")
+
+    @field_validator("argument")
+    @classmethod
+    def validate_argument(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, field_name="argument")
+
+
+BreakpointCreateArgs = Annotated[
+    BreakpointCodeCreateArgs | BreakpointWatchCreateArgs | BreakpointCatchCreateArgs,
+    Field(discriminator="kind"),
+]
+
+
+class BreakpointUpdateChangesArgs(StrictArgsModel):
+    condition: str | None = Field(None, description="New condition to set on the breakpoint")
+    clear_condition: bool = Field(False, description="Remove the existing breakpoint condition")
+
+    @field_validator("condition")
+    @classmethod
+    def validate_condition(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, field_name="condition")
+
+    @model_validator(mode="after")
+    def validate_requested_change(self) -> "BreakpointUpdateChangesArgs":
+        if self.condition is None and self.clear_condition is False:
+            raise ValueError("At least one breakpoint change is required")
+        if self.condition is not None and self.clear_condition:
+            raise ValueError("condition and clear_condition are mutually exclusive")
+        return self
+
+
+class BreakpointListQueryArgs(StrictArgsModel):
+    kinds: list[Literal["code", "watch", "catch"]] = Field(
+        default_factory=list,
+        description="Optional breakpoint kinds to include",
+    )
+    enabled: bool | None = Field(None, description="Optional enabled-state filter")
+
+
+class BreakpointGetQueryArgs(StrictArgsModel):
+    number: int = Field(..., gt=0, description="Breakpoint number")
+
+
+class BreakpointManageCreateAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["create"] = Field(..., description="Create a breakpoint/watchpoint/catchpoint")
+    breakpoint: BreakpointCreateArgs
+
+
+class BreakpointManageUpdateAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["update"] = Field(..., description="Update one existing breakpoint")
+    breakpoint: BreakpointSelectorArgs
+    changes: BreakpointUpdateChangesArgs
+
+
+class BreakpointManageNumberAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["delete", "enable", "disable"] = Field(..., description="Mutate one existing breakpoint")
+    breakpoint: BreakpointSelectorArgs
+
+
+class BreakpointManageArgs(
+    RootModel[
+        Annotated[
+            BreakpointManageCreateAction
+            | BreakpointManageUpdateAction
+            | BreakpointManageNumberAction,
+            Field(discriminator="action"),
+        ]
+    ]
+):
+    """Public v2 request model for breakpoint mutations."""
+
+
+class BreakpointQueryListAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["list"] = Field(..., description="List all breakpoints")
+    query: BreakpointListQueryArgs = Field(
+        default_factory=lambda: BreakpointListQueryArgs.model_validate({})
+    )
+
+
+class BreakpointQueryGetAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["get"] = Field(..., description="Fetch one breakpoint")
+    query: BreakpointGetQueryArgs
+
+
+class BreakpointQueryArgs(
+    RootModel[
+        Annotated[
+            BreakpointQueryListAction | BreakpointQueryGetAction,
+            Field(discriminator="action"),
+        ]
+    ]
+):
+    """Public v2 request model for breakpoint queries."""
+
+
+class LocationCurrentArgs(StrictArgsModel):
+    kind: Literal["current"] = Field(..., description="Use the current selected location")
+
+
+class LocationFunctionArgs(StrictArgsModel):
+    kind: Literal["function"] = Field(..., description="Resolve one function")
+    function: str = Field(..., description="Function name selector")
+
+    @field_validator("function")
+    @classmethod
+    def validate_function(cls, value: str) -> str:
+        normalized = _normalize_optional_text(value, field_name="function")
+        if normalized is None:
+            raise ValueError("function is required")
+        return normalized
+
+
+class LocationAddressArgs(StrictArgsModel):
+    kind: Literal["address"] = Field(..., description="Resolve one address")
+    address: str = Field(..., description="Address selector")
+
+    @field_validator("address")
+    @classmethod
+    def validate_address(cls, value: str) -> str:
+        normalized = _normalize_optional_text(value, field_name="address")
+        if normalized is None:
+            raise ValueError("address is required")
+        return normalized
+
+
+class LocationAddressRangeArgs(StrictArgsModel):
+    kind: Literal["address_range"] = Field(..., description="Resolve an address range")
+    start_address: str = Field(..., description="Start of address range")
+    end_address: str = Field(..., description="End of address range")
+
+    @field_validator("start_address", "end_address")
+    @classmethod
+    def validate_range_address(cls, value: str, info: ValidationInfo) -> str:
+        field_name = info.field_name or "address"
+        normalized = _normalize_optional_text(value, field_name=field_name)
+        if normalized is None:
+            raise ValueError(f"{field_name} is required")
+        return normalized
+
+
+class LocationFileLineArgs(StrictArgsModel):
+    kind: Literal["file_line"] = Field(..., description="Resolve one source file line")
+    file: str = Field(..., description="Source file selector")
+    line: int = Field(..., gt=0, description="Source line selector")
+
+    @field_validator("file")
+    @classmethod
+    def validate_file(cls, value: str) -> str:
+        normalized = _normalize_optional_text(value, field_name="file")
+        if normalized is None:
+            raise ValueError("file is required")
+        return normalized
+
+
+class LocationFileRangeArgs(StrictArgsModel):
+    kind: Literal["file_range"] = Field(..., description="Resolve one explicit source file range")
+    file: str = Field(..., description="Source file selector")
+    start_line: int = Field(..., gt=0, description="Start line of the range")
+    end_line: int = Field(..., gt=0, description="End line of the range")
+
+    @field_validator("file")
+    @classmethod
+    def validate_file(cls, value: str) -> str:
+        normalized = _normalize_optional_text(value, field_name="file")
+        if normalized is None:
+            raise ValueError("file is required")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "LocationFileRangeArgs":
+        if self.start_line > self.end_line:
+            raise ValueError("start_line must be <= end_line")
+        return self
+
+
+LocationSelectorArgs = Annotated[
+    LocationCurrentArgs
+    | LocationFunctionArgs
+    | LocationAddressArgs
+    | LocationAddressRangeArgs
+    | LocationFileLineArgs
+    | LocationFileRangeArgs,
+    Field(discriminator="kind"),
+]
+
+
+class ContextBacktraceQueryArgs(StrictArgsModel):
+    thread_id: int | None = Field(None, gt=0, description="Optional thread override")
+    max_frames: int = Field(100, gt=0, description="Maximum number of frames to return")
+
+
+class ContextFrameQueryArgs(StrictArgsModel):
+    thread_id: int | None = Field(None, gt=0, description="Optional thread override")
+    frame: int | None = Field(None, ge=0, description="Optional frame override")
+
+
+class ContextQueryThreadsAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["threads"] = Field(..., description="List threads")
+    query: EmptyQuery = Field(default_factory=EmptyQuery)
+
+
+class ContextQueryBacktraceAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["backtrace"] = Field(..., description="Inspect a backtrace")
+    query: ContextBacktraceQueryArgs = Field(
+        default_factory=lambda: ContextBacktraceQueryArgs.model_validate({})
+    )
+
+
+class ContextQueryFrameAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["frame"] = Field(..., description="Inspect frame information")
+    query: ContextFrameQueryArgs = Field(
+        default_factory=lambda: ContextFrameQueryArgs.model_validate({})
+    )
+
+
+class ContextQueryArgs(
+    RootModel[
+        Annotated[
+            ContextQueryThreadsAction
+            | ContextQueryBacktraceAction
+            | ContextQueryFrameAction,
+            Field(discriminator="action"),
+        ]
+    ]
+):
+    """Public v2 request model for thread/frame queries."""
+
+
+class ContextManageSelectThreadAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["select_thread"] = Field(..., description="Select the current thread")
+    context: ThreadSelectorArgs
+
+
+class ContextManageSelectFrameAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["select_frame"] = Field(..., description="Select the current frame")
+    context: FrameSelectorArgs
+
+
+class ContextManageArgs(
+    RootModel[
+        Annotated[
+            ContextManageSelectThreadAction | ContextManageSelectFrameAction,
+            Field(discriminator="action"),
+        ]
+    ]
+):
+    """Public v2 request model for thread/frame selection."""
+
+
+class InspectEvaluateQueryArgs(StrictArgsModel):
+    context: ThreadFrameContextArgs | None = Field(None, description="Optional thread/frame override")
+    expression: str = Field(..., description="Expression to evaluate")
+
+    @field_validator("expression")
+    @classmethod
+    def validate_expression(cls, value: str) -> str:
+        normalized = _normalize_optional_text(value, field_name="expression")
+        if normalized is None:
+            raise ValueError("expression is required")
+        return normalized
+
+
+class InspectVariablesQueryArgs(StrictArgsModel):
+    context: ThreadFrameContextArgs | None = Field(None, description="Optional thread/frame override")
+
+
+class InspectRegistersQueryArgs(StrictArgsModel):
+    context: ThreadFrameContextArgs | None = Field(None, description="Optional thread/frame override")
+    register_numbers: list[int | str] = Field(default_factory=list, description="Optional register-number selectors")
+    register_names: list[str] = Field(default_factory=list, description="Optional register-name selectors")
+    include_vector_registers: bool = Field(True, description="Whether to include vector/SIMD registers")
+    max_registers: int | None = Field(None, gt=0, description="Optional maximum register count")
+    value_format: Literal["hex", "natural"] = Field("hex", description="Value rendering mode")
+
+    @field_validator("register_numbers")
+    @classmethod
+    def validate_register_numbers(cls, value: list[int | str]) -> list[int]:
+        normalized: list[int] = []
+        for index, raw_number in enumerate(value):
+            normalized_number = _coerce_int_like(
+                raw_number,
+                field_name=f"register_numbers[{index}]",
+                minimum=0,
+                allow_none=False,
+            )
+            if normalized_number is None:
+                raise ValueError(f"register_numbers[{index}] is required")
+            normalized.append(normalized_number)
+        return normalized
+
+    @field_validator("register_names")
+    @classmethod
+    def validate_register_names(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for index, register_name in enumerate(value):
+            text = register_name.strip()
+            if not text:
+                raise ValueError(f"register_names[{index}] must be a non-empty string")
+            normalized.append(text)
+        return normalized
+
+
+class InspectMemoryQueryArgs(StrictArgsModel):
+    address: str = Field(..., description="Address expression to read from")
+    count: int = Field(..., gt=0, description="Number of addressable memory units to read")
+    offset: int = Field(0, ge=0, description="Optional offset relative to address")
+
+    @field_validator("address")
+    @classmethod
+    def validate_address(cls, value: str) -> str:
+        normalized = _normalize_optional_text(value, field_name="address")
+        if normalized is None:
+            raise ValueError("address is required")
+        return normalized
+
+
+class InspectDisassemblyQueryArgs(StrictArgsModel):
+    context: ThreadFrameContextArgs | None = Field(None, description="Optional thread/frame override")
+    location: LocationSelectorArgs
+    instruction_count: int = Field(32, gt=0, description="Upper bound on returned instructions")
+    mode: Literal["assembly", "mixed"] = Field(
+        "mixed",
+        description="Whether to request assembly only or mixed source/assembly output",
+    )
+
+
+class InspectSourceQueryArgs(StrictArgsModel):
+    context: ThreadFrameContextArgs | None = Field(None, description="Optional thread/frame override")
+    location: LocationSelectorArgs
+    context_before: int = Field(5, ge=0, description="Lines before the focal location")
+    context_after: int = Field(5, ge=0, description="Lines after the focal location")
+
+
+class InspectEvaluateAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["evaluate"] = Field(..., description="Evaluate one expression")
+    query: InspectEvaluateQueryArgs
+
+
+class InspectVariablesAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["variables"] = Field(..., description="Inspect variables in one context")
+    query: InspectVariablesQueryArgs = Field(
+        default_factory=lambda: InspectVariablesQueryArgs.model_validate({})
+    )
+
+
+class InspectRegistersAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["registers"] = Field(..., description="Inspect registers in one context")
+    query: InspectRegistersQueryArgs = Field(
+        default_factory=lambda: InspectRegistersQueryArgs.model_validate({})
+    )
+
+
+class InspectMemoryAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["memory"] = Field(..., description="Read target memory")
+    query: InspectMemoryQueryArgs
+
+
+class InspectDisassemblyAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["disassembly"] = Field(..., description="Inspect disassembly for one location")
+    query: InspectDisassemblyQueryArgs
+
+
+class InspectSourceAction(StrictArgsModel):
+    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    action: Literal["source"] = Field(..., description="Inspect source context for one location")
+    query: InspectSourceQueryArgs
+
+
+class InspectQueryArgs(
+    RootModel[
+        Annotated[
+            InspectEvaluateAction
+            | InspectVariablesAction
+            | InspectRegistersAction
+            | InspectMemoryAction
+            | InspectDisassemblyAction
+            | InspectSourceAction,
+            Field(discriminator="action"),
+        ]
+    ]
+):
+    """Public v2 request model for read-only inspection operations."""
+
+
 def build_tool_definitions() -> list[Tool]:
     """Build the MCP tool definitions exposed by this server."""
 
     return [
         Tool(
-            name="gdb_start_session",
+            name="gdb_session_start",
             description=(
                 "Start a new GDB debugging session. Can load an executable, core dump, "
                 "or run custom initialization commands. "
@@ -929,113 +1611,77 @@ def build_tool_definitions() -> list[Tool]:
             inputSchema=StartSessionArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_execute_command",
+            name="gdb_session_query",
             description=(
-                "Execute a GDB command. Supports both CLI and MI commands. "
-                "CLI commands (like 'info breakpoints', 'list', 'print x') are automatically "
-                "handled and their output is formatted for readability. "
-                "MI commands (starting with '-', like '-break-list', '-exec-run') return "
-                "structured data. "
-                "Supports an optional timeout_sec override. "
-                "NOTE: For calling functions in the target process, prefer using the dedicated "
-                "gdb_call_function tool instead of 'call' command, as it provides better "
-                "structured output and can be separately permissioned. "
-                "Common examples: 'info breakpoints', 'info threads', 'run', 'print variable', "
-                "'list main', 'disassemble func'. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
+                "Query session inventory or inspect one live session. "
+                "Use action='list' to enumerate active sessions or action='status' to inspect one session."
             ),
-            inputSchema=ExecuteCommandArgs.model_json_schema(),
+            inputSchema=SessionQueryArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_run",
-            description=(
-                "Run the currently loaded target in a structured way. "
-                "Use this instead of raw 'run' text when you want optional argv overrides "
-                "and a dedicated tool for launching execution. "
-                "If args are provided, they replace the inferior arguments for this run. "
-                "When wait_for_stop=false, this becomes the structured replacement for raw "
-                "'run&' and returns as soon as GDB acknowledges that execution is running. "
-                "Use gdb_wait_for_stop or gdb_interrupt to synchronize after a non-blocking run. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
-            ),
-            inputSchema=RunArgs.model_json_schema(),
+            name="gdb_session_manage",
+            description="Mutate session lifecycle state, such as stopping one live session.",
+            inputSchema=SessionManageArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_add_inferior",
+            name="gdb_inferior_query",
             description=(
-                "Create a new inferior as a structured operation instead of using raw "
-                "'add-inferior'. "
-                "Optionally associate an executable with the new inferior and choose whether "
-                "it should remain selected after the call."
+                "Query inferior inventory or the currently selected inferior inside one live session."
             ),
-            inputSchema=AddInferiorArgs.model_json_schema(),
+            inputSchema=InferiorQueryArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_remove_inferior",
+            name="gdb_inferior_manage",
             description=(
-                "Remove one inferior by its numeric inferior ID. "
-                "Use gdb_list_inferiors first when clients need to inspect the current "
-                "inferior inventory before deleting one."
+                "Create, remove, select, or reconfigure inferiors and fork-follow settings."
             ),
-            inputSchema=RemoveInferiorArgs.model_json_schema(),
+            inputSchema=InferiorManageArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_attach_process",
+            name="gdb_execution_manage",
             description=(
-                "Attach GDB to a running process by PID. "
-                "This is a privileged operation that should be separately permissioned from "
-                "general command execution when possible. "
-                "On success, the attached process is typically paused and inspectable. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
+                "Run, continue, interrupt, step, next, finish, or wait for stop events "
+                "using action-scoped execution payloads."
             ),
-            inputSchema=AttachProcessArgs.model_json_schema(),
+            inputSchema=ExecutionManageArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_list_inferiors",
-            description=(
-                "List the inferiors currently managed inside this GDB session. "
-                "Use this for fork-heavy or daemon/test scenarios where one debugger instance "
-                "needs to reason about multiple inferiors explicitly."
-            ),
-            inputSchema=SessionIdArgs.model_json_schema(),
+            name="gdb_breakpoint_query",
+            description="List breakpoints or fetch one breakpoint record by number.",
+            inputSchema=BreakpointQueryArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_select_inferior",
+            name="gdb_breakpoint_manage",
             description=(
-                "Select a specific inferior by its numeric inferior ID from gdb_list_inferiors. "
-                "This changes the current debugger context for later thread, frame, and "
-                "expression inspection commands."
+                "Create, delete, enable, disable, or update code breakpoints, watchpoints, "
+                "and catchpoints through one action-based tool."
             ),
-            inputSchema=InferiorSelectArgs.model_json_schema(),
+            inputSchema=BreakpointManageArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_set_follow_fork_mode",
-            description=(
-                "Set whether GDB follows the parent or the child after a fork or vfork. "
-                "Use this instead of raw 'set follow-fork-mode ...' strings when building "
-                "repeatable multi-process workflows."
-            ),
-            inputSchema=FollowForkModeArgs.model_json_schema(),
+            name="gdb_context_query",
+            description="List threads or inspect backtraces and frame information.",
+            inputSchema=ContextQueryArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_set_detach_on_fork",
-            description=(
-                "Set whether GDB detaches from the non-followed side of a fork. "
-                "Use this together with gdb_set_follow_fork_mode to build explicit "
-                "multi-inferior fork workflows without raw CLI commands."
-            ),
-            inputSchema=DetachOnForkArgs.model_json_schema(),
+            name="gdb_context_manage",
+            description="Select the current thread or frame in one live session.",
+            inputSchema=ContextManageArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_batch",
+            name="gdb_inspect_query",
             description=(
-                "Execute a structured sequence of existing session-scoped GDB tools atomically "
-                "within one session. "
+                "Evaluate expressions and inspect variables, registers, memory, source context, "
+                "or disassembly without using raw debugger commands."
+            ),
+            inputSchema=InspectQueryArgs.model_json_schema(),
+        ),
+        Tool(
+            name="gdb_workflow_batch",
+            description=(
+                "Execute a structured sequence of session-scoped v2 GDB tools atomically within one session. "
                 "Each step names an existing tool plus tool-specific arguments excluding "
-                "session_id, which is inherited from the enclosing batch request. "
-                "Use this to combine setup, execution, and inspection steps into one "
-                "workflow without interleaving from other requests on the same session. "
-                "Supports optional fail_fast behavior and optional per-step stop-event capture."
+                "session_id, which is inherited from the enclosing batch request."
             ),
             inputSchema=BatchArgs.model_json_schema(),
         ),
@@ -1057,7 +1703,7 @@ def build_tool_definitions() -> list[Tool]:
                 "Run fresh debugger sessions repeatedly until a failure predicate matches or the "
                 "iteration limit is reached. "
                 "Each iteration uses the same startup configuration, optional structured setup "
-                "steps, and one gdb_run invocation. "
+                "steps, and one gdb_execution_manage(action='run') invocation. "
                 "When a failure matches, the tool can automatically write a capture bundle to "
                 "disk and return the bundle metadata, including any explicitly requested memory "
                 "ranges."
@@ -1065,301 +1711,33 @@ def build_tool_definitions() -> list[Tool]:
             inputSchema=RunUntilFailureArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_get_status",
+            name="gdb_execute_command",
             description=(
-                "Get the current status of the GDB session. "
-                "Reports whether the GDB process is still alive, whether a target was "
-                "successfully loaded, whether the session still has an active controller, "
-                "and the inferior execution state (for example not_started, running, paused, exited). "
+                "Execute a GDB command. Supports both CLI and MI commands. "
+                "CLI commands (like 'info breakpoints', 'list', 'print x') are automatically "
+                "handled and their output is formatted for readability. "
+                "MI commands (starting with '-', like '-break-list', '-exec-run') return "
+                "structured data. "
+                "Supports an optional timeout_sec override. "
+                "NOTE: For calling functions in the target process, prefer using the dedicated "
+                "gdb_call_function tool instead of 'call' command, as it provides better "
+                "structured output and can be separately permissioned. "
+                "Common examples: 'info breakpoints', 'info threads', 'run', 'print variable', "
+                "'list main', 'disassemble func'. "
                 "Requires session_id parameter (obtained from gdb_start_session)."
             ),
-            inputSchema=SessionIdArgs.model_json_schema(),
+            inputSchema=ExecuteCommandArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_list_sessions",
+            name="gdb_attach_process",
             description=(
-                "List all currently registered GDB sessions with structured metadata. "
-                "This is intended for MCP clients that manage multiple sessions and need "
-                "an inventory view with lifecycle state, execution state, target info, "
-                "and other summary fields."
-            ),
-            inputSchema=ListSessionsArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_get_threads",
-            description=(
-                "Get information about all threads in the debugged process, including "
-                "thread IDs, states, and the current thread. "
+                "Attach GDB to a running process by PID. "
+                "This is a privileged operation that should be separately permissioned from "
+                "general command execution when possible. "
+                "On success, the attached process is typically paused and inspectable. "
                 "Requires session_id parameter (obtained from gdb_start_session)."
             ),
-            inputSchema=SessionIdArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_select_thread",
-            description=(
-                "Select a specific thread to make it the current thread. "
-                "After selecting a thread, subsequent commands like gdb_get_backtrace, "
-                "gdb_get_variables, and gdb_evaluate_expression will operate on this thread. "
-                "Use gdb_get_threads to see available thread IDs. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
-            ),
-            inputSchema=ThreadSelectArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_get_backtrace",
-            description=(
-                "Get the stack backtrace for a specific thread or the current thread. "
-                "Shows function calls, file locations, and line numbers. "
-                "The response thread_id reports the thread actually inspected. "
-                "If thread_id is provided, the original thread/frame selection is restored after the call. "
-                "The max_frames parameter is an upper bound on the number of frames returned. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
-            ),
-            inputSchema=GetBacktraceArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_select_frame",
-            description=(
-                "Select a specific stack frame to make it the current frame. "
-                "Frame 0 is the innermost (current) frame, higher numbers are outer frames. "
-                "After selecting a frame, commands like gdb_get_variables and gdb_evaluate_expression "
-                "will operate in the context of that frame. "
-                "Use gdb_get_backtrace to see available frames and their numbers. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
-            ),
-            inputSchema=FrameSelectArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_get_frame_info",
-            description=(
-                "Get information about the current stack frame. "
-                "Returns details about the currently selected frame including function name, "
-                "file location, line number, and address. "
-                "Use gdb_select_frame to change the current frame first if needed. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
-            ),
-            inputSchema=SessionIdArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_set_breakpoint",
-            description=(
-                "Set a breakpoint at a function, file:line, or address. "
-                "Supports conditional breakpoints and temporary breakpoints. "
-                "Source file paths containing spaces are supported. "
-                "Returns breakpoint details including number, address, and location. "
-                "Use gdb_list_breakpoints to verify breakpoints were set correctly. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
-            ),
-            inputSchema=SetBreakpointArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_set_watchpoint",
-            description=(
-                "Set a watchpoint on an expression and stop when the watched memory is written, "
-                "read, or accessed. "
-                "Use access='write' for ordinary watchpoints, 'read' for rwatch, and "
-                "'access' for awatch-style behavior. "
-                "If GDB reports a created watchpoint number but a refreshed breakpoint list "
-                "cannot confirm it, this tool returns an error."
-            ),
-            inputSchema=SetWatchpointArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_delete_watchpoint",
-            description=(
-                "Delete a watchpoint by its breakpoint number. "
-                "Watchpoints share the same numeric namespace as breakpoints in GDB, but this "
-                "tool makes the intent explicit for clients building watchpoint workflows."
-            ),
-            inputSchema=BreakpointNumberArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_set_catchpoint",
-            description=(
-                "Set a catchpoint for debugger events such as fork, vfork, exec, syscall, "
-                "C++ exception throw/catch, shared-library load/unload, or signals. "
-                "Use argument when the selected kind supports an extra filter such as a syscall "
-                "name, signal name, shared-library regex, or exception type regex. "
-                "If the created catchpoint number cannot be confirmed in a refreshed breakpoint "
-                "inventory, this tool returns an error."
-            ),
-            inputSchema=SetCatchpointArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_list_breakpoints",
-            description=(
-                "List all breakpoints as structured data with detailed information. "
-                "Returns an array of breakpoint objects, each containing: number, type, "
-                "enabled status, address, function name, source file, line number, and hit count. "
-                "Use this to verify breakpoints were set correctly, check which have been hit "
-                "(times field), and inspect their exact locations. "
-                "Much easier to filter and analyze than text output. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
-            ),
-            inputSchema=SessionIdArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_delete_breakpoint",
-            description=(
-                "Delete a breakpoint by its number. "
-                "Use gdb_list_breakpoints to see breakpoint numbers. "
-                "Once deleted, the breakpoint cannot be recovered. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
-            ),
-            inputSchema=BreakpointNumberArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_enable_breakpoint",
-            description=(
-                "Enable a previously disabled breakpoint by its number. "
-                "Enabled breakpoints will pause execution when hit. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
-            ),
-            inputSchema=BreakpointNumberArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_disable_breakpoint",
-            description=(
-                "Disable a breakpoint by its number without deleting it. "
-                "Disabled breakpoints are not hit but remain in the breakpoint list. "
-                "Use gdb_enable_breakpoint to re-enable it later. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
-            ),
-            inputSchema=BreakpointNumberArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_continue",
-            description=(
-                "Continue execution of the program until next breakpoint or completion. "
-                "IMPORTANT: Only use this when the program is PAUSED (e.g., at a breakpoint). "
-                "If the program hasn't been started yet, use gdb_execute_command with 'run' instead. "
-                "If the program is already running, this will fail - use gdb_interrupt to pause it first. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
-            ),
-            inputSchema=SessionIdArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_wait_for_stop",
-            description=(
-                "Wait for the inferior to stop without forcing the client to poll. "
-                "If the inferior is already stopped, the current stop state is returned immediately. "
-                "Optional stop_reasons let callers check whether the observed stop matched a "
-                "specific reason such as fork, exec, signal-received, syscall-entry, or "
-                "watchpoint-trigger."
-            ),
-            inputSchema=WaitForStopArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_step",
-            description=(
-                "Step into the next instruction (enters function calls). "
-                "IMPORTANT: Only works when program is PAUSED at a specific location. "
-                "Use this for single-stepping through code to debug line-by-line. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
-            ),
-            inputSchema=SessionIdArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_next",
-            description=(
-                "Step over to the next line (doesn't enter function calls). "
-                "IMPORTANT: Only works when program is PAUSED at a specific location. "
-                "Use this to step over function calls without entering them. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
-            ),
-            inputSchema=SessionIdArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_finish",
-            description=(
-                "Step out of the current frame and stop in the caller. "
-                "This is the structured replacement for raw 'finish' when the inferior is "
-                "paused in the frame you want to exit."
-            ),
-            inputSchema=FinishArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_interrupt",
-            description=(
-                "Interrupt (pause) a running program. Use this when: "
-                "1) The program is running and hasn't hit a breakpoint, "
-                "2) You want to pause execution to inspect state or set breakpoints, "
-                "3) The program appears stuck or you want to see where it is. "
-                "After interrupting, you can use other commands like gdb_get_backtrace, "
-                "gdb_get_variables, or gdb_continue. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
-            ),
-            inputSchema=SessionIdArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_evaluate_expression",
-            description=(
-                "Evaluate a C/C++ expression in the current context and return its value. "
-                "Can access variables, dereference pointers, call functions, etc. "
-                "Optional thread_id and frame parameters let callers inspect a specific context "
-                "without permanently changing the selected thread or frame. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
-            ),
-            inputSchema=EvaluateExpressionArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_read_memory",
-            description=(
-                "Read raw target memory bytes from an address expression using GDB's structured "
-                "MI memory-read command. "
-                "Returns one or more readable memory blocks, including gaps when parts of the "
-                "requested range are unreadable."
-            ),
-            inputSchema=ReadMemoryArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_disassemble",
-            description=(
-                "Return structured assembly or mixed source/assembly for one resolved location. "
-                "Supports current-context disassembly with optional thread/frame overrides, plus "
-                "function, address, address-range, and file/line selectors."
-            ),
-            inputSchema=DisassembleArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_get_source_context",
-            description=(
-                "Return structured source lines for one resolved location. "
-                "Supports current-context lookup with optional thread/frame overrides, plus "
-                "function, address, file/line, and file/range selectors."
-            ),
-            inputSchema=GetSourceContextArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_get_variables",
-            description=(
-                "Get local variables for a specific stack frame in a thread. "
-                "This is a read-only inspection call: the original thread/frame selection "
-                "is restored after the variables are collected. "
-                "The response thread_id reports the thread actually inspected. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
-            ),
-            inputSchema=GetVariablesArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_get_registers",
-            description=(
-                "Get CPU register values for the current frame. "
-                "Optional thread_id and frame parameters let callers inspect a specific context "
-                "without permanently changing the selected thread or frame. "
-                "Optional register_numbers/register_names filters, vector-register suppression, "
-                "and max_registers bounds help reduce large payloads. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
-            ),
-            inputSchema=GetRegistersArgs.model_json_schema(),
-        ),
-        Tool(
-            name="gdb_stop_session",
-            description=(
-                "Stop the current GDB session and clean up resources. "
-                "Requires session_id parameter (obtained from gdb_start_session)."
-            ),
-            inputSchema=SessionIdArgs.model_json_schema(),
+            inputSchema=AttachProcessArgs.model_json_schema(),
         ),
         Tool(
             name="gdb_call_function",

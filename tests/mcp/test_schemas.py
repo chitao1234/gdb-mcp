@@ -7,6 +7,7 @@ from gdb_mcp.mcp.schemas import (
     AttachProcessArgs,
     BatchArgs,
     BatchStepArgs,
+    BreakpointManageArgs,
     BreakpointNumberArgs,
     CallFunctionArgs,
     CaptureMemoryRangeArgs,
@@ -19,11 +20,13 @@ from gdb_mcp.mcp.schemas import (
     FrameSelectArgs,
     GetBacktraceArgs,
     GetSourceContextArgs,
+    InspectQueryArgs,
     ReadMemoryArgs,
     GetRegistersArgs,
     ThreadSelectArgs,
     InferiorSelectArgs,
     RemoveInferiorArgs,
+    SessionQueryArgs,
     SetCatchpointArgs,
     SetBreakpointArgs,
     SetWatchpointArgs,
@@ -35,6 +38,7 @@ from gdb_mcp.mcp.schemas import (
     RunArgs,
     StartSessionArgs,
     WaitForStopArgs,
+    build_tool_definitions,
 )
 
 
@@ -236,6 +240,111 @@ class TestSourceContextArgs:
             GetSourceContextArgs(session_id=1, function="main", file="main.c", line=12)
 
 
+class TestV2ToolDefinitions:
+    """Test cases for the clean-break v2 tool inventory."""
+
+    def test_build_tool_definitions_exports_v2_inventory(self):
+        """Tool definitions should only publish the approved v2 surface."""
+
+        tool_names = {tool.name for tool in build_tool_definitions()}
+
+        assert tool_names == {
+            "gdb_session_start",
+            "gdb_session_query",
+            "gdb_session_manage",
+            "gdb_inferior_query",
+            "gdb_inferior_manage",
+            "gdb_execution_manage",
+            "gdb_breakpoint_query",
+            "gdb_breakpoint_manage",
+            "gdb_context_query",
+            "gdb_context_manage",
+            "gdb_inspect_query",
+            "gdb_workflow_batch",
+            "gdb_capture_bundle",
+            "gdb_run_until_failure",
+            "gdb_execute_command",
+            "gdb_attach_process",
+            "gdb_call_function",
+        }
+
+
+class TestV2ActionArgs:
+    """Test cases for the consolidated v2 action models."""
+
+    def test_session_query_list_and_status_have_different_shapes(self):
+        """Session query should discriminate between global list and per-session status."""
+
+        list_args = SessionQueryArgs.model_validate({"action": "list", "query": {}})
+        status_args = SessionQueryArgs.model_validate(
+            {"session_id": 3, "action": "status", "query": {}}
+        )
+
+        assert list_args.root.action == "list"
+        assert status_args.root.action == "status"
+        assert status_args.root.session_id == 3
+
+        with pytest.raises(ValidationError):
+            SessionQueryArgs.model_validate({"action": "status", "query": {}})
+
+    def test_breakpoint_manage_create_accepts_watchpoint_shape(self):
+        """Breakpoint manage create should accept watchpoint payloads."""
+
+        args = BreakpointManageArgs.model_validate(
+            {
+                "session_id": 4,
+                "action": "create",
+                "breakpoint": {
+                    "kind": "watch",
+                    "expression": "state->ready",
+                    "access": "read",
+                },
+            }
+        )
+
+        assert args.root.action == "create"
+        assert args.root.breakpoint.kind == "watch"
+        assert args.root.breakpoint.access == "read"
+
+    def test_breakpoint_manage_update_rejects_missing_changes(self):
+        """Breakpoint update should require at least one requested change."""
+
+        with pytest.raises(ValidationError):
+            BreakpointManageArgs.model_validate(
+                {
+                    "session_id": 4,
+                    "action": "update",
+                    "breakpoint": {
+                        "number": 2,
+                    },
+                    "changes": {},
+                }
+            )
+
+    def test_inspect_query_source_accepts_file_range_location(self):
+        """Inspect source should accept a file-range location selector."""
+
+        args = InspectQueryArgs.model_validate(
+            {
+                "session_id": 9,
+                "action": "source",
+                "query": {
+                    "location": {
+                        "kind": "file_range",
+                        "file": "main.c",
+                        "start_line": 10,
+                        "end_line": 12,
+                    },
+                    "context_before": 0,
+                    "context_after": 0,
+                },
+            }
+        )
+
+        assert args.root.action == "source"
+        assert args.root.query.location.kind == "file_range"
+
+
 class TestAttachProcessArgs:
     """Test cases for AttachProcessArgs model."""
 
@@ -274,8 +383,11 @@ class TestBatchArgs:
             session_id=1,
             steps=[
                 BatchStepArgs(
-                    tool="gdb_execute_command",
-                    arguments={"command": "info threads"},
+                    tool="gdb_breakpoint_manage",
+                    arguments={
+                        "action": "disable",
+                        "breakpoint": {"number": 3},
+                    },
                 )
             ],
         )
@@ -295,47 +407,40 @@ class TestBatchArgs:
         """Batch step tools should be validated against the supported allowlist."""
 
         with pytest.raises(ValidationError) as exc_info:
-            BatchStepArgs(tool="gdb_stop_session", arguments={})
+            BatchStepArgs(tool="gdb_get_status", arguments={})
 
-        assert "gdb_stop_session" in str(exc_info.value)
+        assert "gdb_get_status" in str(exc_info.value)
 
     def test_batch_step_rejects_unknown_field(self):
         """Batch step definitions should reject unexpected keys."""
 
         with pytest.raises(ValidationError) as exc_info:
-            BatchStepArgs(tool="gdb_get_status", arguments={}, unexpected=True)
+            BatchStepArgs(tool="gdb_session_query", arguments={}, unexpected=True)
 
         assert "unexpected" in str(exc_info.value)
 
-    def test_batch_step_accepts_inferior_and_fork_tools(self):
-        """Batch steps should allow the new inferior and fork workflow tools."""
+    def test_batch_step_accepts_v2_tool_names(self):
+        """Batch steps should accept the consolidated v2 tool inventory."""
 
-        step = BatchStepArgs(tool="gdb_select_inferior", arguments={"inferior_id": 2})
+        step = BatchStepArgs(
+            tool="gdb_breakpoint_manage",
+            arguments={
+                "action": "disable",
+                "breakpoint": {"number": 3},
+            },
+        )
 
-        assert step.tool == "gdb_select_inferior"
-        assert step.arguments == {"inferior_id": 2}
-
-    def test_batch_step_accepts_phase_6_tools(self):
-        """Batch steps should allow watchpoint, memory, and wait workflow tools."""
-
-        step = BatchStepArgs(tool="gdb_wait_for_stop", arguments={"timeout_sec": 5})
-
-        assert step.tool == "gdb_wait_for_stop"
-        assert step.arguments == {"timeout_sec": 5}
-
-    def test_batch_step_accepts_tool_expansion_names(self):
-        """Batch steps should allow the new inferior, finish, and inspection tools."""
-
-        step = BatchStepArgs(tool="gdb_disassemble", arguments={"instruction_count": 8})
-
-        assert step.tool == "gdb_disassemble"
-        assert step.arguments == {"instruction_count": 8}
+        assert step.tool == "gdb_breakpoint_manage"
+        assert step.arguments == {
+            "action": "disable",
+            "breakpoint": {"number": 3},
+        }
 
     def test_batch_allows_string_step_shorthand(self):
         """Batch steps should allow shorthand tool-name strings."""
 
-        args = BatchArgs(session_id=1, steps=["gdb_get_status"])
-        assert args.steps == ["gdb_get_status"]
+        args = BatchArgs(session_id=1, steps=["gdb_session_query"])
+        assert args.steps == ["gdb_session_query"]
 
 
 class TestCaptureBundleArgs:
@@ -425,11 +530,11 @@ class TestRunUntilFailureArgs:
         """Campaign requests should allow step shorthand and shell-style run args."""
 
         args = RunUntilFailureArgs(
-            setup_steps=["gdb_get_status"],
+            setup_steps=["gdb_session_query"],
             run_args='--mode "fast path"',
             capture={"memory_ranges": ["&value:8"]},
         )
-        assert args.setup_steps == ["gdb_get_status"]
+        assert args.setup_steps == ["gdb_session_query"]
         assert args.run_args == '--mode "fast path"'
         assert args.capture.memory_ranges == ["&value:8"]
 
