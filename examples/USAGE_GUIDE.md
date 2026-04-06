@@ -2,6 +2,14 @@
 
 This guide shows how an AI assistant can drive the current v2 gdb-mcp interface. All tool names and payloads below match the implemented `*_query`, `*_manage`, and dedicated workflow tools described in [TOOLS.md](../TOOLS.md).
 
+The workflows in this guide are transport-independent. You can expose the same MCP tool surface over stdio with the default `gdb-mcp-server` launch or over streamable HTTP with:
+
+```bash
+gdb-mcp-server --transport streamable-http --host 127.0.0.1 --port 8000 --path /mcp
+```
+
+If you use streamable HTTP, point the client at `http://127.0.0.1:8000/mcp`.
+
 ## Prerequisites
 
 1. Build the sample program: `cd examples && make`

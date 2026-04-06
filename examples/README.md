@@ -6,6 +6,14 @@ This directory contains example programs and scripts to help you test and unders
 
 The examples and usage guide assume the current v2 interface described in [TOOLS.md](../TOOLS.md): `gdb_session_start`, action-based query/manage tool families, and dedicated workflow tools such as `gdb_workflow_batch`.
 
+The example prompts and payloads are transport-independent. Most local clients will launch `gdb-mcp-server` over stdio by default. If your client expects streamable HTTP instead, start:
+
+```bash
+gdb-mcp-server --transport streamable-http --host 127.0.0.1 --port 8000 --path /mcp
+```
+
+Then point the client at `http://127.0.0.1:8000/mcp`.
+
 ## Files
 
 - `sample_program.c` - A multi-threaded C program with various debugging scenarios

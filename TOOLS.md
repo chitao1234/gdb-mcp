@@ -4,6 +4,15 @@ This document describes the current v2 MCP interface. The public surface is a cl
 
 All examples in this file use current v2 tool names. Historical names appear only in the migration appendix at the end.
 
+## Transport Note
+
+The tool payloads and responses in this reference are transport-independent. You can expose the same MCP surface over:
+
+- stdio with the default `gdb-mcp-server` launch
+- streamable HTTP with `gdb-mcp-server --transport streamable-http --host 127.0.0.1 --port 8000 --path /mcp`
+
+Only the connection method changes. Tool names, arguments, and response envelopes stay the same.
+
 ## Response Conventions
 
 ### Direct Success Payloads

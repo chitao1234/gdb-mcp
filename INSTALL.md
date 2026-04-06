@@ -32,6 +32,27 @@ pipx install .
 
 That's it! No paths, no virtual environment management needed.
 
+### Transport Selection
+
+The `gdb-mcp-server` command now supports two transports:
+
+- stdio, which remains the default and is the normal choice for Claude Desktop and other spawn-based MCP clients
+- streamable HTTP, which is useful when a client expects a persistent HTTP endpoint
+
+Default stdio launch:
+
+```bash
+gdb-mcp-server
+```
+
+Explicit streamable HTTP launch:
+
+```bash
+gdb-mcp-server --transport streamable-http --host 127.0.0.1 --port 8000 --path /mcp
+```
+
+That command serves MCP at `http://127.0.0.1:8000/mcp`.
+
 ---
 
 ### Alternative: Using Virtual Environment
@@ -127,6 +148,14 @@ gdb-mcp-server  # Press Ctrl+C to stop
 
 You should see: `INFO:gdb_mcp.server:GDB MCP Server starting...`
 
+To verify the HTTP transport instead:
+
+```bash
+gdb-mcp-server --transport streamable-http --host 127.0.0.1 --port 8000 --path /mcp
+```
+
+Then connect an HTTP-capable MCP client to `http://127.0.0.1:8000/mcp`.
+
 **Troubleshooting:** If you get `ModuleNotFoundError: No module named 'mcp.types'` or similar import errors, the installation may not have fully completed. Wait a moment and try again, or run:
 ```bash
 pipx reinstall gdb-mcp-server
@@ -168,6 +197,14 @@ Or with explicit type (optional):
 ```
 
 That's it! No paths needed - pipx makes the command globally available.
+
+If your client uses streamable HTTP instead of stdio, start the server manually:
+
+```bash
+gdb-mcp-server --transport streamable-http --host 127.0.0.1 --port 8000 --path /mcp
+```
+
+Then point the client at `http://127.0.0.1:8000/mcp`.
 
 ### Step 6: Restart Claude Desktop and Test
 
@@ -230,6 +267,14 @@ This confirms:
 - ✓ The server can start successfully
 
 If you see errors, check the Troubleshooting section below.
+
+If you need streamable HTTP instead of stdio, launch:
+
+```bash
+/absolute/path/to/gdb-mcp/venv/bin/python -m gdb_mcp --transport streamable-http --host 127.0.0.1 --port 8000 --path /mcp
+```
+
+Then connect your MCP client to `http://127.0.0.1:8000/mcp`.
 
 ### Step 3: Configure Your MCP Client
 

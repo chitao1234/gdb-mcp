@@ -9,6 +9,14 @@ description: Use when Codex needs to debug a native program through gdb-mcp, inc
 
 Use gdb-mcp through its v2 structured interface: one startup tool, domain-specific query and manage families, and dedicated workflow tools for batch execution, capture, and failure campaigns. Prefer structured payloads over ad-hoc CLI transcripts, validate state after every transition, and preserve enough evidence that another agent can reproduce the session.
 
+The debugging workflow is transport-independent. Most local MCP clients launch `gdb-mcp-server` over stdio by default. If your client expects streamable HTTP instead, start:
+
+```bash
+gdb-mcp-server --transport streamable-http --host 127.0.0.1 --port 8000 --path /mcp
+```
+
+Then connect the client to `http://127.0.0.1:8000/mcp`. The tool names and payloads below stay the same across both transports.
+
 ## When to Use
 
 - Need to launch a program under GDB with explicit `args`, `env`, `working_dir`, or `init_commands`

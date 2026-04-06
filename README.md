@@ -64,6 +64,22 @@ Typical config file locations:
 
 For other MCP clients, see [INSTALL.md](INSTALL.md#step-5-configure-your-mcp-client).
 
+### Transport Selection
+
+`gdb-mcp-server` still defaults to stdio, which is the right choice for Claude Desktop and most local MCP client launches:
+
+```bash
+gdb-mcp-server
+```
+
+Use streamable HTTP only when the client expects an HTTP endpoint instead of spawning the server over stdio:
+
+```bash
+gdb-mcp-server --transport streamable-http --host 127.0.0.1 --port 8000 --path /mcp
+```
+
+That exposes the MCP endpoint at `http://127.0.0.1:8000/mcp`.
+
 ## Environment Variables
 
 ### `GDB_PATH`
