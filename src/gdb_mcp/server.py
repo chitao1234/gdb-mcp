@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
+import asyncio
 import logging
 import os
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from .mcp import (
     ServerRuntime,
@@ -13,6 +18,17 @@ from .mcp import (
 from .session.registry import SessionRegistry
 
 logger = logging.getLogger(__name__)
+TransportKind = Literal["stdio", "streamable-http"]
+
+
+@dataclass(frozen=True)
+class ServerCliConfig:
+    """Normalized CLI configuration for server startup."""
+
+    transport: TransportKind
+    host: str = "127.0.0.1"
+    port: int = 8000
+    path: str = "/mcp"
 
 
 def create_default_runtime() -> ServerRuntime:
@@ -22,18 +38,89 @@ def create_default_runtime() -> ServerRuntime:
     return create_server_runtime(session_manager_provider=lambda: session_manager, logger=logger)
 
 
-async def main() -> None:
+def _parse_http_path(value: str) -> str:
+    """Validate and normalize the configured HTTP route path."""
+
+    if not value.startswith("/") or "?" in value or "#" in value:
+        raise argparse.ArgumentTypeError(
+            "--path must start with '/' and cannot contain query strings or fragments"
+        )
+    return value
+
+
+def _parse_http_port(value: str) -> int:
+    """Validate the configured HTTP port."""
+
+    try:
+        port = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("--port must be an integer") from exc
+
+    if 0 <= port <= 65535:
+        return port
+
+    raise argparse.ArgumentTypeError("--port must be between 0 and 65535")
+
+
+def parse_server_config(argv: Sequence[str] | None = None) -> ServerCliConfig:
+    """Parse and validate transport-selection CLI flags."""
+
+    parser = argparse.ArgumentParser(prog="gdb-mcp-server")
+    parser.add_argument(
+        "--transport",
+        choices=("stdio", "streamable-http"),
+        default="stdio",
+    )
+    parser.add_argument("--host")
+    parser.add_argument("--port", type=_parse_http_port)
+    parser.add_argument("--path", type=_parse_http_path)
+    args = parser.parse_args(argv)
+
+    if args.transport == "stdio":
+        invalid_flags = [
+            flag
+            for flag, value in (
+                ("--host", args.host),
+                ("--port", args.port),
+                ("--path", args.path),
+            )
+            if value is not None
+        ]
+        if invalid_flags:
+            parser.error(f"{', '.join(invalid_flags)} require --transport streamable-http")
+        return ServerCliConfig(transport="stdio")
+
+    return ServerCliConfig(
+        transport="streamable-http",
+        host="127.0.0.1" if args.host is None else args.host,
+        port=8000 if args.port is None else args.port,
+        path="/mcp" if args.path is None else args.path,
+    )
+
+
+async def main(argv: Sequence[str] | None = None) -> None:
     """Main async entry point for the MCP server."""
 
-    await create_default_runtime().main()
+    config = parse_server_config(argv)
+    runtime = create_default_runtime()
+
+    if config.transport == "stdio":
+        await runtime.run_stdio()
+        return
+
+    await runtime.run_streamable_http(
+        host=config.host,
+        port=config.port,
+        path=config.path,
+    )
 
 
-def run_server() -> None:
+def run_server(argv: Sequence[str] | None = None) -> None:
     """Synchronous entry point for the MCP server."""
 
     configure_logging()
     _warn_if_shadowed_by_build_lib()
-    create_default_runtime().run_server()
+    asyncio.run(main(argv))
 
 
 def configure_logging() -> None:
