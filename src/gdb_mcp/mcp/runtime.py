@@ -11,7 +11,7 @@ from mcp.server import Server
 from mcp.types import TextContent, Tool
 
 from ..session.registry import SessionRegistry
-from .app import create_mcp_app, run_stdio_app
+from .app import create_mcp_app, run_stdio_app, run_streamable_http_app
 from .handlers import dispatch_tool_call
 from .schemas import build_tool_definitions
 
@@ -54,7 +54,7 @@ class ServerRuntime:
         if cleanup_results:
             self.logger.info("Stopped %s session(s) during shutdown", len(cleanup_results))
 
-    async def main(self) -> None:
+    async def run_stdio(self) -> None:
         """Run the MCP server over stdio."""
 
         await run_stdio_app(
@@ -63,8 +63,31 @@ class ServerRuntime:
             on_shutdown=self.shutdown_sessions,
         )
 
+    async def run_streamable_http(
+        self,
+        *,
+        host: str,
+        port: int,
+        path: str,
+    ) -> None:
+        """Run the MCP server over streamable HTTP."""
+
+        await run_streamable_http_app(
+            self.app,
+            host=host,
+            port=port,
+            path=path,
+            startup_message=self.startup_message,
+            on_shutdown=self.shutdown_sessions,
+        )
+
+    async def main(self) -> None:
+        """Run the default stdio transport for compatibility."""
+
+        await self.run_stdio()
+
     def run_server(self) -> None:
-        """Run the MCP server synchronously."""
+        """Run the default stdio transport synchronously."""
 
         asyncio.run(self.main())
 
