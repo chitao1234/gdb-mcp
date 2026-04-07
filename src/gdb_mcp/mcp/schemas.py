@@ -15,6 +15,35 @@ from pydantic import (
     model_validator,
 )
 
+from ..contracts import (
+    BatchStepToolName,
+    BreakpointAccess,
+    BreakpointEvent,
+    BreakpointKind,
+    BreakpointManageNumberActionName,
+    DisassemblyMode,
+    ExecutionWaitUntil,
+    InferiorFollowForkMode,
+    RegisterValueFormat,
+    TOOL_ATTACH_PROCESS,
+    TOOL_BREAKPOINT_MANAGE,
+    TOOL_BREAKPOINT_QUERY,
+    TOOL_CALL_FUNCTION,
+    TOOL_CAPTURE_BUNDLE,
+    TOOL_CONTEXT_MANAGE,
+    TOOL_CONTEXT_QUERY,
+    TOOL_EXECUTE_COMMAND,
+    TOOL_EXECUTION_MANAGE,
+    TOOL_INFERIOR_MANAGE,
+    TOOL_INFERIOR_QUERY,
+    TOOL_INSPECT_QUERY,
+    TOOL_RUN_UNTIL_FAILURE,
+    TOOL_SESSION_MANAGE,
+    TOOL_SESSION_QUERY,
+    TOOL_SESSION_START,
+    TOOL_WORKFLOW_BATCH,
+)
+
 
 class StrictArgsModel(BaseModel):
     """Base model for MCP request validation."""
@@ -72,38 +101,6 @@ def _normalize_optional_text(value: str | None, *, field_name: str) -> str | Non
     if not text:
         raise ValueError(f"{field_name} must be a non-empty string")
     return text
-
-
-BATCH_STEP_TOOL_NAMES = (
-    "gdb_session_query",
-    "gdb_inferior_query",
-    "gdb_inferior_manage",
-    "gdb_execution_manage",
-    "gdb_breakpoint_query",
-    "gdb_breakpoint_manage",
-    "gdb_context_query",
-    "gdb_context_manage",
-    "gdb_inspect_query",
-    "gdb_capture_bundle",
-    "gdb_execute_command",
-    "gdb_attach_process",
-    "gdb_call_function",
-)
-BatchStepToolName: TypeAlias = Literal[
-    "gdb_session_query",
-    "gdb_inferior_query",
-    "gdb_inferior_manage",
-    "gdb_execution_manage",
-    "gdb_breakpoint_query",
-    "gdb_breakpoint_manage",
-    "gdb_context_query",
-    "gdb_context_manage",
-    "gdb_inspect_query",
-    "gdb_capture_bundle",
-    "gdb_execute_command",
-    "gdb_attach_process",
-    "gdb_call_function",
-]
 
 
 class StartSessionArgs(StrictArgsModel):
@@ -242,7 +239,7 @@ class SetBreakpointArgs(StrictArgsModel):
 class SetWatchpointArgs(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     expression: str = Field(..., description="Expression to watch for memory access")
-    access: Literal["write", "read", "access"] = Field(
+    access: BreakpointAccess = Field(
         "write",
         description="Whether to stop on writes only, reads only, or any access",
     )
@@ -250,18 +247,7 @@ class SetWatchpointArgs(StrictArgsModel):
 
 class SetCatchpointArgs(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    kind: Literal[
-        "throw",
-        "rethrow",
-        "catch",
-        "exec",
-        "fork",
-        "vfork",
-        "load",
-        "unload",
-        "signal",
-        "syscall",
-    ] = Field(..., description="Debugger event kind to catch")
+    kind: BreakpointEvent = Field(..., description="Debugger event kind to catch")
     argument: Optional[str] = Field(
         None,
         description=(
@@ -339,7 +325,7 @@ class DisassembleArgs(StrictArgsModel):
     file: str | None = Field(None, description="Source file selector")
     line: int | str | None = Field(None, description="Source line selector")
     instruction_count: int = Field(32, gt=0, description="Upper bound on returned instructions")
-    mode: Literal["assembly", "mixed"] = Field(
+    mode: DisassemblyMode = Field(
         "mixed",
         description="Whether to request assembly only or mixed source/assembly output",
     )
@@ -541,7 +527,7 @@ class GetRegistersArgs(StrictArgsModel):
         gt=0,
         description="Optional upper bound on the number of returned register records.",
     )
-    value_format: Literal["hex", "natural"] = Field(
+    value_format: RegisterValueFormat = Field(
         "hex",
         description="Value rendering mode: 'hex' for MI format 'x', 'natural' for MI format 'N'.",
     )
@@ -620,7 +606,7 @@ class FollowForkModeArgs(StrictArgsModel):
     """Arguments for configuring follow-fork-mode."""
 
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    mode: Literal["parent", "child"] = Field(
+    mode: InferiorFollowForkMode = Field(
         ...,
         description="Whether GDB should follow the parent or child after fork/vfork.",
     )
@@ -973,7 +959,7 @@ class InferiorIdPayload(StrictArgsModel):
 
 
 class InferiorFollowForkPayload(StrictArgsModel):
-    mode: Literal["parent", "child"] = Field(
+    mode: InferiorFollowForkMode = Field(
         ...,
         description="Whether GDB should follow the parent or child after fork/vfork.",
     )
@@ -1029,7 +1015,7 @@ class InferiorManageArgs(
 
 
 class ExecutionWaitArgs(StrictArgsModel):
-    until: Literal["acknowledged", "stop"] = Field(
+    until: ExecutionWaitUntil = Field(
         "stop",
         description="Whether to return when GDB acknowledges running or when a stop is observed.",
     )
@@ -1151,7 +1137,7 @@ class BreakpointCodeCreateArgs(StrictArgsModel):
 class BreakpointWatchCreateArgs(StrictArgsModel):
     kind: Literal["watch"] = Field(..., description="Create a watchpoint")
     expression: str = Field(..., description="Expression to watch")
-    access: Literal["write", "read", "access"] = Field(
+    access: BreakpointAccess = Field(
         "write",
         description="Whether to stop on writes only, reads only, or any access",
     )
@@ -1167,18 +1153,7 @@ class BreakpointWatchCreateArgs(StrictArgsModel):
 
 class BreakpointCatchCreateArgs(StrictArgsModel):
     kind: Literal["catch"] = Field(..., description="Create a catchpoint")
-    event: Literal[
-        "throw",
-        "rethrow",
-        "catch",
-        "exec",
-        "fork",
-        "vfork",
-        "load",
-        "unload",
-        "signal",
-        "syscall",
-    ] = Field(..., description="Debugger event kind to catch")
+    event: BreakpointEvent = Field(..., description="Debugger event kind to catch")
     argument: str | None = Field(
         None,
         description="Optional event filter such as a syscall name or signal name.",
@@ -1216,7 +1191,7 @@ class BreakpointUpdateChangesArgs(StrictArgsModel):
 
 
 class BreakpointListQueryArgs(StrictArgsModel):
-    kinds: list[Literal["code", "watch", "catch"]] = Field(
+    kinds: list[BreakpointKind] = Field(
         default_factory=list,
         description="Optional breakpoint kinds to include",
     )
@@ -1242,7 +1217,10 @@ class BreakpointManageUpdateAction(StrictArgsModel):
 
 class BreakpointManageNumberAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["delete", "enable", "disable"] = Field(..., description="Mutate one existing breakpoint")
+    action: BreakpointManageNumberActionName = Field(
+        ...,
+        description="Mutate one existing breakpoint",
+    )
     breakpoint: BreakpointSelectorArgs
 
 
@@ -1466,7 +1444,7 @@ class InspectRegistersQueryArgs(StrictArgsModel):
     register_names: list[str] = Field(default_factory=list, description="Optional register-name selectors")
     include_vector_registers: bool = Field(True, description="Whether to include vector/SIMD registers")
     max_registers: int | None = Field(None, gt=0, description="Optional maximum register count")
-    value_format: Literal["hex", "natural"] = Field("hex", description="Value rendering mode")
+    value_format: RegisterValueFormat = Field("hex", description="Value rendering mode")
 
     @field_validator("register_numbers")
     @classmethod
@@ -1514,7 +1492,7 @@ class InspectDisassemblyQueryArgs(StrictArgsModel):
     context: ThreadFrameContextArgs | None = Field(None, description="Optional thread/frame override")
     location: LocationSelectorArgs
     instruction_count: int = Field(32, gt=0, description="Upper bound on returned instructions")
-    mode: Literal["assembly", "mixed"] = Field(
+    mode: DisassemblyMode = Field(
         "mixed",
         description="Whether to request assembly only or mixed source/assembly output",
     )
@@ -1584,19 +1562,19 @@ class InspectQueryArgs(
 
 
 BATCH_STEP_TOOL_MODELS: dict[str, type[BaseModel]] = {
-    "gdb_execute_command": ExecuteCommandArgs,
-    "gdb_session_query": SessionQueryArgs,
-    "gdb_inferior_query": InferiorQueryArgs,
-    "gdb_inferior_manage": InferiorManageArgs,
-    "gdb_execution_manage": ExecutionManageArgs,
-    "gdb_breakpoint_query": BreakpointQueryArgs,
-    "gdb_breakpoint_manage": BreakpointManageArgs,
-    "gdb_context_query": ContextQueryArgs,
-    "gdb_context_manage": ContextManageArgs,
-    "gdb_inspect_query": InspectQueryArgs,
-    "gdb_attach_process": AttachProcessArgs,
-    "gdb_capture_bundle": CaptureBundleArgs,
-    "gdb_call_function": CallFunctionArgs,
+    TOOL_EXECUTE_COMMAND: ExecuteCommandArgs,
+    TOOL_SESSION_QUERY: SessionQueryArgs,
+    TOOL_INFERIOR_QUERY: InferiorQueryArgs,
+    TOOL_INFERIOR_MANAGE: InferiorManageArgs,
+    TOOL_EXECUTION_MANAGE: ExecutionManageArgs,
+    TOOL_BREAKPOINT_QUERY: BreakpointQueryArgs,
+    TOOL_BREAKPOINT_MANAGE: BreakpointManageArgs,
+    TOOL_CONTEXT_QUERY: ContextQueryArgs,
+    TOOL_CONTEXT_MANAGE: ContextManageArgs,
+    TOOL_INSPECT_QUERY: InspectQueryArgs,
+    TOOL_ATTACH_PROCESS: AttachProcessArgs,
+    TOOL_CAPTURE_BUNDLE: CaptureBundleArgs,
+    TOOL_CALL_FUNCTION: CallFunctionArgs,
 }
 
 
@@ -1605,7 +1583,7 @@ def build_tool_definitions() -> list[Tool]:
 
     return [
         Tool(
-            name="gdb_session_start",
+            name=TOOL_SESSION_START,
             description=(
                 "Start a new GDB debugging session. Can load an executable, core dump, "
                 "or run custom initialization commands. "
@@ -1628,7 +1606,7 @@ def build_tool_definitions() -> list[Tool]:
             inputSchema=StartSessionArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_session_query",
+            name=TOOL_SESSION_QUERY,
             description=(
                 "Query session inventory or inspect one live session. "
                 "Use action='list' to enumerate active sessions or action='status' to inspect one session."
@@ -1636,26 +1614,26 @@ def build_tool_definitions() -> list[Tool]:
             inputSchema=SessionQueryArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_session_manage",
+            name=TOOL_SESSION_MANAGE,
             description="Mutate session lifecycle state, such as stopping one live session.",
             inputSchema=SessionManageArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_inferior_query",
+            name=TOOL_INFERIOR_QUERY,
             description=(
                 "Query inferior inventory or the currently selected inferior inside one live session."
             ),
             inputSchema=InferiorQueryArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_inferior_manage",
+            name=TOOL_INFERIOR_MANAGE,
             description=(
                 "Create, remove, select, or reconfigure inferiors and fork-follow settings."
             ),
             inputSchema=InferiorManageArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_execution_manage",
+            name=TOOL_EXECUTION_MANAGE,
             description=(
                 "Run, continue, interrupt, step, next, finish, or wait for stop events "
                 "using action-scoped execution payloads."
@@ -1663,12 +1641,12 @@ def build_tool_definitions() -> list[Tool]:
             inputSchema=ExecutionManageArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_breakpoint_query",
+            name=TOOL_BREAKPOINT_QUERY,
             description="List breakpoints or fetch one breakpoint record by number.",
             inputSchema=BreakpointQueryArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_breakpoint_manage",
+            name=TOOL_BREAKPOINT_MANAGE,
             description=(
                 "Create, delete, enable, disable, or update code breakpoints, watchpoints, "
                 "and catchpoints through one action-based tool."
@@ -1676,17 +1654,17 @@ def build_tool_definitions() -> list[Tool]:
             inputSchema=BreakpointManageArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_context_query",
+            name=TOOL_CONTEXT_QUERY,
             description="List threads or inspect backtraces and frame information.",
             inputSchema=ContextQueryArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_context_manage",
+            name=TOOL_CONTEXT_MANAGE,
             description="Select the current thread or frame in one live session.",
             inputSchema=ContextManageArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_inspect_query",
+            name=TOOL_INSPECT_QUERY,
             description=(
                 "Evaluate expressions and inspect variables, registers, memory, source context, "
                 "or disassembly without using raw debugger commands."
@@ -1694,7 +1672,7 @@ def build_tool_definitions() -> list[Tool]:
             inputSchema=InspectQueryArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_workflow_batch",
+            name=TOOL_WORKFLOW_BATCH,
             description=(
                 "Execute a structured sequence of session-scoped v2 GDB tools atomically within one session. "
                 "Each step names an existing tool plus tool-specific arguments excluding "
@@ -1703,7 +1681,7 @@ def build_tool_definitions() -> list[Tool]:
             inputSchema=BatchArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_capture_bundle",
+            name=TOOL_CAPTURE_BUNDLE,
             description=(
                 "Write a structured forensic capture bundle to disk for the current session. "
                 "The bundle includes a manifest plus JSON artifacts such as session status, "
@@ -1715,7 +1693,7 @@ def build_tool_definitions() -> list[Tool]:
             inputSchema=CaptureBundleArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_run_until_failure",
+            name=TOOL_RUN_UNTIL_FAILURE,
             description=(
                 "Run fresh debugger sessions repeatedly until a failure predicate matches or the "
                 "iteration limit is reached. "
@@ -1728,7 +1706,7 @@ def build_tool_definitions() -> list[Tool]:
             inputSchema=RunUntilFailureArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_execute_command",
+            name=TOOL_EXECUTE_COMMAND,
             description=(
                 "Execute a GDB command. Supports both CLI and MI commands. "
                 "CLI commands (like 'info breakpoints', 'list', 'print x') are automatically "
@@ -1746,7 +1724,7 @@ def build_tool_definitions() -> list[Tool]:
             inputSchema=ExecuteCommandArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_attach_process",
+            name=TOOL_ATTACH_PROCESS,
             description=(
                 "Attach GDB to a running process by PID. "
                 "This is a privileged operation that should be separately permissioned from "
@@ -1757,7 +1735,7 @@ def build_tool_definitions() -> list[Tool]:
             inputSchema=AttachProcessArgs.model_json_schema(),
         ),
         Tool(
-            name="gdb_call_function",
+            name=TOOL_CALL_FUNCTION,
             description=(
                 "Call a function in the target process. "
                 "WARNING: This is a privileged operation that executes code in the debugged program. "

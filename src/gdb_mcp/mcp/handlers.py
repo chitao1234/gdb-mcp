@@ -12,6 +12,25 @@ from typing import Protocol, TypeAlias, TypeVar, cast
 from pydantic import BaseModel, RootModel
 from mcp.types import TextContent
 
+from ..contracts import (
+    TOOL_ATTACH_PROCESS,
+    TOOL_BREAKPOINT_MANAGE,
+    TOOL_BREAKPOINT_QUERY,
+    TOOL_CALL_FUNCTION,
+    TOOL_CAPTURE_BUNDLE,
+    TOOL_CONTEXT_MANAGE,
+    TOOL_CONTEXT_QUERY,
+    TOOL_EXECUTE_COMMAND,
+    TOOL_EXECUTION_MANAGE,
+    TOOL_INFERIOR_MANAGE,
+    TOOL_INFERIOR_QUERY,
+    TOOL_INSPECT_QUERY,
+    TOOL_RUN_UNTIL_FAILURE,
+    TOOL_SESSION_MANAGE,
+    TOOL_SESSION_QUERY,
+    TOOL_SESSION_START,
+    TOOL_WORKFLOW_BATCH,
+)
 from ..domain import (
     MemoryCaptureRange,
     OperationError,
@@ -957,7 +976,7 @@ def _handle_session_query_for_session(session: SessionService, args: SessionQuer
     if isinstance(action_args, SessionQueryStatusAction):
         return _wrap_action_result("status", session.get_status())
     return OperationError(
-        message="gdb_session_query(action=list) is not valid inside gdb_workflow_batch",
+        message=f"{TOOL_SESSION_QUERY}(action=list) is not valid inside {TOOL_WORKFLOW_BATCH}",
         code="unsupported_combination",
     )
 
@@ -996,25 +1015,25 @@ def _build_batch_step_templates(
             return OperationError(
                 message=(
                     f"Batch step {index} ({step.tool}) must not include session_id. "
-                    "It is inherited from gdb_workflow_batch."
+                    f"It is inherited from {TOOL_WORKFLOW_BATCH}."
                 ),
                 code="validation_error",
             )
 
-        if step.tool == "gdb_session_query" and step.arguments.get("action") == "list":
+        if step.tool == TOOL_SESSION_QUERY and step.arguments.get("action") == "list":
             return OperationError(
-                message="gdb_session_query(action=list) is not valid inside gdb_workflow_batch",
+                message=f"{TOOL_SESSION_QUERY}(action=list) is not valid inside {TOOL_WORKFLOW_BATCH}",
                 code="unsupported_combination",
             )
 
-        if step.tool == "gdb_session_manage":
+        if step.tool == TOOL_SESSION_MANAGE:
             return OperationError(
-                message="gdb_session_manage is not valid inside gdb_workflow_batch",
+                message=f"{TOOL_SESSION_MANAGE} is not valid inside {TOOL_WORKFLOW_BATCH}",
                 code="unsupported_combination",
             )
 
         tool_spec = SESSION_TOOL_SPECS.get(step.tool)
-        if tool_spec is None or step.tool in {"gdb_workflow_batch", "gdb_run_until_failure"}:
+        if tool_spec is None or step.tool in {TOOL_WORKFLOW_BATCH, TOOL_RUN_UNTIL_FAILURE}:
             return OperationError(
                 message=f"Unsupported batch step tool: {step.tool}",
                 code="unknown_tool",
@@ -1050,20 +1069,20 @@ def _build_batch_step_templates(
 
 
 SESSION_TOOL_SPECS: dict[str, SessionToolSpec] = {
-    "gdb_execute_command": session_tool_spec(ExecuteCommandArgs, _handle_execute_command),
-    "gdb_session_query": session_tool_spec(SessionQueryArgs, _handle_session_query_for_session),
-    "gdb_inferior_query": session_tool_spec(InferiorQueryArgs, _handle_inferior_query),
-    "gdb_inferior_manage": session_tool_spec(InferiorManageArgs, _handle_inferior_manage),
-    "gdb_execution_manage": session_tool_spec(ExecutionManageArgs, _handle_execution_manage),
-    "gdb_breakpoint_query": session_tool_spec(BreakpointQueryArgs, _handle_breakpoint_query),
-    "gdb_breakpoint_manage": session_tool_spec(BreakpointManageArgs, _handle_breakpoint_manage),
-    "gdb_context_query": session_tool_spec(ContextQueryArgs, _handle_context_query),
-    "gdb_context_manage": session_tool_spec(ContextManageArgs, _handle_context_manage),
-    "gdb_inspect_query": session_tool_spec(InspectQueryArgs, _handle_inspect_query),
-    "gdb_workflow_batch": session_tool_spec(BatchArgs, _handle_batch),
-    "gdb_attach_process": session_tool_spec(AttachProcessArgs, _handle_attach_process),
-    "gdb_capture_bundle": session_tool_spec(CaptureBundleArgs, _handle_capture_bundle),
-    "gdb_call_function": session_tool_spec(CallFunctionArgs, _handle_call_function),
+    TOOL_EXECUTE_COMMAND: session_tool_spec(ExecuteCommandArgs, _handle_execute_command),
+    TOOL_SESSION_QUERY: session_tool_spec(SessionQueryArgs, _handle_session_query_for_session),
+    TOOL_INFERIOR_QUERY: session_tool_spec(InferiorQueryArgs, _handle_inferior_query),
+    TOOL_INFERIOR_MANAGE: session_tool_spec(InferiorManageArgs, _handle_inferior_manage),
+    TOOL_EXECUTION_MANAGE: session_tool_spec(ExecutionManageArgs, _handle_execution_manage),
+    TOOL_BREAKPOINT_QUERY: session_tool_spec(BreakpointQueryArgs, _handle_breakpoint_query),
+    TOOL_BREAKPOINT_MANAGE: session_tool_spec(BreakpointManageArgs, _handle_breakpoint_manage),
+    TOOL_CONTEXT_QUERY: session_tool_spec(ContextQueryArgs, _handle_context_query),
+    TOOL_CONTEXT_MANAGE: session_tool_spec(ContextManageArgs, _handle_context_manage),
+    TOOL_INSPECT_QUERY: session_tool_spec(InspectQueryArgs, _handle_inspect_query),
+    TOOL_WORKFLOW_BATCH: session_tool_spec(BatchArgs, _handle_batch),
+    TOOL_ATTACH_PROCESS: session_tool_spec(AttachProcessArgs, _handle_attach_process),
+    TOOL_CAPTURE_BUNDLE: session_tool_spec(CaptureBundleArgs, _handle_capture_bundle),
+    TOOL_CALL_FUNCTION: session_tool_spec(CallFunctionArgs, _handle_call_function),
 }
 
 
@@ -1079,13 +1098,13 @@ async def dispatch_tool_call(
     try:
         normalized_args = _normalize_arguments(arguments)
 
-        if name == "gdb_session_start":
+        if name == TOOL_SESSION_START:
             return serialize_result(_handle_start_session(normalized_args, session_manager))
-        if name == "gdb_session_query":
+        if name == TOOL_SESSION_QUERY:
             return serialize_result(_handle_session_query(normalized_args, session_manager))
-        if name == "gdb_session_manage":
+        if name == TOOL_SESSION_MANAGE:
             return serialize_result(_handle_session_manage(normalized_args, session_manager))
-        if name == "gdb_run_until_failure":
+        if name == TOOL_RUN_UNTIL_FAILURE:
             return serialize_result(_handle_run_until_failure(normalized_args, session_manager))
 
         tool_spec = SESSION_TOOL_SPECS.get(name)

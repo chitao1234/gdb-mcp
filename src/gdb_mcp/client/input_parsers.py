@@ -8,6 +8,13 @@ from typing import cast
 
 from pydantic import ValidationError
 
+from gdb_mcp.contracts import (
+    BatchStepToolName,
+    TOOL_RUN_UNTIL_FAILURE,
+    TOOL_SESSION_MANAGE,
+    TOOL_SESSION_QUERY,
+    TOOL_WORKFLOW_BATCH,
+)
 from gdb_mcp.mcp.schemas import BATCH_STEP_TOOL_MODELS
 
 from .inputs import (
@@ -201,13 +208,13 @@ def _validate_workflow_step(
             "it is inherited from the enclosing command"
         )
 
-    if tool_name == "gdb_session_query" and arguments.get("action") == "list":
-        raise CliUsageError("gdb_session_query(action=list) is not valid inside workflow steps")
+    if tool_name == TOOL_SESSION_QUERY and arguments.get("action") == "list":
+        raise CliUsageError(f"{TOOL_SESSION_QUERY}(action=list) is not valid inside workflow steps")
 
-    if tool_name == "gdb_session_manage":
-        raise CliUsageError("gdb_session_manage is not valid inside workflow steps")
+    if tool_name == TOOL_SESSION_MANAGE:
+        raise CliUsageError(f"{TOOL_SESSION_MANAGE} is not valid inside workflow steps")
 
-    if tool_name in {"gdb_workflow_batch", "gdb_run_until_failure"}:
+    if tool_name in {TOOL_WORKFLOW_BATCH, TOOL_RUN_UNTIL_FAILURE}:
         raise CliUsageError(f"{tool_name} is not valid inside workflow steps")
 
     model = BATCH_STEP_TOOL_MODELS.get(tool_name)
@@ -249,13 +256,13 @@ def parse_step_inputs(
         return None
 
     steps: list[SessionStepInput] = []
-    current_tool: str | None = None
+    current_tool: BatchStepToolName | None = None
     current_label: str | None = None
     current_arguments: dict[str, object] | None = None
 
     for option, value in normalized_events:
         if option == "--step":
-            current_tool = cast(str, value)
+            current_tool = cast(BatchStepToolName, value)
             current_label = None
             current_arguments = {}
             steps.append(

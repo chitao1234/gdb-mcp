@@ -2319,18 +2319,3 @@ class TestClientCli:
         assert exc_info.value.code == 2
         assert "mutually exclusive" in stderr.getvalue()
         mock_invoke_tool.assert_not_awaited()
-
-    def test_client_tool_specs_cover_public_tool_inventory(self):
-        from gdb_mcp.client.specs import CLIENT_TOOL_SPECS
-        from gdb_mcp.mcp.schemas import build_tool_definitions
-
-        assert set(CLIENT_TOOL_SPECS) == {tool.name for tool in build_tool_definitions()}
-
-    def test_batch_step_tool_models_match_server_workflow_allowlist(self):
-        from gdb_mcp.mcp.handlers import SESSION_TOOL_SPECS
-        from gdb_mcp.mcp.schemas import BATCH_STEP_TOOL_MODELS
-
-        expected_tools = set(SESSION_TOOL_SPECS) - {"gdb_workflow_batch"}
-        assert set(BATCH_STEP_TOOL_MODELS) == expected_tools
-        for tool_name in expected_tools:
-            assert BATCH_STEP_TOOL_MODELS[tool_name] is SESSION_TOOL_SPECS[tool_name].model

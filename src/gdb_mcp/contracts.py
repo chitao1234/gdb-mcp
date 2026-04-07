@@ -154,6 +154,8 @@ BREAKPOINT_QUERY_ACTIONS = ("list", "get")
 BreakpointQueryAction: TypeAlias = Literal["list", "get"]
 BREAKPOINT_MANAGE_ACTIONS = ("create", "update", "delete", "enable", "disable")
 BreakpointManageAction: TypeAlias = Literal["create", "update", "delete", "enable", "disable"]
+BREAKPOINT_MANAGE_NUMBER_ACTIONS = ("delete", "enable", "disable")
+BreakpointManageNumberActionName: TypeAlias = Literal["delete", "enable", "disable"]
 
 LOCATION_KINDS = (
     "current",
