@@ -6,10 +6,12 @@ from .execution import build_execution_manage_payload
 from .inferior import build_inferior_manage_payload, build_inferior_query_payload
 from .inspect import build_inspect_query_payload
 from .session import build_session_query_payload, build_session_start_payload
+from .workflow import build_run_until_failure_payload, build_workflow_batch_payload
 
 __all__ = [
     "build_breakpoint_manage_payload",
     "build_breakpoint_query_payload",
+    "build_run_until_failure_payload",
     "build_context_manage_payload",
     "build_context_query_payload",
     "build_execution_manage_payload",
@@ -18,4 +20,5 @@ __all__ = [
     "build_inspect_query_payload",
     "build_session_query_payload",
     "build_session_start_payload",
+    "build_workflow_batch_payload",
 ]

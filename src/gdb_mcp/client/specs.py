@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 import argparse
-from copy import deepcopy
 from dataclasses import dataclass
 from typing import Callable, Generic, TypeVar, cast
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from gdb_mcp.mcp.schemas import (
     AttachProcessArgs,
-    BATCH_STEP_TOOL_MODELS,
     BatchArgs,
     BreakpointManageArgs,
     BreakpointQueryArgs,
@@ -37,6 +35,7 @@ from .builders.execution import build_execution_manage_payload
 from .builders.inferior import build_inferior_manage_payload, build_inferior_query_payload
 from .builders.inspect import build_inspect_query_payload
 from .builders.session import build_session_query_payload, build_session_start_payload
+from .builders.workflow import build_run_until_failure_payload, build_workflow_batch_payload
 from .input_parsers import (
     parse_breakpoint_manage_input,
     parse_breakpoint_query_input,
@@ -46,8 +45,10 @@ from .input_parsers import (
     parse_inferior_manage_input,
     parse_inferior_query_input,
     parse_inspect_query_input,
+    parse_run_until_failure_input,
     parse_session_query_input,
     parse_session_start_input,
+    parse_workflow_batch_input,
 )
 from .inputs import (
     BreakpointCreateInput,
@@ -60,19 +61,18 @@ from .inputs import (
     InferiorQueryInput,
     InspectQueryInput,
     LocationInput,
+    RunUntilFailureInput,
     SessionQueryInput,
     SessionStartInput,
+    WorkflowBatchInput,
 )
 from .parsers import (
     AppendTaggedValue,
     add_boolean_flag,
-    assign_dotted_value,
-    collapse_key_value_entries,
     CliUsageError,
     dotted_assignment,
     ensure_action_fields,
     format_cli_flag,
-    format_validation_error,
     key_value_entry,
     validate_model_payload,
 )
@@ -139,11 +139,6 @@ _LOCATION_KIND_CHOICES = [
     "file-line",
     "file-range",
 ]
-_WORKFLOW_STEP_OPTION_MAP = {
-    "--setup-step": "--step",
-    "--setup-step-label": "--step-label",
-    "--setup-step-arg": "--step-arg",
-}
 
 
 def _parse_namespace(namespace: argparse.Namespace) -> argparse.Namespace:
@@ -195,157 +190,6 @@ def _reject_fields(
     if unexpected:
         joined = ", ".join(sorted(unexpected))
         raise CliUsageError(f"{joined} not valid with {context}")
-
-
-def _validate_workflow_step(
-    tool_name: str,
-    arguments: dict[str, object],
-    *,
-    index: int,
-) -> dict[str, object]:
-    if "session_id" in arguments:
-        raise CliUsageError(
-            f"Workflow step {index} ({tool_name}) must not include session_id; "
-            "it is inherited from the enclosing command"
-        )
-
-    if tool_name == "gdb_session_query" and arguments.get("action") == "list":
-        raise CliUsageError("gdb_session_query(action=list) is not valid inside workflow steps")
-
-    if tool_name == "gdb_session_manage":
-        raise CliUsageError("gdb_session_manage is not valid inside workflow steps")
-
-    if tool_name in {"gdb_workflow_batch", "gdb_run_until_failure"}:
-        raise CliUsageError(f"{tool_name} is not valid inside workflow steps")
-
-    model = BATCH_STEP_TOOL_MODELS.get(tool_name)
-    if model is None:
-        raise CliUsageError(f"Unsupported workflow step tool: {tool_name}")
-
-    try:
-        validated = _validate_workflow_step_payload(model, {"session_id": 1, **arguments})
-    except ValidationError as exc:
-        raise CliUsageError(
-            f"Invalid workflow step {index} ({tool_name}): {format_validation_error(exc)}"
-        ) from exc
-
-    validated.pop("session_id", None)
-    return validated
-
-
-def _coerce_single_item_list_path(
-    payload: dict[str, object],
-    path: tuple[object, ...],
-    *,
-    action: str | None,
-) -> bool:
-    normalized_path: list[str] = []
-    for position, segment in enumerate(path):
-        if not isinstance(segment, str):
-            return False
-        if position == 0 and action is not None and segment == action:
-            continue
-        normalized_path.append(segment)
-
-    if not normalized_path:
-        return False
-
-    current: object = payload
-    for segment in normalized_path[:-1]:
-        if not isinstance(current, dict):
-            return False
-        current = current.get(segment)
-        if current is None:
-            return False
-
-    if not isinstance(current, dict):
-        return False
-
-    leaf = normalized_path[-1]
-    existing = current.get(leaf)
-    if existing is None or isinstance(existing, list):
-        return False
-
-    current[leaf] = [existing]
-    return True
-
-
-def _validate_workflow_step_payload(
-    model: type[BaseModel],
-    payload: dict[str, object],
-) -> dict[str, object]:
-    candidate = cast(dict[str, object], deepcopy(payload))
-
-    while True:
-        try:
-            return validate_model_payload(model, candidate)
-        except ValidationError as exc:
-            errors = exc.errors()
-            if not errors or any(error.get("type") != "list_type" for error in errors):
-                raise
-
-            action_value = candidate.get("action")
-            action: str | None = action_value if isinstance(action_value, str) else None
-            changed = False
-            for error in errors:
-                location = cast(tuple[object, ...], tuple(error.get("loc", ())))
-                changed = _coerce_single_item_list_path(
-                    candidate,
-                    location,
-                    action=action,
-                ) or changed
-
-            if not changed:
-                raise
-
-
-def _build_step_list(step_events: list[tuple[str, object]] | None) -> list[dict[str, object]]:
-    if not step_events:
-        raise CliUsageError("At least one --step is required")
-
-    steps: list[dict[str, object]] = []
-    current_step: dict[str, object] | None = None
-
-    for option, value in step_events:
-        if option == "--step":
-            current_step = {"tool": value, "arguments": {}}
-            steps.append(current_step)
-            continue
-
-        if current_step is None:
-            raise CliUsageError(f"{option} requires a preceding --step")
-
-        if option == "--step-label":
-            current_step["label"] = value
-            continue
-
-        if option == "--step-arg":
-            path, scalar = cast(tuple[str, object], value)
-            arguments = cast(dict[str, object], current_step["arguments"])
-            assign_dotted_value(arguments, path, scalar)
-
-    validated_steps: list[dict[str, object]] = []
-    for index, step in enumerate(steps):
-        step_arguments = cast(dict[str, object], step["arguments"])
-        validated_step = {
-            "tool": step["tool"],
-            "arguments": _validate_workflow_step(
-                str(step["tool"]),
-                dict(step_arguments),
-                index=index,
-            ),
-        }
-        if "label" in step:
-            validated_step["label"] = step["label"]
-        validated_steps.append(validated_step)
-
-    return validated_steps
-
-
-def _remap_step_events(step_events: list[tuple[str, object]] | None) -> list[tuple[str, object]] | None:
-    if step_events is None:
-        return None
-    return [(_WORKFLOW_STEP_OPTION_MAP[option], value) for option, value in step_events]
 
 
 def _configure_session_start(parser: argparse.ArgumentParser) -> None:
@@ -1315,15 +1159,8 @@ def _configure_workflow_batch(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_workflow_batch(namespace: argparse.Namespace) -> dict[str, object]:
-    payload: dict[str, object] = {
-        "session_id": namespace.session_id,
-        "steps": _build_step_list(getattr(namespace, "step_events", None)),
-    }
-    if hasattr(namespace, "fail_fast"):
-        payload["fail_fast"] = namespace.fail_fast
-    if hasattr(namespace, "capture_stop_events"):
-        payload["capture_stop_events"] = namespace.capture_stop_events
+def _build_workflow_batch(typed_input: WorkflowBatchInput) -> dict[str, object]:
+    payload = build_workflow_batch_payload(typed_input)
     return validate_model_payload(BatchArgs, payload)
 
 
@@ -1465,158 +1302,8 @@ def _configure_run_until_failure(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_run_until_failure(namespace: argparse.Namespace) -> dict[str, object]:
-    setup_step_events = getattr(namespace, "setup_step_events", None)
-    startup: dict[str, object] = {
-        **({"program": namespace.startup_program} if hasattr(namespace, "startup_program") else {}),
-        **({"args": namespace.startup_args} if namespace.startup_args else {}),
-        **(
-            {"init_commands": namespace.startup_init_commands}
-            if namespace.startup_init_commands
-            else {}
-        ),
-        **(
-            {"env": collapse_key_value_entries(namespace.startup_env)}
-            if namespace.startup_env
-            else {}
-        ),
-        **({"gdb_path": namespace.startup_gdb_path} if hasattr(namespace, "startup_gdb_path") else {}),
-        **(
-            {"working_dir": namespace.startup_working_dir}
-            if hasattr(namespace, "startup_working_dir")
-            else {}
-        ),
-        **({"core": namespace.startup_core} if hasattr(namespace, "startup_core") else {}),
-    }
-    failure: dict[str, object] = {
-        **(
-            {"failure_on_error": namespace.failure_on_error}
-            if hasattr(namespace, "failure_on_error")
-            else {}
-        ),
-        **(
-            {"failure_on_timeout": namespace.failure_on_timeout}
-            if hasattr(namespace, "failure_on_timeout")
-            else {}
-        ),
-        **(
-            {"stop_reasons": namespace.failure_stop_reasons}
-            if hasattr(namespace, "failure_stop_reasons")
-            else {}
-        ),
-        **(
-            {"execution_states": namespace.failure_execution_states}
-            if hasattr(namespace, "failure_execution_states")
-            else {}
-        ),
-        **(
-            {"exit_codes": namespace.failure_exit_codes}
-            if hasattr(namespace, "failure_exit_codes")
-            else {}
-        ),
-        **(
-            {"result_text_regex": namespace.failure_result_text_regex}
-            if hasattr(namespace, "failure_result_text_regex")
-            else {}
-        ),
-    }
-    capture: dict[str, object] = {
-        **(
-            {"enabled": namespace.capture_enabled}
-            if hasattr(namespace, "capture_enabled")
-            else {}
-        ),
-        **(
-            {"output_dir": namespace.capture_output_dir}
-            if hasattr(namespace, "capture_output_dir")
-            else {}
-        ),
-        **(
-            {"bundle_name_prefix": namespace.capture_bundle_name_prefix}
-            if hasattr(namespace, "capture_bundle_name_prefix")
-            else {}
-        ),
-        **(
-            {"bundle_name": namespace.capture_bundle_name}
-            if hasattr(namespace, "capture_bundle_name")
-            else {}
-        ),
-        **(
-            {"expressions": namespace.capture_expressions}
-            if namespace.capture_expressions
-            else {}
-        ),
-        **(
-            {"memory_ranges": namespace.capture_memory_ranges}
-            if namespace.capture_memory_ranges
-            else {}
-        ),
-        **(
-            {"max_frames": namespace.capture_max_frames}
-            if hasattr(namespace, "capture_max_frames")
-            else {}
-        ),
-        **(
-            {"include_threads": namespace.capture_include_threads}
-            if hasattr(namespace, "capture_include_threads")
-            else {}
-        ),
-        **(
-            {"include_backtraces": namespace.capture_include_backtraces}
-            if hasattr(namespace, "capture_include_backtraces")
-            else {}
-        ),
-        **(
-            {"include_frame": namespace.capture_include_frame}
-            if hasattr(namespace, "capture_include_frame")
-            else {}
-        ),
-        **(
-            {"include_variables": namespace.capture_include_variables}
-            if hasattr(namespace, "capture_include_variables")
-            else {}
-        ),
-        **(
-            {"include_registers": namespace.capture_include_registers}
-            if hasattr(namespace, "capture_include_registers")
-            else {}
-        ),
-        **(
-            {"include_transcript": namespace.capture_include_transcript}
-            if hasattr(namespace, "capture_include_transcript")
-            else {}
-        ),
-        **(
-            {"include_stop_history": namespace.capture_include_stop_history}
-            if hasattr(namespace, "capture_include_stop_history")
-            else {}
-        ),
-    }
-    payload: dict[str, object] = {
-        **({"startup": startup} if startup else {}),
-        **(
-            {
-                "setup_steps": _build_step_list(
-                    _remap_step_events(setup_step_events)
-                )
-            }
-            if setup_step_events
-            else {}
-        ),
-        **({"run_args": namespace.run_args} if namespace.run_args else {}),
-        **(
-            {"run_timeout_sec": namespace.run_timeout_sec}
-            if hasattr(namespace, "run_timeout_sec")
-            else {}
-        ),
-        **(
-            {"max_iterations": namespace.max_iterations}
-            if hasattr(namespace, "max_iterations")
-            else {}
-        ),
-        **({"failure": failure} if failure else {}),
-        **({"capture": capture} if capture else {}),
-    }
+def _build_run_until_failure(typed_input: RunUntilFailureInput) -> dict[str, object]:
+    payload = build_run_until_failure_payload(typed_input)
     return validate_model_payload(RunUntilFailureArgs, payload)
 
 
@@ -1715,7 +1402,7 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
     "gdb_workflow_batch": _register_tool_spec(ToolCliSpec(
         name="gdb_workflow_batch",
         configure_parser=_configure_workflow_batch,
-        parse_input=_parse_namespace,
+        parse_input=parse_workflow_batch_input,
         build_arguments=_build_workflow_batch,
         render_human=render_mapping,
     )),
@@ -1736,7 +1423,7 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
     "gdb_run_until_failure": _register_tool_spec(ToolCliSpec(
         name="gdb_run_until_failure",
         configure_parser=_configure_run_until_failure,
-        parse_input=_parse_namespace,
+        parse_input=parse_run_until_failure_input,
         build_arguments=_build_run_until_failure,
         render_human=render_mapping,
     )),

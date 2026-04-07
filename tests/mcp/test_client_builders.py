@@ -16,6 +16,10 @@ from gdb_mcp.client.builders.session import (
     build_session_query_payload,
     build_session_start_payload,
 )
+from gdb_mcp.client.builders.workflow import (
+    build_run_until_failure_payload,
+    build_workflow_batch_payload,
+)
 from gdb_mcp.client.input_parsers import (
     parse_session_query_input,
     parse_session_start_input,
@@ -31,6 +35,9 @@ from gdb_mcp.client.inputs import (
     BreakpointQueryInput,
     InspectQueryInput,
     LocationInput,
+    RunUntilFailureInput,
+    SessionStepInput,
+    WorkflowBatchInput,
 )
 
 
@@ -265,5 +272,99 @@ def test_build_inspect_source_payload() -> None:
             "location": {"kind": "file_line", "file": "src/main.c", "line": 42},
             "context_before": 2,
             "context_after": 3,
+        },
+    }
+
+
+def test_build_workflow_batch_payload_from_typed_steps() -> None:
+    typed_input = WorkflowBatchInput(
+        session_id=7,
+        steps=[
+            SessionStepInput(
+                tool="gdb_context_query",
+                label="stack",
+                arguments={"action": "backtrace", "query": {"max_frames": 20}},
+            )
+        ],
+        fail_fast=False,
+        capture_stop_events=True,
+    )
+
+    assert build_workflow_batch_payload(typed_input) == {
+        "session_id": 7,
+        "steps": [
+            {
+                "tool": "gdb_context_query",
+                "label": "stack",
+                "arguments": {"action": "backtrace", "query": {"max_frames": 20}},
+            }
+        ],
+        "fail_fast": False,
+        "capture_stop_events": True,
+    }
+
+
+def test_build_run_until_failure_payload_from_typed_input() -> None:
+    typed_input = RunUntilFailureInput(
+        startup_program="/bin/true",
+        startup_args=[],
+        startup_init_commands=["set pagination off"],
+        startup_env=None,
+        startup_gdb_path=None,
+        startup_working_dir=None,
+        startup_core=None,
+        setup_steps=[],
+        run_args=[],
+        run_timeout_sec=15,
+        max_iterations=2,
+        failure_on_error=True,
+        failure_on_timeout=True,
+        failure_stop_reasons=["signal-received"],
+        failure_execution_states=[],
+        failure_exit_codes=[],
+        failure_result_text_regex=None,
+        capture_enabled=True,
+        capture_output_dir=None,
+        capture_bundle_name_prefix=None,
+        capture_bundle_name=None,
+        capture_expressions=["errno"],
+        capture_memory_ranges=["&errno:8"],
+        capture_max_frames=100,
+        capture_include_threads=True,
+        capture_include_backtraces=True,
+        capture_include_frame=True,
+        capture_include_variables=True,
+        capture_include_registers=True,
+        capture_include_transcript=True,
+        capture_include_stop_history=True,
+    )
+
+    assert build_run_until_failure_payload(typed_input) == {
+        "startup": {
+            "program": "/bin/true",
+            "init_commands": ["set pagination off"],
+        },
+        "setup_steps": [],
+        "run_timeout_sec": 15,
+        "max_iterations": 2,
+        "failure": {
+            "failure_on_error": True,
+            "failure_on_timeout": True,
+            "stop_reasons": ["signal-received"],
+            "execution_states": [],
+            "exit_codes": [],
+        },
+        "capture": {
+            "enabled": True,
+            "expressions": ["errno"],
+            "memory_ranges": ["&errno:8"],
+            "max_frames": 100,
+            "include_threads": True,
+            "include_backtraces": True,
+            "include_frame": True,
+            "include_variables": True,
+            "include_registers": True,
+            "include_transcript": True,
+            "include_stop_history": True,
         },
     }

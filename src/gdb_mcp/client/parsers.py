@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 from collections.abc import Iterable
 from typing import cast
 
@@ -134,6 +135,72 @@ def validate_model_payload(model: type[BaseModel], payload: dict[str, object]) -
     validated = model.model_validate(payload)
     dumped = validated.model_dump(mode="python", exclude_none=True)
     return cast(dict[str, object], dumped)
+
+
+def _coerce_single_item_list_path(
+    payload: dict[str, object],
+    path: tuple[object, ...],
+    *,
+    action: str | None,
+) -> bool:
+    normalized_path: list[str] = []
+    for position, segment in enumerate(path):
+        if not isinstance(segment, str):
+            return False
+        if position == 0 and action is not None and segment == action:
+            continue
+        normalized_path.append(segment)
+
+    if not normalized_path:
+        return False
+
+    current: object = payload
+    for segment in normalized_path[:-1]:
+        if not isinstance(current, dict):
+            return False
+        current = current.get(segment)
+        if current is None:
+            return False
+
+    if not isinstance(current, dict):
+        return False
+
+    leaf = normalized_path[-1]
+    existing = current.get(leaf)
+    if existing is None or isinstance(existing, list):
+        return False
+
+    current[leaf] = [existing]
+    return True
+
+
+def validate_model_payload_with_list_coercion(
+    model: type[BaseModel],
+    payload: dict[str, object],
+) -> dict[str, object]:
+    """Validate one payload, retrying by widening scalars into single-item lists when needed."""
+
+    candidate = cast(dict[str, object], deepcopy(payload))
+
+    while True:
+        try:
+            return validate_model_payload(model, candidate)
+        except ValidationError as exc:
+            errors = exc.errors()
+            if not errors or any(error.get("type") != "list_type" for error in errors):
+                raise
+
+            action_value = candidate.get("action")
+            action: str | None = action_value if isinstance(action_value, str) else None
+            changed = False
+            for error in errors:
+                location = cast(tuple[object, ...], tuple(error.get("loc", ())))
+                changed = (
+                    _coerce_single_item_list_path(candidate, location, action=action) or changed
+                )
+
+            if not changed:
+                raise
 
 
 def format_validation_error(exc: ValidationError) -> str:

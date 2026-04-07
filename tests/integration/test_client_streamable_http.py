@@ -185,6 +185,61 @@ def test_cli_calls_real_streamable_http_workflow_batch_with_nested_step_args(
 
 
 @pytest.mark.integration
+def test_cli_calls_real_streamable_http_workflow_batch_with_single_list_step_arg(
+    integration_runtime,
+    compile_program,
+    start_session_result,
+):
+    program = compile_program(
+        TEST_CPP_PROGRAM,
+        filename="cli_single_list_batch.cpp",
+        compiler="g++",
+    )
+    session_id = start_session_result(program)["session_id"]
+    app = create_streamable_http_app(
+        integration_runtime.app,
+        path="/mcp",
+        on_shutdown=integration_runtime.shutdown_sessions,
+    )
+    stdout = StringIO()
+
+    async def exercise() -> tuple[int, dict[str, object]]:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://testserver",
+            ) as http_client:
+                exit_code = await main(
+                    [
+                        "--server-url",
+                        "http://testserver/mcp",
+                        "--json",
+                        "gdb_workflow_batch",
+                        "--session-id",
+                        str(session_id),
+                        "--step",
+                        "gdb_breakpoint_query",
+                        "--step-arg",
+                        "action=list",
+                        "--step-arg",
+                        "query.kinds=code",
+                    ],
+                    stdout=stdout,
+                    http_client=http_client,
+                )
+
+        return exit_code, json.loads(stdout.getvalue())
+
+    exit_code, payload = asyncio.run(exercise())
+
+    assert exit_code == 0
+    assert payload["status"] == "success"
+    assert payload["count"] == 1
+    assert payload["steps"][0]["tool"] == "gdb_breakpoint_query"
+    assert payload["steps"][0]["action"] == "list"
+
+
+@pytest.mark.integration
 def test_cli_calls_real_streamable_http_run_until_failure(
     integration_runtime,
     compile_program,

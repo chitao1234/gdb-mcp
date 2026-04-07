@@ -1610,12 +1610,13 @@ class TestClientCli:
             ],
             parser=build_parser(),
         )
+        typed_input = client_specs.parse_workflow_batch_input(args)
 
         with patch(
             "gdb_mcp.client.specs.validate_model_payload",
             side_effect=lambda _model, payload: payload,
         ):
-            payload = client_specs._build_workflow_batch(args)
+            payload = client_specs._build_workflow_batch(typed_input)
 
         assert payload == {
             "session_id": 7,
@@ -1623,7 +1624,7 @@ class TestClientCli:
                 {
                     "tool": "gdb_context_query",
                     "label": "stack",
-                    "arguments": {"action": "backtrace", "query": {"max_frames": "20"}},
+                    "arguments": {"action": "backtrace", "query": {"max_frames": 20}},
                 }
             ],
             "fail_fast": False,
@@ -2144,12 +2145,13 @@ class TestClientCli:
             ],
             parser=build_parser(),
         )
+        typed_input = client_specs.parse_run_until_failure_input(args)
 
         with patch(
             "gdb_mcp.client.specs.validate_model_payload",
             side_effect=lambda _model, payload: payload,
         ):
-            payload = client_specs._build_run_until_failure(args)
+            payload = client_specs._build_run_until_failure(typed_input)
 
         assert payload == {
             "startup": {"program": "/bin/true"},
