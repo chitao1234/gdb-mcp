@@ -3,65 +3,27 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
 
-
-SessionQueryAction = Literal["list", "status"]
-InferiorQueryAction = Literal["list", "current"]
-InferiorManageAction = Literal[
-    "create",
-    "remove",
-    "select",
-    "set_follow_fork_mode",
-    "set_detach_on_fork",
-]
-InferiorFollowForkMode = Literal["parent", "child"]
-ExecutionWaitUntil = Literal["acknowledged", "stop"]
-ExecutionManageAction = Literal[
-    "run",
-    "continue",
-    "interrupt",
-    "step",
-    "next",
-    "finish",
-    "wait_for_stop",
-]
-ContextQueryAction = Literal["threads", "backtrace", "frame"]
-ContextManageAction = Literal["select_thread", "select_frame"]
-BreakpointKind = Literal["code", "watch", "catch"]
-BreakpointAccess = Literal["write", "read", "access"]
-BreakpointEvent = Literal[
-    "throw",
-    "rethrow",
-    "catch",
-    "exec",
-    "fork",
-    "vfork",
-    "load",
-    "unload",
-    "signal",
-    "syscall",
-]
-BreakpointQueryAction = Literal["list", "get"]
-BreakpointManageAction = Literal["create", "update", "delete", "enable", "disable"]
-LocationKind = Literal[
-    "current",
-    "function",
-    "address",
-    "address_range",
-    "file_line",
-    "file_range",
-]
-InspectQueryAction = Literal[
-    "evaluate",
-    "variables",
-    "registers",
-    "memory",
-    "disassembly",
-    "source",
-]
-RegisterValueFormat = Literal["hex", "natural"]
-DisassemblyMode = Literal["assembly", "mixed"]
+from gdb_mcp.contracts import (
+    BatchStepToolName,
+    BreakpointAccess,
+    BreakpointEvent,
+    BreakpointKind,
+    BreakpointManageAction,
+    BreakpointQueryAction,
+    ContextManageAction,
+    ContextQueryAction,
+    DisassemblyMode,
+    ExecutionManageAction,
+    ExecutionWaitUntil,
+    InferiorFollowForkMode,
+    InferiorManageAction,
+    InferiorQueryAction,
+    InspectQueryAction,
+    LocationKind,
+    RegisterValueFormat,
+    SessionQueryAction,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,7 +192,7 @@ class InspectQueryInput:
 class SessionStepInput:
     """Typed workflow/setup step used by batch-oriented commands."""
 
-    tool: str
+    tool: BatchStepToolName
     label: str | None
     arguments: dict[str, object]
 

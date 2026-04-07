@@ -8,6 +8,43 @@ from typing import Callable, Generic, TypeVar, cast
 
 from pydantic import BaseModel
 
+from gdb_mcp.contracts import (
+    BREAKPOINT_ACCESS_VALUES,
+    BREAKPOINT_EVENTS,
+    BREAKPOINT_KINDS,
+    BREAKPOINT_MANAGE_ACTIONS,
+    BREAKPOINT_QUERY_ACTIONS,
+    CLI_LOCATION_KIND_CHOICES,
+    CONTEXT_MANAGE_ACTIONS,
+    CONTEXT_QUERY_ACTIONS,
+    DISASSEMBLY_MODES,
+    EXECUTION_MANAGE_ACTIONS,
+    EXECUTION_WAIT_UNTIL_VALUES,
+    INFERIOR_FOLLOW_FORK_MODES,
+    INFERIOR_MANAGE_ACTIONS,
+    INFERIOR_QUERY_ACTIONS,
+    INSPECT_QUERY_ACTIONS,
+    REGISTER_VALUE_FORMATS,
+    SESSION_MANAGE_ACTIONS,
+    SESSION_QUERY_ACTIONS,
+    TOOL_ATTACH_PROCESS,
+    TOOL_BREAKPOINT_MANAGE,
+    TOOL_BREAKPOINT_QUERY,
+    TOOL_CALL_FUNCTION,
+    TOOL_CAPTURE_BUNDLE,
+    TOOL_CONTEXT_MANAGE,
+    TOOL_CONTEXT_QUERY,
+    TOOL_EXECUTE_COMMAND,
+    TOOL_EXECUTION_MANAGE,
+    TOOL_INFERIOR_MANAGE,
+    TOOL_INFERIOR_QUERY,
+    TOOL_INSPECT_QUERY,
+    TOOL_RUN_UNTIL_FAILURE,
+    TOOL_SESSION_MANAGE,
+    TOOL_SESSION_QUERY,
+    TOOL_SESSION_START,
+    TOOL_WORKFLOW_BATCH,
+)
 from gdb_mcp.mcp.schemas import (
     AttachProcessArgs,
     BatchArgs,
@@ -119,28 +156,6 @@ TOOL_HELP_DESCRIPTIONS = {
     for tool in build_tool_definitions()
 }
 
-_BREAKPOINT_KINDS = ["code", "watch", "catch"]
-_BREAKPOINT_EVENTS = [
-    "throw",
-    "rethrow",
-    "catch",
-    "exec",
-    "fork",
-    "vfork",
-    "load",
-    "unload",
-    "signal",
-    "syscall",
-]
-_LOCATION_KIND_CHOICES = [
-    "current",
-    "function",
-    "address",
-    "address-range",
-    "file-line",
-    "file-range",
-]
-
 
 def _parse_namespace(namespace: argparse.Namespace) -> argparse.Namespace:
     return namespace
@@ -192,7 +207,7 @@ def _add_session_id(parser: argparse.ArgumentParser, *, required: bool = True) -
     parser.add_argument("--session-id", type=int, required=False, default=argparse.SUPPRESS)
 
 
-def _add_action(parser: argparse.ArgumentParser, *, choices: list[str]) -> None:
+def _add_action(parser: argparse.ArgumentParser, *, choices: tuple[str, ...]) -> None:
     parser.add_argument("--action", required=True, choices=choices)
 
 
@@ -756,7 +771,7 @@ def _empty_payload(_: argparse.Namespace) -> dict[str, object]:
 
 
 def _configure_session_query(parser: argparse.ArgumentParser) -> None:
-    _add_action(parser, choices=["list", "status"])
+    _add_action(parser, choices=SESSION_QUERY_ACTIONS)
     _add_session_id(parser, required=False)
 
 
@@ -769,7 +784,7 @@ def _build_session_query(typed_input: SessionQueryInput) -> dict[str, object]:
 
 def _configure_session_manage(parser: argparse.ArgumentParser) -> None:
     _add_session_id(parser)
-    _add_action(parser, choices=["stop"])
+    _add_action(parser, choices=SESSION_MANAGE_ACTIONS)
 
 
 def _build_session_manage(namespace: argparse.Namespace) -> dict[str, object]:
@@ -782,7 +797,7 @@ def _build_session_manage(namespace: argparse.Namespace) -> dict[str, object]:
 
 def _configure_inferior_query(parser: argparse.ArgumentParser) -> None:
     _add_session_id(parser)
-    _add_action(parser, choices=["list", "current"])
+    _add_action(parser, choices=INFERIOR_QUERY_ACTIONS)
 
 
 def _build_inferior_query(typed_input: InferiorQueryInput) -> dict[str, object]:
@@ -792,10 +807,7 @@ def _build_inferior_query(typed_input: InferiorQueryInput) -> dict[str, object]:
 
 def _configure_inferior_manage(parser: argparse.ArgumentParser) -> None:
     _add_session_id(parser)
-    _add_action(
-        parser,
-        choices=["create", "remove", "select", "set_follow_fork_mode", "set_detach_on_fork"],
-    )
+    _add_action(parser, choices=INFERIOR_MANAGE_ACTIONS)
     parser.add_argument("--inferior-id", type=int, default=argparse.SUPPRESS)
     parser.add_argument("--executable", default=argparse.SUPPRESS)
     add_boolean_flag(
@@ -805,7 +817,7 @@ def _configure_inferior_manage(parser: argparse.ArgumentParser) -> None:
         help_text="Select the new inferior after create",
         suppress_default=True,
     )
-    parser.add_argument("--mode", choices=["parent", "child"], default=argparse.SUPPRESS)
+    parser.add_argument("--mode", choices=INFERIOR_FOLLOW_FORK_MODES, default=argparse.SUPPRESS)
     add_boolean_flag(
         parser,
         "enabled",
@@ -823,12 +835,13 @@ def _build_inferior_manage(typed_input: InferiorManageInput) -> dict[str, object
 
 def _configure_execution_manage(parser: argparse.ArgumentParser) -> None:
     _add_session_id(parser)
-    _add_action(
-        parser,
-        choices=["run", "continue", "interrupt", "step", "next", "finish", "wait_for_stop"],
-    )
+    _add_action(parser, choices=EXECUTION_MANAGE_ACTIONS)
     parser.add_argument("--arg", dest="args", action="append", default=argparse.SUPPRESS)
-    parser.add_argument("--wait-until", choices=["acknowledged", "stop"], default=argparse.SUPPRESS)
+    parser.add_argument(
+        "--wait-until",
+        choices=EXECUTION_WAIT_UNTIL_VALUES,
+        default=argparse.SUPPRESS,
+    )
     parser.add_argument("--wait-timeout-sec", type=int, default=argparse.SUPPRESS)
     parser.add_argument("--timeout-sec", type=int, default=argparse.SUPPRESS)
     parser.add_argument("--stop-reason", dest="stop_reasons", action="append", default=argparse.SUPPRESS)
@@ -842,7 +855,7 @@ def _build_execution_manage(typed_input: ExecutionManageInput) -> dict[str, obje
 
 def _configure_context_query(parser: argparse.ArgumentParser) -> None:
     _add_session_id(parser)
-    _add_action(parser, choices=["threads", "backtrace", "frame"])
+    _add_action(parser, choices=CONTEXT_QUERY_ACTIONS)
     parser.add_argument("--thread-id", type=int, default=argparse.SUPPRESS)
     parser.add_argument("--frame", type=int, default=argparse.SUPPRESS)
     parser.add_argument("--max-frames", type=int, default=argparse.SUPPRESS)
@@ -856,7 +869,7 @@ def _build_context_query(typed_input: ContextQueryInput) -> dict[str, object]:
 
 def _configure_context_manage(parser: argparse.ArgumentParser) -> None:
     _add_session_id(parser)
-    _add_action(parser, choices=["select_thread", "select_frame"])
+    _add_action(parser, choices=CONTEXT_MANAGE_ACTIONS)
     parser.add_argument("--thread-id", type=int, default=argparse.SUPPRESS)
     parser.add_argument("--frame", type=int, default=argparse.SUPPRESS)
 
@@ -979,13 +992,13 @@ def _build_capture_bundle(namespace: argparse.Namespace) -> dict[str, object]:
 
 def _configure_breakpoint_query(parser: argparse.ArgumentParser) -> None:
     _add_session_id(parser)
-    _add_action(parser, choices=["list", "get"])
+    _add_action(parser, choices=BREAKPOINT_QUERY_ACTIONS)
     parser.add_argument("--number", type=int, default=argparse.SUPPRESS)
     parser.add_argument(
         "--kind",
         dest="kinds",
         action="append",
-        choices=_BREAKPOINT_KINDS,
+        choices=BREAKPOINT_KINDS,
         default=argparse.SUPPRESS,
     )
     add_boolean_flag(
@@ -1009,20 +1022,20 @@ def _build_breakpoint_query(typed_input: BreakpointQueryInput) -> dict[str, obje
 
 def _configure_breakpoint_manage(parser: argparse.ArgumentParser) -> None:
     _add_session_id(parser)
-    _add_action(parser, choices=["create", "update", "delete", "enable", "disable"])
+    _add_action(parser, choices=BREAKPOINT_MANAGE_ACTIONS)
     parser.add_argument(
         "--breakpoint-kind",
-        choices=_BREAKPOINT_KINDS,
+        choices=BREAKPOINT_KINDS,
         default=argparse.SUPPRESS,
     )
     parser.add_argument("--location", default=argparse.SUPPRESS)
     parser.add_argument("--expression", default=argparse.SUPPRESS)
     parser.add_argument(
         "--access",
-        choices=["write", "read", "access"],
+        choices=BREAKPOINT_ACCESS_VALUES,
         default=argparse.SUPPRESS,
     )
-    parser.add_argument("--event", choices=_BREAKPOINT_EVENTS, default=argparse.SUPPRESS)
+    parser.add_argument("--event", choices=BREAKPOINT_EVENTS, default=argparse.SUPPRESS)
     parser.add_argument("--argument", default=argparse.SUPPRESS)
     add_boolean_flag(
         parser,
@@ -1050,10 +1063,7 @@ def _build_breakpoint_manage(typed_input: BreakpointManageInput) -> dict[str, ob
 
 def _configure_inspect_query(parser: argparse.ArgumentParser) -> None:
     _add_session_id(parser)
-    _add_action(
-        parser,
-        choices=["evaluate", "variables", "registers", "memory", "disassembly", "source"],
-    )
+    _add_action(parser, choices=INSPECT_QUERY_ACTIONS)
     parser.add_argument("--thread-id", type=int, default=argparse.SUPPRESS)
     parser.add_argument("--frame", type=int, default=argparse.SUPPRESS)
     parser.add_argument("--expression", default=argparse.SUPPRESS)
@@ -1078,13 +1088,17 @@ def _configure_inspect_query(parser: argparse.ArgumentParser) -> None:
         suppress_default=True,
     )
     parser.add_argument("--max-registers", type=int, default=argparse.SUPPRESS)
-    parser.add_argument("--value-format", choices=["hex", "natural"], default=argparse.SUPPRESS)
+    parser.add_argument(
+        "--value-format",
+        choices=REGISTER_VALUE_FORMATS,
+        default=argparse.SUPPRESS,
+    )
     parser.add_argument("--address", default=argparse.SUPPRESS)
     parser.add_argument("--count", type=int, default=argparse.SUPPRESS)
     parser.add_argument("--offset", type=int, default=argparse.SUPPRESS)
     parser.add_argument(
         "--location-kind",
-        choices=_LOCATION_KIND_CHOICES,
+        choices=CLI_LOCATION_KIND_CHOICES,
         default=argparse.SUPPRESS,
     )
     parser.add_argument("--function", default=argparse.SUPPRESS)
@@ -1095,7 +1109,7 @@ def _configure_inspect_query(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--start-line", type=int, default=argparse.SUPPRESS)
     parser.add_argument("--end-line", type=int, default=argparse.SUPPRESS)
     parser.add_argument("--instruction-count", type=int, default=argparse.SUPPRESS)
-    parser.add_argument("--mode", choices=["assembly", "mixed"], default=argparse.SUPPRESS)
+    parser.add_argument("--mode", choices=DISASSEMBLY_MODES, default=argparse.SUPPRESS)
     parser.add_argument("--context-before", type=int, default=argparse.SUPPRESS)
     parser.add_argument("--context-after", type=int, default=argparse.SUPPRESS)
 
@@ -1281,123 +1295,123 @@ def _build_run_until_failure(typed_input: RunUntilFailureInput) -> dict[str, obj
 
 
 CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
-    "gdb_session_start": _register_tool_spec(ToolCliSpec(
-        name="gdb_session_start",
+    TOOL_SESSION_START: _register_tool_spec(ToolCliSpec(
+        name=TOOL_SESSION_START,
         configure_parser=_configure_session_start,
         parse_input=parse_session_start_input,
         build_arguments=_build_session_start,
         render_human=render_session_start,
     )),
-    "gdb_session_query": _register_tool_spec(ToolCliSpec(
-        name="gdb_session_query",
+    TOOL_SESSION_QUERY: _register_tool_spec(ToolCliSpec(
+        name=TOOL_SESSION_QUERY,
         configure_parser=_configure_session_query,
         parse_input=parse_session_query_input,
         build_arguments=_build_session_query,
         render_human=render_action_payload,
     )),
-    "gdb_session_manage": _register_tool_spec(ToolCliSpec(
-        name="gdb_session_manage",
+    TOOL_SESSION_MANAGE: _register_tool_spec(ToolCliSpec(
+        name=TOOL_SESSION_MANAGE,
         configure_parser=_configure_session_manage,
         parse_input=_parse_namespace,
         build_arguments=_build_session_manage,
         render_human=render_action_payload,
     )),
-    "gdb_inferior_query": _register_tool_spec(ToolCliSpec(
-        name="gdb_inferior_query",
+    TOOL_INFERIOR_QUERY: _register_tool_spec(ToolCliSpec(
+        name=TOOL_INFERIOR_QUERY,
         configure_parser=_configure_inferior_query,
         parse_input=parse_inferior_query_input,
         build_arguments=_build_inferior_query,
         render_human=render_action_payload,
     )),
-    "gdb_inferior_manage": _register_tool_spec(ToolCliSpec(
-        name="gdb_inferior_manage",
+    TOOL_INFERIOR_MANAGE: _register_tool_spec(ToolCliSpec(
+        name=TOOL_INFERIOR_MANAGE,
         configure_parser=_configure_inferior_manage,
         parse_input=parse_inferior_manage_input,
         build_arguments=_build_inferior_manage,
         render_human=render_action_payload,
     )),
-    "gdb_execution_manage": _register_tool_spec(ToolCliSpec(
-        name="gdb_execution_manage",
+    TOOL_EXECUTION_MANAGE: _register_tool_spec(ToolCliSpec(
+        name=TOOL_EXECUTION_MANAGE,
         configure_parser=_configure_execution_manage,
         parse_input=parse_execution_manage_input,
         build_arguments=_build_execution_manage,
         render_human=render_action_payload,
     )),
-    "gdb_breakpoint_query": _register_tool_spec(ToolCliSpec(
-        name="gdb_breakpoint_query",
+    TOOL_BREAKPOINT_QUERY: _register_tool_spec(ToolCliSpec(
+        name=TOOL_BREAKPOINT_QUERY,
         configure_parser=_configure_breakpoint_query,
         parse_input=parse_breakpoint_query_input,
         build_arguments=_build_breakpoint_query,
         render_human=render_action_payload,
     )),
-    "gdb_breakpoint_manage": _register_tool_spec(ToolCliSpec(
-        name="gdb_breakpoint_manage",
+    TOOL_BREAKPOINT_MANAGE: _register_tool_spec(ToolCliSpec(
+        name=TOOL_BREAKPOINT_MANAGE,
         configure_parser=_configure_breakpoint_manage,
         parse_input=parse_breakpoint_manage_input,
         build_arguments=_build_breakpoint_manage,
         render_human=render_action_payload,
     )),
-    "gdb_execute_command": _register_tool_spec(ToolCliSpec(
-        name="gdb_execute_command",
-        configure_parser=_configure_execute_command,
-        parse_input=_parse_namespace,
-        build_arguments=_build_execute_command,
-        render_human=render_mapping,
-    )),
-    "gdb_attach_process": _register_tool_spec(ToolCliSpec(
-        name="gdb_attach_process",
-        configure_parser=_configure_attach_process,
-        parse_input=_parse_namespace,
-        build_arguments=_build_attach_process,
-        render_human=render_mapping,
-    )),
-    "gdb_context_query": _register_tool_spec(ToolCliSpec(
-        name="gdb_context_query",
+    TOOL_CONTEXT_QUERY: _register_tool_spec(ToolCliSpec(
+        name=TOOL_CONTEXT_QUERY,
         configure_parser=_configure_context_query,
         parse_input=parse_context_query_input,
         build_arguments=_build_context_query,
         render_human=render_action_payload,
     )),
-    "gdb_context_manage": _register_tool_spec(ToolCliSpec(
-        name="gdb_context_manage",
+    TOOL_CONTEXT_MANAGE: _register_tool_spec(ToolCliSpec(
+        name=TOOL_CONTEXT_MANAGE,
         configure_parser=_configure_context_manage,
         parse_input=parse_context_manage_input,
         build_arguments=_build_context_manage,
         render_human=render_action_payload,
     )),
-    "gdb_inspect_query": _register_tool_spec(ToolCliSpec(
-        name="gdb_inspect_query",
+    TOOL_INSPECT_QUERY: _register_tool_spec(ToolCliSpec(
+        name=TOOL_INSPECT_QUERY,
         configure_parser=_configure_inspect_query,
         parse_input=parse_inspect_query_input,
         build_arguments=_build_inspect_query,
         render_human=render_action_payload,
     )),
-    "gdb_workflow_batch": _register_tool_spec(ToolCliSpec(
-        name="gdb_workflow_batch",
+    TOOL_WORKFLOW_BATCH: _register_tool_spec(ToolCliSpec(
+        name=TOOL_WORKFLOW_BATCH,
         configure_parser=_configure_workflow_batch,
         parse_input=parse_workflow_batch_input,
         build_arguments=_build_workflow_batch,
         render_human=render_mapping,
     )),
-    "gdb_call_function": _register_tool_spec(ToolCliSpec(
-        name="gdb_call_function",
-        configure_parser=_configure_call_function,
-        parse_input=_parse_namespace,
-        build_arguments=_build_call_function,
-        render_human=render_mapping,
-    )),
-    "gdb_capture_bundle": _register_tool_spec(ToolCliSpec(
-        name="gdb_capture_bundle",
+    TOOL_CAPTURE_BUNDLE: _register_tool_spec(ToolCliSpec(
+        name=TOOL_CAPTURE_BUNDLE,
         configure_parser=_configure_capture_bundle,
         parse_input=_parse_namespace,
         build_arguments=_build_capture_bundle,
         render_human=render_mapping,
     )),
-    "gdb_run_until_failure": _register_tool_spec(ToolCliSpec(
-        name="gdb_run_until_failure",
+    TOOL_RUN_UNTIL_FAILURE: _register_tool_spec(ToolCliSpec(
+        name=TOOL_RUN_UNTIL_FAILURE,
         configure_parser=_configure_run_until_failure,
         parse_input=parse_run_until_failure_input,
         build_arguments=_build_run_until_failure,
+        render_human=render_mapping,
+    )),
+    TOOL_EXECUTE_COMMAND: _register_tool_spec(ToolCliSpec(
+        name=TOOL_EXECUTE_COMMAND,
+        configure_parser=_configure_execute_command,
+        parse_input=_parse_namespace,
+        build_arguments=_build_execute_command,
+        render_human=render_mapping,
+    )),
+    TOOL_ATTACH_PROCESS: _register_tool_spec(ToolCliSpec(
+        name=TOOL_ATTACH_PROCESS,
+        configure_parser=_configure_attach_process,
+        parse_input=_parse_namespace,
+        build_arguments=_build_attach_process,
+        render_human=render_mapping,
+    )),
+    TOOL_CALL_FUNCTION: _register_tool_spec(ToolCliSpec(
+        name=TOOL_CALL_FUNCTION,
+        configure_parser=_configure_call_function,
+        parse_input=_parse_namespace,
+        build_arguments=_build_call_function,
         render_human=render_mapping,
     )),
 }
