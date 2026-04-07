@@ -2319,3 +2319,26 @@ class TestClientCli:
         assert exc_info.value.code == 2
         assert "mutually exclusive" in stderr.getvalue()
         mock_invoke_tool.assert_not_awaited()
+
+    def test_client_tool_specs_preserve_cli_help_order(self):
+        from gdb_mcp.client.specs import CLIENT_TOOL_SPECS
+
+        assert tuple(CLIENT_TOOL_SPECS) == (
+            "gdb_session_start",
+            "gdb_session_query",
+            "gdb_session_manage",
+            "gdb_inferior_query",
+            "gdb_inferior_manage",
+            "gdb_execution_manage",
+            "gdb_breakpoint_query",
+            "gdb_breakpoint_manage",
+            "gdb_execute_command",
+            "gdb_attach_process",
+            "gdb_context_query",
+            "gdb_context_manage",
+            "gdb_inspect_query",
+            "gdb_workflow_batch",
+            "gdb_call_function",
+            "gdb_capture_bundle",
+            "gdb_run_until_failure",
+        )

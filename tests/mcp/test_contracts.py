@@ -55,6 +55,7 @@ from gdb_mcp.contracts import (
 )
 from gdb_mcp.mcp.handlers import SESSION_TOOL_SPECS
 from gdb_mcp.mcp.schemas import (
+    BATCH_STEP_TOOL_NAMES as SCHEMA_BATCH_STEP_TOOL_NAMES,
     BATCH_STEP_TOOL_MODELS,
     BreakpointCatchCreateArgs,
     BreakpointListQueryArgs,
@@ -112,12 +113,13 @@ def test_client_input_aliases_match_shared_contract_values(
 
 
 def test_public_tool_names_match_all_runtime_registries() -> None:
-    assert tuple(CLIENT_TOOL_SPECS) == PUBLIC_TOOL_NAMES
+    assert set(CLIENT_TOOL_SPECS) == set(PUBLIC_TOOL_NAMES)
     assert tuple(tool.name for tool in build_tool_definitions()) == PUBLIC_TOOL_NAMES
 
 
 def test_batch_step_tool_names_match_workflow_allowlists() -> None:
     expected_tools = set(SESSION_TOOL_SPECS) - {TOOL_WORKFLOW_BATCH}
+    assert SCHEMA_BATCH_STEP_TOOL_NAMES == BATCH_STEP_TOOL_NAMES
     assert set(BATCH_STEP_TOOL_NAMES) == expected_tools
     assert set(BATCH_STEP_TOOL_MODELS) == expected_tools
     for tool_name in expected_tools:

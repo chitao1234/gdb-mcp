@@ -1351,6 +1351,20 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
         build_arguments=_build_breakpoint_manage,
         render_human=render_action_payload,
     )),
+    TOOL_EXECUTE_COMMAND: _register_tool_spec(ToolCliSpec(
+        name=TOOL_EXECUTE_COMMAND,
+        configure_parser=_configure_execute_command,
+        parse_input=_parse_namespace,
+        build_arguments=_build_execute_command,
+        render_human=render_mapping,
+    )),
+    TOOL_ATTACH_PROCESS: _register_tool_spec(ToolCliSpec(
+        name=TOOL_ATTACH_PROCESS,
+        configure_parser=_configure_attach_process,
+        parse_input=_parse_namespace,
+        build_arguments=_build_attach_process,
+        render_human=render_mapping,
+    )),
     TOOL_CONTEXT_QUERY: _register_tool_spec(ToolCliSpec(
         name=TOOL_CONTEXT_QUERY,
         configure_parser=_configure_context_query,
@@ -1379,6 +1393,13 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
         build_arguments=_build_workflow_batch,
         render_human=render_mapping,
     )),
+    TOOL_CALL_FUNCTION: _register_tool_spec(ToolCliSpec(
+        name=TOOL_CALL_FUNCTION,
+        configure_parser=_configure_call_function,
+        parse_input=_parse_namespace,
+        build_arguments=_build_call_function,
+        render_human=render_mapping,
+    )),
     TOOL_CAPTURE_BUNDLE: _register_tool_spec(ToolCliSpec(
         name=TOOL_CAPTURE_BUNDLE,
         configure_parser=_configure_capture_bundle,
@@ -1391,27 +1412,6 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
         configure_parser=_configure_run_until_failure,
         parse_input=parse_run_until_failure_input,
         build_arguments=_build_run_until_failure,
-        render_human=render_mapping,
-    )),
-    TOOL_EXECUTE_COMMAND: _register_tool_spec(ToolCliSpec(
-        name=TOOL_EXECUTE_COMMAND,
-        configure_parser=_configure_execute_command,
-        parse_input=_parse_namespace,
-        build_arguments=_build_execute_command,
-        render_human=render_mapping,
-    )),
-    TOOL_ATTACH_PROCESS: _register_tool_spec(ToolCliSpec(
-        name=TOOL_ATTACH_PROCESS,
-        configure_parser=_configure_attach_process,
-        parse_input=_parse_namespace,
-        build_arguments=_build_attach_process,
-        render_human=render_mapping,
-    )),
-    TOOL_CALL_FUNCTION: _register_tool_spec(ToolCliSpec(
-        name=TOOL_CALL_FUNCTION,
-        configure_parser=_configure_call_function,
-        parse_input=_parse_namespace,
-        build_arguments=_build_call_function,
         render_human=render_mapping,
     )),
 }

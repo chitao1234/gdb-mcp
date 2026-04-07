@@ -16,6 +16,7 @@ from pydantic import (
 )
 
 from ..contracts import (
+    BATCH_STEP_TOOL_NAMES as CONTRACT_BATCH_STEP_TOOL_NAMES,
     BatchStepToolName,
     BreakpointAccess,
     BreakpointEvent,
@@ -43,6 +44,9 @@ from ..contracts import (
     TOOL_SESSION_START,
     TOOL_WORKFLOW_BATCH,
 )
+
+# Re-export the batch-step allowlist for callers that still import it from this module.
+BATCH_STEP_TOOL_NAMES = CONTRACT_BATCH_STEP_TOOL_NAMES
 
 
 class StrictArgsModel(BaseModel):
