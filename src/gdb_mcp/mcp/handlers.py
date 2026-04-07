@@ -7,20 +7,17 @@ import logging
 import re
 import shlex
 from collections.abc import Callable, Sequence
-from typing import Literal, Protocol, TypeAlias, TypeVar, cast
+from typing import Protocol, TypeAlias, TypeVar, cast
 
-from pydantic import BaseModel
+from pydantic import BaseModel, RootModel
 from mcp.types import TextContent
 
 from ..domain import (
-    CatchpointType,
-    FollowForkMode,
     MemoryCaptureRange,
     OperationError,
     OperationResult,
     OperationSuccess,
     StructuredPayload,
-    WatchpointAccessType,
     payload_to_mapping,
 )
 from ..session.campaign import (
@@ -39,13 +36,26 @@ from .schemas import (
     AttachProcessArgs,
     BatchArgs,
     BatchStepArgs,
+    BreakpointCatchCreateArgs,
     BreakpointManageArgs,
+    BreakpointManageCreateAction,
+    BreakpointManageNumberAction,
+    BreakpointManageUpdateAction,
     BreakpointNumberArgs,
+    BreakpointCodeCreateArgs,
     BreakpointQueryArgs,
+    BreakpointQueryGetAction,
+    BreakpointQueryListAction,
+    BreakpointWatchCreateArgs,
     CallFunctionArgs,
     CaptureBundleArgs,
     ContextManageArgs,
+    ContextManageSelectFrameAction,
+    ContextManageSelectThreadAction,
     ContextQueryArgs,
+    ContextQueryBacktraceAction,
+    ContextQueryFrameAction,
+    ContextQueryThreadsAction,
     DisassembleArgs,
     DetachOnForkArgs,
     EvaluateExpressionArgs,
@@ -67,9 +77,28 @@ from .schemas import (
     GetRegistersArgs,
     GetVariablesArgs,
     InferiorManageArgs,
+    InferiorManageCreateAction,
+    InferiorManageDetachOnForkAction,
+    InferiorManageFollowForkAction,
+    InferiorManageRemoveAction,
+    InferiorManageSelectAction,
     InferiorQueryArgs,
+    InferiorQueryCurrentAction,
+    InferiorQueryListAction,
     InferiorSelectArgs,
+    InspectDisassemblyAction,
+    InspectEvaluateAction,
+    InspectMemoryAction,
     InspectQueryArgs,
+    InspectRegistersAction,
+    InspectSourceAction,
+    InspectVariablesAction,
+    LocationAddressArgs,
+    LocationAddressRangeArgs,
+    LocationCurrentArgs,
+    LocationFileLineArgs,
+    LocationFileRangeArgs,
+    LocationFunctionArgs,
     ReadMemoryArgs,
     RemoveInferiorArgs,
     RunUntilFailureArgs,
@@ -84,6 +113,7 @@ from .schemas import (
     SetBreakpointArgs,
     SetWatchpointArgs,
     StartSessionArgs,
+    ThreadFrameContextArgs,
     ThreadSelectArgs,
     WaitForStopArgs,
 )
@@ -108,6 +138,14 @@ class MemoryRangeArgsProtocol(Protocol):
 SessionToolArgsT = TypeVar("SessionToolArgsT", bound=BaseModel)
 ToolArguments: TypeAlias = StructuredPayload
 ToolResult: TypeAlias = OperationResult[object]
+LocationArgs: TypeAlias = (
+    LocationCurrentArgs
+    | LocationFunctionArgs
+    | LocationAddressArgs
+    | LocationAddressRangeArgs
+    | LocationFileLineArgs
+    | LocationFileRangeArgs
+)
 _MEMORY_RANGE_SHORTHAND_RE = re.compile(r"^(?P<address>.+):(?P<count>\d+)(?:@(?P<offset>\d+))?$")
 
 
@@ -117,6 +155,20 @@ class SessionToolSpec:
 
     model: type[BaseModel]
     handler: Callable[[SessionService, BaseModel], ToolResult]
+
+
+@dataclass(frozen=True, slots=True)
+class LocationSelection:
+    """Typed inspection location resolved from one schema-discriminated selector."""
+
+    function: str | None = None
+    address: str | None = None
+    start_address: str | None = None
+    end_address: str | None = None
+    file: str | None = None
+    line: int | None = None
+    start_line: int | None = None
+    end_line: int | None = None
 
 
 def session_tool_spec(
@@ -144,8 +196,9 @@ def _normalize_arguments(arguments: object) -> ToolArguments:
 def _unwrap_action_args(args: BaseModel) -> BaseModel:
     """Return the discriminated action payload for root-model tool schemas."""
 
-    root = getattr(args, "root", None)
-    return cast(BaseModel, root if root is not None else args)
+    if isinstance(args, RootModel):
+        return cast(BaseModel, args.root)
+    return args
 
 
 def _wrap_action_result(action: str, result: ToolResult) -> ToolResult:
@@ -273,16 +326,14 @@ def _handle_execution_manage(session: SessionService, args: ExecutionManageArgs)
     )
 
 
-def _handle_inferior_query(session: SessionService, args: BaseModel) -> ToolResult:
+def _handle_inferior_query(session: SessionService, args: InferiorQueryArgs) -> ToolResult:
     """Route v2 inferior query actions to the inspection service."""
 
     action_args = _unwrap_action_args(args)
-    action = cast(str, getattr(action_args, "action"))
-
-    if action == "list":
+    if isinstance(action_args, InferiorQueryListAction):
         return _wrap_action_result("list", session.list_inferiors())
 
-    if action == "current":
+    if isinstance(action_args, InferiorQueryCurrentAction):
         result = session.list_inferiors()
         if isinstance(result, OperationError):
             return _wrap_action_result("current", result)
@@ -313,48 +364,46 @@ def _handle_inferior_query(session: SessionService, args: BaseModel) -> ToolResu
     )
 
 
-def _handle_inferior_manage(session: SessionService, args: BaseModel) -> ToolResult:
+def _handle_inferior_manage(session: SessionService, args: InferiorManageArgs) -> ToolResult:
     """Route v2 inferior mutation actions to the inspection/execution services."""
 
     action_args = _unwrap_action_args(args)
-    action = cast(str, getattr(action_args, "action"))
-
-    if action == "create":
-        payload = getattr(action_args, "inferior")
+    if isinstance(action_args, InferiorManageCreateAction):
+        create_payload = action_args.inferior
         return _wrap_action_result(
             "create",
             session.add_inferior(
-                executable=cast(str | None, getattr(payload, "executable")),
-                make_current=cast(bool, getattr(payload, "make_current")),
+                executable=create_payload.executable,
+                make_current=create_payload.make_current,
             ),
         )
 
-    if action == "remove":
-        payload = getattr(action_args, "inferior")
+    if isinstance(action_args, InferiorManageRemoveAction):
+        remove_payload = action_args.inferior
         return _wrap_action_result(
             "remove",
-            session.remove_inferior(inferior_id=cast(int, getattr(payload, "inferior_id"))),
+            session.remove_inferior(inferior_id=remove_payload.inferior_id),
         )
 
-    if action == "select":
-        payload = getattr(action_args, "inferior")
+    if isinstance(action_args, InferiorManageSelectAction):
+        select_payload = action_args.inferior
         return _wrap_action_result(
             "select",
-            session.select_inferior(inferior_id=cast(int, getattr(payload, "inferior_id"))),
+            session.select_inferior(inferior_id=select_payload.inferior_id),
         )
 
-    if action == "set_follow_fork_mode":
-        payload = getattr(action_args, "inferior")
+    if isinstance(action_args, InferiorManageFollowForkAction):
+        follow_payload = action_args.inferior
         return _wrap_action_result(
             "set_follow_fork_mode",
-            session.set_follow_fork_mode(mode=cast(FollowForkMode, getattr(payload, "mode"))),
+            session.set_follow_fork_mode(mode=follow_payload.mode),
         )
 
-    if action == "set_detach_on_fork":
-        payload = getattr(action_args, "inferior")
+    if isinstance(action_args, InferiorManageDetachOnForkAction):
+        detach_payload = action_args.inferior
         return _wrap_action_result(
             "set_detach_on_fork",
-            session.set_detach_on_fork(enabled=cast(bool, getattr(payload, "enabled"))),
+            session.set_detach_on_fork(enabled=detach_payload.enabled),
         )
 
     return OperationError(
@@ -363,20 +412,18 @@ def _handle_inferior_manage(session: SessionService, args: BaseModel) -> ToolRes
     )
 
 
-def _handle_breakpoint_query(session: SessionService, args: BaseModel) -> ToolResult:
+def _handle_breakpoint_query(session: SessionService, args: BreakpointQueryArgs) -> ToolResult:
     """Route v2 breakpoint query actions to the breakpoint service."""
 
     action_args = _unwrap_action_args(args)
-    action = cast(str, getattr(action_args, "action"))
-
-    if action == "list":
+    if isinstance(action_args, BreakpointQueryListAction):
         result = session.list_breakpoints()
         if isinstance(result, OperationError):
             return _wrap_action_result("list", result)
 
-        query = getattr(action_args, "query")
-        kinds = set(cast(list[str], getattr(query, "kinds")))
-        enabled_filter = cast(bool | None, getattr(query, "enabled"))
+        list_query = action_args.query
+        kinds = set(list_query.kinds)
+        enabled_filter = list_query.enabled
         if not kinds and enabled_filter is None:
             return _wrap_action_result("list", result)
 
@@ -409,11 +456,11 @@ def _handle_breakpoint_query(session: SessionService, args: BaseModel) -> ToolRe
             ),
         )
 
-    if action == "get":
-        query = getattr(action_args, "query")
+    if isinstance(action_args, BreakpointQueryGetAction):
+        get_query = action_args.query
         return _wrap_action_result(
             "get",
-            session.get_breakpoint(cast(int, getattr(query, "number"))),
+            session.get_breakpoint(get_query.number),
         )
 
     return OperationError(
@@ -422,60 +469,67 @@ def _handle_breakpoint_query(session: SessionService, args: BaseModel) -> ToolRe
     )
 
 
-def _handle_breakpoint_manage(session: SessionService, args: BaseModel) -> ToolResult:
+def _handle_breakpoint_manage(session: SessionService, args: BreakpointManageArgs) -> ToolResult:
     """Route v2 breakpoint mutation actions to the breakpoint service."""
 
     action_args = _unwrap_action_args(args)
-    action = cast(str, getattr(action_args, "action"))
-
-    if action == "create":
-        payload = getattr(action_args, "breakpoint")
-        kind = cast(str, getattr(payload, "kind"))
-        if kind == "code":
+    if isinstance(action_args, BreakpointManageCreateAction):
+        payload = action_args.breakpoint
+        if isinstance(payload, BreakpointCodeCreateArgs):
             return _wrap_action_result(
                 "create",
                 session.set_breakpoint(
-                    location=cast(str, getattr(payload, "location")),
-                    condition=cast(str | None, getattr(payload, "condition")),
-                    temporary=cast(bool, getattr(payload, "temporary")),
+                    location=payload.location,
+                    condition=payload.condition,
+                    temporary=payload.temporary,
                 ),
             )
-        if kind == "watch":
+        if isinstance(payload, BreakpointWatchCreateArgs):
             return _wrap_action_result(
                 "create",
                 session.set_watchpoint(
-                    expression=cast(str, getattr(payload, "expression")),
-                    access=cast(WatchpointAccessType, getattr(payload, "access")),
+                    expression=payload.expression,
+                    access=payload.access,
                 ),
             )
-        return _wrap_action_result(
-            "create",
-            session.set_catchpoint(
-                cast(CatchpointType, getattr(payload, "event")),
-                argument=cast(str | None, getattr(payload, "argument")),
-                temporary=cast(bool, getattr(payload, "temporary")),
-            ),
+        if isinstance(payload, BreakpointCatchCreateArgs):
+            return _wrap_action_result(
+                "create",
+                session.set_catchpoint(
+                    payload.event,
+                    argument=payload.argument,
+                    temporary=payload.temporary,
+                ),
+            )
+        return OperationError(
+            message=f"Unsupported breakpoint create payload: {type(payload).__name__}",
+            code="validation_error",
         )
 
-    if action == "update":
-        selector = getattr(action_args, "breakpoint")
-        changes = getattr(action_args, "changes")
+    if isinstance(action_args, BreakpointManageUpdateAction):
+        selector = action_args.breakpoint
+        changes = action_args.changes
         return _wrap_action_result(
             "update",
             session.update_breakpoint(
-                cast(int, getattr(selector, "number")),
-                condition=cast(str | None, getattr(changes, "condition")),
-                clear_condition=cast(bool, getattr(changes, "clear_condition")),
+                selector.number,
+                condition=changes.condition,
+                clear_condition=changes.clear_condition,
             ),
         )
 
-    selector = getattr(action_args, "breakpoint")
-    number = cast(int, getattr(selector, "number"))
-    if action == "delete":
+    if not isinstance(action_args, BreakpointManageNumberAction):
+        return OperationError(
+            message=f"Unsupported breakpoint manage action: {type(action_args).__name__}",
+            code="validation_error",
+        )
+
+    number = action_args.breakpoint.number
+    if action_args.action == "delete":
         return _wrap_action_result("delete", session.delete_breakpoint(number=number))
-    if action == "enable":
+    if action_args.action == "enable":
         return _wrap_action_result("enable", session.enable_breakpoint(number=number))
-    if action == "disable":
+    if action_args.action == "disable":
         return _wrap_action_result("disable", session.disable_breakpoint(number=number))
 
     return OperationError(
@@ -484,103 +538,64 @@ def _handle_breakpoint_manage(session: SessionService, args: BaseModel) -> ToolR
     )
 
 
-def _location_kwargs(location: BaseModel) -> dict[str, object]:
+def _location_selection(location: LocationArgs) -> LocationSelection:
     """Translate a location union payload into inspection keyword arguments."""
 
-    kind = cast(str, getattr(location, "kind"))
-    if kind == "current":
-        return {
-            "function": None,
-            "address": None,
-            "start_address": None,
-            "end_address": None,
-            "file": None,
-            "line": None,
-            "start_line": None,
-            "end_line": None,
-        }
-    if kind == "function":
-        return {
-            "function": getattr(location, "function"),
-            "address": None,
-            "start_address": None,
-            "end_address": None,
-            "file": None,
-            "line": None,
-            "start_line": None,
-            "end_line": None,
-        }
-    if kind == "address":
-        return {
-            "function": None,
-            "address": getattr(location, "address"),
-            "start_address": None,
-            "end_address": None,
-            "file": None,
-            "line": None,
-            "start_line": None,
-            "end_line": None,
-        }
-    if kind == "address_range":
-        return {
-            "function": None,
-            "address": None,
-            "start_address": getattr(location, "start_address"),
-            "end_address": getattr(location, "end_address"),
-            "file": None,
-            "line": None,
-            "start_line": None,
-            "end_line": None,
-        }
-    if kind == "file_line":
-        return {
-            "function": None,
-            "address": None,
-            "start_address": None,
-            "end_address": None,
-            "file": getattr(location, "file"),
-            "line": getattr(location, "line"),
-            "start_line": None,
-            "end_line": None,
-        }
-    return {
-        "function": None,
-        "address": None,
-        "start_address": None,
-        "end_address": None,
-        "file": getattr(location, "file"),
-        "line": None,
-        "start_line": getattr(location, "start_line"),
-        "end_line": getattr(location, "end_line"),
-    }
+    if isinstance(location, LocationCurrentArgs):
+        return LocationSelection()
+    if isinstance(location, LocationFunctionArgs):
+        return LocationSelection(function=location.function)
+    if isinstance(location, LocationAddressArgs):
+        return LocationSelection(address=location.address)
+    if isinstance(location, LocationAddressRangeArgs):
+        return LocationSelection(
+            start_address=location.start_address,
+            end_address=location.end_address,
+        )
+    if isinstance(location, LocationFileLineArgs):
+        return LocationSelection(
+            file=location.file,
+            line=location.line,
+        )
+    return LocationSelection(
+        file=location.file,
+        start_line=location.start_line,
+        end_line=location.end_line,
+    )
 
 
-def _handle_context_query(session: SessionService, args: BaseModel) -> ToolResult:
+def _context_selector(context: ThreadFrameContextArgs | None) -> tuple[int | None, int | None]:
+    """Extract optional thread/frame selectors from one typed context payload."""
+
+    if context is None:
+        return None, None
+    return context.thread_id, context.frame
+
+
+def _handle_context_query(session: SessionService, args: ContextQueryArgs) -> ToolResult:
     """Route v2 context query actions to the inspection service."""
 
     action_args = _unwrap_action_args(args)
-    action = cast(str, getattr(action_args, "action"))
-
-    if action == "threads":
+    if isinstance(action_args, ContextQueryThreadsAction):
         return _wrap_action_result("threads", session.get_threads())
 
-    if action == "backtrace":
-        query = getattr(action_args, "query")
+    if isinstance(action_args, ContextQueryBacktraceAction):
+        backtrace_query = action_args.query
         return _wrap_action_result(
             "backtrace",
             session.get_backtrace(
-                thread_id=cast(int | None, getattr(query, "thread_id")),
-                max_frames=cast(int, getattr(query, "max_frames")),
+                thread_id=backtrace_query.thread_id,
+                max_frames=backtrace_query.max_frames,
             ),
         )
 
-    if action == "frame":
-        query = getattr(action_args, "query")
+    if isinstance(action_args, ContextQueryFrameAction):
+        frame_query = action_args.query
         return _wrap_action_result(
             "frame",
             session.get_frame_info(
-                thread_id=cast(int | None, getattr(query, "thread_id")),
-                frame=cast(int | None, getattr(query, "frame")),
+                thread_id=frame_query.thread_id,
+                frame=frame_query.frame,
             ),
         )
 
@@ -590,23 +605,20 @@ def _handle_context_query(session: SessionService, args: BaseModel) -> ToolResul
     )
 
 
-def _handle_context_manage(session: SessionService, args: BaseModel) -> ToolResult:
+def _handle_context_manage(session: SessionService, args: ContextManageArgs) -> ToolResult:
     """Route v2 context mutation actions to the inspection service."""
 
     action_args = _unwrap_action_args(args)
-    action = cast(str, getattr(action_args, "action"))
-    context = getattr(action_args, "context")
-
-    if action == "select_thread":
+    if isinstance(action_args, ContextManageSelectThreadAction):
         return _wrap_action_result(
             "select_thread",
-            session.select_thread(thread_id=cast(int, getattr(context, "thread_id"))),
+            session.select_thread(thread_id=action_args.context.thread_id),
         )
 
-    if action == "select_frame":
+    if isinstance(action_args, ContextManageSelectFrameAction):
         return _wrap_action_result(
             "select_frame",
-            session.select_frame(frame_number=cast(int, getattr(context, "frame"))),
+            session.select_frame(frame_number=action_args.context.frame),
         )
 
     return OperationError(
@@ -615,99 +627,99 @@ def _handle_context_manage(session: SessionService, args: BaseModel) -> ToolResu
     )
 
 
-def _handle_inspect_query(session: SessionService, args: BaseModel) -> ToolResult:
+def _handle_inspect_query(session: SessionService, args: InspectQueryArgs) -> ToolResult:
     """Route v2 inspect query actions to the inspection service."""
 
     action_args = _unwrap_action_args(args)
-    action = cast(str, getattr(action_args, "action"))
-    query = getattr(action_args, "query")
-
-    if action == "evaluate":
-        context = cast(BaseModel | None, getattr(query, "context"))
+    if isinstance(action_args, InspectEvaluateAction):
+        evaluate_query = action_args.query
+        thread_id, frame = _context_selector(evaluate_query.context)
         return _wrap_action_result(
             "evaluate",
             session.evaluate_expression(
-                cast(str, getattr(query, "expression")),
-                thread_id=cast(int | None, getattr(context, "thread_id")) if context is not None else None,
-                frame=cast(int | None, getattr(context, "frame")) if context is not None else None,
-            ),
-        )
-
-    if action == "variables":
-        context = cast(BaseModel | None, getattr(query, "context"))
-        frame = 0
-        if context is not None and getattr(context, "frame") is not None:
-            frame = cast(int, getattr(context, "frame"))
-        return _wrap_action_result(
-            "variables",
-            session.get_variables(
-                thread_id=cast(int | None, getattr(context, "thread_id")) if context is not None else None,
+                evaluate_query.expression,
+                thread_id=thread_id,
                 frame=frame,
             ),
         )
 
-    if action == "registers":
-        context = cast(BaseModel | None, getattr(query, "context"))
-        register_numbers = list(cast(list[int], getattr(query, "register_numbers")))
-        register_names = list(cast(list[str], getattr(query, "register_names")))
+    if isinstance(action_args, InspectVariablesAction):
+        variables_query = action_args.query
+        thread_id, frame = _context_selector(variables_query.context)
+        return _wrap_action_result(
+            "variables",
+            session.get_variables(
+                thread_id=thread_id,
+                frame=0 if frame is None else frame,
+            ),
+        )
+
+    if isinstance(action_args, InspectRegistersAction):
+        registers_query = action_args.query
+        thread_id, frame = _context_selector(registers_query.context)
+        register_numbers = cast(list[int], list(registers_query.register_numbers))
+        register_names = list(registers_query.register_names)
         return _wrap_action_result(
             "registers",
             session.get_registers(
-                thread_id=cast(int | None, getattr(context, "thread_id")) if context is not None else None,
-                frame=cast(int | None, getattr(context, "frame")) if context is not None else None,
+                thread_id=thread_id,
+                frame=frame,
                 register_numbers=register_numbers or None,
                 register_names=register_names or None,
-                include_vector_registers=cast(bool, getattr(query, "include_vector_registers")),
-                max_registers=cast(int | None, getattr(query, "max_registers")),
-                value_format=cast(Literal["hex", "natural"], getattr(query, "value_format")),
+                include_vector_registers=registers_query.include_vector_registers,
+                max_registers=registers_query.max_registers,
+                value_format=registers_query.value_format,
             ),
         )
 
-    if action == "memory":
+    if isinstance(action_args, InspectMemoryAction):
+        memory_query = action_args.query
         return _wrap_action_result(
             "memory",
             session.read_memory(
-                address=cast(str, getattr(query, "address")),
-                count=cast(int, getattr(query, "count")),
-                offset=cast(int, getattr(query, "offset")),
+                address=memory_query.address,
+                count=memory_query.count,
+                offset=memory_query.offset,
             ),
         )
 
-    if action == "disassembly":
-        context = cast(BaseModel | None, getattr(query, "context"))
-        location = _location_kwargs(cast(BaseModel, getattr(query, "location")))
+    if isinstance(action_args, InspectDisassemblyAction):
+        disassembly_query = action_args.query
+        thread_id, frame = _context_selector(disassembly_query.context)
+        location = _location_selection(disassembly_query.location)
         return _wrap_action_result(
             "disassembly",
             session.disassemble(
-                thread_id=cast(int | None, getattr(context, "thread_id")) if context is not None else None,
-                frame=cast(int | None, getattr(context, "frame")) if context is not None else None,
-                function=cast(str | None, location["function"]),
-                address=cast(str | None, location["address"]),
-                start_address=cast(str | None, location["start_address"]),
-                end_address=cast(str | None, location["end_address"]),
-                file=cast(str | None, location["file"]),
-                line=cast(int | None, location["line"]),
-                instruction_count=cast(int, getattr(query, "instruction_count")),
-                mode=cast(Literal["assembly", "mixed"], getattr(query, "mode")),
+                thread_id=thread_id,
+                frame=frame,
+                function=location.function,
+                address=location.address,
+                start_address=location.start_address,
+                end_address=location.end_address,
+                file=location.file,
+                line=location.line,
+                instruction_count=disassembly_query.instruction_count,
+                mode=disassembly_query.mode,
             ),
         )
 
-    if action == "source":
-        context = cast(BaseModel | None, getattr(query, "context"))
-        location = _location_kwargs(cast(BaseModel, getattr(query, "location")))
+    if isinstance(action_args, InspectSourceAction):
+        source_query = action_args.query
+        thread_id, frame = _context_selector(source_query.context)
+        location = _location_selection(source_query.location)
         return _wrap_action_result(
             "source",
             session.get_source_context(
-                thread_id=cast(int | None, getattr(context, "thread_id")) if context is not None else None,
-                frame=cast(int | None, getattr(context, "frame")) if context is not None else None,
-                function=cast(str | None, location["function"]),
-                address=cast(str | None, location["address"]),
-                file=cast(str | None, location["file"]),
-                line=cast(int | None, location["line"]),
-                start_line=cast(int | None, location["start_line"]),
-                end_line=cast(int | None, location["end_line"]),
-                context_before=cast(int, getattr(query, "context_before")),
-                context_after=cast(int, getattr(query, "context_after")),
+                thread_id=thread_id,
+                frame=frame,
+                function=location.function,
+                address=location.address,
+                file=location.file,
+                line=location.line,
+                start_line=location.start_line,
+                end_line=location.end_line,
+                context_before=source_query.context_before,
+                context_after=source_query.context_after,
             ),
         )
 

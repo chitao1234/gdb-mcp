@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, Mock
 
 from gdb_mcp.domain import (
     BreakpointInfo,
+    BreakpointListInfo,
     CommandExecutionInfo,
     DisassemblyInfo,
     FrameInfo,
@@ -464,6 +465,50 @@ class TestHandlerDispatch:
 
         session.select_thread.assert_called_once_with(thread_id=7)
 
+    def test_context_manage_select_frame_routes_to_service(self):
+        """Context manage should route frame selection through the session service."""
+
+        manager = Mock()
+        session = _session_double()
+        session.select_frame.return_value = OperationSuccess(
+            FrameInfo(frame={"level": "2", "func": "worker"})
+        )
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_context_manage",
+            {
+                "session_id": 2,
+                "action": "select_frame",
+                "context": {"frame": 2},
+            },
+            manager,
+        )
+
+        session.select_frame.assert_called_once_with(frame_number=2)
+
+    def test_context_query_threads_routes_to_service(self):
+        """Context query threads should route through the session service."""
+
+        manager = Mock()
+        session = _session_double()
+        session.get_threads.return_value = OperationSuccess(
+            {"threads": [{"id": "1"}], "current_thread_id": "1", "count": 1}
+        )
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_context_query",
+            {
+                "session_id": 2,
+                "action": "threads",
+                "query": {},
+            },
+            manager,
+        )
+
+        session.get_threads.assert_called_once_with()
+
     def test_context_query_frame_routes_with_thread_and_frame_override(self):
         """Context query frame should route optional thread/frame overrides."""
 
@@ -630,6 +675,37 @@ class TestHandlerDispatch:
         )
 
         session.get_breakpoint.assert_called_once_with(4)
+
+    def test_breakpoint_query_list_routes_enabled_filter(self):
+        """Breakpoint query list should apply the enabled-state filter after listing."""
+
+        manager = Mock()
+        session = _session_double()
+        session.list_breakpoints.return_value = OperationSuccess(
+            BreakpointListInfo(
+                breakpoints=[
+                    {"number": "1", "type": "breakpoint", "enabled": "y"},
+                    {"number": "2", "type": "watchpoint", "enabled": "n"},
+                ],
+                count=2,
+            )
+        )
+        manager.resolve_session.return_value = session
+
+        result_data = dispatch(
+            "gdb_breakpoint_query",
+            {
+                "session_id": 3,
+                "action": "list",
+                "query": {"enabled": True},
+            },
+            manager,
+        )
+
+        session.list_breakpoints.assert_called_once_with()
+        assert result_data["action"] == "list"
+        assert result_data["result"]["count"] == 1
+        assert result_data["result"]["breakpoints"][0]["number"] == "1"
 
     def test_breakpoint_manage_update_routes_changes(self):
         """Breakpoint manage update should route condition changes."""
