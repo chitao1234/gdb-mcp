@@ -71,6 +71,12 @@ class TestClientCli:
 
         assert "gdb_call_function" in help_text
 
+    def test_build_parser_still_exposes_session_subcommands(self):
+        help_text = build_parser().format_help()
+
+        assert "gdb_session_start" in help_text
+        assert "gdb_session_query" in help_text
+
     def test_subcommand_help_preserves_percent_description(self, capsys):
         with pytest.raises(SystemExit) as exc_info:
             build_parser().parse_args(["gdb_call_function", "--help"])
@@ -413,6 +419,32 @@ class TestClientCli:
 
         assert exc_info.value.code == 2
         assert "--session-id" in stderr.getvalue()
+        mock_invoke_tool.assert_not_awaited()
+
+    @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
+    def test_main_rejects_session_query_status_without_session_id(self, mock_invoke_tool):
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success"},
+            is_error=False,
+        )
+
+        stderr = StringIO()
+        with pytest.raises(SystemExit) as exc_info:
+            asyncio.run(
+                main(
+                    [
+                        "--server-url",
+                        "http://127.0.0.1:8000/mcp",
+                        "gdb_session_query",
+                        "--action",
+                        "status",
+                    ],
+                    stderr=stderr,
+                )
+            )
+
+        assert exc_info.value.code == 2
+        assert "session_id" in stderr.getvalue()
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)

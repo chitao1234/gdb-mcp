@@ -107,7 +107,8 @@ async def main(
     spec = CLIENT_TOOL_SPECS[args.tool_name]
     with redirect_stderr(error_output):
         try:
-            payload = spec.build_arguments(args)
+            typed_input = spec.parse_input(args)
+            payload = spec.build_arguments(typed_input)
         except CliUsageError as exc:
             parser.error(str(exc))
         except ValidationError as exc:

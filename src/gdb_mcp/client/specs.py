@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Callable, cast
+from typing import Callable, Generic, TypeVar, cast
 
 from pydantic import BaseModel, ValidationError
 
@@ -31,6 +31,9 @@ from gdb_mcp.mcp.schemas import (
     build_tool_definitions,
 )
 
+from .builders.session import build_session_query_payload, build_session_start_payload
+from .input_parsers import parse_session_query_input, parse_session_start_input
+from .inputs import SessionQueryInput, SessionStartInput
 from .parsers import (
     AppendTaggedValue,
     add_boolean_flag,
@@ -46,14 +49,28 @@ from .parsers import (
 )
 from .renderers import render_action_payload, render_mapping, render_session_start
 
+_ToolInputT = TypeVar("_ToolInputT")
+
 
 @dataclass(frozen=True)
-class ToolCliSpec:
+class ToolCliSpec(Generic[_ToolInputT]):
     """One CLI mapping for a public MCP tool."""
 
     name: str
     configure_parser: Callable[[argparse.ArgumentParser], None]
-    build_arguments: Callable[[argparse.Namespace], dict[str, object]]
+    parse_input: Callable[[argparse.Namespace], _ToolInputT]
+    build_arguments: Callable[[_ToolInputT], dict[str, object]]
+    render_human: Callable[[dict[str, object]], str]
+
+
+@dataclass(frozen=True)
+class RegisteredToolCliSpec:
+    """Runtime CLI spec with erased parsed-input type."""
+
+    name: str
+    configure_parser: Callable[[argparse.ArgumentParser], None]
+    parse_input: Callable[[argparse.Namespace], object]
+    build_arguments: Callable[[object], dict[str, object]]
     render_human: Callable[[dict[str, object]], str]
 
 
@@ -111,6 +128,29 @@ _WORKFLOW_STEP_OPTION_MAP = {
     "--setup-step-label": "--step-label",
     "--setup-step-arg": "--step-arg",
 }
+
+
+def _parse_namespace(namespace: argparse.Namespace) -> argparse.Namespace:
+    return namespace
+
+
+def _erase_builder(
+    builder: Callable[[_ToolInputT], dict[str, object]],
+) -> Callable[[object], dict[str, object]]:
+    def build_arguments(parsed_input: object) -> dict[str, object]:
+        return builder(cast(_ToolInputT, parsed_input))
+
+    return build_arguments
+
+
+def _register_tool_spec(spec: ToolCliSpec[_ToolInputT]) -> RegisteredToolCliSpec:
+    return RegisteredToolCliSpec(
+        name=spec.name,
+        configure_parser=spec.configure_parser,
+        parse_input=spec.parse_input,
+        build_arguments=_erase_builder(spec.build_arguments),
+        render_human=spec.render_human,
+    )
 
 
 def _require_fields(
@@ -500,16 +540,8 @@ def _configure_session_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--core")
 
 
-def _build_session_start(namespace: argparse.Namespace) -> dict[str, object]:
-    payload: dict[str, object] = {
-        "program": namespace.program,
-        "args": namespace.args or None,
-        "init_commands": namespace.init_commands or None,
-        "env": collapse_key_value_entries(namespace.env),
-        "gdb_path": namespace.gdb_path,
-        "working_dir": namespace.working_dir,
-        "core": namespace.core,
-    }
+def _build_session_start(typed_input: SessionStartInput) -> dict[str, object]:
+    payload = build_session_start_payload(typed_input)
     return validate_model_payload(StartSessionArgs, payload)
 
 
@@ -607,22 +639,11 @@ def _configure_session_query(parser: argparse.ArgumentParser) -> None:
     _add_session_id(parser, required=False)
 
 
-def _build_session_query(namespace: argparse.Namespace) -> dict[str, object]:
-    return _build_action_arguments(
-        namespace,
-        model=SessionQueryArgs,
-        variants={
-            "list": ActionVariant(
-                build_fields=lambda _: {"query": {}},
-                allowed_fields=frozenset(),
-            ),
-            "status": ActionVariant(
-                build_fields=lambda _: {"query": {}},
-                allowed_fields=frozenset({"session_id"}),
-            ),
-        },
-        tracked_fields=frozenset({"session_id"}),
-    )
+def _build_session_query(typed_input: SessionQueryInput) -> dict[str, object]:
+    payload = build_session_query_payload(typed_input)
+    if typed_input.action == "list" and typed_input.session_id is not None:
+        raise CliUsageError("--session-id not valid with --action list")
+    return validate_model_payload(SessionQueryArgs, payload)
 
 
 def _configure_session_manage(parser: argparse.ArgumentParser) -> None:
@@ -1611,107 +1632,124 @@ def _build_run_until_failure(namespace: argparse.Namespace) -> dict[str, object]
     return validate_model_payload(RunUntilFailureArgs, payload)
 
 
-CLIENT_TOOL_SPECS: dict[str, ToolCliSpec] = {
-    "gdb_session_start": ToolCliSpec(
+CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
+    "gdb_session_start": _register_tool_spec(ToolCliSpec(
         name="gdb_session_start",
         configure_parser=_configure_session_start,
+        parse_input=parse_session_start_input,
         build_arguments=_build_session_start,
         render_human=render_session_start,
-    ),
-    "gdb_session_query": ToolCliSpec(
+    )),
+    "gdb_session_query": _register_tool_spec(ToolCliSpec(
         name="gdb_session_query",
         configure_parser=_configure_session_query,
+        parse_input=parse_session_query_input,
         build_arguments=_build_session_query,
         render_human=render_action_payload,
-    ),
-    "gdb_session_manage": ToolCliSpec(
+    )),
+    "gdb_session_manage": _register_tool_spec(ToolCliSpec(
         name="gdb_session_manage",
         configure_parser=_configure_session_manage,
+        parse_input=_parse_namespace,
         build_arguments=_build_session_manage,
         render_human=render_action_payload,
-    ),
-    "gdb_inferior_query": ToolCliSpec(
+    )),
+    "gdb_inferior_query": _register_tool_spec(ToolCliSpec(
         name="gdb_inferior_query",
         configure_parser=_configure_inferior_query,
+        parse_input=_parse_namespace,
         build_arguments=_build_inferior_query,
         render_human=render_action_payload,
-    ),
-    "gdb_inferior_manage": ToolCliSpec(
+    )),
+    "gdb_inferior_manage": _register_tool_spec(ToolCliSpec(
         name="gdb_inferior_manage",
         configure_parser=_configure_inferior_manage,
+        parse_input=_parse_namespace,
         build_arguments=_build_inferior_manage,
         render_human=render_action_payload,
-    ),
-    "gdb_execution_manage": ToolCliSpec(
+    )),
+    "gdb_execution_manage": _register_tool_spec(ToolCliSpec(
         name="gdb_execution_manage",
         configure_parser=_configure_execution_manage,
+        parse_input=_parse_namespace,
         build_arguments=_build_execution_manage,
         render_human=render_action_payload,
-    ),
-    "gdb_breakpoint_query": ToolCliSpec(
+    )),
+    "gdb_breakpoint_query": _register_tool_spec(ToolCliSpec(
         name="gdb_breakpoint_query",
         configure_parser=_configure_breakpoint_query,
+        parse_input=_parse_namespace,
         build_arguments=_build_breakpoint_query,
         render_human=render_action_payload,
-    ),
-    "gdb_breakpoint_manage": ToolCliSpec(
+    )),
+    "gdb_breakpoint_manage": _register_tool_spec(ToolCliSpec(
         name="gdb_breakpoint_manage",
         configure_parser=_configure_breakpoint_manage,
+        parse_input=_parse_namespace,
         build_arguments=_build_breakpoint_manage,
         render_human=render_action_payload,
-    ),
-    "gdb_execute_command": ToolCliSpec(
+    )),
+    "gdb_execute_command": _register_tool_spec(ToolCliSpec(
         name="gdb_execute_command",
         configure_parser=_configure_execute_command,
+        parse_input=_parse_namespace,
         build_arguments=_build_execute_command,
         render_human=render_mapping,
-    ),
-    "gdb_attach_process": ToolCliSpec(
+    )),
+    "gdb_attach_process": _register_tool_spec(ToolCliSpec(
         name="gdb_attach_process",
         configure_parser=_configure_attach_process,
+        parse_input=_parse_namespace,
         build_arguments=_build_attach_process,
         render_human=render_mapping,
-    ),
-    "gdb_context_query": ToolCliSpec(
+    )),
+    "gdb_context_query": _register_tool_spec(ToolCliSpec(
         name="gdb_context_query",
         configure_parser=_configure_context_query,
+        parse_input=_parse_namespace,
         build_arguments=_build_context_query,
         render_human=render_action_payload,
-    ),
-    "gdb_context_manage": ToolCliSpec(
+    )),
+    "gdb_context_manage": _register_tool_spec(ToolCliSpec(
         name="gdb_context_manage",
         configure_parser=_configure_context_manage,
+        parse_input=_parse_namespace,
         build_arguments=_build_context_manage,
         render_human=render_action_payload,
-    ),
-    "gdb_inspect_query": ToolCliSpec(
+    )),
+    "gdb_inspect_query": _register_tool_spec(ToolCliSpec(
         name="gdb_inspect_query",
         configure_parser=_configure_inspect_query,
+        parse_input=_parse_namespace,
         build_arguments=_build_inspect_query,
         render_human=render_action_payload,
-    ),
-    "gdb_workflow_batch": ToolCliSpec(
+    )),
+    "gdb_workflow_batch": _register_tool_spec(ToolCliSpec(
         name="gdb_workflow_batch",
         configure_parser=_configure_workflow_batch,
+        parse_input=_parse_namespace,
         build_arguments=_build_workflow_batch,
         render_human=render_mapping,
-    ),
-    "gdb_call_function": ToolCliSpec(
+    )),
+    "gdb_call_function": _register_tool_spec(ToolCliSpec(
         name="gdb_call_function",
         configure_parser=_configure_call_function,
+        parse_input=_parse_namespace,
         build_arguments=_build_call_function,
         render_human=render_mapping,
-    ),
-    "gdb_capture_bundle": ToolCliSpec(
+    )),
+    "gdb_capture_bundle": _register_tool_spec(ToolCliSpec(
         name="gdb_capture_bundle",
         configure_parser=_configure_capture_bundle,
+        parse_input=_parse_namespace,
         build_arguments=_build_capture_bundle,
         render_human=render_mapping,
-    ),
-    "gdb_run_until_failure": ToolCliSpec(
+    )),
+    "gdb_run_until_failure": _register_tool_spec(ToolCliSpec(
         name="gdb_run_until_failure",
         configure_parser=_configure_run_until_failure,
+        parse_input=_parse_namespace,
         build_arguments=_build_run_until_failure,
         render_human=render_mapping,
-    ),
+    )),
 }
