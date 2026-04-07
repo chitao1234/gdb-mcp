@@ -32,7 +32,6 @@ from ..session.registry import SessionRegistry
 from ..session.service import SessionService
 from ..session.workflow import BatchStepTemplate
 from .schemas import (
-    AddInferiorArgs,
     AttachProcessArgs,
     BatchArgs,
     BatchStepArgs,
@@ -41,7 +40,6 @@ from .schemas import (
     BreakpointManageCreateAction,
     BreakpointManageNumberAction,
     BreakpointManageUpdateAction,
-    BreakpointNumberArgs,
     BreakpointCodeCreateArgs,
     BreakpointQueryArgs,
     BreakpointQueryGetAction,
@@ -56,9 +54,6 @@ from .schemas import (
     ContextQueryBacktraceAction,
     ContextQueryFrameAction,
     ContextQueryThreadsAction,
-    DisassembleArgs,
-    DetachOnForkArgs,
-    EvaluateExpressionArgs,
     ExecutionContinueAction,
     ExecutionFinishAction,
     ExecutionInterruptAction,
@@ -69,13 +64,6 @@ from .schemas import (
     ExecutionWaitArgs,
     ExecutionWaitForStopAction,
     ExecuteCommandArgs,
-    FinishArgs,
-    FollowForkModeArgs,
-    FrameSelectArgs,
-    GetBacktraceArgs,
-    GetSourceContextArgs,
-    GetRegistersArgs,
-    GetVariablesArgs,
     InferiorManageArgs,
     InferiorManageCreateAction,
     InferiorManageDetachOnForkAction,
@@ -85,7 +73,6 @@ from .schemas import (
     InferiorQueryArgs,
     InferiorQueryCurrentAction,
     InferiorQueryListAction,
-    InferiorSelectArgs,
     InspectDisassemblyAction,
     InspectEvaluateAction,
     InspectMemoryAction,
@@ -99,23 +86,14 @@ from .schemas import (
     LocationFileLineArgs,
     LocationFileRangeArgs,
     LocationFunctionArgs,
-    ReadMemoryArgs,
-    RemoveInferiorArgs,
     RunUntilFailureArgs,
-    RunArgs,
     SessionManageArgs,
     SessionManageStopAction,
     SessionQueryArgs,
     SessionQueryListAction,
     SessionQueryStatusAction,
-    SessionIdArgs,
-    SetCatchpointArgs,
-    SetBreakpointArgs,
-    SetWatchpointArgs,
     StartSessionArgs,
     ThreadFrameContextArgs,
-    ThreadSelectArgs,
-    WaitForStopArgs,
 )
 from .serializer import serialize_exception, serialize_result
 
@@ -236,18 +214,6 @@ def _execution_wait_policy(wait: ExecutionWaitArgs | None) -> tuple[int, bool]:
 
 def _handle_execute_command(session: SessionService, args: ExecuteCommandArgs) -> ToolResult:
     return session.execute_command(command=args.command, timeout_sec=args.timeout_sec)
-
-
-def _handle_run(session: SessionService, args: RunArgs) -> ToolResult:
-    run_args = _normalize_run_args(args.args)
-    if isinstance(run_args, OperationError):
-        return run_args
-    return session.run(
-        args=run_args,
-        timeout_sec=args.timeout_sec,
-        wait_for_stop=args.wait_for_stop,
-    )
-
 
 def _handle_execution_manage(session: SessionService, args: ExecutionManageArgs) -> ToolResult:
     """Route v2 execution actions to the session execution API."""
@@ -728,267 +694,8 @@ def _handle_inspect_query(session: SessionService, args: InspectQueryArgs) -> To
         code="validation_error",
     )
 
-
-def _handle_add_inferior(session: SessionService, args: AddInferiorArgs) -> ToolResult:
-    return session.add_inferior(
-        executable=args.executable,
-        make_current=args.make_current,
-    )
-
-
-def _handle_remove_inferior(session: SessionService, args: RemoveInferiorArgs) -> ToolResult:
-    return session.remove_inferior(inferior_id=args.inferior_id)
-
-
 def _handle_attach_process(session: SessionService, args: AttachProcessArgs) -> ToolResult:
     return session.attach_process(pid=args.pid, timeout_sec=args.timeout_sec)
-
-
-def _handle_list_inferiors(session: SessionService, args: SessionIdArgs) -> ToolResult:
-    del args
-    return session.list_inferiors()
-
-
-def _handle_select_inferior(session: SessionService, args: InferiorSelectArgs) -> ToolResult:
-    return session.select_inferior(inferior_id=args.inferior_id)
-
-
-def _handle_set_follow_fork_mode(
-    session: SessionService, args: FollowForkModeArgs
-) -> ToolResult:
-    return session.set_follow_fork_mode(mode=args.mode)
-
-
-def _handle_set_detach_on_fork(session: SessionService, args: DetachOnForkArgs) -> ToolResult:
-    return session.set_detach_on_fork(enabled=args.enabled)
-
-
-def _handle_get_status(session: SessionService, args: SessionIdArgs) -> ToolResult:
-    del args
-    return session.get_status()
-
-
-def _handle_get_threads(session: SessionService, args: SessionIdArgs) -> ToolResult:
-    del args
-    return session.get_threads()
-
-
-def _handle_select_thread(session: SessionService, args: ThreadSelectArgs) -> ToolResult:
-    return session.select_thread(thread_id=args.thread_id)
-
-
-def _handle_get_backtrace(session: SessionService, args: GetBacktraceArgs) -> ToolResult:
-    thread_id = _normalize_int_argument(args.thread_id, field_name="thread_id", minimum=1)
-    if isinstance(thread_id, OperationError):
-        return thread_id
-    return session.get_backtrace(thread_id=thread_id, max_frames=args.max_frames)
-
-
-def _handle_select_frame(session: SessionService, args: FrameSelectArgs) -> ToolResult:
-    return session.select_frame(frame_number=args.frame_number)
-
-
-def _handle_get_frame_info(session: SessionService, args: SessionIdArgs) -> ToolResult:
-    del args
-    return session.get_frame_info()
-
-
-def _handle_set_breakpoint(session: SessionService, args: SetBreakpointArgs) -> ToolResult:
-    return session.set_breakpoint(
-        location=args.location,
-        condition=args.condition,
-        temporary=args.temporary,
-    )
-
-
-def _handle_set_watchpoint(session: SessionService, args: SetWatchpointArgs) -> ToolResult:
-    return session.set_watchpoint(expression=args.expression, access=args.access)
-
-
-def _handle_delete_watchpoint(session: SessionService, args: BreakpointNumberArgs) -> ToolResult:
-    return session.delete_watchpoint(number=args.number)
-
-
-def _handle_set_catchpoint(session: SessionService, args: SetCatchpointArgs) -> ToolResult:
-    return session.set_catchpoint(
-        args.kind,
-        argument=args.argument,
-        temporary=args.temporary,
-    )
-
-
-def _handle_list_breakpoints(session: SessionService, args: SessionIdArgs) -> ToolResult:
-    del args
-    return session.list_breakpoints()
-
-
-def _handle_delete_breakpoint(session: SessionService, args: BreakpointNumberArgs) -> ToolResult:
-    return session.delete_breakpoint(number=args.number)
-
-
-def _handle_enable_breakpoint(session: SessionService, args: BreakpointNumberArgs) -> ToolResult:
-    return session.enable_breakpoint(number=args.number)
-
-
-def _handle_disable_breakpoint(session: SessionService, args: BreakpointNumberArgs) -> ToolResult:
-    return session.disable_breakpoint(number=args.number)
-
-
-def _handle_continue(session: SessionService, args: SessionIdArgs) -> ToolResult:
-    del args
-    return session.continue_execution()
-
-
-def _handle_wait_for_stop(session: SessionService, args: WaitForStopArgs) -> ToolResult:
-    return session.wait_for_stop(
-        timeout_sec=args.timeout_sec,
-        stop_reasons=tuple(args.stop_reasons),
-    )
-
-
-def _handle_step(session: SessionService, args: SessionIdArgs) -> ToolResult:
-    del args
-    return session.step()
-
-
-def _handle_next(session: SessionService, args: SessionIdArgs) -> ToolResult:
-    del args
-    return session.next()
-
-
-def _handle_finish(session: SessionService, args: FinishArgs) -> ToolResult:
-    return session.finish(timeout_sec=args.timeout_sec)
-
-
-def _handle_interrupt(session: SessionService, args: SessionIdArgs) -> ToolResult:
-    del args
-    return session.interrupt()
-
-
-def _handle_evaluate_expression(
-    session: SessionService, args: EvaluateExpressionArgs
-) -> ToolResult:
-    thread_id = _normalize_int_argument(args.thread_id, field_name="thread_id", minimum=1)
-    if isinstance(thread_id, OperationError):
-        return thread_id
-
-    frame = _normalize_int_argument(args.frame, field_name="frame", minimum=0)
-    if isinstance(frame, OperationError):
-        return frame
-
-    return session.evaluate_expression(
-        args.expression,
-        thread_id=thread_id,
-        frame=frame,
-    )
-
-
-def _handle_read_memory(session: SessionService, args: ReadMemoryArgs) -> ToolResult:
-    return session.read_memory(
-        address=args.address,
-        count=args.count,
-        offset=args.offset,
-    )
-
-
-def _handle_disassemble(session: SessionService, args: DisassembleArgs) -> ToolResult:
-    thread_id = _normalize_int_argument(args.thread_id, field_name="thread_id", minimum=1)
-    if isinstance(thread_id, OperationError):
-        return thread_id
-
-    frame = _normalize_int_argument(args.frame, field_name="frame", minimum=0)
-    if isinstance(frame, OperationError):
-        return frame
-
-    line = _normalize_int_argument(args.line, field_name="line", minimum=1)
-    if isinstance(line, OperationError):
-        return line
-
-    return session.disassemble(
-        thread_id=thread_id,
-        frame=frame,
-        function=args.function,
-        address=args.address,
-        start_address=args.start_address,
-        end_address=args.end_address,
-        file=args.file,
-        line=line,
-        instruction_count=args.instruction_count,
-        mode=args.mode,
-    )
-
-
-def _handle_get_variables(session: SessionService, args: GetVariablesArgs) -> ToolResult:
-    thread_id = _normalize_int_argument(args.thread_id, field_name="thread_id", minimum=1)
-    if isinstance(thread_id, OperationError):
-        return thread_id
-
-    frame_value = _normalize_int_argument(args.frame, field_name="frame", minimum=0)
-    if isinstance(frame_value, OperationError):
-        return frame_value
-    if frame_value is None:
-        return OperationError(message="Invalid frame: value is required", code="validation_error")
-
-    return session.get_variables(thread_id=thread_id, frame=frame_value)
-
-
-def _handle_get_source_context(session: SessionService, args: GetSourceContextArgs) -> ToolResult:
-    thread_id = _normalize_int_argument(args.thread_id, field_name="thread_id", minimum=1)
-    if isinstance(thread_id, OperationError):
-        return thread_id
-
-    frame = _normalize_int_argument(args.frame, field_name="frame", minimum=0)
-    if isinstance(frame, OperationError):
-        return frame
-
-    line = _normalize_int_argument(args.line, field_name="line", minimum=1)
-    if isinstance(line, OperationError):
-        return line
-
-    start_line = _normalize_int_argument(args.start_line, field_name="start_line", minimum=1)
-    if isinstance(start_line, OperationError):
-        return start_line
-
-    end_line = _normalize_int_argument(args.end_line, field_name="end_line", minimum=1)
-    if isinstance(end_line, OperationError):
-        return end_line
-
-    return session.get_source_context(
-        thread_id=thread_id,
-        frame=frame,
-        function=args.function,
-        address=args.address,
-        file=args.file,
-        line=line,
-        start_line=start_line,
-        end_line=end_line,
-        context_before=args.context_before,
-        context_after=args.context_after,
-    )
-
-
-def _handle_get_registers(session: SessionService, args: GetRegistersArgs) -> ToolResult:
-    thread_id = _normalize_int_argument(args.thread_id, field_name="thread_id", minimum=1)
-    if isinstance(thread_id, OperationError):
-        return thread_id
-
-    frame = _normalize_int_argument(args.frame, field_name="frame", minimum=0)
-    if isinstance(frame, OperationError):
-        return frame
-
-    register_numbers = [int(number) for number in args.register_numbers]
-    register_names = [str(name) for name in args.register_names]
-
-    return session.get_registers(
-        thread_id=thread_id,
-        frame=frame,
-        register_numbers=register_numbers or None,
-        register_names=register_names or None,
-        include_vector_registers=args.include_vector_registers,
-        max_registers=args.max_registers,
-        value_format=args.value_format,
-    )
-
 
 def _handle_call_function(session: SessionService, args: CallFunctionArgs) -> ToolResult:
     return session.call_function(function_call=args.function_call, timeout_sec=args.timeout_sec)
@@ -1165,65 +872,6 @@ def _normalize_run_args(args: list[str] | str | None) -> list[str] | None | Oper
                 code="validation_error",
             )
     return list(args)
-
-
-def _normalize_int_argument(
-    value: int | str | None,
-    *,
-    field_name: str,
-    minimum: int,
-) -> int | None | OperationError:
-    """Normalize an integer-like argument from int or numeric-string input."""
-
-    if value is None:
-        return None
-
-    if isinstance(value, int):
-        parsed = value
-    elif isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return OperationError(
-                message=f"Invalid {field_name}: expected an integer value",
-                code="validation_error",
-            )
-        if text.startswith(("+", "-")):
-            sign = text[0]
-            digits = text[1:]
-            if not digits.isdigit():
-                return OperationError(
-                    message=f"Invalid {field_name}: expected an integer value, got {value!r}",
-                    code="validation_error",
-                )
-            parsed = int(f"{sign}{digits}", 10)
-        elif text.isdigit():
-            parsed = int(text, 10)
-        else:
-            return OperationError(
-                message=f"Invalid {field_name}: expected an integer value, got {value!r}",
-                code="validation_error",
-            )
-    else:
-        return OperationError(
-            message=f"Invalid {field_name}: expected an integer value",
-            code="validation_error",
-        )
-
-    if parsed < minimum:
-        qualifier = "positive integer" if minimum == 1 else f"integer >= {minimum}"
-        return OperationError(
-            message=f"Invalid {field_name}: expected {qualifier}, got {parsed}",
-            code="validation_error",
-        )
-    return parsed
-
-
-def _invalid_session_result(session_id: object) -> OperationError:
-    """Return the standard invalid-session error response."""
-
-    return OperationError(
-        message=f"Invalid session_id: {session_id}. Use gdb_session_start to create a new session."
-    )
 
 
 def _handle_start_session(
