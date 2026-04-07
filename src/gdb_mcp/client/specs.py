@@ -31,9 +31,28 @@ from gdb_mcp.mcp.schemas import (
     build_tool_definitions,
 )
 
+from .builders.context import build_context_manage_payload, build_context_query_payload
+from .builders.execution import build_execution_manage_payload
+from .builders.inferior import build_inferior_manage_payload, build_inferior_query_payload
 from .builders.session import build_session_query_payload, build_session_start_payload
-from .input_parsers import parse_session_query_input, parse_session_start_input
-from .inputs import SessionQueryInput, SessionStartInput
+from .input_parsers import (
+    parse_context_manage_input,
+    parse_context_query_input,
+    parse_execution_manage_input,
+    parse_inferior_manage_input,
+    parse_inferior_query_input,
+    parse_session_query_input,
+    parse_session_start_input,
+)
+from .inputs import (
+    ContextManageInput,
+    ContextQueryInput,
+    ExecutionManageInput,
+    InferiorManageInput,
+    InferiorQueryInput,
+    SessionQueryInput,
+    SessionStartInput,
+)
 from .parsers import (
     AppendTaggedValue,
     add_boolean_flag,
@@ -588,50 +607,123 @@ def _build_action_arguments(
     return validate_model_payload(model, payload)
 
 
+def _raise_invalid_action_flags(action: str, invalid_flags: list[str]) -> None:
+    if invalid_flags:
+        raise CliUsageError(
+            f"{', '.join(sorted(invalid_flags))} not valid with --action {action}"
+        )
+
+
+def _validate_inferior_manage_input(typed_input: InferiorManageInput) -> None:
+    invalid_flags: list[str] = []
+    if typed_input.action == "create":
+        if typed_input.inferior_id is not None:
+            invalid_flags.append("--inferior-id")
+        if typed_input.mode is not None:
+            invalid_flags.append("--mode")
+        if typed_input.enabled is not None:
+            invalid_flags.append("--enabled")
+    elif typed_input.action in {"remove", "select"}:
+        if typed_input.executable is not None:
+            invalid_flags.append("--executable")
+        if typed_input.make_current is not None:
+            invalid_flags.append("--make-current")
+        if typed_input.mode is not None:
+            invalid_flags.append("--mode")
+        if typed_input.enabled is not None:
+            invalid_flags.append("--enabled")
+    elif typed_input.action == "set_follow_fork_mode":
+        if typed_input.inferior_id is not None:
+            invalid_flags.append("--inferior-id")
+        if typed_input.executable is not None:
+            invalid_flags.append("--executable")
+        if typed_input.make_current is not None:
+            invalid_flags.append("--make-current")
+        if typed_input.enabled is not None:
+            invalid_flags.append("--enabled")
+    elif typed_input.action == "set_detach_on_fork":
+        if typed_input.inferior_id is not None:
+            invalid_flags.append("--inferior-id")
+        if typed_input.executable is not None:
+            invalid_flags.append("--executable")
+        if typed_input.make_current is not None:
+            invalid_flags.append("--make-current")
+        if typed_input.mode is not None:
+            invalid_flags.append("--mode")
+
+    _raise_invalid_action_flags(typed_input.action, invalid_flags)
+
+
+def _validate_execution_manage_input(typed_input: ExecutionManageInput) -> None:
+    invalid_flags: list[str] = []
+    has_wait_until = typed_input.wait is not None and typed_input.wait.until is not None
+    has_wait_timeout = typed_input.wait is not None and typed_input.wait.timeout_sec is not None
+
+    if typed_input.action == "run":
+        if typed_input.timeout_sec is not None:
+            invalid_flags.append("--timeout-sec")
+        if typed_input.stop_reasons:
+            invalid_flags.append("--stop-reason")
+    elif typed_input.action in {"continue", "step", "next", "finish"}:
+        if typed_input.args:
+            invalid_flags.append("--arg")
+        if typed_input.timeout_sec is not None:
+            invalid_flags.append("--timeout-sec")
+        if typed_input.stop_reasons:
+            invalid_flags.append("--stop-reason")
+    elif typed_input.action == "interrupt":
+        if typed_input.args:
+            invalid_flags.append("--arg")
+        if has_wait_until:
+            invalid_flags.append("--wait-until")
+        if has_wait_timeout:
+            invalid_flags.append("--wait-timeout-sec")
+        if typed_input.timeout_sec is not None:
+            invalid_flags.append("--timeout-sec")
+        if typed_input.stop_reasons:
+            invalid_flags.append("--stop-reason")
+    elif typed_input.action == "wait_for_stop":
+        if typed_input.args:
+            invalid_flags.append("--arg")
+        if has_wait_until:
+            invalid_flags.append("--wait-until")
+        if has_wait_timeout:
+            invalid_flags.append("--wait-timeout-sec")
+
+    _raise_invalid_action_flags(typed_input.action, invalid_flags)
+
+
+def _validate_context_query_input(typed_input: ContextQueryInput) -> None:
+    invalid_flags: list[str] = []
+    if typed_input.action == "threads":
+        if typed_input.thread_id is not None:
+            invalid_flags.append("--thread-id")
+        if typed_input.frame is not None:
+            invalid_flags.append("--frame")
+        if typed_input.max_frames is not None:
+            invalid_flags.append("--max-frames")
+    elif typed_input.action == "backtrace":
+        if typed_input.frame is not None:
+            invalid_flags.append("--frame")
+    elif typed_input.action == "frame":
+        if typed_input.max_frames is not None:
+            invalid_flags.append("--max-frames")
+
+    _raise_invalid_action_flags(typed_input.action, invalid_flags)
+
+
+def _validate_context_manage_input(typed_input: ContextManageInput) -> None:
+    invalid_flags: list[str] = []
+    if typed_input.action == "select_thread" and typed_input.frame is not None:
+        invalid_flags.append("--frame")
+    elif typed_input.action == "select_frame" and typed_input.thread_id is not None:
+        invalid_flags.append("--thread-id")
+
+    _raise_invalid_action_flags(typed_input.action, invalid_flags)
+
+
 def _empty_payload(_: argparse.Namespace) -> dict[str, object]:
     return {}
-
-
-def _execution_wait(namespace: argparse.Namespace) -> dict[str, object] | None:
-    wait_until = getattr(namespace, "wait_until", None)
-    wait_timeout_sec = getattr(namespace, "wait_timeout_sec", None)
-    if wait_until is None and wait_timeout_sec is None:
-        return None
-
-    payload: dict[str, object] = {}
-    if wait_until is not None:
-        payload["until"] = wait_until
-    if wait_timeout_sec is not None:
-        payload["timeout_sec"] = wait_timeout_sec
-    return payload
-
-
-def _execution_run_payload(namespace: argparse.Namespace) -> dict[str, object]:
-    payload: dict[str, object] = {}
-    args = getattr(namespace, "args", [])
-    if args:
-        payload["args"] = args
-
-    wait_payload = _execution_wait(namespace)
-    if wait_payload is not None:
-        payload["wait"] = wait_payload
-
-    return payload
-
-
-def _execution_control_payload(namespace: argparse.Namespace) -> dict[str, object]:
-    wait_payload = _execution_wait(namespace)
-    if wait_payload is None:
-        return {}
-    return {"wait": wait_payload}
-
-
-def _execution_wait_for_stop_payload(namespace: argparse.Namespace) -> dict[str, object]:
-    payload: dict[str, object] = {"timeout_sec": getattr(namespace, "timeout_sec", 30)}
-    stop_reasons = getattr(namespace, "stop_reasons", [])
-    if stop_reasons:
-        payload["stop_reasons"] = stop_reasons
-    return payload
 
 
 def _configure_session_query(parser: argparse.ArgumentParser) -> None:
@@ -664,15 +756,9 @@ def _configure_inferior_query(parser: argparse.ArgumentParser) -> None:
     _add_action(parser, choices=["list", "current"])
 
 
-def _build_inferior_query(namespace: argparse.Namespace) -> dict[str, object]:
-    return _build_action_arguments(
-        namespace,
-        model=InferiorQueryArgs,
-        variants={
-            "list": ActionVariant(build_fields=lambda _: {"query": {}}),
-            "current": ActionVariant(build_fields=lambda _: {"query": {}}),
-        },
-    )
+def _build_inferior_query(typed_input: InferiorQueryInput) -> dict[str, object]:
+    payload = build_inferior_query_payload(typed_input)
+    return validate_model_payload(InferiorQueryArgs, payload)
 
 
 def _configure_inferior_manage(parser: argparse.ArgumentParser) -> None:
@@ -700,45 +786,10 @@ def _configure_inferior_manage(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_inferior_manage(namespace: argparse.Namespace) -> dict[str, object]:
-    return _build_action_arguments(
-        namespace,
-        model=InferiorManageArgs,
-        variants={
-            "create": ActionVariant(
-                build_fields=lambda ns: {
-                    "inferior": {
-                        "executable": getattr(ns, "executable", None),
-                        "make_current": getattr(ns, "make_current", False),
-                    }
-                },
-                allowed_fields=frozenset({"executable", "make_current"}),
-            ),
-            "remove": ActionVariant(
-                build_fields=lambda ns: {
-                    "inferior": {"inferior_id": getattr(ns, "inferior_id", None)}
-                },
-                allowed_fields=frozenset({"inferior_id"}),
-            ),
-            "select": ActionVariant(
-                build_fields=lambda ns: {
-                    "inferior": {"inferior_id": getattr(ns, "inferior_id", None)}
-                },
-                allowed_fields=frozenset({"inferior_id"}),
-            ),
-            "set_follow_fork_mode": ActionVariant(
-                build_fields=lambda ns: {"inferior": {"mode": getattr(ns, "mode", None)}},
-                allowed_fields=frozenset({"mode"}),
-            ),
-            "set_detach_on_fork": ActionVariant(
-                build_fields=lambda ns: {
-                    "inferior": {"enabled": getattr(ns, "enabled", True)}
-                },
-                allowed_fields=frozenset({"enabled"}),
-            ),
-        },
-        tracked_fields=frozenset({"inferior_id", "executable", "make_current", "mode", "enabled"}),
-    )
+def _build_inferior_manage(typed_input: InferiorManageInput) -> dict[str, object]:
+    _validate_inferior_manage_input(typed_input)
+    payload = build_inferior_manage_payload(typed_input)
+    return validate_model_payload(InferiorManageArgs, payload)
 
 
 def _configure_execution_manage(parser: argparse.ArgumentParser) -> None:
@@ -754,42 +805,10 @@ def _configure_execution_manage(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--stop-reason", dest="stop_reasons", action="append", default=argparse.SUPPRESS)
 
 
-def _build_execution_manage(namespace: argparse.Namespace) -> dict[str, object]:
-    return _build_action_arguments(
-        namespace,
-        model=ExecutionManageArgs,
-        variants={
-            "run": ActionVariant(
-                build_fields=lambda ns: {"execution": _execution_run_payload(ns)},
-                allowed_fields=frozenset({"args", "wait_until", "wait_timeout_sec"}),
-            ),
-            "continue": ActionVariant(
-                build_fields=lambda ns: {"execution": _execution_control_payload(ns)},
-                allowed_fields=frozenset({"wait_until", "wait_timeout_sec"}),
-            ),
-            "interrupt": ActionVariant(
-                build_fields=lambda _: {"execution": {}},
-                allowed_fields=frozenset(),
-            ),
-            "step": ActionVariant(
-                build_fields=lambda ns: {"execution": _execution_control_payload(ns)},
-                allowed_fields=frozenset({"wait_until", "wait_timeout_sec"}),
-            ),
-            "next": ActionVariant(
-                build_fields=lambda ns: {"execution": _execution_control_payload(ns)},
-                allowed_fields=frozenset({"wait_until", "wait_timeout_sec"}),
-            ),
-            "finish": ActionVariant(
-                build_fields=lambda ns: {"execution": _execution_control_payload(ns)},
-                allowed_fields=frozenset({"wait_until", "wait_timeout_sec"}),
-            ),
-            "wait_for_stop": ActionVariant(
-                build_fields=lambda ns: {"execution": _execution_wait_for_stop_payload(ns)},
-                allowed_fields=frozenset({"timeout_sec", "stop_reasons"}),
-            ),
-        },
-        tracked_fields=frozenset({"args", "wait_until", "wait_timeout_sec", "timeout_sec", "stop_reasons"}),
-    )
+def _build_execution_manage(typed_input: ExecutionManageInput) -> dict[str, object]:
+    _validate_execution_manage_input(typed_input)
+    payload = build_execution_manage_payload(typed_input)
+    return validate_model_payload(ExecutionManageArgs, payload)
 
 
 def _configure_context_query(parser: argparse.ArgumentParser) -> None:
@@ -800,36 +819,10 @@ def _configure_context_query(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-frames", type=int, default=argparse.SUPPRESS)
 
 
-def _build_context_query(namespace: argparse.Namespace) -> dict[str, object]:
-    return _build_action_arguments(
-        namespace,
-        model=ContextQueryArgs,
-        variants={
-            "threads": ActionVariant(
-                build_fields=lambda _: {"query": {}},
-                allowed_fields=frozenset(),
-            ),
-            "backtrace": ActionVariant(
-                build_fields=lambda ns: {
-                    "query": {
-                        "thread_id": getattr(ns, "thread_id", None),
-                        "max_frames": getattr(ns, "max_frames", 100),
-                    }
-                },
-                allowed_fields=frozenset({"thread_id", "max_frames"}),
-            ),
-            "frame": ActionVariant(
-                build_fields=lambda ns: {
-                    "query": {
-                        "thread_id": getattr(ns, "thread_id", None),
-                        "frame": getattr(ns, "frame", None),
-                    }
-                },
-                allowed_fields=frozenset({"thread_id", "frame"}),
-            ),
-        },
-        tracked_fields=frozenset({"thread_id", "frame", "max_frames"}),
-    )
+def _build_context_query(typed_input: ContextQueryInput) -> dict[str, object]:
+    _validate_context_query_input(typed_input)
+    payload = build_context_query_payload(typed_input)
+    return validate_model_payload(ContextQueryArgs, payload)
 
 
 def _configure_context_manage(parser: argparse.ArgumentParser) -> None:
@@ -839,24 +832,10 @@ def _configure_context_manage(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--frame", type=int, default=argparse.SUPPRESS)
 
 
-def _build_context_manage(namespace: argparse.Namespace) -> dict[str, object]:
-    return _build_action_arguments(
-        namespace,
-        model=ContextManageArgs,
-        variants={
-            "select_thread": ActionVariant(
-                build_fields=lambda ns: {
-                    "context": {"thread_id": getattr(ns, "thread_id", None)}
-                },
-                allowed_fields=frozenset({"thread_id"}),
-            ),
-            "select_frame": ActionVariant(
-                build_fields=lambda ns: {"context": {"frame": getattr(ns, "frame", None)}},
-                allowed_fields=frozenset({"frame"}),
-            ),
-        },
-        tracked_fields=frozenset({"thread_id", "frame"}),
-    )
+def _build_context_manage(typed_input: ContextManageInput) -> dict[str, object]:
+    _validate_context_manage_input(typed_input)
+    payload = build_context_manage_payload(typed_input)
+    return validate_model_payload(ContextManageArgs, payload)
 
 
 def _configure_execute_command(parser: argparse.ArgumentParser) -> None:
@@ -1657,21 +1636,21 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
     "gdb_inferior_query": _register_tool_spec(ToolCliSpec(
         name="gdb_inferior_query",
         configure_parser=_configure_inferior_query,
-        parse_input=_parse_namespace,
+        parse_input=parse_inferior_query_input,
         build_arguments=_build_inferior_query,
         render_human=render_action_payload,
     )),
     "gdb_inferior_manage": _register_tool_spec(ToolCliSpec(
         name="gdb_inferior_manage",
         configure_parser=_configure_inferior_manage,
-        parse_input=_parse_namespace,
+        parse_input=parse_inferior_manage_input,
         build_arguments=_build_inferior_manage,
         render_human=render_action_payload,
     )),
     "gdb_execution_manage": _register_tool_spec(ToolCliSpec(
         name="gdb_execution_manage",
         configure_parser=_configure_execution_manage,
-        parse_input=_parse_namespace,
+        parse_input=parse_execution_manage_input,
         build_arguments=_build_execution_manage,
         render_human=render_action_payload,
     )),
@@ -1706,14 +1685,14 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
     "gdb_context_query": _register_tool_spec(ToolCliSpec(
         name="gdb_context_query",
         configure_parser=_configure_context_query,
-        parse_input=_parse_namespace,
+        parse_input=parse_context_query_input,
         build_arguments=_build_context_query,
         render_human=render_action_payload,
     )),
     "gdb_context_manage": _register_tool_spec(ToolCliSpec(
         name="gdb_context_manage",
         configure_parser=_configure_context_manage,
-        parse_input=_parse_namespace,
+        parse_input=parse_context_manage_input,
         build_arguments=_build_context_manage,
         render_human=render_action_payload,
     )),

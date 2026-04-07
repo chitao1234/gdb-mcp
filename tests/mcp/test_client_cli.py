@@ -573,6 +573,71 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
+    def test_main_rejects_inferior_remove_with_executable_flag(self, mock_invoke_tool):
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success"},
+            is_error=False,
+        )
+
+        stderr = StringIO()
+        with pytest.raises(SystemExit) as exc_info:
+            asyncio.run(
+                main(
+                    [
+                        "--server-url",
+                        "http://127.0.0.1:8000/mcp",
+                        "gdb_inferior_manage",
+                        "--session-id",
+                        "7",
+                        "--action",
+                        "remove",
+                        "--inferior-id",
+                        "2",
+                        "--executable",
+                        "/bin/true",
+                    ],
+                    stderr=stderr,
+                )
+            )
+
+        assert exc_info.value.code == 2
+        assert "--executable" in stderr.getvalue()
+        mock_invoke_tool.assert_not_awaited()
+
+    @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
+    def test_main_builds_inferior_set_detach_on_fork_default_payload(self, mock_invoke_tool):
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success", "action": "set_detach_on_fork", "result": {"enabled": True}},
+            is_error=False,
+        )
+
+        exit_code = asyncio.run(
+            main(
+                [
+                    "--server-url",
+                    "http://127.0.0.1:8000/mcp",
+                    "gdb_inferior_manage",
+                    "--session-id",
+                    "7",
+                    "--action",
+                    "set_detach_on_fork",
+                ]
+            )
+        )
+
+        assert exit_code == 0
+        mock_invoke_tool.assert_awaited_once_with(
+            "http://127.0.0.1:8000/mcp",
+            "gdb_inferior_manage",
+            {
+                "session_id": 7,
+                "action": "set_detach_on_fork",
+                "inferior": {"enabled": True},
+            },
+            http_client=None,
+        )
+
+    @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_rejects_execution_interrupt_with_wait_flags(self, mock_invoke_tool):
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"},
@@ -600,6 +665,36 @@ class TestClientCli:
 
         assert exc_info.value.code == 2
         assert "--wait-until" in stderr.getvalue()
+        mock_invoke_tool.assert_not_awaited()
+
+    @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
+    def test_main_rejects_execution_interrupt_with_args(self, mock_invoke_tool):
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success"},
+            is_error=False,
+        )
+
+        stderr = StringIO()
+        with pytest.raises(SystemExit) as exc_info:
+            asyncio.run(
+                main(
+                    [
+                        "--server-url",
+                        "http://127.0.0.1:8000/mcp",
+                        "gdb_execution_manage",
+                        "--session-id",
+                        "7",
+                        "--action",
+                        "interrupt",
+                        "--arg",
+                        "x",
+                    ],
+                    stderr=stderr,
+                )
+            )
+
+        assert exc_info.value.code == 2
+        assert "--arg" in stderr.getvalue()
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -693,6 +788,36 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
+    def test_main_rejects_execution_wait_for_stop_zero_timeout(self, mock_invoke_tool):
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success"},
+            is_error=False,
+        )
+
+        stderr = StringIO()
+        with pytest.raises(SystemExit) as exc_info:
+            asyncio.run(
+                main(
+                    [
+                        "--server-url",
+                        "http://127.0.0.1:8000/mcp",
+                        "gdb_execution_manage",
+                        "--session-id",
+                        "7",
+                        "--action",
+                        "wait_for_stop",
+                        "--timeout-sec",
+                        "0",
+                    ],
+                    stderr=stderr,
+                )
+            )
+
+        assert exc_info.value.code == 2
+        assert "timeout_sec" in stderr.getvalue()
+        mock_invoke_tool.assert_not_awaited()
+
+    @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_rejects_context_threads_with_thread_flag(self, mock_invoke_tool):
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"},
@@ -760,6 +885,36 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
+    def test_main_rejects_context_backtrace_with_frame_flag(self, mock_invoke_tool):
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success"},
+            is_error=False,
+        )
+
+        stderr = StringIO()
+        with pytest.raises(SystemExit) as exc_info:
+            asyncio.run(
+                main(
+                    [
+                        "--server-url",
+                        "http://127.0.0.1:8000/mcp",
+                        "gdb_context_query",
+                        "--session-id",
+                        "7",
+                        "--action",
+                        "backtrace",
+                        "--frame",
+                        "2",
+                    ],
+                    stderr=stderr,
+                )
+            )
+
+        assert exc_info.value.code == 2
+        assert "--frame" in stderr.getvalue()
+        mock_invoke_tool.assert_not_awaited()
+
+    @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_builds_context_manage_select_frame_payload(self, mock_invoke_tool):
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "action": "select_frame", "result": {"frame": 2}},
@@ -793,6 +948,38 @@ class TestClientCli:
             },
             http_client=None,
         )
+
+    @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
+    def test_main_rejects_context_select_thread_with_frame_flag(self, mock_invoke_tool):
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success"},
+            is_error=False,
+        )
+
+        stderr = StringIO()
+        with pytest.raises(SystemExit) as exc_info:
+            asyncio.run(
+                main(
+                    [
+                        "--server-url",
+                        "http://127.0.0.1:8000/mcp",
+                        "gdb_context_manage",
+                        "--session-id",
+                        "7",
+                        "--action",
+                        "select_thread",
+                        "--thread-id",
+                        "3",
+                        "--frame",
+                        "2",
+                    ],
+                    stderr=stderr,
+                )
+            )
+
+        assert exc_info.value.code == 2
+        assert "--frame" in stderr.getvalue()
+        mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_builds_breakpoint_query_list_payload(self, mock_invoke_tool):
