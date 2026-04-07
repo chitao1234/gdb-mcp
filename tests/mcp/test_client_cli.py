@@ -16,7 +16,7 @@ from gdb_mcp.client.parsers import CliUsageError
 from gdb_mcp.client.renderers import render_action_payload
 from gdb_mcp.client.specs import ActionVariant, _build_action_arguments
 from gdb_mcp.client.runtime import ClientToolResponse
-from gdb_mcp.mcp.schemas import SessionQueryArgs
+from gdb_mcp.mcp.schemas import SessionManageArgs, SessionQueryArgs
 
 
 class TestClientCli:
@@ -58,6 +58,21 @@ class TestClientCli:
                         }
                     )
                 },
+            )
+
+    def test_build_action_arguments_rejects_explicit_false_flag(self):
+        namespace = argparse.Namespace(action="stop", enabled=False)
+
+        with pytest.raises(CliUsageError, match="--enabled"):
+            _build_action_arguments(
+                namespace,
+                model=SessionManageArgs,
+                variants={
+                    "stop": ActionVariant(
+                        build_fields=lambda _: {"session": {}},
+                    )
+                },
+                tracked_fields=frozenset({"enabled"}),
             )
 
     def test_parse_client_args_requires_server_url(self):

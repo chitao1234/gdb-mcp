@@ -49,6 +49,7 @@ from .input_parsers import (
     parse_session_query_input,
     parse_session_start_input,
     parse_workflow_batch_input,
+    provided_fields,
 )
 from .inputs import (
     BreakpointCreateInput,
@@ -163,35 +164,6 @@ def _register_tool_spec(spec: ToolCliSpec[_ToolInputT]) -> RegisteredToolCliSpec
         render_human=spec.render_human,
     )
 
-
-def _require_fields(
-    namespace: argparse.Namespace,
-    *,
-    context: str,
-    required_fields: tuple[str, ...],
-) -> None:
-    missing = [format_cli_flag(field_name) for field_name in required_fields if not hasattr(namespace, field_name)]
-    if missing:
-        joined = ", ".join(missing)
-        raise CliUsageError(f"{joined} required with {context}")
-
-
-def _reject_fields(
-    namespace: argparse.Namespace,
-    *,
-    context: str,
-    forbidden_fields: tuple[str, ...],
-) -> None:
-    unexpected = [
-        format_cli_flag(field_name)
-        for field_name in forbidden_fields
-        if hasattr(namespace, field_name)
-    ]
-    if unexpected:
-        joined = ", ".join(sorted(unexpected))
-        raise CliUsageError(f"{joined} not valid with {context}")
-
-
 def _configure_session_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--program")
     parser.add_argument("--arg", dest="args", action="append", default=[])
@@ -232,15 +204,16 @@ def _build_action_arguments(
     tracked_fields: frozenset[str] = frozenset(),
 ) -> dict[str, object]:
     variant = variants[namespace.action]
+    explicit_fields = provided_fields(namespace, tracked_fields)
     ensure_action_fields(
-        namespace,
+        explicit_fields,
         action=namespace.action,
-        tracked_fields=tracked_fields,
         allowed_fields=variant.allowed_fields,
     )
     payload: dict[str, object] = {"action": namespace.action}
-    if hasattr(namespace, "session_id") and namespace.session_id is not None:
-        payload["session_id"] = namespace.session_id
+    session_id = namespace.__dict__.get("session_id")
+    if session_id is not None:
+        payload["session_id"] = session_id
     variant_fields = variant.build_fields(namespace)
     reserved_fields = {"action", "session_id"} & set(variant_fields)
     if reserved_fields:

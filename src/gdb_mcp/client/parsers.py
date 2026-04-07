@@ -223,10 +223,9 @@ def format_cli_flag(name: str) -> str:
 
 
 def ensure_action_fields(
-    namespace: argparse.Namespace,
+    provided_fields: set[str],
     *,
     action: str,
-    tracked_fields: Iterable[str],
     allowed_fields: Iterable[str],
 ) -> None:
     """Reject explicit flags that are incompatible with the selected action."""
@@ -234,8 +233,8 @@ def ensure_action_fields(
     allowed = set(allowed_fields)
     unexpected = [
         format_cli_flag(field_name)
-        for field_name in tracked_fields
-        if hasattr(namespace, field_name) and field_name not in allowed
+        for field_name in sorted(provided_fields)
+        if field_name not in allowed
     ]
     if unexpected:
         joined = ", ".join(sorted(unexpected))

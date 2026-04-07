@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterable
 from typing import cast
 
 from pydantic import ValidationError
@@ -68,6 +69,17 @@ _WORKFLOW_STEP_OPTION_MAP = {
     "--setup-step-label": "--step-label",
     "--setup-step-arg": "--step-arg",
 }
+
+
+def provided_fields(namespace: argparse.Namespace, tracked_fields: Iterable[str]) -> set[str]:
+    """Return the tracked CLI fields that were explicitly provided on one namespace."""
+
+    namespace_fields = namespace.__dict__
+    return {
+        field_name
+        for field_name in tracked_fields
+        if field_name in namespace_fields
+    }
 
 
 def parse_session_start_input(namespace: argparse.Namespace) -> SessionStartInput:
