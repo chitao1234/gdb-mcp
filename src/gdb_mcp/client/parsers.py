@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterable
 from typing import cast
 
 from pydantic import BaseModel, ValidationError
+
+
+class CliUsageError(ValueError):
+    """Raised when CLI flag combinations are structurally invalid."""
 
 
 def key_value_entry(text: str) -> tuple[str, str]:
@@ -36,6 +41,7 @@ def add_boolean_flag(
     *,
     default: bool,
     help_text: str,
+    suppress_default: bool = False,
 ) -> None:
     """Add a paired boolean flag using argparse's optional boolean action."""
 
@@ -43,7 +49,7 @@ def add_boolean_flag(
         f"--{name.replace('_', '-')}",
         dest=name,
         action=argparse.BooleanOptionalAction,
-        default=default,
+        default=argparse.SUPPRESS if suppress_default else default,
         help=help_text,
     )
 
@@ -67,3 +73,29 @@ def format_validation_error(exc: ValidationError) -> str:
         else:
             messages.append(str(error["msg"]))
     return "; ".join(messages)
+
+
+def format_cli_flag(name: str) -> str:
+    """Render one namespace field name as a CLI flag."""
+
+    return f"--{name.replace('_', '-')}"
+
+
+def ensure_action_fields(
+    namespace: argparse.Namespace,
+    *,
+    action: str,
+    tracked_fields: Iterable[str],
+    allowed_fields: Iterable[str],
+) -> None:
+    """Reject explicit flags that are incompatible with the selected action."""
+
+    allowed = set(allowed_fields)
+    unexpected = [
+        format_cli_flag(field_name)
+        for field_name in tracked_fields
+        if hasattr(namespace, field_name) and field_name not in allowed
+    ]
+    if unexpected:
+        joined = ", ".join(sorted(unexpected))
+        raise CliUsageError(f"{joined} not valid with --action {action}")

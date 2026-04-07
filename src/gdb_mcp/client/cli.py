@@ -14,7 +14,7 @@ from typing import TextIO
 import httpx
 from pydantic import ValidationError
 
-from .parsers import format_validation_error
+from .parsers import CliUsageError, format_validation_error
 from .runtime import invoke_tool
 from .specs import CLIENT_TOOL_SPECS, TOOL_DESCRIPTIONS
 
@@ -108,6 +108,8 @@ async def main(
     with redirect_stderr(error_output):
         try:
             payload = spec.build_arguments(args)
+        except CliUsageError as exc:
+            parser.error(str(exc))
         except ValidationError as exc:
             parser.error(format_validation_error(exc))
     try:
