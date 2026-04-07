@@ -31,25 +31,35 @@ from gdb_mcp.mcp.schemas import (
     build_tool_definitions,
 )
 
+from .builders.breakpoint import build_breakpoint_manage_payload, build_breakpoint_query_payload
 from .builders.context import build_context_manage_payload, build_context_query_payload
 from .builders.execution import build_execution_manage_payload
 from .builders.inferior import build_inferior_manage_payload, build_inferior_query_payload
+from .builders.inspect import build_inspect_query_payload
 from .builders.session import build_session_query_payload, build_session_start_payload
 from .input_parsers import (
+    parse_breakpoint_manage_input,
+    parse_breakpoint_query_input,
     parse_context_manage_input,
     parse_context_query_input,
     parse_execution_manage_input,
     parse_inferior_manage_input,
     parse_inferior_query_input,
+    parse_inspect_query_input,
     parse_session_query_input,
     parse_session_start_input,
 )
 from .inputs import (
+    BreakpointCreateInput,
+    BreakpointManageInput,
+    BreakpointQueryInput,
     ContextManageInput,
     ContextQueryInput,
     ExecutionManageInput,
     InferiorManageInput,
     InferiorQueryInput,
+    InspectQueryInput,
+    LocationInput,
     SessionQueryInput,
     SessionStartInput,
 )
@@ -129,19 +139,6 @@ _LOCATION_KIND_CHOICES = [
     "file-line",
     "file-range",
 ]
-_LOCATION_TRACKED_FIELDS = frozenset(
-    {
-        "location_kind",
-        "function",
-        "address",
-        "start_address",
-        "end_address",
-        "file",
-        "line",
-        "start_line",
-        "end_line",
-    }
-)
 _WORKFLOW_STEP_OPTION_MAP = {
     "--setup-step": "--step",
     "--setup-step-label": "--step-label",
@@ -198,204 +195,6 @@ def _reject_fields(
     if unexpected:
         joined = ", ".join(sorted(unexpected))
         raise CliUsageError(f"{joined} not valid with {context}")
-
-
-def _build_context_override(namespace: argparse.Namespace) -> dict[str, object] | None:
-    payload: dict[str, object] = {}
-    if hasattr(namespace, "thread_id"):
-        payload["thread_id"] = namespace.thread_id
-    if hasattr(namespace, "frame"):
-        payload["frame"] = namespace.frame
-    return payload or None
-
-
-def _build_location(namespace: argparse.Namespace, *, context: str) -> dict[str, object]:
-    if not hasattr(namespace, "location_kind"):
-        raise CliUsageError(f"--location-kind required with {context}")
-
-    kind = namespace.location_kind
-    if kind == "current":
-        _reject_fields(
-            namespace,
-            context="--location-kind current",
-            forbidden_fields=(
-                "function",
-                "address",
-                "start_address",
-                "end_address",
-                "file",
-                "line",
-                "start_line",
-                "end_line",
-            ),
-        )
-        return {"kind": "current"}
-
-    if kind == "function":
-        _require_fields(
-            namespace,
-            context="--location-kind function",
-            required_fields=("function",),
-        )
-        _reject_fields(
-            namespace,
-            context="--location-kind function",
-            forbidden_fields=(
-                "address",
-                "start_address",
-                "end_address",
-                "file",
-                "line",
-                "start_line",
-                "end_line",
-            ),
-        )
-        return {"kind": "function", "function": namespace.function}
-
-    if kind == "address":
-        _require_fields(
-            namespace,
-            context="--location-kind address",
-            required_fields=("address",),
-        )
-        _reject_fields(
-            namespace,
-            context="--location-kind address",
-            forbidden_fields=(
-                "function",
-                "start_address",
-                "end_address",
-                "file",
-                "line",
-                "start_line",
-                "end_line",
-            ),
-        )
-        return {"kind": "address", "address": namespace.address}
-
-    if kind == "address-range":
-        _require_fields(
-            namespace,
-            context="--location-kind address-range",
-            required_fields=("start_address", "end_address"),
-        )
-        _reject_fields(
-            namespace,
-            context="--location-kind address-range",
-            forbidden_fields=(
-                "function",
-                "address",
-                "file",
-                "line",
-                "start_line",
-                "end_line",
-            ),
-        )
-        return {
-            "kind": "address_range",
-            "start_address": namespace.start_address,
-            "end_address": namespace.end_address,
-        }
-
-    if kind == "file-line":
-        _require_fields(
-            namespace,
-            context="--location-kind file-line",
-            required_fields=("file", "line"),
-        )
-        _reject_fields(
-            namespace,
-            context="--location-kind file-line",
-            forbidden_fields=(
-                "function",
-                "address",
-                "start_address",
-                "end_address",
-                "start_line",
-                "end_line",
-            ),
-        )
-        return {"kind": "file_line", "file": namespace.file, "line": namespace.line}
-
-    _require_fields(
-        namespace,
-        context="--location-kind file-range",
-        required_fields=("file", "start_line", "end_line"),
-    )
-    _reject_fields(
-        namespace,
-        context="--location-kind file-range",
-        forbidden_fields=(
-            "function",
-            "address",
-            "start_address",
-            "end_address",
-            "line",
-        ),
-    )
-    return {
-        "kind": "file_range",
-        "file": namespace.file,
-        "start_line": namespace.start_line,
-        "end_line": namespace.end_line,
-    }
-
-
-def _build_breakpoint_create_payload(namespace: argparse.Namespace) -> dict[str, object]:
-    if not hasattr(namespace, "breakpoint_kind"):
-        raise CliUsageError("--breakpoint-kind required with --action create")
-
-    kind = namespace.breakpoint_kind
-    if kind == "code":
-        _require_fields(
-            namespace,
-            context="--breakpoint-kind code",
-            required_fields=("location",),
-        )
-        _reject_fields(
-            namespace,
-            context="--breakpoint-kind code",
-            forbidden_fields=("expression", "access", "event", "argument"),
-        )
-        payload: dict[str, object] = {"kind": "code", "location": namespace.location}
-        if hasattr(namespace, "condition"):
-            payload["condition"] = namespace.condition
-        if getattr(namespace, "temporary", False):
-            payload["temporary"] = True
-        return payload
-
-    if kind == "watch":
-        _require_fields(
-            namespace,
-            context="--breakpoint-kind watch",
-            required_fields=("expression",),
-        )
-        _reject_fields(
-            namespace,
-            context="--breakpoint-kind watch",
-            forbidden_fields=("location", "condition", "temporary", "event", "argument"),
-        )
-        payload = {"kind": "watch", "expression": namespace.expression}
-        if hasattr(namespace, "access"):
-            payload["access"] = namespace.access
-        return payload
-
-    _require_fields(
-        namespace,
-        context="--breakpoint-kind catch",
-        required_fields=("event",),
-    )
-    _reject_fields(
-        namespace,
-        context="--breakpoint-kind catch",
-        forbidden_fields=("location", "condition", "expression", "access"),
-    )
-    payload = {"kind": "catch", "event": namespace.event}
-    if hasattr(namespace, "argument"):
-        payload["argument"] = namespace.argument
-    if getattr(namespace, "temporary", False):
-        payload["temporary"] = True
-    return payload
 
 
 def _validate_workflow_step(
@@ -722,6 +521,419 @@ def _validate_context_manage_input(typed_input: ContextManageInput) -> None:
     _raise_invalid_action_flags(typed_input.action, invalid_flags)
 
 
+def _validate_breakpoint_query_input(typed_input: BreakpointQueryInput) -> None:
+    invalid_flags: list[str] = []
+    if typed_input.action == "list":
+        if typed_input.number is not None:
+            invalid_flags.append("--number")
+    elif typed_input.action == "get":
+        if typed_input.kinds:
+            invalid_flags.append("--kind")
+        if typed_input.enabled is not None:
+            invalid_flags.append("--enabled")
+
+    _raise_invalid_action_flags(typed_input.action, invalid_flags)
+
+
+def _validate_breakpoint_create_input(typed_input: BreakpointCreateInput) -> None:
+    if typed_input.kind == "code":
+        if typed_input.location is None:
+            raise CliUsageError("--location required with --breakpoint-kind code")
+        invalid_flags: list[str] = []
+        if typed_input.expression is not None:
+            invalid_flags.append("--expression")
+        if typed_input.access is not None:
+            invalid_flags.append("--access")
+        if typed_input.event is not None:
+            invalid_flags.append("--event")
+        if typed_input.argument is not None:
+            invalid_flags.append("--argument")
+        if invalid_flags:
+            raise CliUsageError(
+                f"{', '.join(sorted(invalid_flags))} not valid with --breakpoint-kind code"
+            )
+        return
+
+    if typed_input.kind == "watch":
+        if typed_input.expression is None:
+            raise CliUsageError("--expression required with --breakpoint-kind watch")
+        invalid_flags = []
+        if typed_input.location is not None:
+            invalid_flags.append("--location")
+        if typed_input.condition is not None:
+            invalid_flags.append("--condition")
+        if typed_input.temporary_explicit:
+            invalid_flags.append("--temporary")
+        if typed_input.event is not None:
+            invalid_flags.append("--event")
+        if typed_input.argument is not None:
+            invalid_flags.append("--argument")
+        if invalid_flags:
+            raise CliUsageError(
+                f"{', '.join(sorted(invalid_flags))} not valid with --breakpoint-kind watch"
+            )
+        return
+
+    if typed_input.event is None:
+        raise CliUsageError("--event required with --breakpoint-kind catch")
+
+    invalid_flags = []
+    if typed_input.location is not None:
+        invalid_flags.append("--location")
+    if typed_input.condition is not None:
+        invalid_flags.append("--condition")
+    if typed_input.expression is not None:
+        invalid_flags.append("--expression")
+    if typed_input.access is not None:
+        invalid_flags.append("--access")
+    if invalid_flags:
+        raise CliUsageError(
+            f"{', '.join(sorted(invalid_flags))} not valid with --breakpoint-kind catch"
+        )
+
+
+def _validate_breakpoint_manage_input(typed_input: BreakpointManageInput) -> None:
+    invalid_flags: list[str] = []
+    if typed_input.action == "create":
+        if typed_input.number is not None:
+            invalid_flags.append("--number")
+        if typed_input.clear_condition is not None:
+            invalid_flags.append("--clear-condition")
+        _raise_invalid_action_flags(typed_input.action, invalid_flags)
+        if typed_input.breakpoint is None or not typed_input.breakpoint.kind_explicit:
+            raise CliUsageError("--breakpoint-kind required with --action create")
+        _validate_breakpoint_create_input(typed_input.breakpoint)
+        return
+
+    if typed_input.breakpoint is not None:
+        if typed_input.breakpoint.kind_explicit:
+            invalid_flags.append("--breakpoint-kind")
+        if typed_input.breakpoint.location is not None:
+            invalid_flags.append("--location")
+        if typed_input.breakpoint.expression is not None:
+            invalid_flags.append("--expression")
+        if typed_input.breakpoint.access is not None:
+            invalid_flags.append("--access")
+        if typed_input.breakpoint.event is not None:
+            invalid_flags.append("--event")
+        if typed_input.breakpoint.argument is not None:
+            invalid_flags.append("--argument")
+        if typed_input.breakpoint.temporary_explicit:
+            invalid_flags.append("--temporary")
+
+    if typed_input.action in {"delete", "enable", "disable"}:
+        if typed_input.condition is not None:
+            invalid_flags.append("--condition")
+        if typed_input.clear_condition is not None:
+            invalid_flags.append("--clear-condition")
+
+    _raise_invalid_action_flags(typed_input.action, invalid_flags)
+
+
+def _validate_location_input(typed_input: LocationInput | None, *, context: str) -> None:
+    if typed_input is None:
+        raise CliUsageError(f"--location-kind required with {context}")
+
+    if typed_input.kind == "current":
+        invalid_flags: list[str] = []
+        if typed_input.function is not None:
+            invalid_flags.append("--function")
+        if typed_input.address is not None:
+            invalid_flags.append("--address")
+        if typed_input.start_address is not None:
+            invalid_flags.append("--start-address")
+        if typed_input.end_address is not None:
+            invalid_flags.append("--end-address")
+        if typed_input.file is not None:
+            invalid_flags.append("--file")
+        if typed_input.line is not None:
+            invalid_flags.append("--line")
+        if typed_input.start_line is not None:
+            invalid_flags.append("--start-line")
+        if typed_input.end_line is not None:
+            invalid_flags.append("--end-line")
+        if invalid_flags:
+            raise CliUsageError(
+                f"{', '.join(sorted(invalid_flags))} not valid with --location-kind current"
+            )
+        return
+
+    if typed_input.kind == "function":
+        if typed_input.function is None:
+            raise CliUsageError("--function required with --location-kind function")
+        invalid_flags = []
+        if typed_input.address is not None:
+            invalid_flags.append("--address")
+        if typed_input.start_address is not None:
+            invalid_flags.append("--start-address")
+        if typed_input.end_address is not None:
+            invalid_flags.append("--end-address")
+        if typed_input.file is not None:
+            invalid_flags.append("--file")
+        if typed_input.line is not None:
+            invalid_flags.append("--line")
+        if typed_input.start_line is not None:
+            invalid_flags.append("--start-line")
+        if typed_input.end_line is not None:
+            invalid_flags.append("--end-line")
+        if invalid_flags:
+            raise CliUsageError(
+                f"{', '.join(sorted(invalid_flags))} not valid with --location-kind function"
+            )
+        return
+
+    if typed_input.kind == "address":
+        if typed_input.address is None:
+            raise CliUsageError("--address required with --location-kind address")
+        invalid_flags = []
+        if typed_input.function is not None:
+            invalid_flags.append("--function")
+        if typed_input.start_address is not None:
+            invalid_flags.append("--start-address")
+        if typed_input.end_address is not None:
+            invalid_flags.append("--end-address")
+        if typed_input.file is not None:
+            invalid_flags.append("--file")
+        if typed_input.line is not None:
+            invalid_flags.append("--line")
+        if typed_input.start_line is not None:
+            invalid_flags.append("--start-line")
+        if typed_input.end_line is not None:
+            invalid_flags.append("--end-line")
+        if invalid_flags:
+            raise CliUsageError(
+                f"{', '.join(sorted(invalid_flags))} not valid with --location-kind address"
+            )
+        return
+
+    if typed_input.kind == "address_range":
+        if typed_input.start_address is None:
+            raise CliUsageError("--start-address required with --location-kind address-range")
+        if typed_input.end_address is None:
+            raise CliUsageError("--end-address required with --location-kind address-range")
+        invalid_flags = []
+        if typed_input.function is not None:
+            invalid_flags.append("--function")
+        if typed_input.address is not None:
+            invalid_flags.append("--address")
+        if typed_input.file is not None:
+            invalid_flags.append("--file")
+        if typed_input.line is not None:
+            invalid_flags.append("--line")
+        if typed_input.start_line is not None:
+            invalid_flags.append("--start-line")
+        if typed_input.end_line is not None:
+            invalid_flags.append("--end-line")
+        if invalid_flags:
+            raise CliUsageError(
+                f"{', '.join(sorted(invalid_flags))} not valid with --location-kind address-range"
+            )
+        return
+
+    if typed_input.kind == "file_line":
+        if typed_input.file is None:
+            raise CliUsageError("--file required with --location-kind file-line")
+        if typed_input.line is None:
+            raise CliUsageError("--line required with --location-kind file-line")
+        invalid_flags = []
+        if typed_input.function is not None:
+            invalid_flags.append("--function")
+        if typed_input.address is not None:
+            invalid_flags.append("--address")
+        if typed_input.start_address is not None:
+            invalid_flags.append("--start-address")
+        if typed_input.end_address is not None:
+            invalid_flags.append("--end-address")
+        if typed_input.start_line is not None:
+            invalid_flags.append("--start-line")
+        if typed_input.end_line is not None:
+            invalid_flags.append("--end-line")
+        if invalid_flags:
+            raise CliUsageError(
+                f"{', '.join(sorted(invalid_flags))} not valid with --location-kind file-line"
+            )
+        return
+
+    if typed_input.file is None:
+        raise CliUsageError("--file required with --location-kind file-range")
+    if typed_input.start_line is None:
+        raise CliUsageError("--start-line required with --location-kind file-range")
+    if typed_input.end_line is None:
+        raise CliUsageError("--end-line required with --location-kind file-range")
+    invalid_flags = []
+    if typed_input.function is not None:
+        invalid_flags.append("--function")
+    if typed_input.address is not None:
+        invalid_flags.append("--address")
+    if typed_input.start_address is not None:
+        invalid_flags.append("--start-address")
+    if typed_input.end_address is not None:
+        invalid_flags.append("--end-address")
+    if typed_input.line is not None:
+        invalid_flags.append("--line")
+    if invalid_flags:
+        raise CliUsageError(
+            f"{', '.join(sorted(invalid_flags))} not valid with --location-kind file-range"
+        )
+
+
+def _validate_inspect_query_input(typed_input: InspectQueryInput) -> None:
+    invalid_flags: list[str] = []
+    location_flags = [format_cli_flag(field_name) for field_name in typed_input.location_fields]
+    if typed_input.action == "evaluate":
+        if typed_input.register_numbers:
+            invalid_flags.append("--register-number")
+        if typed_input.register_names:
+            invalid_flags.append("--register-name")
+        if typed_input.include_vector_registers is not None:
+            invalid_flags.append("--include-vector-registers")
+        if typed_input.max_registers is not None:
+            invalid_flags.append("--max-registers")
+        if typed_input.value_format is not None:
+            invalid_flags.append("--value-format")
+        if typed_input.memory_address is not None:
+            invalid_flags.append("--address")
+        if typed_input.count is not None:
+            invalid_flags.append("--count")
+        if typed_input.offset is not None:
+            invalid_flags.append("--offset")
+        invalid_flags.extend(location_flags)
+        if typed_input.instruction_count is not None:
+            invalid_flags.append("--instruction-count")
+        if typed_input.mode is not None:
+            invalid_flags.append("--mode")
+        if typed_input.context_before is not None:
+            invalid_flags.append("--context-before")
+        if typed_input.context_after is not None:
+            invalid_flags.append("--context-after")
+    elif typed_input.action == "variables":
+        if typed_input.expression is not None:
+            invalid_flags.append("--expression")
+        if typed_input.register_numbers:
+            invalid_flags.append("--register-number")
+        if typed_input.register_names:
+            invalid_flags.append("--register-name")
+        if typed_input.include_vector_registers is not None:
+            invalid_flags.append("--include-vector-registers")
+        if typed_input.max_registers is not None:
+            invalid_flags.append("--max-registers")
+        if typed_input.value_format is not None:
+            invalid_flags.append("--value-format")
+        if typed_input.memory_address is not None:
+            invalid_flags.append("--address")
+        if typed_input.count is not None:
+            invalid_flags.append("--count")
+        if typed_input.offset is not None:
+            invalid_flags.append("--offset")
+        invalid_flags.extend(location_flags)
+        if typed_input.instruction_count is not None:
+            invalid_flags.append("--instruction-count")
+        if typed_input.mode is not None:
+            invalid_flags.append("--mode")
+        if typed_input.context_before is not None:
+            invalid_flags.append("--context-before")
+        if typed_input.context_after is not None:
+            invalid_flags.append("--context-after")
+    elif typed_input.action == "registers":
+        if typed_input.expression is not None:
+            invalid_flags.append("--expression")
+        if typed_input.memory_address is not None:
+            invalid_flags.append("--address")
+        if typed_input.count is not None:
+            invalid_flags.append("--count")
+        if typed_input.offset is not None:
+            invalid_flags.append("--offset")
+        invalid_flags.extend(location_flags)
+        if typed_input.instruction_count is not None:
+            invalid_flags.append("--instruction-count")
+        if typed_input.mode is not None:
+            invalid_flags.append("--mode")
+        if typed_input.context_before is not None:
+            invalid_flags.append("--context-before")
+        if typed_input.context_after is not None:
+            invalid_flags.append("--context-after")
+    elif typed_input.action == "memory":
+        if typed_input.thread_id is not None:
+            invalid_flags.append("--thread-id")
+        if typed_input.frame is not None:
+            invalid_flags.append("--frame")
+        if typed_input.expression is not None:
+            invalid_flags.append("--expression")
+        if typed_input.register_numbers:
+            invalid_flags.append("--register-number")
+        if typed_input.register_names:
+            invalid_flags.append("--register-name")
+        if typed_input.include_vector_registers is not None:
+            invalid_flags.append("--include-vector-registers")
+        if typed_input.max_registers is not None:
+            invalid_flags.append("--max-registers")
+        if typed_input.value_format is not None:
+            invalid_flags.append("--value-format")
+        invalid_flags.extend(location_flags)
+        if typed_input.instruction_count is not None:
+            invalid_flags.append("--instruction-count")
+        if typed_input.mode is not None:
+            invalid_flags.append("--mode")
+        if typed_input.context_before is not None:
+            invalid_flags.append("--context-before")
+        if typed_input.context_after is not None:
+            invalid_flags.append("--context-after")
+    elif typed_input.action == "disassembly":
+        if typed_input.expression is not None:
+            invalid_flags.append("--expression")
+        if typed_input.register_numbers:
+            invalid_flags.append("--register-number")
+        if typed_input.register_names:
+            invalid_flags.append("--register-name")
+        if typed_input.include_vector_registers is not None:
+            invalid_flags.append("--include-vector-registers")
+        if typed_input.max_registers is not None:
+            invalid_flags.append("--max-registers")
+        if typed_input.value_format is not None:
+            invalid_flags.append("--value-format")
+        if typed_input.memory_address is not None:
+            invalid_flags.append("--address")
+        if typed_input.count is not None:
+            invalid_flags.append("--count")
+        if typed_input.offset is not None:
+            invalid_flags.append("--offset")
+        if typed_input.context_before is not None:
+            invalid_flags.append("--context-before")
+        if typed_input.context_after is not None:
+            invalid_flags.append("--context-after")
+        _raise_invalid_action_flags(typed_input.action, invalid_flags)
+        _validate_location_input(typed_input.location, context="--action disassembly")
+        return
+    elif typed_input.action == "source":
+        if typed_input.expression is not None:
+            invalid_flags.append("--expression")
+        if typed_input.register_numbers:
+            invalid_flags.append("--register-number")
+        if typed_input.register_names:
+            invalid_flags.append("--register-name")
+        if typed_input.include_vector_registers is not None:
+            invalid_flags.append("--include-vector-registers")
+        if typed_input.max_registers is not None:
+            invalid_flags.append("--max-registers")
+        if typed_input.value_format is not None:
+            invalid_flags.append("--value-format")
+        if typed_input.memory_address is not None:
+            invalid_flags.append("--address")
+        if typed_input.count is not None:
+            invalid_flags.append("--count")
+        if typed_input.offset is not None:
+            invalid_flags.append("--offset")
+        if typed_input.instruction_count is not None:
+            invalid_flags.append("--instruction-count")
+        if typed_input.mode is not None:
+            invalid_flags.append("--mode")
+        _raise_invalid_action_flags(typed_input.action, invalid_flags)
+        _validate_location_input(typed_input.location, context="--action source")
+        return
+
+    _raise_invalid_action_flags(typed_input.action, invalid_flags)
+
+
 def _empty_payload(_: argparse.Namespace) -> dict[str, object]:
     return {}
 
@@ -968,31 +1180,14 @@ def _configure_breakpoint_query(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_breakpoint_query(namespace: argparse.Namespace) -> dict[str, object]:
-    payload = _build_action_arguments(
-        namespace,
-        model=BreakpointQueryArgs,
-        variants={
-            "list": ActionVariant(
-                build_fields=lambda ns: {
-                    "query": {
-                        **({"kinds": ns.kinds} if getattr(ns, "kinds", None) else {}),
-                        **({"enabled": ns.enabled} if hasattr(ns, "enabled") else {}),
-                    }
-                },
-                allowed_fields=frozenset({"kinds", "enabled"}),
-            ),
-            "get": ActionVariant(
-                build_fields=lambda ns: {"query": {"number": getattr(ns, "number", None)}},
-                allowed_fields=frozenset({"number"}),
-            ),
-        },
-        tracked_fields=frozenset({"number", "kinds", "enabled"}),
-    )
-    query = payload.get("query")
+def _build_breakpoint_query(typed_input: BreakpointQueryInput) -> dict[str, object]:
+    _validate_breakpoint_query_input(typed_input)
+    payload = build_breakpoint_query_payload(typed_input)
+    validated = validate_model_payload(BreakpointQueryArgs, payload)
+    query = validated.get("query")
     if isinstance(query, dict) and query.get("kinds") == []:
         query.pop("kinds", None)
-    return payload
+    return validated
 
 
 def _configure_breakpoint_manage(parser: argparse.ArgumentParser) -> None:
@@ -1030,68 +1225,10 @@ def _configure_breakpoint_manage(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_breakpoint_manage(namespace: argparse.Namespace) -> dict[str, object]:
-    return _build_action_arguments(
-        namespace,
-        model=BreakpointManageArgs,
-        variants={
-            "create": ActionVariant(
-                build_fields=lambda ns: {"breakpoint": _build_breakpoint_create_payload(ns)},
-                allowed_fields=frozenset(
-                    {
-                        "breakpoint_kind",
-                        "location",
-                        "expression",
-                        "access",
-                        "event",
-                        "argument",
-                        "temporary",
-                        "condition",
-                    }
-                ),
-            ),
-            "update": ActionVariant(
-                build_fields=lambda ns: {
-                    "breakpoint": {"number": getattr(ns, "number", None)},
-                    "changes": {
-                        **({"condition": ns.condition} if hasattr(ns, "condition") else {}),
-                        **(
-                            {"clear_condition": ns.clear_condition}
-                            if hasattr(ns, "clear_condition")
-                            else {}
-                        ),
-                    },
-                },
-                allowed_fields=frozenset({"number", "condition", "clear_condition"}),
-            ),
-            "delete": ActionVariant(
-                build_fields=lambda ns: {"breakpoint": {"number": getattr(ns, "number", None)}},
-                allowed_fields=frozenset({"number"}),
-            ),
-            "enable": ActionVariant(
-                build_fields=lambda ns: {"breakpoint": {"number": getattr(ns, "number", None)}},
-                allowed_fields=frozenset({"number"}),
-            ),
-            "disable": ActionVariant(
-                build_fields=lambda ns: {"breakpoint": {"number": getattr(ns, "number", None)}},
-                allowed_fields=frozenset({"number"}),
-            ),
-        },
-        tracked_fields=frozenset(
-            {
-                "breakpoint_kind",
-                "location",
-                "expression",
-                "access",
-                "event",
-                "argument",
-                "temporary",
-                "number",
-                "condition",
-                "clear_condition",
-            }
-        ),
-    )
+def _build_breakpoint_manage(typed_input: BreakpointManageInput) -> dict[str, object]:
+    _validate_breakpoint_manage_input(typed_input)
+    payload = build_breakpoint_manage_payload(typed_input)
+    return validate_model_payload(BreakpointManageArgs, payload)
 
 
 def _configure_inspect_query(parser: argparse.ArgumentParser) -> None:
@@ -1146,138 +1283,10 @@ def _configure_inspect_query(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--context-after", type=int, default=argparse.SUPPRESS)
 
 
-def _build_inspect_query(namespace: argparse.Namespace) -> dict[str, object]:
-    return _build_action_arguments(
-        namespace,
-        model=InspectQueryArgs,
-        variants={
-            "evaluate": ActionVariant(
-                build_fields=lambda ns: {
-                    "query": {
-                        **({"context": _build_context_override(ns)} if _build_context_override(ns) is not None else {}),
-                        "expression": getattr(ns, "expression", None),
-                    }
-                },
-                allowed_fields=frozenset({"thread_id", "frame", "expression"}),
-            ),
-            "variables": ActionVariant(
-                build_fields=lambda ns: {
-                    "query": (
-                        {"context": _build_context_override(ns)}
-                        if _build_context_override(ns) is not None
-                        else {}
-                    )
-                },
-                allowed_fields=frozenset({"thread_id", "frame"}),
-            ),
-            "registers": ActionVariant(
-                build_fields=lambda ns: {
-                    "query": {
-                        **({"context": _build_context_override(ns)} if _build_context_override(ns) is not None else {}),
-                        **({"register_numbers": ns.register_numbers} if hasattr(ns, "register_numbers") else {}),
-                        **({"register_names": ns.register_names} if hasattr(ns, "register_names") else {}),
-                        **(
-                            {"include_vector_registers": ns.include_vector_registers}
-                            if hasattr(ns, "include_vector_registers")
-                            else {}
-                        ),
-                        **({"max_registers": ns.max_registers} if hasattr(ns, "max_registers") else {}),
-                        **({"value_format": ns.value_format} if hasattr(ns, "value_format") else {}),
-                    }
-                },
-                allowed_fields=frozenset(
-                    {
-                        "thread_id",
-                        "frame",
-                        "register_numbers",
-                        "register_names",
-                        "include_vector_registers",
-                        "max_registers",
-                        "value_format",
-                    }
-                ),
-            ),
-            "memory": ActionVariant(
-                build_fields=lambda ns: {
-                    "query": {
-                        "address": getattr(ns, "address", None),
-                        "count": getattr(ns, "count", None),
-                        **({"offset": ns.offset} if hasattr(ns, "offset") else {}),
-                    }
-                },
-                allowed_fields=frozenset({"address", "count", "offset"}),
-            ),
-            "disassembly": ActionVariant(
-                build_fields=lambda ns: {
-                    "query": {
-                        **({"context": _build_context_override(ns)} if _build_context_override(ns) is not None else {}),
-                        "location": _build_location(ns, context="--action disassembly"),
-                        **(
-                            {"instruction_count": ns.instruction_count}
-                            if hasattr(ns, "instruction_count")
-                            else {}
-                        ),
-                        **({"mode": ns.mode} if hasattr(ns, "mode") else {}),
-                    }
-                },
-                allowed_fields=frozenset(
-                    {
-                        "thread_id",
-                        "frame",
-                        "instruction_count",
-                        "mode",
-                    }
-                )
-                | _LOCATION_TRACKED_FIELDS,
-            ),
-            "source": ActionVariant(
-                build_fields=lambda ns: {
-                    "query": {
-                        **({"context": _build_context_override(ns)} if _build_context_override(ns) is not None else {}),
-                        "location": _build_location(ns, context="--action source"),
-                        **({"context_before": ns.context_before} if hasattr(ns, "context_before") else {}),
-                        **({"context_after": ns.context_after} if hasattr(ns, "context_after") else {}),
-                    }
-                },
-                allowed_fields=frozenset(
-                    {
-                        "thread_id",
-                        "frame",
-                        "context_before",
-                        "context_after",
-                    }
-                )
-                | _LOCATION_TRACKED_FIELDS,
-            ),
-        },
-        tracked_fields=frozenset(
-            {
-                "thread_id",
-                "frame",
-                "expression",
-                "register_numbers",
-                "register_names",
-                "include_vector_registers",
-                "max_registers",
-                "value_format",
-                "address",
-                "count",
-                "offset",
-                "location_kind",
-                "function",
-                "start_address",
-                "end_address",
-                "file",
-                "line",
-                "start_line",
-                "end_line",
-                "instruction_count",
-                "mode",
-                "context_before",
-                "context_after",
-            }
-        ),
-    )
+def _build_inspect_query(typed_input: InspectQueryInput) -> dict[str, object]:
+    _validate_inspect_query_input(typed_input)
+    payload = build_inspect_query_payload(typed_input)
+    return validate_model_payload(InspectQueryArgs, payload)
 
 
 def _configure_workflow_batch(parser: argparse.ArgumentParser) -> None:
@@ -1657,14 +1666,14 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
     "gdb_breakpoint_query": _register_tool_spec(ToolCliSpec(
         name="gdb_breakpoint_query",
         configure_parser=_configure_breakpoint_query,
-        parse_input=_parse_namespace,
+        parse_input=parse_breakpoint_query_input,
         build_arguments=_build_breakpoint_query,
         render_human=render_action_payload,
     )),
     "gdb_breakpoint_manage": _register_tool_spec(ToolCliSpec(
         name="gdb_breakpoint_manage",
         configure_parser=_configure_breakpoint_manage,
-        parse_input=_parse_namespace,
+        parse_input=parse_breakpoint_manage_input,
         build_arguments=_build_breakpoint_manage,
         render_human=render_action_payload,
     )),
@@ -1699,7 +1708,7 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
     "gdb_inspect_query": _register_tool_spec(ToolCliSpec(
         name="gdb_inspect_query",
         configure_parser=_configure_inspect_query,
-        parse_input=_parse_namespace,
+        parse_input=parse_inspect_query_input,
         build_arguments=_build_inspect_query,
         render_human=render_action_payload,
     )),

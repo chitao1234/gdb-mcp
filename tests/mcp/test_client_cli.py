@@ -1264,6 +1264,66 @@ class TestClientCli:
         assert "--breakpoint-kind" in stderr.getvalue()
         mock_invoke_tool.assert_not_awaited()
 
+    @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
+    def test_main_rejects_breakpoint_update_with_location_flag_only(self, mock_invoke_tool):
+        mock_invoke_tool.return_value = ClientToolResponse(payload={"status": "success"}, is_error=False)
+
+        stderr = StringIO()
+        with pytest.raises(SystemExit) as exc_info:
+            asyncio.run(
+                main(
+                    [
+                        "--server-url",
+                        "http://127.0.0.1:8000/mcp",
+                        "gdb_breakpoint_manage",
+                        "--session-id",
+                        "7",
+                        "--action",
+                        "update",
+                        "--number",
+                        "1",
+                        "--location",
+                        "main",
+                    ],
+                    stderr=stderr,
+                )
+            )
+
+        assert exc_info.value.code == 2
+        assert "--location" in stderr.getvalue()
+        assert "--breakpoint-kind" not in stderr.getvalue()
+        mock_invoke_tool.assert_not_awaited()
+
+    @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
+    def test_main_rejects_breakpoint_update_with_explicit_no_temporary(
+        self, mock_invoke_tool
+    ):
+        mock_invoke_tool.return_value = ClientToolResponse(payload={"status": "success"}, is_error=False)
+
+        stderr = StringIO()
+        with pytest.raises(SystemExit) as exc_info:
+            asyncio.run(
+                main(
+                    [
+                        "--server-url",
+                        "http://127.0.0.1:8000/mcp",
+                        "gdb_breakpoint_manage",
+                        "--session-id",
+                        "7",
+                        "--action",
+                        "update",
+                        "--number",
+                        "1",
+                        "--no-temporary",
+                    ],
+                    stderr=stderr,
+                )
+            )
+
+        assert exc_info.value.code == 2
+        assert "--temporary" in stderr.getvalue()
+        mock_invoke_tool.assert_not_awaited()
+
     def test_build_breakpoint_update_omits_default_clear_condition_before_validation(self):
         import gdb_mcp.client.specs as client_specs
 
@@ -1283,12 +1343,13 @@ class TestClientCli:
             ],
             parser=build_parser(),
         )
+        typed_input = client_specs.parse_breakpoint_manage_input(args)
 
         with patch(
             "gdb_mcp.client.specs.validate_model_payload",
             side_effect=lambda _model, payload: payload,
         ):
-            payload = client_specs._build_breakpoint_manage(args)
+            payload = client_specs._build_breakpoint_manage(typed_input)
 
         assert payload == {
             "session_id": 7,
@@ -1339,6 +1400,88 @@ class TestClientCli:
                     "location": {"kind": "file_line", "file": "src/main.c", "line": 42},
                     "context_before": 2,
                     "context_after": 3,
+                },
+            },
+            http_client=None,
+        )
+
+    @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
+    def test_main_builds_inspect_source_address_location_payload(self, mock_invoke_tool):
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success", "action": "source", "result": {"line_start": 40}},
+            is_error=False,
+        )
+
+        exit_code = asyncio.run(
+            main(
+                [
+                    "--server-url",
+                    "http://127.0.0.1:8000/mcp",
+                    "gdb_inspect_query",
+                    "--session-id",
+                    "7",
+                    "--action",
+                    "source",
+                    "--location-kind",
+                    "address",
+                    "--address",
+                    "0x401000",
+                ]
+            )
+        )
+
+        assert exit_code == 0
+        mock_invoke_tool.assert_awaited_once_with(
+            "http://127.0.0.1:8000/mcp",
+            "gdb_inspect_query",
+            {
+                "session_id": 7,
+                "action": "source",
+                "query": {
+                    "location": {"kind": "address", "address": "0x401000"},
+                    "context_before": 5,
+                    "context_after": 5,
+                },
+            },
+            http_client=None,
+        )
+
+    @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
+    def test_main_builds_inspect_disassembly_address_location_payload(self, mock_invoke_tool):
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success", "action": "disassembly", "result": {"count": 4}},
+            is_error=False,
+        )
+
+        exit_code = asyncio.run(
+            main(
+                [
+                    "--server-url",
+                    "http://127.0.0.1:8000/mcp",
+                    "gdb_inspect_query",
+                    "--session-id",
+                    "7",
+                    "--action",
+                    "disassembly",
+                    "--location-kind",
+                    "address",
+                    "--address",
+                    "0x401000",
+                ]
+            )
+        )
+
+        assert exit_code == 0
+        mock_invoke_tool.assert_awaited_once_with(
+            "http://127.0.0.1:8000/mcp",
+            "gdb_inspect_query",
+            {
+                "session_id": 7,
+                "action": "disassembly",
+                "query": {
+                    "location": {"kind": "address", "address": "0x401000"},
+                    "instruction_count": 32,
+                    "mode": "mixed",
                 },
             },
             http_client=None,
@@ -2071,6 +2214,68 @@ class TestClientCli:
 
         assert exc_info.value.code == 2
         assert "--instruction-count" in stderr.getvalue()
+        mock_invoke_tool.assert_not_awaited()
+
+    @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
+    def test_main_rejects_inspect_variables_with_file_flag_only(self, mock_invoke_tool):
+        mock_invoke_tool.return_value = ClientToolResponse(payload={"status": "success"}, is_error=False)
+
+        stderr = StringIO()
+        with pytest.raises(SystemExit) as exc_info:
+            asyncio.run(
+                main(
+                    [
+                        "--server-url",
+                        "http://127.0.0.1:8000/mcp",
+                        "gdb_inspect_query",
+                        "--session-id",
+                        "7",
+                        "--action",
+                        "variables",
+                        "--file",
+                        "src/main.c",
+                    ],
+                    stderr=stderr,
+                )
+            )
+
+        assert exc_info.value.code == 2
+        assert "--file" in stderr.getvalue()
+        mock_invoke_tool.assert_not_awaited()
+
+    @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
+    def test_main_rejects_inspect_variables_with_location_selector_flags(
+        self, mock_invoke_tool
+    ):
+        mock_invoke_tool.return_value = ClientToolResponse(payload={"status": "success"}, is_error=False)
+
+        stderr = StringIO()
+        with pytest.raises(SystemExit) as exc_info:
+            asyncio.run(
+                main(
+                    [
+                        "--server-url",
+                        "http://127.0.0.1:8000/mcp",
+                        "gdb_inspect_query",
+                        "--session-id",
+                        "7",
+                        "--action",
+                        "variables",
+                        "--location-kind",
+                        "file-line",
+                        "--file",
+                        "src/main.c",
+                        "--line",
+                        "42",
+                    ],
+                    stderr=stderr,
+                )
+            )
+
+        assert exc_info.value.code == 2
+        assert "--location-kind" in stderr.getvalue()
+        assert "--file" in stderr.getvalue()
+        assert "--line" in stderr.getvalue()
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)

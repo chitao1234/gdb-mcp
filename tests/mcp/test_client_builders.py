@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import argparse
 
+from gdb_mcp.client.builders.breakpoint import (
+    build_breakpoint_manage_payload,
+    build_breakpoint_query_payload,
+)
 from gdb_mcp.client.builders.context import build_context_query_payload
 from gdb_mcp.client.builders.execution import build_execution_manage_payload
 from gdb_mcp.client.builders.inferior import build_inferior_manage_payload
+from gdb_mcp.client.builders.inspect import build_inspect_query_payload
 from gdb_mcp.client.builders.session import (
     build_session_query_payload,
     build_session_start_payload,
@@ -21,6 +26,11 @@ from gdb_mcp.client.inputs import (
     ExecutionManageInput,
     ExecutionWaitInput,
     InferiorManageInput,
+    BreakpointCreateInput,
+    BreakpointManageInput,
+    BreakpointQueryInput,
+    InspectQueryInput,
+    LocationInput,
 )
 
 
@@ -181,4 +191,79 @@ def test_build_context_query_backtrace_payload() -> None:
         "session_id": 7,
         "action": "backtrace",
         "query": {"thread_id": 3, "max_frames": 20},
+    }
+
+
+def test_build_breakpoint_query_filtered_list_payload() -> None:
+    typed_input = BreakpointQueryInput(
+        action="list",
+        session_id=7,
+        number=None,
+        kinds=("code", "watch"),
+        enabled=False,
+    )
+
+    assert build_breakpoint_query_payload(typed_input) == {
+        "session_id": 7,
+        "action": "list",
+        "query": {"kinds": ["code", "watch"], "enabled": False},
+    }
+
+
+def test_build_breakpoint_manage_create_payload() -> None:
+    typed_input = BreakpointManageInput(
+        action="create",
+        session_id=7,
+        breakpoint=BreakpointCreateInput(
+            kind="code",
+            location="main",
+            expression=None,
+            access=None,
+            event=None,
+            argument=None,
+            condition=None,
+            temporary=True,
+        ),
+        number=None,
+        condition=None,
+        clear_condition=None,
+    )
+
+    assert build_breakpoint_manage_payload(typed_input) == {
+        "session_id": 7,
+        "action": "create",
+        "breakpoint": {"kind": "code", "location": "main", "temporary": True},
+    }
+
+
+def test_build_inspect_source_payload() -> None:
+    typed_input = InspectQueryInput(
+        action="source",
+        session_id=7,
+        thread_id=None,
+        frame=None,
+        expression=None,
+        register_numbers=(),
+        register_names=(),
+        include_vector_registers=None,
+        max_registers=None,
+        value_format=None,
+        memory_address=None,
+        count=None,
+        offset=None,
+        location=LocationInput(kind="file_line", file="src/main.c", line=42),
+        instruction_count=None,
+        mode=None,
+        context_before=2,
+        context_after=3,
+    )
+
+    assert build_inspect_query_payload(typed_input) == {
+        "session_id": 7,
+        "action": "source",
+        "query": {
+            "location": {"kind": "file_line", "file": "src/main.c", "line": 42},
+            "context_before": 2,
+            "context_after": 3,
+        },
     }

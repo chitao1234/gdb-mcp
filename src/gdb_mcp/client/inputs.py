@@ -28,6 +28,40 @@ ExecutionManageAction = Literal[
 ]
 ContextQueryAction = Literal["threads", "backtrace", "frame"]
 ContextManageAction = Literal["select_thread", "select_frame"]
+BreakpointKind = Literal["code", "watch", "catch"]
+BreakpointAccess = Literal["write", "read", "access"]
+BreakpointEvent = Literal[
+    "throw",
+    "rethrow",
+    "catch",
+    "exec",
+    "fork",
+    "vfork",
+    "load",
+    "unload",
+    "signal",
+    "syscall",
+]
+BreakpointQueryAction = Literal["list", "get"]
+BreakpointManageAction = Literal["create", "update", "delete", "enable", "disable"]
+LocationKind = Literal[
+    "current",
+    "function",
+    "address",
+    "address_range",
+    "file_line",
+    "file_range",
+]
+InspectQueryAction = Literal[
+    "evaluate",
+    "variables",
+    "registers",
+    "memory",
+    "disassembly",
+    "source",
+]
+RegisterValueFormat = Literal["hex", "natural"]
+DisassemblyMode = Literal["assembly", "mixed"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,3 +145,82 @@ class ContextManageInput:
     session_id: int
     thread_id: int | None
     frame: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class BreakpointQueryInput:
+    """Parsed input for ``gdb_breakpoint_query``."""
+
+    action: BreakpointQueryAction
+    session_id: int
+    number: int | None
+    kinds: tuple[BreakpointKind, ...]
+    enabled: bool | None
+
+
+@dataclass(frozen=True, slots=True)
+class BreakpointCreateInput:
+    """Create payload for ``gdb_breakpoint_manage --action create``."""
+
+    kind: BreakpointKind
+    location: str | None
+    expression: str | None
+    access: BreakpointAccess | None
+    event: BreakpointEvent | None
+    argument: str | None
+    condition: str | None
+    temporary: bool
+    kind_explicit: bool = False
+    temporary_explicit: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class BreakpointManageInput:
+    """Parsed input for ``gdb_breakpoint_manage``."""
+
+    action: BreakpointManageAction
+    session_id: int
+    breakpoint: BreakpointCreateInput | None
+    number: int | None
+    condition: str | None
+    clear_condition: bool | None
+
+
+@dataclass(frozen=True, slots=True)
+class LocationInput:
+    """Typed source/disassembly location selector."""
+
+    kind: LocationKind
+    function: str | None = None
+    address: str | None = None
+    start_address: str | None = None
+    end_address: str | None = None
+    file: str | None = None
+    line: int | None = None
+    start_line: int | None = None
+    end_line: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class InspectQueryInput:
+    """Parsed input for ``gdb_inspect_query``."""
+
+    action: InspectQueryAction
+    session_id: int
+    thread_id: int | None
+    frame: int | None
+    expression: str | None
+    register_numbers: tuple[int, ...]
+    register_names: tuple[str, ...]
+    include_vector_registers: bool | None
+    max_registers: int | None
+    value_format: RegisterValueFormat | None
+    memory_address: str | None
+    count: int | None
+    offset: int | None
+    location: LocationInput | None
+    instruction_count: int | None
+    mode: DisassemblyMode | None
+    context_before: int | None
+    context_after: int | None
+    location_fields: tuple[str, ...] = ()
