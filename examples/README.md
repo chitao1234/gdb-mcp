@@ -14,6 +14,15 @@ gdb-mcp-server --transport streamable-http --host 127.0.0.1 --port 8000 --path /
 
 Then point the client at `http://127.0.0.1:8000/mcp`.
 
+If you want to exercise the examples without a separate MCP host application, call tools directly with the CLI client:
+
+```bash
+gdb-mcp-client \
+  --server-url http://127.0.0.1:8000/mcp \
+  gdb_session_start \
+  --program examples/sample_program
+```
+
 ## Files
 
 - `sample_program.c` - A multi-threaded C program with various debugging scenarios

@@ -13,6 +13,22 @@ The tool payloads and responses in this reference are transport-independent. You
 
 Only the connection method changes. Tool names, arguments, and response envelopes stay the same.
 
+## CLI Client Note
+
+The same public tool inventory is also available through the first-party `gdb-mcp-client` command when the server is running in streamable HTTP mode:
+
+```bash
+gdb-mcp-client \
+  --server-url http://127.0.0.1:8000/mcp \
+  gdb_breakpoint_manage \
+  --session-id 7 \
+  --action create \
+  --breakpoint-kind code \
+  --location main
+```
+
+Add `--json` when you want the structured payload instead of human-oriented text.
+
 ## Response Conventions
 
 ### Direct Success Payloads

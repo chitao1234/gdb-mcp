@@ -80,6 +80,36 @@ gdb-mcp-server --transport streamable-http --host 127.0.0.1 --port 8000 --path /
 
 That exposes the MCP endpoint at `http://127.0.0.1:8000/mcp`.
 
+### CLI Client
+
+`gdb-mcp-server` exposes the MCP endpoint. `gdb-mcp-client` calls that endpoint over streamable HTTP.
+
+Start the server:
+
+```bash
+gdb-mcp-server --transport streamable-http --host 127.0.0.1 --port 8000 --path /mcp
+```
+
+Call a tool:
+
+```bash
+gdb-mcp-client \
+  --server-url http://127.0.0.1:8000/mcp \
+  gdb_session_query \
+  --action list
+```
+
+Request raw JSON instead of human-oriented output:
+
+```bash
+gdb-mcp-client \
+  --server-url http://127.0.0.1:8000/mcp \
+  --json \
+  gdb_execution_manage \
+  --session-id 7 \
+  --action continue
+```
+
 ## Environment Variables
 
 ### `GDB_PATH`

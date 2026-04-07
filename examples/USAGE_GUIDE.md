@@ -10,6 +10,31 @@ gdb-mcp-server --transport streamable-http --host 127.0.0.1 --port 8000 --path /
 
 If you use streamable HTTP, point the client at `http://127.0.0.1:8000/mcp`.
 
+### Representative CLI Equivalent
+
+When you want to drive the same workflows directly from the shell, use `gdb-mcp-client` against the streamable HTTP endpoint:
+
+```bash
+gdb-mcp-client \
+  --server-url http://127.0.0.1:8000/mcp \
+  gdb_session_start \
+  --program examples/sample_program
+
+gdb-mcp-client \
+  --server-url http://127.0.0.1:8000/mcp \
+  gdb_breakpoint_manage \
+  --session-id 1 \
+  --action create \
+  --breakpoint-kind code \
+  --location main
+
+gdb-mcp-client \
+  --server-url http://127.0.0.1:8000/mcp \
+  gdb_execution_manage \
+  --session-id 1 \
+  --action run
+```
+
 ## Prerequisites
 
 1. Build the sample program: `cd examples && make`

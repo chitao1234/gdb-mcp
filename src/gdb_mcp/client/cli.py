@@ -16,7 +16,7 @@ from pydantic import ValidationError
 
 from .parsers import CliUsageError, format_validation_error
 from .runtime import invoke_tool
-from .specs import CLIENT_TOOL_SPECS, TOOL_DESCRIPTIONS
+from .specs import CLIENT_TOOL_SPECS, TOOL_DESCRIPTIONS, TOOL_HELP_DESCRIPTIONS
 
 
 _BASE_EXCEPTION_GROUP_TYPE = getattr(builtins, "BaseExceptionGroup", None)
@@ -67,7 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
     for tool_name, spec in CLIENT_TOOL_SPECS.items():
         subparser = subparsers.add_parser(
             tool_name,
-            help=TOOL_DESCRIPTIONS.get(tool_name, ""),
+            help=TOOL_HELP_DESCRIPTIONS.get(tool_name, ""),
             description=TOOL_DESCRIPTIONS.get(tool_name, ""),
         )
         _add_invocation_flags(subparser, suppress_defaults=True)

@@ -66,6 +66,20 @@ class TestClientCli:
 
         assert exc_info.value.code == 2
 
+    def test_build_parser_formats_help_with_percent_descriptions(self):
+        help_text = build_parser().format_help()
+
+        assert "gdb_call_function" in help_text
+
+    def test_subcommand_help_preserves_percent_description(self, capsys):
+        with pytest.raises(SystemExit) as exc_info:
+            build_parser().parse_args(["gdb_call_function", "--help"])
+
+        assert exc_info.value.code == 0
+        help_text = capsys.readouterr().out
+        assert 'x=%d\\n' in help_text
+        assert 'x=%%d\\n' not in help_text
+
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_invokes_session_start_with_flat_flags(self, mock_invoke_tool):
         mock_invoke_tool.return_value = ClientToolResponse(

@@ -67,6 +67,11 @@ class ActionVariant:
 
 TOOL_DESCRIPTIONS = {tool.name: tool.description or "" for tool in build_tool_definitions()}
 
+TOOL_HELP_DESCRIPTIONS = {
+    tool.name: (tool.description or "").replace("%", "%%")
+    for tool in build_tool_definitions()
+}
+
 _BREAKPOINT_KINDS = ["code", "watch", "catch"]
 _BREAKPOINT_EVENTS = [
     "throw",
