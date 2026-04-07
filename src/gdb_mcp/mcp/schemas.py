@@ -1583,6 +1583,23 @@ class InspectQueryArgs(
     """Public v2 request model for read-only inspection operations."""
 
 
+BATCH_STEP_TOOL_MODELS: dict[str, type[BaseModel]] = {
+    "gdb_execute_command": ExecuteCommandArgs,
+    "gdb_session_query": SessionQueryArgs,
+    "gdb_inferior_query": InferiorQueryArgs,
+    "gdb_inferior_manage": InferiorManageArgs,
+    "gdb_execution_manage": ExecutionManageArgs,
+    "gdb_breakpoint_query": BreakpointQueryArgs,
+    "gdb_breakpoint_manage": BreakpointManageArgs,
+    "gdb_context_query": ContextQueryArgs,
+    "gdb_context_manage": ContextManageArgs,
+    "gdb_inspect_query": InspectQueryArgs,
+    "gdb_attach_process": AttachProcessArgs,
+    "gdb_capture_bundle": CaptureBundleArgs,
+    "gdb_call_function": CallFunctionArgs,
+}
+
+
 def build_tool_definitions() -> list[Tool]:
     """Build the MCP tool definitions exposed by this server."""
 

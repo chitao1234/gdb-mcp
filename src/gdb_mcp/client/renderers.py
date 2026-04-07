@@ -3,14 +3,51 @@
 from __future__ import annotations
 
 
+def _render_sequence_lines(values: list[object], *, indent: int = 0) -> list[str]:
+    prefix = "  " * indent
+    lines: list[str] = []
+
+    for value in values:
+        if isinstance(value, dict):
+            if not value:
+                lines.append(f"{prefix}- {{}}")
+                continue
+            lines.append(f"{prefix}-")
+            lines.extend(_render_mapping_lines(value, indent=indent + 1))
+            continue
+
+        if isinstance(value, list):
+            if not value:
+                lines.append(f"{prefix}- []")
+                continue
+            lines.append(f"{prefix}-")
+            lines.extend(_render_sequence_lines(value, indent=indent + 1))
+            continue
+
+        lines.append(f"{prefix}- {value}")
+
+    return lines
+
+
 def _render_mapping_lines(payload: dict[str, object], *, indent: int = 0) -> list[str]:
     prefix = "  " * indent
     lines: list[str] = []
 
     for key, value in payload.items():
         if isinstance(value, dict):
+            if not value:
+                lines.append(f"{prefix}{key}: {{}}")
+                continue
             lines.append(f"{prefix}{key}:")
             lines.extend(_render_mapping_lines(value, indent=indent + 1))
+            continue
+
+        if isinstance(value, list):
+            if not value:
+                lines.append(f"{prefix}{key}: []")
+                continue
+            lines.append(f"{prefix}{key}:")
+            lines.extend(_render_sequence_lines(value, indent=indent + 1))
             continue
 
         lines.append(f"{prefix}{key}: {value}")
@@ -34,6 +71,13 @@ def render_action_payload(payload: dict[str, object]) -> str:
         if isinstance(value, dict):
             lines.append(f"{key}:")
             lines.extend(_render_mapping_lines(value, indent=1))
+            continue
+        if isinstance(value, list):
+            if not value:
+                lines.append(f"{key}: []")
+                continue
+            lines.append(f"{key}:")
+            lines.extend(_render_sequence_lines(value, indent=1))
             continue
         lines.append(f"{key}: {value}")
 

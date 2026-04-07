@@ -13,6 +13,26 @@ class CliUsageError(ValueError):
     """Raised when CLI flag combinations are structurally invalid."""
 
 
+class AppendTaggedValue(argparse.Action):
+    """Collect tagged CLI events while preserving the originating option."""
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: object,
+        option_string: str | None = None,
+    ) -> None:
+        del parser
+
+        events = getattr(namespace, self.dest, None)
+        if events is None:
+            events = []
+            setattr(namespace, self.dest, events)
+
+        events.append((option_string or self.option_strings[0], values))
+
+
 def key_value_entry(text: str) -> tuple[str, str]:
     """Parse one KEY=VALUE argument."""
 
@@ -33,6 +53,60 @@ def collapse_key_value_entries(entries: list[tuple[str, str]]) -> dict[str, str]
         return None
 
     return {key: value for key, value in entries}
+
+
+def coerce_scalar(text: str) -> object:
+    """Preserve dotted-assignment values as raw strings until schema validation."""
+
+    return text
+
+
+def dotted_assignment(text: str) -> tuple[str, object]:
+    """Parse one PATH=VALUE dotted assignment."""
+
+    if "=" not in text:
+        raise argparse.ArgumentTypeError("Expected PATH=VALUE")
+
+    path, raw_value = text.split("=", 1)
+    if not path:
+        raise argparse.ArgumentTypeError("Expected non-empty PATH in PATH=VALUE")
+    if any(part == "" for part in path.split(".")):
+        raise argparse.ArgumentTypeError(
+            "Expected PATH with non-empty dotted segments in PATH=VALUE"
+        )
+
+    return path, coerce_scalar(raw_value)
+
+
+def assign_dotted_value(target: dict[str, object], path: str, value: object) -> None:
+    """Assign one dotted path into a nested mapping."""
+
+    current = target
+    parts = path.split(".")
+    for part in parts[:-1]:
+        child = current.get(part)
+        if child is None:
+            child = {}
+            current[part] = child
+        elif not isinstance(child, dict):
+            raise CliUsageError(
+                f"Conflicting dotted assignment for {path}: segment {part!r} already set"
+            )
+        current = child
+
+    leaf_key = parts[-1]
+    existing = current.get(leaf_key)
+    if existing is None:
+        current[leaf_key] = value
+        return
+    if isinstance(existing, dict):
+        raise CliUsageError(
+            f"Conflicting dotted assignment for {path}: path already set to a mapping"
+        )
+    if isinstance(existing, list):
+        existing.append(value)
+        return
+    current[leaf_key] = [existing, value]
 
 
 def add_boolean_flag(
