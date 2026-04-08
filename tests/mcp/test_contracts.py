@@ -7,6 +7,7 @@ from typing import get_args, get_type_hints
 import pytest
 from pydantic import BaseModel
 
+import gdb_mcp.contracts as shared_contracts
 from gdb_mcp.client.inputs import (
     BreakpointAccess,
     BreakpointEvent,
@@ -110,6 +111,121 @@ def test_client_input_aliases_match_shared_contract_values(
     expected: tuple[str, ...],
 ) -> None:
     assert get_args(alias) == expected
+
+
+@pytest.mark.parametrize(
+    ("alias_name", "value_name"),
+    [
+        ("ActionListName", "ACTION_LIST"),
+        ("ActionStatusName", "ACTION_STATUS"),
+        ("ActionStopName", "ACTION_STOP"),
+        ("ActionCurrentName", "ACTION_CURRENT"),
+        ("ActionCreateName", "ACTION_CREATE"),
+        ("ActionRemoveName", "ACTION_REMOVE"),
+        ("ActionSelectName", "ACTION_SELECT"),
+        ("ActionSetFollowForkModeName", "ACTION_SET_FOLLOW_FORK_MODE"),
+        ("ActionSetDetachOnForkName", "ACTION_SET_DETACH_ON_FORK"),
+        ("ActionRunName", "ACTION_RUN"),
+        ("ActionContinueName", "ACTION_CONTINUE"),
+        ("ActionInterruptName", "ACTION_INTERRUPT"),
+        ("ActionStepName", "ACTION_STEP"),
+        ("ActionNextName", "ACTION_NEXT"),
+        ("ActionFinishName", "ACTION_FINISH"),
+        ("ActionWaitForStopName", "ACTION_WAIT_FOR_STOP"),
+        ("ActionUpdateName", "ACTION_UPDATE"),
+        ("ActionDeleteName", "ACTION_DELETE"),
+        ("ActionEnableName", "ACTION_ENABLE"),
+        ("ActionDisableName", "ACTION_DISABLE"),
+        ("ActionGetName", "ACTION_GET"),
+        ("ActionThreadsName", "ACTION_THREADS"),
+        ("ActionBacktraceName", "ACTION_BACKTRACE"),
+        ("ActionFrameName", "ACTION_FRAME"),
+        ("ActionSelectThreadName", "ACTION_SELECT_THREAD"),
+        ("ActionSelectFrameName", "ACTION_SELECT_FRAME"),
+        ("ActionEvaluateName", "ACTION_EVALUATE"),
+        ("ActionVariablesName", "ACTION_VARIABLES"),
+        ("ActionRegistersName", "ACTION_REGISTERS"),
+        ("ActionMemoryName", "ACTION_MEMORY"),
+        ("ActionDisassemblyName", "ACTION_DISASSEMBLY"),
+        ("ActionSourceName", "ACTION_SOURCE"),
+        ("BreakpointKindCodeName", "BREAKPOINT_KIND_CODE"),
+        ("BreakpointKindWatchName", "BREAKPOINT_KIND_WATCH"),
+        ("BreakpointKindCatchName", "BREAKPOINT_KIND_CATCH"),
+        ("LocationKindCurrentName", "LOCATION_KIND_CURRENT"),
+        ("LocationKindFunctionName", "LOCATION_KIND_FUNCTION"),
+        ("LocationKindAddressName", "LOCATION_KIND_ADDRESS"),
+        ("LocationKindAddressRangeName", "LOCATION_KIND_ADDRESS_RANGE"),
+        ("LocationKindFileLineName", "LOCATION_KIND_FILE_LINE"),
+        ("LocationKindFileRangeName", "LOCATION_KIND_FILE_RANGE"),
+    ],
+)
+def test_shared_single_value_public_contract_aliases_match_runtime_values(
+    alias_name: str,
+    value_name: str,
+) -> None:
+    assert get_args(getattr(shared_contracts, alias_name)) == (
+        getattr(shared_contracts, value_name),
+    )
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "arguments", "expected"),
+    [
+        (
+            shared_contracts.TOOL_SESSION_QUERY,
+            {"session_id": 9},
+            shared_contracts.WorkflowStepValidationIssue(
+                kind="session_id_not_allowed",
+            ),
+        ),
+        (
+            shared_contracts.TOOL_SESSION_QUERY,
+            {"action": shared_contracts.ACTION_LIST},
+            shared_contracts.WorkflowStepValidationIssue(
+                kind="session_query_list_not_allowed",
+            ),
+        ),
+        (
+            shared_contracts.TOOL_SESSION_MANAGE,
+            {"action": shared_contracts.ACTION_STOP},
+            shared_contracts.WorkflowStepValidationIssue(
+                kind="session_manage_not_allowed",
+            ),
+        ),
+        (
+            shared_contracts.TOOL_WORKFLOW_BATCH,
+            {},
+            shared_contracts.WorkflowStepValidationIssue(
+                kind="nested_workflow_tool_not_allowed",
+            ),
+        ),
+        (
+            shared_contracts.TOOL_RUN_UNTIL_FAILURE,
+            {},
+            shared_contracts.WorkflowStepValidationIssue(
+                kind="nested_workflow_tool_not_allowed",
+            ),
+        ),
+        (
+            shared_contracts.TOOL_CONTEXT_QUERY,
+            {"action": shared_contracts.ACTION_THREADS},
+            None,
+        ),
+        (
+            "gdb_not_a_real_tool",
+            {},
+            shared_contracts.WorkflowStepValidationIssue(
+                kind="unknown_tool",
+            ),
+        ),
+    ],
+)
+def test_validate_workflow_step_contract_matches_shared_public_rules(
+    tool_name: str,
+    arguments: dict[str, object],
+    expected: shared_contracts.WorkflowStepValidationIssue | None,
+) -> None:
+    assert shared_contracts.validate_workflow_step_contract(tool_name, arguments) == expected
 
 
 def test_public_tool_names_match_all_runtime_registries() -> None:
