@@ -12,6 +12,7 @@ from typing import Protocol, TypeAlias, TypeVar, cast
 from pydantic import BaseModel, RootModel
 from mcp.types import TextContent
 
+from .. import contracts as shared_contracts
 from ..contracts import (
     TOOL_ATTACH_PROCESS,
     TOOL_BREAKPOINT_MANAGE,
@@ -221,6 +222,39 @@ def _wrap_action_result(action: str, result: ToolResult) -> ToolResult:
     )
 
 
+def _workflow_step_validation_error(
+    tool_name: str,
+    issue: shared_contracts.WorkflowStepValidationIssue,
+    *,
+    index: int,
+) -> OperationError:
+    if issue.kind == "session_id_not_allowed":
+        return OperationError(
+            message=(
+                f"Batch step {index} ({tool_name}) must not include session_id. "
+                f"It is inherited from {TOOL_WORKFLOW_BATCH}."
+            ),
+            code="validation_error",
+        )
+    if issue.kind == "session_query_list_not_allowed":
+        return OperationError(
+            message=(
+                f"{TOOL_SESSION_QUERY}(action={shared_contracts.ACTION_LIST}) "
+                f"is not valid inside {TOOL_WORKFLOW_BATCH}"
+            ),
+            code="unsupported_combination",
+        )
+    if issue.kind == "session_manage_not_allowed":
+        return OperationError(
+            message=f"{TOOL_SESSION_MANAGE} is not valid inside {TOOL_WORKFLOW_BATCH}",
+            code="unsupported_combination",
+        )
+    return OperationError(
+        message=f"Unsupported batch step tool: {tool_name}",
+        code="unknown_tool",
+    )
+
+
 def _execution_wait_policy(wait: ExecutionWaitArgs | None) -> tuple[int, bool]:
     """Translate an execution wait payload into service-layer arguments."""
 
@@ -243,9 +277,9 @@ def _handle_execution_manage(session: SessionService, args: ExecutionManageArgs)
         timeout_sec, wait_for_stop = _execution_wait_policy(action_args.execution.wait)
         run_args = _normalize_run_args(action_args.execution.args)
         if isinstance(run_args, OperationError):
-            return _wrap_action_result("run", run_args)
+            return _wrap_action_result(action_args.action, run_args)
         return _wrap_action_result(
-            "run",
+            action_args.action,
             session.run(
                 args=run_args,
                 timeout_sec=timeout_sec,
@@ -256,7 +290,7 @@ def _handle_execution_manage(session: SessionService, args: ExecutionManageArgs)
     if isinstance(action_args, ExecutionContinueAction):
         timeout_sec, wait_for_stop = _execution_wait_policy(action_args.execution.wait)
         return _wrap_action_result(
-            "continue",
+            action_args.action,
             session.continue_execution(
                 wait_for_stop=wait_for_stop,
                 timeout_sec=timeout_sec,
@@ -264,12 +298,12 @@ def _handle_execution_manage(session: SessionService, args: ExecutionManageArgs)
         )
 
     if isinstance(action_args, ExecutionInterruptAction):
-        return _wrap_action_result("interrupt", session.interrupt())
+        return _wrap_action_result(action_args.action, session.interrupt())
 
     if isinstance(action_args, ExecutionStepAction):
         timeout_sec, wait_for_stop = _execution_wait_policy(action_args.execution.wait)
         return _wrap_action_result(
-            "step",
+            action_args.action,
             session.step(
                 wait_for_stop=wait_for_stop,
                 timeout_sec=timeout_sec,
@@ -279,7 +313,7 @@ def _handle_execution_manage(session: SessionService, args: ExecutionManageArgs)
     if isinstance(action_args, ExecutionNextAction):
         timeout_sec, wait_for_stop = _execution_wait_policy(action_args.execution.wait)
         return _wrap_action_result(
-            "next",
+            action_args.action,
             session.next(
                 wait_for_stop=wait_for_stop,
                 timeout_sec=timeout_sec,
@@ -289,7 +323,7 @@ def _handle_execution_manage(session: SessionService, args: ExecutionManageArgs)
     if isinstance(action_args, ExecutionFinishAction):
         timeout_sec, wait_for_stop = _execution_wait_policy(action_args.execution.wait)
         return _wrap_action_result(
-            "finish",
+            action_args.action,
             session.finish(
                 timeout_sec=timeout_sec,
                 wait_for_stop=wait_for_stop,
@@ -298,7 +332,7 @@ def _handle_execution_manage(session: SessionService, args: ExecutionManageArgs)
 
     if isinstance(action_args, ExecutionWaitForStopAction):
         return _wrap_action_result(
-            "wait_for_stop",
+            action_args.action,
             session.wait_for_stop(
                 timeout_sec=action_args.execution.timeout_sec,
                 stop_reasons=tuple(action_args.execution.stop_reasons),
@@ -316,12 +350,12 @@ def _handle_inferior_query(session: SessionService, args: InferiorQueryArgs) -> 
 
     action_args = _unwrap_action_args(args)
     if isinstance(action_args, InferiorQueryListAction):
-        return _wrap_action_result("list", session.list_inferiors())
+        return _wrap_action_result(action_args.action, session.list_inferiors())
 
     if isinstance(action_args, InferiorQueryCurrentAction):
         result = session.list_inferiors()
         if isinstance(result, OperationError):
-            return _wrap_action_result("current", result)
+            return _wrap_action_result(action_args.action, result)
 
         current_inferior_id = result.value.current_inferior_id
         current_inferior = next(
@@ -334,14 +368,14 @@ def _handle_inferior_query(session: SessionService, args: InferiorQueryArgs) -> 
         )
         if current_inferior is None:
             return _wrap_action_result(
-                "current",
+                action_args.action,
                 OperationError(
                     message="Current inferior could not be determined",
                     code="not_found",
                     details={"current_inferior_id": current_inferior_id},
                 ),
             )
-        return _wrap_action_result("current", OperationSuccess({"inferior": current_inferior}))
+        return _wrap_action_result(action_args.action, OperationSuccess({"inferior": current_inferior}))
 
     return OperationError(
         message=f"Unsupported inferior query action: {type(action_args).__name__}",
@@ -356,7 +390,7 @@ def _handle_inferior_manage(session: SessionService, args: InferiorManageArgs) -
     if isinstance(action_args, InferiorManageCreateAction):
         create_payload = action_args.inferior
         return _wrap_action_result(
-            "create",
+            action_args.action,
             session.add_inferior(
                 executable=create_payload.executable,
                 make_current=create_payload.make_current,
@@ -366,28 +400,28 @@ def _handle_inferior_manage(session: SessionService, args: InferiorManageArgs) -
     if isinstance(action_args, InferiorManageRemoveAction):
         remove_payload = action_args.inferior
         return _wrap_action_result(
-            "remove",
+            action_args.action,
             session.remove_inferior(inferior_id=remove_payload.inferior_id),
         )
 
     if isinstance(action_args, InferiorManageSelectAction):
         select_payload = action_args.inferior
         return _wrap_action_result(
-            "select",
+            action_args.action,
             session.select_inferior(inferior_id=select_payload.inferior_id),
         )
 
     if isinstance(action_args, InferiorManageFollowForkAction):
         follow_payload = action_args.inferior
         return _wrap_action_result(
-            "set_follow_fork_mode",
+            action_args.action,
             session.set_follow_fork_mode(mode=follow_payload.mode),
         )
 
     if isinstance(action_args, InferiorManageDetachOnForkAction):
         detach_payload = action_args.inferior
         return _wrap_action_result(
-            "set_detach_on_fork",
+            action_args.action,
             session.set_detach_on_fork(enabled=detach_payload.enabled),
         )
 
@@ -404,13 +438,13 @@ def _handle_breakpoint_query(session: SessionService, args: BreakpointQueryArgs)
     if isinstance(action_args, BreakpointQueryListAction):
         result = session.list_breakpoints()
         if isinstance(result, OperationError):
-            return _wrap_action_result("list", result)
+            return _wrap_action_result(action_args.action, result)
 
         list_query = action_args.query
         kinds = set(list_query.kinds)
         enabled_filter = list_query.enabled
         if not kinds and enabled_filter is None:
-            return _wrap_action_result("list", result)
+            return _wrap_action_result(action_args.action, result)
 
         filtered_breakpoints = []
         for breakpoint_info in result.value.breakpoints:
@@ -432,7 +466,7 @@ def _handle_breakpoint_query(session: SessionService, args: BreakpointQueryArgs)
             filtered_breakpoints.append(breakpoint_info)
 
         return _wrap_action_result(
-            "list",
+            action_args.action,
             OperationSuccess(
                 {
                     "breakpoints": filtered_breakpoints,
@@ -444,7 +478,7 @@ def _handle_breakpoint_query(session: SessionService, args: BreakpointQueryArgs)
     if isinstance(action_args, BreakpointQueryGetAction):
         get_query = action_args.query
         return _wrap_action_result(
-            "get",
+            action_args.action,
             session.get_breakpoint(get_query.number),
         )
 
@@ -462,7 +496,7 @@ def _handle_breakpoint_manage(session: SessionService, args: BreakpointManageArg
         payload = action_args.breakpoint
         if isinstance(payload, BreakpointCodeCreateArgs):
             return _wrap_action_result(
-                "create",
+                action_args.action,
                 session.set_breakpoint(
                     location=payload.location,
                     condition=payload.condition,
@@ -471,7 +505,7 @@ def _handle_breakpoint_manage(session: SessionService, args: BreakpointManageArg
             )
         if isinstance(payload, BreakpointWatchCreateArgs):
             return _wrap_action_result(
-                "create",
+                action_args.action,
                 session.set_watchpoint(
                     expression=payload.expression,
                     access=payload.access,
@@ -479,7 +513,7 @@ def _handle_breakpoint_manage(session: SessionService, args: BreakpointManageArg
             )
         if isinstance(payload, BreakpointCatchCreateArgs):
             return _wrap_action_result(
-                "create",
+                action_args.action,
                 session.set_catchpoint(
                     payload.event,
                     argument=payload.argument,
@@ -495,7 +529,7 @@ def _handle_breakpoint_manage(session: SessionService, args: BreakpointManageArg
         selector = action_args.breakpoint
         changes = action_args.changes
         return _wrap_action_result(
-            "update",
+            action_args.action,
             session.update_breakpoint(
                 selector.number,
                 condition=changes.condition,
@@ -510,12 +544,12 @@ def _handle_breakpoint_manage(session: SessionService, args: BreakpointManageArg
         )
 
     number = action_args.breakpoint.number
-    if action_args.action == "delete":
-        return _wrap_action_result("delete", session.delete_breakpoint(number=number))
-    if action_args.action == "enable":
-        return _wrap_action_result("enable", session.enable_breakpoint(number=number))
-    if action_args.action == "disable":
-        return _wrap_action_result("disable", session.disable_breakpoint(number=number))
+    if action_args.action == shared_contracts.ACTION_DELETE:
+        return _wrap_action_result(action_args.action, session.delete_breakpoint(number=number))
+    if action_args.action == shared_contracts.ACTION_ENABLE:
+        return _wrap_action_result(action_args.action, session.enable_breakpoint(number=number))
+    if action_args.action == shared_contracts.ACTION_DISABLE:
+        return _wrap_action_result(action_args.action, session.disable_breakpoint(number=number))
 
     return OperationError(
         message=f"Unsupported breakpoint manage action: {type(action_args).__name__}",
@@ -562,12 +596,12 @@ def _handle_context_query(session: SessionService, args: ContextQueryArgs) -> To
 
     action_args = _unwrap_action_args(args)
     if isinstance(action_args, ContextQueryThreadsAction):
-        return _wrap_action_result("threads", session.get_threads())
+        return _wrap_action_result(action_args.action, session.get_threads())
 
     if isinstance(action_args, ContextQueryBacktraceAction):
         backtrace_query = action_args.query
         return _wrap_action_result(
-            "backtrace",
+            action_args.action,
             session.get_backtrace(
                 thread_id=backtrace_query.thread_id,
                 max_frames=backtrace_query.max_frames,
@@ -577,7 +611,7 @@ def _handle_context_query(session: SessionService, args: ContextQueryArgs) -> To
     if isinstance(action_args, ContextQueryFrameAction):
         frame_query = action_args.query
         return _wrap_action_result(
-            "frame",
+            action_args.action,
             session.get_frame_info(
                 thread_id=frame_query.thread_id,
                 frame=frame_query.frame,
@@ -596,13 +630,13 @@ def _handle_context_manage(session: SessionService, args: ContextManageArgs) -> 
     action_args = _unwrap_action_args(args)
     if isinstance(action_args, ContextManageSelectThreadAction):
         return _wrap_action_result(
-            "select_thread",
+            action_args.action,
             session.select_thread(thread_id=action_args.context.thread_id),
         )
 
     if isinstance(action_args, ContextManageSelectFrameAction):
         return _wrap_action_result(
-            "select_frame",
+            action_args.action,
             session.select_frame(frame_number=action_args.context.frame),
         )
 
@@ -620,7 +654,7 @@ def _handle_inspect_query(session: SessionService, args: InspectQueryArgs) -> To
         evaluate_query = action_args.query
         thread_id, frame = _context_selector(evaluate_query.context)
         return _wrap_action_result(
-            "evaluate",
+            action_args.action,
             session.evaluate_expression(
                 evaluate_query.expression,
                 thread_id=thread_id,
@@ -632,7 +666,7 @@ def _handle_inspect_query(session: SessionService, args: InspectQueryArgs) -> To
         variables_query = action_args.query
         thread_id, frame = _context_selector(variables_query.context)
         return _wrap_action_result(
-            "variables",
+            action_args.action,
             session.get_variables(
                 thread_id=thread_id,
                 frame=0 if frame is None else frame,
@@ -645,7 +679,7 @@ def _handle_inspect_query(session: SessionService, args: InspectQueryArgs) -> To
         register_numbers = cast(list[int], list(registers_query.register_numbers))
         register_names = list(registers_query.register_names)
         return _wrap_action_result(
-            "registers",
+            action_args.action,
             session.get_registers(
                 thread_id=thread_id,
                 frame=frame,
@@ -660,7 +694,7 @@ def _handle_inspect_query(session: SessionService, args: InspectQueryArgs) -> To
     if isinstance(action_args, InspectMemoryAction):
         memory_query = action_args.query
         return _wrap_action_result(
-            "memory",
+            action_args.action,
             session.read_memory(
                 address=memory_query.address,
                 count=memory_query.count,
@@ -673,7 +707,7 @@ def _handle_inspect_query(session: SessionService, args: InspectQueryArgs) -> To
         thread_id, frame = _context_selector(disassembly_query.context)
         location = _location_selection(disassembly_query.location)
         return _wrap_action_result(
-            "disassembly",
+            action_args.action,
             session.disassemble(
                 thread_id=thread_id,
                 frame=frame,
@@ -693,7 +727,7 @@ def _handle_inspect_query(session: SessionService, args: InspectQueryArgs) -> To
         thread_id, frame = _context_selector(source_query.context)
         location = _location_selection(source_query.location)
         return _wrap_action_result(
-            "source",
+            action_args.action,
             session.get_source_context(
                 thread_id=thread_id,
                 frame=frame,
@@ -933,14 +967,14 @@ def _handle_session_query(
     action_args = _unwrap_action_args(args)
 
     if isinstance(action_args, SessionQueryListAction):
-        return _wrap_action_result("list", session_manager.list_sessions())
+        return _wrap_action_result(action_args.action, session_manager.list_sessions())
 
     if isinstance(action_args, SessionQueryStatusAction):
         session = session_manager.resolve_session(action_args.session_id)
         if isinstance(session, OperationError):
-            return _wrap_action_result("status", session)
+            return _wrap_action_result(action_args.action, session)
         with session_workflow_context(session):
-            return _wrap_action_result("status", session.get_status())
+            return _wrap_action_result(action_args.action, session.get_status())
 
     return OperationError(
         message=f"Unsupported session query action: {type(action_args).__name__}",
@@ -959,7 +993,7 @@ def _handle_session_manage(
 
     if isinstance(action_args, SessionManageStopAction):
         return _wrap_action_result(
-            "stop",
+            action_args.action,
             session_manager.close_session(action_args.session_id),
         )
 
@@ -974,9 +1008,12 @@ def _handle_session_query_for_session(session: SessionService, args: SessionQuer
 
     action_args = _unwrap_action_args(args)
     if isinstance(action_args, SessionQueryStatusAction):
-        return _wrap_action_result("status", session.get_status())
+        return _wrap_action_result(action_args.action, session.get_status())
     return OperationError(
-        message=f"{TOOL_SESSION_QUERY}(action=list) is not valid inside {TOOL_WORKFLOW_BATCH}",
+        message=(
+            f"{TOOL_SESSION_QUERY}(action={shared_contracts.ACTION_LIST}) "
+            f"is not valid inside {TOOL_WORKFLOW_BATCH}"
+        ),
         code="unsupported_combination",
     )
 
@@ -1011,29 +1048,12 @@ def _build_batch_step_templates(
             if isinstance(raw_step, str)
             else raw_step
         )
-        if "session_id" in step.arguments:
-            return OperationError(
-                message=(
-                    f"Batch step {index} ({step.tool}) must not include session_id. "
-                    f"It is inherited from {TOOL_WORKFLOW_BATCH}."
-                ),
-                code="validation_error",
-            )
-
-        if step.tool == TOOL_SESSION_QUERY and step.arguments.get("action") == "list":
-            return OperationError(
-                message=f"{TOOL_SESSION_QUERY}(action=list) is not valid inside {TOOL_WORKFLOW_BATCH}",
-                code="unsupported_combination",
-            )
-
-        if step.tool == TOOL_SESSION_MANAGE:
-            return OperationError(
-                message=f"{TOOL_SESSION_MANAGE} is not valid inside {TOOL_WORKFLOW_BATCH}",
-                code="unsupported_combination",
-            )
+        issue = shared_contracts.validate_workflow_step_contract(step.tool, step.arguments)
+        if issue is not None:
+            return _workflow_step_validation_error(step.tool, issue, index=index)
 
         tool_spec = SESSION_TOOL_SPECS.get(step.tool)
-        if tool_spec is None or step.tool in {TOOL_WORKFLOW_BATCH, TOOL_RUN_UNTIL_FAILURE}:
+        if tool_spec is None:
             return OperationError(
                 message=f"Unsupported batch step tool: {step.tool}",
                 code="unknown_tool",

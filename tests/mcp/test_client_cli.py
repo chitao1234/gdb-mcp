@@ -1817,6 +1817,33 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
+    def test_main_rejects_workflow_batch_session_query_list_step(self, mock_invoke_tool):
+        mock_invoke_tool.return_value = ClientToolResponse(payload={"status": "success"}, is_error=False)
+
+        stderr = StringIO()
+        with pytest.raises(SystemExit) as exc_info:
+            asyncio.run(
+                main(
+                    [
+                        "--server-url",
+                        "http://127.0.0.1:8000/mcp",
+                        "gdb_workflow_batch",
+                        "--session-id",
+                        "7",
+                        "--step",
+                        "gdb_session_query",
+                        "--step-arg",
+                        "action=list",
+                    ],
+                    stderr=stderr,
+                )
+            )
+
+        assert exc_info.value.code == 2
+        assert "gdb_session_query(action=list) is not valid inside workflow steps" in stderr.getvalue()
+        mock_invoke_tool.assert_not_awaited()
+
+    @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_rejects_workflow_batch_conflicting_dotted_assignments(self, mock_invoke_tool):
         mock_invoke_tool.return_value = ClientToolResponse(payload={"status": "success"}, is_error=False)
 

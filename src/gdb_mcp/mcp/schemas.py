@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, Optional, TypeAlias
+from typing import Annotated, Optional, TypeAlias
 
 from mcp.types import Tool
 from pydantic import (
@@ -15,6 +15,7 @@ from pydantic import (
     model_validator,
 )
 
+from .. import contracts as shared_contracts
 from ..contracts import (
     BATCH_STEP_TOOL_NAMES as CONTRACT_BATCH_STEP_TOOL_NAMES,
     BatchStepToolName,
@@ -881,13 +882,13 @@ class ThreadFrameContextArgs(StrictArgsModel):
 
 
 class SessionQueryListAction(StrictArgsModel):
-    action: Literal["list"] = Field(..., description="List all active sessions")
+    action: shared_contracts.ActionListName = Field(..., description="List all active sessions")
     query: EmptyQuery = Field(default_factory=EmptyQuery)
 
 
 class SessionQueryStatusAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["status"] = Field(..., description="Query one live session")
+    action: shared_contracts.ActionStatusName = Field(..., description="Query one live session")
     query: EmptyQuery = Field(default_factory=EmptyQuery)
 
 
@@ -904,7 +905,7 @@ class SessionQueryArgs(
 
 class SessionManageStopAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["stop"] = Field(..., description="Stop one live session")
+    action: shared_contracts.ActionStopName = Field(..., description="Stop one live session")
     session: EmptyQuery = Field(default_factory=EmptyQuery)
 
 
@@ -921,13 +922,16 @@ class SessionManageArgs(
 
 class InferiorQueryListAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["list"] = Field(..., description="List inferiors in one live session")
+    action: shared_contracts.ActionListName = Field(..., description="List inferiors in one live session")
     query: EmptyQuery = Field(default_factory=EmptyQuery)
 
 
 class InferiorQueryCurrentAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["current"] = Field(..., description="Inspect the selected inferior")
+    action: shared_contracts.ActionCurrentName = Field(
+        ...,
+        description="Inspect the selected inferior",
+    )
     query: EmptyQuery = Field(default_factory=EmptyQuery)
 
 
@@ -975,31 +979,37 @@ class InferiorDetachOnForkPayload(StrictArgsModel):
 
 class InferiorManageCreateAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["create"] = Field(..., description="Create a new inferior")
+    action: shared_contracts.ActionCreateName = Field(..., description="Create a new inferior")
     inferior: InferiorCreatePayload
 
 
 class InferiorManageRemoveAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["remove"] = Field(..., description="Remove one inferior")
+    action: shared_contracts.ActionRemoveName = Field(..., description="Remove one inferior")
     inferior: InferiorIdPayload
 
 
 class InferiorManageSelectAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["select"] = Field(..., description="Select the active inferior")
+    action: shared_contracts.ActionSelectName = Field(..., description="Select the active inferior")
     inferior: InferiorIdPayload
 
 
 class InferiorManageFollowForkAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["set_follow_fork_mode"] = Field(..., description="Change follow-fork-mode")
+    action: shared_contracts.ActionSetFollowForkModeName = Field(
+        ...,
+        description="Change follow-fork-mode",
+    )
     inferior: InferiorFollowForkPayload
 
 
 class InferiorManageDetachOnForkAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["set_detach_on_fork"] = Field(..., description="Change detach-on-fork")
+    action: shared_contracts.ActionSetDetachOnForkName = Field(
+        ...,
+        description="Change detach-on-fork",
+    )
     inferior: InferiorDetachOnForkPayload
 
 
@@ -1058,13 +1068,13 @@ class ExecutionWaitForStopPayload(StrictArgsModel):
 
 class ExecutionRunAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["run"] = Field(..., description="Start the inferior")
+    action: shared_contracts.ActionRunName = Field(..., description="Start the inferior")
     execution: ExecutionRunPayload
 
 
 class ExecutionContinueAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["continue"] = Field(..., description="Continue execution")
+    action: shared_contracts.ActionContinueName = Field(..., description="Continue execution")
     execution: ExecutionControlPayload = Field(
         default_factory=lambda: ExecutionControlPayload.model_validate({})
     )
@@ -1072,13 +1082,19 @@ class ExecutionContinueAction(StrictArgsModel):
 
 class ExecutionInterruptAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["interrupt"] = Field(..., description="Interrupt the running inferior")
+    action: shared_contracts.ActionInterruptName = Field(
+        ...,
+        description="Interrupt the running inferior",
+    )
     execution: EmptyQuery = Field(default_factory=EmptyQuery)
 
 
 class ExecutionStepAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["step"] = Field(..., description="Step into the next line or instruction")
+    action: shared_contracts.ActionStepName = Field(
+        ...,
+        description="Step into the next line or instruction",
+    )
     execution: ExecutionControlPayload = Field(
         default_factory=lambda: ExecutionControlPayload.model_validate({})
     )
@@ -1086,7 +1102,10 @@ class ExecutionStepAction(StrictArgsModel):
 
 class ExecutionNextAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["next"] = Field(..., description="Step over the next line or instruction")
+    action: shared_contracts.ActionNextName = Field(
+        ...,
+        description="Step over the next line or instruction",
+    )
     execution: ExecutionControlPayload = Field(
         default_factory=lambda: ExecutionControlPayload.model_validate({})
     )
@@ -1094,7 +1113,7 @@ class ExecutionNextAction(StrictArgsModel):
 
 class ExecutionFinishAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["finish"] = Field(..., description="Finish the current frame")
+    action: shared_contracts.ActionFinishName = Field(..., description="Finish the current frame")
     execution: ExecutionControlPayload = Field(
         default_factory=lambda: ExecutionControlPayload.model_validate({})
     )
@@ -1102,7 +1121,10 @@ class ExecutionFinishAction(StrictArgsModel):
 
 class ExecutionWaitForStopAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["wait_for_stop"] = Field(..., description="Wait for the next stop event")
+    action: shared_contracts.ActionWaitForStopName = Field(
+        ...,
+        description="Wait for the next stop event",
+    )
     execution: ExecutionWaitForStopPayload
 
 
@@ -1124,7 +1146,10 @@ class ExecutionManageArgs(
 
 
 class BreakpointCodeCreateArgs(StrictArgsModel):
-    kind: Literal["code"] = Field(..., description="Create a code breakpoint")
+    kind: shared_contracts.BreakpointKindCodeName = Field(
+        ...,
+        description="Create a code breakpoint",
+    )
     location: str = Field(..., description="Function, file:line, or *address")
     condition: str | None = Field(None, description="Optional breakpoint condition")
     temporary: bool = Field(False, description="Whether the breakpoint is temporary")
@@ -1139,7 +1164,10 @@ class BreakpointCodeCreateArgs(StrictArgsModel):
 
 
 class BreakpointWatchCreateArgs(StrictArgsModel):
-    kind: Literal["watch"] = Field(..., description="Create a watchpoint")
+    kind: shared_contracts.BreakpointKindWatchName = Field(
+        ...,
+        description="Create a watchpoint",
+    )
     expression: str = Field(..., description="Expression to watch")
     access: BreakpointAccess = Field(
         "write",
@@ -1156,7 +1184,10 @@ class BreakpointWatchCreateArgs(StrictArgsModel):
 
 
 class BreakpointCatchCreateArgs(StrictArgsModel):
-    kind: Literal["catch"] = Field(..., description="Create a catchpoint")
+    kind: shared_contracts.BreakpointKindCatchName = Field(
+        ...,
+        description="Create a catchpoint",
+    )
     event: BreakpointEvent = Field(..., description="Debugger event kind to catch")
     argument: str | None = Field(
         None,
@@ -1208,13 +1239,19 @@ class BreakpointGetQueryArgs(StrictArgsModel):
 
 class BreakpointManageCreateAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["create"] = Field(..., description="Create a breakpoint/watchpoint/catchpoint")
+    action: shared_contracts.ActionCreateName = Field(
+        ...,
+        description="Create a breakpoint/watchpoint/catchpoint",
+    )
     breakpoint: BreakpointCreateArgs
 
 
 class BreakpointManageUpdateAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["update"] = Field(..., description="Update one existing breakpoint")
+    action: shared_contracts.ActionUpdateName = Field(
+        ...,
+        description="Update one existing breakpoint",
+    )
     breakpoint: BreakpointSelectorArgs
     changes: BreakpointUpdateChangesArgs
 
@@ -1243,7 +1280,7 @@ class BreakpointManageArgs(
 
 class BreakpointQueryListAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["list"] = Field(..., description="List all breakpoints")
+    action: shared_contracts.ActionListName = Field(..., description="List all breakpoints")
     query: BreakpointListQueryArgs = Field(
         default_factory=lambda: BreakpointListQueryArgs.model_validate({})
     )
@@ -1251,7 +1288,7 @@ class BreakpointQueryListAction(StrictArgsModel):
 
 class BreakpointQueryGetAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["get"] = Field(..., description="Fetch one breakpoint")
+    action: shared_contracts.ActionGetName = Field(..., description="Fetch one breakpoint")
     query: BreakpointGetQueryArgs
 
 
@@ -1267,11 +1304,14 @@ class BreakpointQueryArgs(
 
 
 class LocationCurrentArgs(StrictArgsModel):
-    kind: Literal["current"] = Field(..., description="Use the current selected location")
+    kind: shared_contracts.LocationKindCurrentName = Field(
+        ...,
+        description="Use the current selected location",
+    )
 
 
 class LocationFunctionArgs(StrictArgsModel):
-    kind: Literal["function"] = Field(..., description="Resolve one function")
+    kind: shared_contracts.LocationKindFunctionName = Field(..., description="Resolve one function")
     function: str = Field(..., description="Function name selector")
 
     @field_validator("function")
@@ -1284,7 +1324,7 @@ class LocationFunctionArgs(StrictArgsModel):
 
 
 class LocationAddressArgs(StrictArgsModel):
-    kind: Literal["address"] = Field(..., description="Resolve one address")
+    kind: shared_contracts.LocationKindAddressName = Field(..., description="Resolve one address")
     address: str = Field(..., description="Address selector")
 
     @field_validator("address")
@@ -1297,7 +1337,10 @@ class LocationAddressArgs(StrictArgsModel):
 
 
 class LocationAddressRangeArgs(StrictArgsModel):
-    kind: Literal["address_range"] = Field(..., description="Resolve an address range")
+    kind: shared_contracts.LocationKindAddressRangeName = Field(
+        ...,
+        description="Resolve an address range",
+    )
     start_address: str = Field(..., description="Start of address range")
     end_address: str = Field(..., description="End of address range")
 
@@ -1312,7 +1355,10 @@ class LocationAddressRangeArgs(StrictArgsModel):
 
 
 class LocationFileLineArgs(StrictArgsModel):
-    kind: Literal["file_line"] = Field(..., description="Resolve one source file line")
+    kind: shared_contracts.LocationKindFileLineName = Field(
+        ...,
+        description="Resolve one source file line",
+    )
     file: str = Field(..., description="Source file selector")
     line: int = Field(..., gt=0, description="Source line selector")
 
@@ -1326,7 +1372,10 @@ class LocationFileLineArgs(StrictArgsModel):
 
 
 class LocationFileRangeArgs(StrictArgsModel):
-    kind: Literal["file_range"] = Field(..., description="Resolve one explicit source file range")
+    kind: shared_contracts.LocationKindFileRangeName = Field(
+        ...,
+        description="Resolve one explicit source file range",
+    )
     file: str = Field(..., description="Source file selector")
     start_line: int = Field(..., gt=0, description="Start line of the range")
     end_line: int = Field(..., gt=0, description="End line of the range")
@@ -1369,13 +1418,16 @@ class ContextFrameQueryArgs(StrictArgsModel):
 
 class ContextQueryThreadsAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["threads"] = Field(..., description="List threads")
+    action: shared_contracts.ActionThreadsName = Field(..., description="List threads")
     query: EmptyQuery = Field(default_factory=EmptyQuery)
 
 
 class ContextQueryBacktraceAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["backtrace"] = Field(..., description="Inspect a backtrace")
+    action: shared_contracts.ActionBacktraceName = Field(
+        ...,
+        description="Inspect a backtrace",
+    )
     query: ContextBacktraceQueryArgs = Field(
         default_factory=lambda: ContextBacktraceQueryArgs.model_validate({})
     )
@@ -1383,7 +1435,10 @@ class ContextQueryBacktraceAction(StrictArgsModel):
 
 class ContextQueryFrameAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["frame"] = Field(..., description="Inspect frame information")
+    action: shared_contracts.ActionFrameName = Field(
+        ...,
+        description="Inspect frame information",
+    )
     query: ContextFrameQueryArgs = Field(
         default_factory=lambda: ContextFrameQueryArgs.model_validate({})
     )
@@ -1404,13 +1459,19 @@ class ContextQueryArgs(
 
 class ContextManageSelectThreadAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["select_thread"] = Field(..., description="Select the current thread")
+    action: shared_contracts.ActionSelectThreadName = Field(
+        ...,
+        description="Select the current thread",
+    )
     context: ThreadSelectorArgs
 
 
 class ContextManageSelectFrameAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["select_frame"] = Field(..., description="Select the current frame")
+    action: shared_contracts.ActionSelectFrameName = Field(
+        ...,
+        description="Select the current frame",
+    )
     context: FrameSelectorArgs
 
 
@@ -1511,13 +1572,16 @@ class InspectSourceQueryArgs(StrictArgsModel):
 
 class InspectEvaluateAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["evaluate"] = Field(..., description="Evaluate one expression")
+    action: shared_contracts.ActionEvaluateName = Field(..., description="Evaluate one expression")
     query: InspectEvaluateQueryArgs
 
 
 class InspectVariablesAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["variables"] = Field(..., description="Inspect variables in one context")
+    action: shared_contracts.ActionVariablesName = Field(
+        ...,
+        description="Inspect variables in one context",
+    )
     query: InspectVariablesQueryArgs = Field(
         default_factory=lambda: InspectVariablesQueryArgs.model_validate({})
     )
@@ -1525,7 +1589,10 @@ class InspectVariablesAction(StrictArgsModel):
 
 class InspectRegistersAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["registers"] = Field(..., description="Inspect registers in one context")
+    action: shared_contracts.ActionRegistersName = Field(
+        ...,
+        description="Inspect registers in one context",
+    )
     query: InspectRegistersQueryArgs = Field(
         default_factory=lambda: InspectRegistersQueryArgs.model_validate({})
     )
@@ -1533,19 +1600,25 @@ class InspectRegistersAction(StrictArgsModel):
 
 class InspectMemoryAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["memory"] = Field(..., description="Read target memory")
+    action: shared_contracts.ActionMemoryName = Field(..., description="Read target memory")
     query: InspectMemoryQueryArgs
 
 
 class InspectDisassemblyAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["disassembly"] = Field(..., description="Inspect disassembly for one location")
+    action: shared_contracts.ActionDisassemblyName = Field(
+        ...,
+        description="Inspect disassembly for one location",
+    )
     query: InspectDisassemblyQueryArgs
 
 
 class InspectSourceAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: Literal["source"] = Field(..., description="Inspect source context for one location")
+    action: shared_contracts.ActionSourceName = Field(
+        ...,
+        description="Inspect source context for one location",
+    )
     query: InspectSourceQueryArgs
 
 

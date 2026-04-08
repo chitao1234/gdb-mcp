@@ -8,12 +8,11 @@ from typing import cast
 
 from pydantic import ValidationError
 
+import gdb_mcp.contracts as shared_contracts
 from gdb_mcp.contracts import (
     BatchStepToolName,
-    TOOL_RUN_UNTIL_FAILURE,
     TOOL_SESSION_MANAGE,
     TOOL_SESSION_QUERY,
-    TOOL_WORKFLOW_BATCH,
 )
 from gdb_mcp.mcp.schemas import BATCH_STEP_TOOL_MODELS
 
@@ -202,20 +201,23 @@ def _validate_workflow_step(
     *,
     index: int,
 ) -> dict[str, object]:
-    if "session_id" in arguments:
-        raise CliUsageError(
-            f"Workflow step {index} ({tool_name}) must not include session_id; "
-            "it is inherited from the enclosing command"
-        )
-
-    if tool_name == TOOL_SESSION_QUERY and arguments.get("action") == "list":
-        raise CliUsageError(f"{TOOL_SESSION_QUERY}(action=list) is not valid inside workflow steps")
-
-    if tool_name == TOOL_SESSION_MANAGE:
-        raise CliUsageError(f"{TOOL_SESSION_MANAGE} is not valid inside workflow steps")
-
-    if tool_name in {TOOL_WORKFLOW_BATCH, TOOL_RUN_UNTIL_FAILURE}:
-        raise CliUsageError(f"{tool_name} is not valid inside workflow steps")
+    issue = shared_contracts.validate_workflow_step_contract(tool_name, arguments)
+    if issue is not None:
+        if issue.kind == "session_id_not_allowed":
+            raise CliUsageError(
+                f"Workflow step {index} ({tool_name}) must not include session_id; "
+                "it is inherited from the enclosing command"
+            )
+        if issue.kind == "session_query_list_not_allowed":
+            raise CliUsageError(
+                f"{TOOL_SESSION_QUERY}(action={shared_contracts.ACTION_LIST}) "
+                "is not valid inside workflow steps"
+            )
+        if issue.kind == "session_manage_not_allowed":
+            raise CliUsageError(f"{TOOL_SESSION_MANAGE} is not valid inside workflow steps")
+        if issue.kind == "nested_workflow_tool_not_allowed":
+            raise CliUsageError(f"{tool_name} is not valid inside workflow steps")
+        raise CliUsageError(f"Unsupported workflow step tool: {tool_name}")
 
     model = BATCH_STEP_TOOL_MODELS.get(tool_name)
     if model is None:

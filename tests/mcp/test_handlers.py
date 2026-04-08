@@ -1190,6 +1190,30 @@ class TestHandlerDispatch:
         assert result_data["status"] == "error"
         assert "must not include session_id" in result_data["message"]
 
+    def test_workflow_batch_rejects_session_query_list_step(self):
+        """Workflow batch should reject the global session inventory action inside steps."""
+
+        manager = Mock()
+        session = create_default_session_service()
+        manager.resolve_session.return_value = session
+
+        result_data = dispatch(
+            "gdb_workflow_batch",
+            {
+                "session_id": 3,
+                "steps": [
+                    {
+                        "tool": "gdb_session_query",
+                        "arguments": {"action": "list", "query": {}},
+                    }
+                ],
+            },
+            manager,
+        )
+
+        assert result_data["status"] == "error"
+        assert "gdb_session_query(action=list) is not valid inside gdb_workflow_batch" in result_data["message"]
+
     def test_capture_bundle_routes_to_session(self):
         """Capture requests should forward the bundle options to the resolved session."""
 

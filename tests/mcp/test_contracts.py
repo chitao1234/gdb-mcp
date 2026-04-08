@@ -58,25 +58,36 @@ from gdb_mcp.mcp.handlers import SESSION_TOOL_SPECS
 from gdb_mcp.mcp.schemas import (
     BATCH_STEP_TOOL_NAMES as SCHEMA_BATCH_STEP_TOOL_NAMES,
     BATCH_STEP_TOOL_MODELS,
+    BreakpointCodeCreateArgs,
     BreakpointCatchCreateArgs,
     BreakpointListQueryArgs,
     BreakpointManageNumberAction,
     BreakpointWatchCreateArgs,
+    ContextQueryThreadsAction,
     DisassembleArgs,
+    ExecutionRunAction,
     ExecutionWaitArgs,
     FollowForkModeArgs,
     GetRegistersArgs,
     InferiorFollowForkPayload,
+    InspectEvaluateAction,
     InspectDisassemblyQueryArgs,
     InspectRegistersQueryArgs,
+    LocationCurrentArgs,
     SetCatchpointArgs,
     SetWatchpointArgs,
+    SessionQueryListAction,
+    SessionQueryStatusAction,
     build_tool_definitions,
 )
 
 
 def _enum_values(model: type[BaseModel], field_name: str) -> tuple[str, ...]:
     return tuple(model.model_json_schema()["properties"][field_name]["enum"])
+
+
+def _const_value(model: type[BaseModel], field_name: str) -> str:
+    return str(model.model_json_schema()["properties"][field_name]["const"])
 
 
 def _array_item_enum_values(model: type[BaseModel], field_name: str) -> tuple[str, ...]:
@@ -263,6 +274,16 @@ def test_shared_schema_enums_match_contract_values() -> None:
     assert _enum_values(BreakpointManageNumberAction, "action") == BREAKPOINT_MANAGE_NUMBER_ACTIONS
     assert _enum_values(InspectRegistersQueryArgs, "value_format") == REGISTER_VALUE_FORMATS
     assert _enum_values(InspectDisassemblyQueryArgs, "mode") == DISASSEMBLY_MODES
+
+
+def test_shared_schema_const_fields_match_public_contract_values() -> None:
+    assert _const_value(SessionQueryListAction, "action") == shared_contracts.ACTION_LIST
+    assert _const_value(SessionQueryStatusAction, "action") == shared_contracts.ACTION_STATUS
+    assert _const_value(ExecutionRunAction, "action") == shared_contracts.ACTION_RUN
+    assert _const_value(ContextQueryThreadsAction, "action") == shared_contracts.ACTION_THREADS
+    assert _const_value(InspectEvaluateAction, "action") == shared_contracts.ACTION_EVALUATE
+    assert _const_value(BreakpointCodeCreateArgs, "kind") == shared_contracts.BREAKPOINT_KIND_CODE
+    assert _const_value(LocationCurrentArgs, "kind") == shared_contracts.LOCATION_KIND_CURRENT
 
 
 def test_cli_location_kind_choices_keep_public_hyphenated_form() -> None:
