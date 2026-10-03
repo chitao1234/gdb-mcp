@@ -6,6 +6,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from collections.abc import Callable
+from pathlib import Path
 
 from mcp.server import Server
 from mcp.types import CallToolResult, Tool
@@ -69,6 +70,9 @@ class ServerRuntime:
         host: str,
         port: int,
         path: str,
+        auth_token: str | None = None,
+        ready_file: Path | None = None,
+        idle_timeout_sec: float = 0.0,
     ) -> None:
         """Run the MCP server over streamable HTTP."""
 
@@ -79,6 +83,10 @@ class ServerRuntime:
             path=path,
             startup_message=self.startup_message,
             on_shutdown=self.shutdown_sessions,
+            auth_token=auth_token,
+            ready_file=ready_file,
+            idle_timeout_sec=idle_timeout_sec,
+            has_active_sessions=lambda: self.session_manager.active_session_count() > 0,
         )
 
     async def main(self) -> None:

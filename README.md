@@ -82,38 +82,45 @@ That exposes the MCP endpoint at `http://127.0.0.1:8000/mcp`.
 
 ### CLI Client
 
-`gdb-mcp-server` exposes the MCP endpoint. `gdb-mcp-client` calls that endpoint over streamable HTTP.
+`gdb-mcp-client` calls an MCP endpoint over streamable HTTP. When you omit `--server-url` and `GDB_MCP_SERVER_URL` is unset, the client starts a background server for the current project (the nearest VCS root, else the working directory), records it in a per-user cache cookie, and reuses it for later commands:
 
-Start the server:
+```bash
+gdb-mcp-client gdb_session_query --action list
+```
+
+Background servers bind `127.0.0.1` on an ephemeral port and require a bearer token that is stored only in the cookie. They exit after 15 minutes without requests or active debug sessions. Manage them with:
+
+```bash
+gdb-mcp-client daemon status
+gdb-mcp-client daemon stop
+gdb-mcp-client daemon stop --force   # stop even with active debug sessions
+```
+
+To talk to a server you started yourself, pass `--server-url` or set `GDB_MCP_SERVER_URL`:
 
 ```bash
 gdb-mcp-server --transport streamable-http --host 127.0.0.1 --port 8000 --path /mcp
-```
-
-Call a tool:
-
-```bash
 gdb-mcp-client \
   --server-url http://127.0.0.1:8000/mcp \
   gdb_session_query \
   --action list
 ```
 
+Servers started by hand never idle-exit; only background servers created by the client do.
+
 Request raw JSON instead of human-oriented output:
 
 ```bash
 gdb-mcp-client \
-  --server-url http://127.0.0.1:8000/mcp \
   --json \
   gdb_execution_manage \
   --session-id 7 \
   --action continue
 ```
 
-Set `GDB_MCP_SERVER_URL` instead of passing `--server-url` on every call. To send a raw MCP payload (for example one listed by `--help`), use `--payload-json`, which is mutually exclusive with the field flags:
+To send a raw MCP payload (for example one listed by `--help`), use `--payload-json`, which is mutually exclusive with the field flags:
 
 ```bash
-export GDB_MCP_SERVER_URL=http://127.0.0.1:8000/mcp
 gdb-mcp-client \
   gdb_breakpoint_manage \
   --payload-json '{"session_id": 7, "action": "disable", "breakpoint": {"number": 3}}'
@@ -144,6 +151,24 @@ gdb-mcp-server
 ```
 
 Valid values: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`.
+
+### `GDB_MCP_AUTH_TOKEN`
+
+Bearer token for the streamable HTTP transport. `gdb-mcp-server` uses it when `--auth-token` is not passed, and `gdb-mcp-client` sends it with every request (including `--server-url` mode). Background servers created by the client receive the token through this variable instead of the command line:
+
+```bash
+export GDB_MCP_AUTH_TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
+gdb-mcp-server --transport streamable-http --port 8000
+gdb-mcp-client --server-url http://127.0.0.1:8000/mcp gdb_session_query --action list
+```
+
+### `GDB_MCP_STATE_DIR`
+
+Overrides where `gdb-mcp-client` keeps background-server cookies and logs. Defaults to the platform cache directory (`%LOCALAPPDATA%` on Windows, `~/Library/Caches` on macOS, `$XDG_CACHE_HOME` or `~/.cache` elsewhere) under `gdb-mcp/`.
+
+### `GDB_MCP_DAEMON_IDLE_SEC`
+
+Changes how long a background server started by `gdb-mcp-client` waits without requests before exiting. Defaults to 900 seconds; `0` disables idle exit.
 
 ## Tool Surface
 

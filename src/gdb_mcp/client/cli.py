@@ -18,6 +18,7 @@ from pydantic import ValidationError
 from gdb_mcp.mcp.schemas import TOOL_MODELS
 from gdb_mcp.mcp.tool_examples import TOOL_EXAMPLES
 
+from .daemon import DaemonError, daemon_status, resolve_server, stop_daemon
 from .parsers import CliUsageError, format_validation_error, validate_model_payload
 from .runtime import invoke_tool
 from .specs import CLIENT_TOOL_SPECS, TOOL_DESCRIPTIONS, TOOL_HELP_DESCRIPTIONS
@@ -138,6 +139,19 @@ def build_parser() -> argparse.ArgumentParser:
         _add_invocation_flags(subparser, suppress_defaults=True)
         spec.configure_parser(subparser)
 
+    daemon_parser = subparsers.add_parser(
+        "daemon",
+        help="Manage the per-project background server",
+    )
+    daemon_commands = daemon_parser.add_subparsers(dest="daemon_command", required=True)
+    daemon_commands.add_parser("status", help="Show the background server for this project")
+    stop_parser = daemon_commands.add_parser("stop", help="Stop the background server")
+    stop_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Stop even when debug sessions are active",
+    )
+
     return parser
 
 
@@ -174,11 +188,18 @@ def parse_client_args(
     args = arg_parser.parse_args(argv)
     if not args.server_url:
         args.server_url = os.environ.get(_SERVER_URL_ENV)
-    if not args.server_url:
-        arg_parser.error(
-            f"the following arguments are required: --server-url (or set {_SERVER_URL_ENV})"
-        )
     return args
+
+
+async def _run_daemon_command(args: argparse.Namespace, output: TextIO) -> int:
+    """Handle the daemon meta commands."""
+
+    if args.daemon_command == "status":
+        output.write(await daemon_status() + "\n")
+        return 0
+    result = await stop_daemon(force=bool(args.force))
+    output.write(result.message + "\n")
+    return 0 if result.stopped else 1
 
 
 async def main(
@@ -202,6 +223,13 @@ async def main(
                     + ", ".join(sorted(set(conflicting)))
                 )
         args = parse_client_args(argv, parser=parser)
+    if args.tool_name == "daemon":
+        return await _run_daemon_command(args, output)
+    try:
+        resolved = await resolve_server(explicit_url=args.server_url)
+    except DaemonError as exc:
+        error_output.write(f"gdb-mcp-client: error: {exc}\n")
+        return 1
     spec = CLIENT_TOOL_SPECS[args.tool_name]
     with redirect_stderr(error_output):
         if payload_mode:
@@ -216,10 +244,11 @@ async def main(
                 parser.error(format_validation_error(exc))
     try:
         response = await invoke_tool(
-            args.server_url,
+            resolved.url,
             args.tool_name,
             payload,
             http_client=http_client,
+            auth_token=resolved.token,
         )
     except Exception as exc:
         error_output.write(f"gdb-mcp-client: error: {_format_runtime_error(exc)}\n")

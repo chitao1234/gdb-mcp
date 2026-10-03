@@ -60,6 +60,9 @@ class TestServerEntrypoint:
             host="0.0.0.0",
             port=9000,
             path="/debug",
+            auth_token=None,
+            ready_file=None,
+            idle_timeout_sec=0.0,
         )
         runtime.run_stdio.assert_not_called()
 

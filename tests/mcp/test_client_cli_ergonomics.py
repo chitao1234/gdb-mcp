@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from gdb_mcp.client.cli import build_parser, main, parse_client_args
+from gdb_mcp.client.daemon import DaemonError, ResolvedServer
 from gdb_mcp.client.runtime import ClientToolResponse
 
 SERVER_URL = "http://127.0.0.1:8000/mcp"
@@ -36,13 +37,41 @@ def test_explicit_server_url_wins_over_environment(monkeypatch) -> None:
     assert args.server_url == SERVER_URL
 
 
-def test_missing_server_url_still_fails_without_environment(monkeypatch) -> None:
+@patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
+def test_missing_server_url_is_resolved_from_the_daemon(mock_invoke_tool, monkeypatch) -> None:
     monkeypatch.delenv("GDB_MCP_SERVER_URL", raising=False)
+    mock_invoke_tool.return_value = ClientToolResponse(
+        payload={"status": "success"}, is_error=False
+    )
+    daemon = ResolvedServer("http://127.0.0.1:41234/mcp", "secret-token", True)
 
-    with pytest.raises(SystemExit) as exc_info:
-        parse_client_args(["gdb_session_query", "--action", "list"], parser=build_parser())
+    with patch("gdb_mcp.client.cli.resolve_server", new_callable=AsyncMock) as mock_resolve:
+        mock_resolve.return_value = daemon
+        exit_code = asyncio.run(main(["gdb_session_query", "--action", "list"], stdout=StringIO()))
 
-    assert exc_info.value.code == 2
+    assert exit_code == 0
+    mock_resolve.assert_awaited_once_with(explicit_url=None)
+    mock_invoke_tool.assert_awaited_once_with(
+        daemon.url,
+        "gdb_session_query",
+        {"action": "list"},
+        http_client=None,
+        auth_token="secret-token",
+    )
+
+
+@patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
+def test_daemon_failure_is_reported_with_exit_code_one(mock_invoke_tool, monkeypatch) -> None:
+    monkeypatch.delenv("GDB_MCP_SERVER_URL", raising=False)
+    stderr = StringIO()
+
+    with patch("gdb_mcp.client.cli.resolve_server", new_callable=AsyncMock) as mock_resolve:
+        mock_resolve.side_effect = DaemonError("background server did not become ready")
+        exit_code = asyncio.run(main(["gdb_session_query", "--action", "list"], stderr=stderr))
+
+    assert exit_code == 1
+    assert "background server did not become ready" in stderr.getvalue()
+    mock_invoke_tool.assert_not_awaited()
 
 
 @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -69,6 +98,7 @@ def test_payload_json_sends_the_raw_payload(mock_invoke_tool, monkeypatch) -> No
         "gdb_breakpoint_manage",
         {"session_id": 7, "action": "disable", "breakpoint": {"number": 3}},
         http_client=None,
+        auth_token=None,
     )
 
 

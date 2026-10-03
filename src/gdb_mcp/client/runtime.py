@@ -43,17 +43,26 @@ async def invoke_tool(
     arguments: dict[str, object],
     *,
     http_client: httpx.AsyncClient | None = None,
+    auth_token: str | None = None,
 ) -> ClientToolResponse:
     """Connect to one MCP HTTP endpoint, invoke a tool, and return its parsed payload."""
 
-    async with streamable_http_client(server_url, http_client=http_client) as (
-        read_stream,
-        write_stream,
-        _get_session_id,
-    ):
-        async with ClientSession(read_stream, write_stream) as session:
-            await session.initialize()
-            result = await session.call_tool(tool_name, arguments)
+    owns_client = http_client is None and auth_token is not None
+    client = http_client
+    if owns_client:
+        client = httpx.AsyncClient(headers={"Authorization": f"Bearer {auth_token}"})
+    try:
+        async with streamable_http_client(server_url, http_client=client) as (
+            read_stream,
+            write_stream,
+            _get_session_id,
+        ):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                result = await session.call_tool(tool_name, arguments)
+    finally:
+        if owns_client and client is not None:
+            await client.aclose()
 
     payload = _parse_tool_payload(result)
     return ClientToolResponse(

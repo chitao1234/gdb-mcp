@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import ANY, AsyncMock, Mock, patch
+
+import uvicorn
 
 from starlette.responses import PlainTextResponse
 from starlette.applications import Starlette
@@ -12,7 +15,12 @@ from starlette.testclient import TestClient
 
 from mcp.types import TextContent, Tool
 
-from gdb_mcp.mcp.app import create_mcp_app, create_streamable_http_app, run_streamable_http_app
+from gdb_mcp.mcp.app import (
+    _ReadyReportingServer,
+    create_mcp_app,
+    create_streamable_http_app,
+    run_streamable_http_app,
+)
 
 
 class TestMcpAppToolRegistration:
@@ -82,7 +90,7 @@ class TestStreamableHttpApp:
         )
 
         assert isinstance(app, Starlette)
-        assert [route.path for route in app.routes] == ["/mcp"]
+        assert [route.path for route in app.routes] == ["/mcp", "/shutdown"]
 
         async def exercise_lifespan() -> None:
             async with app.router.lifespan_context(app):
@@ -134,7 +142,7 @@ class TestStreamableHttpApp:
         assert [scope["path"] for scope in session_manager.scopes] == ["/mcp"]
         shutdown.assert_called_once_with()
 
-    @patch("gdb_mcp.mcp.app.uvicorn.Server")
+    @patch("gdb_mcp.mcp.app._ReadyReportingServer")
     @patch("gdb_mcp.mcp.app.uvicorn.Config")
     @patch("gdb_mcp.mcp.app.create_streamable_http_app")
     def test_run_streamable_http_app_uses_uvicorn(
@@ -169,26 +177,34 @@ class TestStreamableHttpApp:
             mcp_app,
             path="/mcp",
             on_shutdown=shutdown,
+            auth_token=None,
+            idle_timeout_sec=0.0,
+            has_active_sessions=None,
+            request_shutdown=ANY,
         )
         mock_config_cls.assert_called_once()
         assert mock_config_cls.call_args.args[0] is starlette_app
         assert mock_config_cls.call_args.kwargs["host"] == "127.0.0.1"
         assert mock_config_cls.call_args.kwargs["port"] == 8000
-        mock_server_cls.assert_called_once_with(mock_config_cls.return_value)
+        mock_server_cls.assert_called_once_with(
+            mock_config_cls.return_value,
+            ready_file=None,
+            path="/mcp",
+        )
         uvicorn_server.serve.assert_awaited_once_with()
 
     @patch("gdb_mcp.mcp.app.logging.getLogger")
-    @patch("gdb_mcp.mcp.app.uvicorn.Server")
+    @patch("gdb_mcp.mcp.app._ReadyReportingServer")
     @patch("gdb_mcp.mcp.app.uvicorn.Config")
     @patch("gdb_mcp.mcp.app.create_streamable_http_app")
-    def test_run_streamable_http_app_logs_effective_url(
+    def test_run_streamable_http_app_logs_the_startup_message(
         self,
         mock_create_streamable_http_app,
         mock_config_cls,
         mock_server_cls,
         mock_get_logger,
     ):
-        """The startup log should include the effective streamable HTTP endpoint."""
+        """The startup message should be logged once with the effective log level."""
 
         mcp_app = Mock()
         app_logger = Mock()
@@ -212,9 +228,31 @@ class TestStreamableHttpApp:
         )
 
         app_logger.info.assert_called_once_with(
-            "%s Listening on http://%s:%s%s",
+            "%s starting",
             "GDB MCP Server starting...",
-            "127.0.0.1",
-            8000,
-            "/mcp",
         )
+
+    def test_ready_reporting_server_writes_the_bound_address(self, tmp_path):
+        """The ready file must carry the address uvicorn actually bound."""
+
+        config = uvicorn.Config(Mock(), host="127.0.0.1", port=0, log_level="warning")
+        ready_file = tmp_path / "ready.json"
+        server = _ReadyReportingServer(config, ready_file=ready_file, path="/mcp")
+
+        class FakeSocket:
+            def getsockname(self):
+                return ("127.0.0.1", 42631)
+
+        class FakeBoundServer:
+            sockets = [FakeSocket()]
+
+        server.servers = [FakeBoundServer()]
+
+        with patch("gdb_mcp.mcp.app.uvicorn.Server.startup", new=AsyncMock()):
+            asyncio.run(server.startup())
+
+        assert json.loads(ready_file.read_text(encoding="utf-8")) == {
+            "host": "127.0.0.1",
+            "port": 42631,
+            "path": "/mcp",
+        }

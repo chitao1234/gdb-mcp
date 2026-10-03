@@ -19,6 +19,7 @@ from .session.registry import SessionRegistry
 
 logger = logging.getLogger(__name__)
 TransportKind = Literal["stdio", "streamable-http"]
+_AUTH_TOKEN_ENV = "GDB_MCP_AUTH_TOKEN"
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,9 @@ class ServerCliConfig:
     host: str = "127.0.0.1"
     port: int = 8000
     path: str = "/mcp"
+    auth_token: str | None = None
+    ready_file: Path | None = None
+    idle_timeout_sec: float = 0.0
 
 
 def create_default_runtime() -> ServerRuntime:
@@ -66,15 +70,17 @@ def parse_server_config(argv: Sequence[str] | None = None) -> ServerCliConfig:
     """Parse and validate transport-selection CLI flags."""
 
     parser = argparse.ArgumentParser(prog="gdb-mcp-server")
-    parser.add_argument(
-        "--transport",
-        choices=("stdio", "streamable-http"),
-        default="stdio",
-    )
+    parser.add_argument("--transport", choices=("stdio", "streamable-http"), default="stdio")
     parser.add_argument("--host")
     parser.add_argument("--port", type=_parse_http_port)
     parser.add_argument("--path", type=_parse_http_path)
+    parser.add_argument("--auth-token")
+    parser.add_argument("--ready-file")
+    parser.add_argument("--idle-timeout-sec", type=float)
     args = parser.parse_args(argv)
+
+    if args.idle_timeout_sec is not None and args.idle_timeout_sec < 0:
+        parser.error("--idle-timeout-sec must be >= 0")
 
     if args.transport == "stdio":
         invalid_flags = [
@@ -83,6 +89,9 @@ def parse_server_config(argv: Sequence[str] | None = None) -> ServerCliConfig:
                 ("--host", args.host),
                 ("--port", args.port),
                 ("--path", args.path),
+                ("--auth-token", args.auth_token),
+                ("--ready-file", args.ready_file),
+                ("--idle-timeout-sec", args.idle_timeout_sec),
             )
             if value is not None
         ]
@@ -95,6 +104,11 @@ def parse_server_config(argv: Sequence[str] | None = None) -> ServerCliConfig:
         host="127.0.0.1" if args.host is None else args.host,
         port=8000 if args.port is None else args.port,
         path="/mcp" if args.path is None else args.path,
+        auth_token=(
+            args.auth_token if args.auth_token is not None else os.environ.get(_AUTH_TOKEN_ENV)
+        ),
+        ready_file=Path(args.ready_file) if args.ready_file is not None else None,
+        idle_timeout_sec=0.0 if args.idle_timeout_sec is None else args.idle_timeout_sec,
     )
 
 
@@ -112,6 +126,9 @@ async def main(argv: Sequence[str] | None = None) -> None:
         host=config.host,
         port=config.port,
         path=config.path,
+        auth_token=config.auth_token,
+        ready_file=config.ready_file,
+        idle_timeout_sec=config.idle_timeout_sec,
     )
 
 

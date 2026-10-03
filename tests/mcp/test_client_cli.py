@@ -38,11 +38,12 @@ class TestClientCli:
             "  execution_state: paused"
         )
 
-    def test_parse_client_args_requires_server_url(self):
-        with pytest.raises(SystemExit) as exc_info:
-            parse_client_args(["gdb_session_start", "--program", "/bin/true"])
+    def test_parse_client_args_allows_missing_server_url(self, monkeypatch):
+        monkeypatch.delenv("GDB_MCP_SERVER_URL", raising=False)
 
-        assert exc_info.value.code == 2
+        args = parse_client_args(["gdb_session_start", "--program", "/bin/true"])
+
+        assert args.server_url is None
 
     def test_build_parser_formats_help_with_percent_descriptions(self):
         help_text = build_parser().format_help()
@@ -109,6 +110,7 @@ class TestClientCli:
                 "env": {"TERM": "dumb"},
             },
             http_client=None,
+            auth_token=None,
         )
         rendered = stdout.getvalue()
         assert "session_id: 7" in rendered
@@ -171,6 +173,7 @@ class TestClientCli:
             "gdb_attach_process",
             {"session_id": 7, "pid": 1234, "timeout_sec": 30},
             http_client=None,
+            auth_token=None,
         )
         assert json.loads(stdout.getvalue()) == {"status": "success", "message": "attached"}
 
@@ -227,6 +230,7 @@ class TestClientCli:
             "gdb_execute_command",
             {"session_id": 7, "command": "info breakpoints", "timeout_sec": 9},
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -256,6 +260,7 @@ class TestClientCli:
             "gdb_call_function",
             {"session_id": 7, "function_call": 'printf("hello\\n")', "timeout_sec": 30},
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -308,6 +313,7 @@ class TestClientCli:
                 "include_stop_history": True,
             },
             http_client=None,
+            auth_token=None,
         )
 
     @patch(
@@ -369,6 +375,7 @@ class TestClientCli:
             "gdb_session_query",
             {"session_id": 7, "action": "status"},
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -450,6 +457,7 @@ class TestClientCli:
             "gdb_session_query",
             {"action": "list"},
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -479,6 +487,7 @@ class TestClientCli:
             "gdb_session_manage",
             {"session_id": 7, "action": "stop", "session": {}},
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -515,6 +524,7 @@ class TestClientCli:
                 "inferior": {"executable": "/bin/true", "make_current": True},
             },
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -544,6 +554,7 @@ class TestClientCli:
             "gdb_inferior_query",
             {"session_id": 7, "action": "current"},
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -613,6 +624,7 @@ class TestClientCli:
                 "inferior": {"enabled": True},
             },
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -719,6 +731,7 @@ class TestClientCli:
                 },
             },
             http_client=None,
+            auth_token=None,
         )
         rendered = stdout.getvalue()
         assert "action: run" in rendered
@@ -764,6 +777,7 @@ class TestClientCli:
                 },
             },
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -861,6 +875,7 @@ class TestClientCli:
                 "query": {"thread_id": 2, "max_frames": 10},
             },
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -926,6 +941,7 @@ class TestClientCli:
                 "context": {"frame": 2},
             },
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -987,6 +1003,7 @@ class TestClientCli:
             "gdb_breakpoint_query",
             {"session_id": 7, "action": "list"},
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -1025,6 +1042,7 @@ class TestClientCli:
                 "query": {"kinds": ["code", "watch"], "enabled": False},
             },
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -1095,6 +1113,7 @@ class TestClientCli:
                 "query": {"number": 1},
             },
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -1168,6 +1187,7 @@ class TestClientCli:
                 "breakpoint": {"kind": "code", "location": "main", "temporary": True},
             },
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -1210,6 +1230,7 @@ class TestClientCli:
                 "changes": {"condition": "i == 3"},
             },
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -1380,6 +1401,7 @@ class TestClientCli:
                 },
             },
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -1417,6 +1439,7 @@ class TestClientCli:
                 "query": {"location": {"kind": "address", "address": "0x401000"}},
             },
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -1454,6 +1477,7 @@ class TestClientCli:
                 "query": {"location": {"kind": "address", "address": "0x401000"}},
             },
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -1510,6 +1534,7 @@ class TestClientCli:
                 "fail_fast": False,
             },
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -1633,6 +1658,7 @@ class TestClientCli:
                 ],
             },
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -1681,6 +1707,7 @@ class TestClientCli:
                 ],
             },
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -1722,6 +1749,7 @@ class TestClientCli:
                 ],
             },
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -1889,6 +1917,7 @@ class TestClientCli:
                 "capture": {"expressions": ["errno"], "memory_ranges": ["&errno:8"]},
             },
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -1980,6 +2009,7 @@ class TestClientCli:
                 ]
             },
             http_client=None,
+            auth_token=None,
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
@@ -2016,6 +2046,7 @@ class TestClientCli:
                 ]
             },
             http_client=None,
+            auth_token=None,
         )
 
     def test_build_run_until_failure_omits_default_sections_before_validation(self):

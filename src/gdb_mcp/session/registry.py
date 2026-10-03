@@ -36,6 +36,12 @@ class SessionRegistry:
         self._next_session_id: int = 1
         self._lock = threading.Lock()
 
+    def active_session_count(self) -> int:
+        """Return the number of tracked (including closing) sessions."""
+
+        with self._lock:
+            return len(self._sessions) + len(self._closing_sessions)
+
     def _allocate_session_id(self) -> int:
         """Allocate a new session ID without publishing a session yet."""
 

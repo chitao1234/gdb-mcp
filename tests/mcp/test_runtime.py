@@ -3,7 +3,7 @@
 import asyncio
 import json
 import logging
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, Mock, patch
 
 from gdb_mcp.domain import OperationSuccess, SessionMessage, SessionStatusSnapshot
 from gdb_mcp.mcp.runtime import ServerRuntime, create_server_runtime
@@ -115,6 +115,10 @@ class TestServerRuntime:
             path="/mcp",
             startup_message="GDB MCP Server starting...",
             on_shutdown=runtime.shutdown_sessions,
+            auth_token=None,
+            ready_file=None,
+            idle_timeout_sec=0.0,
+            has_active_sessions=ANY,
         )
 
     @patch("gdb_mcp.mcp.runtime.asyncio.run")
