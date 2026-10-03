@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal, TypeAlias
+from typing import Literal, TypeAlias, get_args
 
 TOOL_SESSION_START = "gdb_session_start"
 TOOL_SESSION_QUERY = "gdb_session_query"
@@ -129,21 +129,6 @@ PUBLIC_TOOL_NAMES = (
     TOOL_CALL_FUNCTION,
 )
 
-BATCH_STEP_TOOL_NAMES = (
-    TOOL_SESSION_QUERY,
-    TOOL_INFERIOR_QUERY,
-    TOOL_INFERIOR_MANAGE,
-    TOOL_EXECUTION_MANAGE,
-    TOOL_BREAKPOINT_QUERY,
-    TOOL_BREAKPOINT_MANAGE,
-    TOOL_CONTEXT_QUERY,
-    TOOL_CONTEXT_MANAGE,
-    TOOL_INSPECT_QUERY,
-    TOOL_CAPTURE_BUNDLE,
-    TOOL_EXECUTE_COMMAND,
-    TOOL_ATTACH_PROCESS,
-    TOOL_CALL_FUNCTION,
-)
 BatchStepToolName: TypeAlias = Literal[
     "gdb_session_query",
     "gdb_inferior_query",
@@ -159,20 +144,14 @@ BatchStepToolName: TypeAlias = Literal[
     "gdb_attach_process",
     "gdb_call_function",
 ]
+BATCH_STEP_TOOL_NAMES = get_args(BatchStepToolName)
 
-SESSION_QUERY_ACTIONS = (ACTION_LIST, ACTION_STATUS)
 SessionQueryAction: TypeAlias = Literal["list", "status"]
-SESSION_MANAGE_ACTIONS = (ACTION_STOP,)
+SESSION_QUERY_ACTIONS = get_args(SessionQueryAction)
+SESSION_MANAGE_ACTIONS = get_args(ActionStopName)
 
-INFERIOR_QUERY_ACTIONS = (ACTION_LIST, ACTION_CURRENT)
 InferiorQueryAction: TypeAlias = Literal["list", "current"]
-INFERIOR_MANAGE_ACTIONS = (
-    ACTION_CREATE,
-    ACTION_REMOVE,
-    ACTION_SELECT,
-    ACTION_SET_FOLLOW_FORK_MODE,
-    ACTION_SET_DETACH_ON_FORK,
-)
+INFERIOR_QUERY_ACTIONS = get_args(InferiorQueryAction)
 InferiorManageAction: TypeAlias = Literal[
     "create",
     "remove",
@@ -180,20 +159,12 @@ InferiorManageAction: TypeAlias = Literal[
     "set_follow_fork_mode",
     "set_detach_on_fork",
 ]
-INFERIOR_FOLLOW_FORK_MODES = ("parent", "child")
+INFERIOR_MANAGE_ACTIONS = get_args(InferiorManageAction)
 InferiorFollowForkMode: TypeAlias = Literal["parent", "child"]
+INFERIOR_FOLLOW_FORK_MODES = get_args(InferiorFollowForkMode)
 
-EXECUTION_WAIT_UNTIL_VALUES = ("acknowledged", "stop")
 ExecutionWaitUntil: TypeAlias = Literal["acknowledged", "stop"]
-EXECUTION_MANAGE_ACTIONS = (
-    ACTION_RUN,
-    ACTION_CONTINUE,
-    ACTION_INTERRUPT,
-    ACTION_STEP,
-    ACTION_NEXT,
-    ACTION_FINISH,
-    ACTION_WAIT_FOR_STOP,
-)
+EXECUTION_WAIT_UNTIL_VALUES = get_args(ExecutionWaitUntil)
 ExecutionManageAction: TypeAlias = Literal[
     "run",
     "continue",
@@ -203,28 +174,17 @@ ExecutionManageAction: TypeAlias = Literal[
     "finish",
     "wait_for_stop",
 ]
+EXECUTION_MANAGE_ACTIONS = get_args(ExecutionManageAction)
 
-CONTEXT_QUERY_ACTIONS = (ACTION_THREADS, ACTION_BACKTRACE, ACTION_FRAME)
 ContextQueryAction: TypeAlias = Literal["threads", "backtrace", "frame"]
-CONTEXT_MANAGE_ACTIONS = (ACTION_SELECT_THREAD, ACTION_SELECT_FRAME)
+CONTEXT_QUERY_ACTIONS = get_args(ContextQueryAction)
 ContextManageAction: TypeAlias = Literal["select_thread", "select_frame"]
+CONTEXT_MANAGE_ACTIONS = get_args(ContextManageAction)
 
-BREAKPOINT_KINDS = (BREAKPOINT_KIND_CODE, BREAKPOINT_KIND_WATCH, BREAKPOINT_KIND_CATCH)
 BreakpointKind: TypeAlias = Literal["code", "watch", "catch"]
-BREAKPOINT_ACCESS_VALUES = ("write", "read", "access")
+BREAKPOINT_KINDS = get_args(BreakpointKind)
 BreakpointAccess: TypeAlias = Literal["write", "read", "access"]
-BREAKPOINT_EVENTS = (
-    "throw",
-    "rethrow",
-    "catch",
-    "exec",
-    "fork",
-    "vfork",
-    "load",
-    "unload",
-    "signal",
-    "syscall",
-)
+BREAKPOINT_ACCESS_VALUES = get_args(BreakpointAccess)
 BreakpointEvent: TypeAlias = Literal[
     "throw",
     "rethrow",
@@ -237,27 +197,14 @@ BreakpointEvent: TypeAlias = Literal[
     "signal",
     "syscall",
 ]
-BREAKPOINT_QUERY_ACTIONS = (ACTION_LIST, ACTION_GET)
+BREAKPOINT_EVENTS = get_args(BreakpointEvent)
 BreakpointQueryAction: TypeAlias = Literal["list", "get"]
-BREAKPOINT_MANAGE_ACTIONS = (
-    ACTION_CREATE,
-    ACTION_UPDATE,
-    ACTION_DELETE,
-    ACTION_ENABLE,
-    ACTION_DISABLE,
-)
+BREAKPOINT_QUERY_ACTIONS = get_args(BreakpointQueryAction)
 BreakpointManageAction: TypeAlias = Literal["create", "update", "delete", "enable", "disable"]
-BREAKPOINT_MANAGE_NUMBER_ACTIONS = (ACTION_DELETE, ACTION_ENABLE, ACTION_DISABLE)
+BREAKPOINT_MANAGE_ACTIONS = get_args(BreakpointManageAction)
 BreakpointManageNumberActionName: TypeAlias = Literal["delete", "enable", "disable"]
+BREAKPOINT_MANAGE_NUMBER_ACTIONS = get_args(BreakpointManageNumberActionName)
 
-LOCATION_KINDS = (
-    LOCATION_KIND_CURRENT,
-    LOCATION_KIND_FUNCTION,
-    LOCATION_KIND_ADDRESS,
-    LOCATION_KIND_ADDRESS_RANGE,
-    LOCATION_KIND_FILE_LINE,
-    LOCATION_KIND_FILE_RANGE,
-)
 LocationKind: TypeAlias = Literal[
     "current",
     "function",
@@ -266,6 +213,7 @@ LocationKind: TypeAlias = Literal[
     "file_line",
     "file_range",
 ]
+LOCATION_KINDS = get_args(LocationKind)
 CLI_LOCATION_KIND_CHOICES = (
     "current",
     "function",
@@ -275,14 +223,6 @@ CLI_LOCATION_KIND_CHOICES = (
     "file-range",
 )
 
-INSPECT_QUERY_ACTIONS = (
-    ACTION_EVALUATE,
-    ACTION_VARIABLES,
-    ACTION_REGISTERS,
-    ACTION_MEMORY,
-    ACTION_DISASSEMBLY,
-    ACTION_SOURCE,
-)
 InspectQueryAction: TypeAlias = Literal[
     "evaluate",
     "variables",
@@ -291,10 +231,11 @@ InspectQueryAction: TypeAlias = Literal[
     "disassembly",
     "source",
 ]
-REGISTER_VALUE_FORMATS = ("hex", "natural")
+INSPECT_QUERY_ACTIONS = get_args(InspectQueryAction)
 RegisterValueFormat: TypeAlias = Literal["hex", "natural"]
-DISASSEMBLY_MODES = ("assembly", "mixed")
+REGISTER_VALUE_FORMATS = get_args(RegisterValueFormat)
 DisassemblyMode: TypeAlias = Literal["assembly", "mixed"]
+DISASSEMBLY_MODES = get_args(DisassemblyMode)
 
 WorkflowStepValidationKind: TypeAlias = Literal[
     "session_id_not_allowed",

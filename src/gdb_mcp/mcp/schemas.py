@@ -17,6 +17,7 @@ from pydantic import (
 
 from .. import contracts as shared_contracts
 from ..contracts import (
+    BATCH_STEP_TOOL_NAMES,
     BatchStepToolName,
     BreakpointAccess,
     BreakpointEvent,
@@ -1191,9 +1192,10 @@ class InspectQueryArgs(
     """Public v2 request model for read-only inspection operations."""
 
 
-BATCH_STEP_TOOL_MODELS: dict[str, type[BaseModel]] = {
-    TOOL_EXECUTE_COMMAND: ExecuteCommandArgs,
+TOOL_MODELS: dict[str, type[BaseModel]] = {
+    TOOL_SESSION_START: StartSessionArgs,
     TOOL_SESSION_QUERY: SessionQueryArgs,
+    TOOL_SESSION_MANAGE: SessionManageArgs,
     TOOL_INFERIOR_QUERY: InferiorQueryArgs,
     TOOL_INFERIOR_MANAGE: InferiorManageArgs,
     TOOL_EXECUTION_MANAGE: ExecutionManageArgs,
@@ -1202,9 +1204,16 @@ BATCH_STEP_TOOL_MODELS: dict[str, type[BaseModel]] = {
     TOOL_CONTEXT_QUERY: ContextQueryArgs,
     TOOL_CONTEXT_MANAGE: ContextManageArgs,
     TOOL_INSPECT_QUERY: InspectQueryArgs,
-    TOOL_ATTACH_PROCESS: AttachProcessArgs,
+    TOOL_WORKFLOW_BATCH: BatchArgs,
     TOOL_CAPTURE_BUNDLE: CaptureBundleArgs,
+    TOOL_RUN_UNTIL_FAILURE: RunUntilFailureArgs,
+    TOOL_EXECUTE_COMMAND: ExecuteCommandArgs,
+    TOOL_ATTACH_PROCESS: AttachProcessArgs,
     TOOL_CALL_FUNCTION: CallFunctionArgs,
+}
+
+BATCH_STEP_TOOL_MODELS: dict[str, type[BaseModel]] = {
+    name: TOOL_MODELS[name] for name in BATCH_STEP_TOOL_NAMES
 }
 
 
