@@ -29,6 +29,8 @@ gdb-mcp-client \
 
 Add `--json` when you want the structured payload instead of human-oriented text.
 
+Set `GDB_MCP_SERVER_URL` to avoid repeating `--server-url`. `--payload-json '<json>'` sends a raw tool payload (mutually exclusive with field flags); every action-based subcommand lists validated payload examples in `--help`. `gdb_workflow_batch` exits non-zero when the response reports `error_count > 0`.
+
 ## Response Conventions
 
 ### Direct Success Payloads

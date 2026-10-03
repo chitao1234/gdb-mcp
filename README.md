@@ -110,6 +110,17 @@ gdb-mcp-client \
   --action continue
 ```
 
+Set `GDB_MCP_SERVER_URL` instead of passing `--server-url` on every call. To send a raw MCP payload (for example one listed by `--help`), use `--payload-json`, which is mutually exclusive with the field flags:
+
+```bash
+export GDB_MCP_SERVER_URL=http://127.0.0.1:8000/mcp
+gdb-mcp-client \
+  gdb_breakpoint_manage \
+  --payload-json '{"session_id": 7, "action": "disable", "breakpoint": {"number": 3}}'
+```
+
+`gdb_workflow_batch` exits non-zero when the response reports `error_count > 0`, so scripts can detect partial failures.
+
 ## Environment Variables
 
 ### `GDB_PATH`
