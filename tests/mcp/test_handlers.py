@@ -713,9 +713,7 @@ class TestHandlerDispatch:
         manager = Mock()
         session = _session_double()
         session.update_breakpoint.return_value = OperationSuccess(
-            BreakpointInfo(
-                breakpoint={"number": "4", "type": "breakpoint", "exp": "count > 100"}
-            )
+            BreakpointInfo(breakpoint={"number": "4", "type": "breakpoint", "exp": "count > 100"})
         )
         manager.resolve_session.return_value = session
 
@@ -1212,7 +1210,10 @@ class TestHandlerDispatch:
         )
 
         assert result_data["status"] == "error"
-        assert "gdb_session_query(action=list) is not valid inside gdb_workflow_batch" in result_data["message"]
+        assert (
+            "gdb_session_query(action=list) is not valid inside gdb_workflow_batch"
+            in result_data["message"]
+        )
 
     def test_capture_bundle_routes_to_session(self):
         """Capture requests should forward the bundle options to the resolved session."""
@@ -1262,7 +1263,9 @@ class TestHandlerDispatch:
 
         manager = Mock()
         session = _session_double()
-        session.capture_bundle.return_value = OperationSuccess(SessionMessage(message="bundle written"))
+        session.capture_bundle.return_value = OperationSuccess(
+            SessionMessage(message="bundle written")
+        )
         manager.resolve_session.return_value = session
 
         dispatch(
@@ -1307,9 +1310,7 @@ class TestHandlerDispatch:
                 "startup": {"program": "/tmp/a.out"},
                 "capture": {
                     "enabled": True,
-                    "memory_ranges": [
-                        {"address": "&value", "count": 8, "name": "value-bytes"}
-                    ],
+                    "memory_ranges": [{"address": "&value", "count": 8, "name": "value-bytes"}],
                 },
             },
             manager,

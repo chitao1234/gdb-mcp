@@ -28,8 +28,11 @@ This file defines repository-specific guidance for agents and contributors worki
 
 ## Validation Before Commit
 
+Black is the canonical formatter for this project (configuration in `pyproject.toml`, line length 100); run `black src tests` to fix style before committing.
+
 Run these checks for code changes (and run relevant subsets for docs-only changes):
 
+- `black --check src tests` or `uv run black --check src tests`
 - `ruff check src tests` or `uv run ruff check src tests`
 - `mypy src` or `uv run mypy src`
 - `pytest -q` or `uv run pytest -q`

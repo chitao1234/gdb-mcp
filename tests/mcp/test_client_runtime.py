@@ -193,9 +193,7 @@ class TestClientRuntime:
         session = AsyncMock()
         session.initialize = AsyncMock(return_value=Mock())
         session.call_tool = AsyncMock(
-            return_value=CallToolResult(
-                content=[TextContent(type="text", text="{not-json}")]
-            )
+            return_value=CallToolResult(content=[TextContent(type="text", text="{not-json}")])
         )
         mock_client_session_cls.return_value = _AsyncContextManager(session)
 

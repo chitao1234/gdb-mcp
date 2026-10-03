@@ -180,8 +180,10 @@ class TestExecutionApi:
         assert status["current_inferior_id"] == 2
         assert status["inferior_count"] == 2
         assert status["execution_state"] == "paused"
-        assert controller.io_manager.stdin.writes[-1].decode().endswith(
-            '-interpreter-exec console "info inferiors"\n'
+        assert (
+            controller.io_manager.stdin.writes[-1]
+            .decode()
+            .endswith('-interpreter-exec console "info inferiors"\n')
         )
 
     def test_continue_execution_attributes_stop_without_thread_group_after_fork_refresh(
@@ -619,7 +621,9 @@ class TestExecutionApi:
                 mi_result(),
             ],
         )
-        session.runtime.update_inferior_inventory(current_inferior_id=2, count=2, inferior_ids=(1, 2))
+        session.runtime.update_inferior_inventory(
+            current_inferior_id=2, count=2, inferior_ids=(1, 2)
+        )
         session.runtime.mark_inferior_selected(2)
 
         result = result_to_mapping(session.remove_inferior(2))

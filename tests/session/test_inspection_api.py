@@ -81,8 +81,10 @@ class TestThreadAndStackInspectionApi:
         assert result["inferiors"][0]["is_current"] is True
         assert result["inferiors"][0]["executable"] == "/tmp/app"
         assert result["inferiors"][1]["inferior_id"] == 2
-        assert controller.io_manager.stdin.writes[0].decode().endswith(
-            '-interpreter-exec console "info inferiors"\n'
+        assert (
+            controller.io_manager.stdin.writes[0]
+            .decode()
+            .endswith('-interpreter-exec console "info inferiors"\n')
         )
 
     def test_list_inferiors_includes_runtime_state_summary(
@@ -551,7 +553,16 @@ class TestStructuredCodeInspectionApi:
         """Register listing should pass explicit number filters and natural format token."""
 
         session, controller = scripted_running_session(
-            [mi_result({"register-values": [{"number": "0", "value": "1"}, {"number": "3", "value": "2"}]})]
+            [
+                mi_result(
+                    {
+                        "register-values": [
+                            {"number": "0", "value": "1"},
+                            {"number": "3", "value": "2"},
+                        ]
+                    }
+                )
+            ]
         )
 
         result = result_to_mapping(

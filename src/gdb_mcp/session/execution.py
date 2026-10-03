@@ -680,9 +680,7 @@ class SessionExecutionService:
                 )
             return "Inferior stopped"
         if stop_reason:
-            return (
-                f"Inferior stopped for reason {stop_reason}, but it did not match the requested filter"
-            )
+            return f"Inferior stopped for reason {stop_reason}, but it did not match the requested filter"
         return "Inferior is not running and no matching stop reason is available"
 
     def _refresh_inferior_inventory(self) -> OperationSuccess[InferiorListInfo] | OperationError:
@@ -716,11 +714,7 @@ class SessionExecutionService:
         """Return one inferior record by numeric ID."""
 
         return next(
-            (
-                record
-                for record in payload.inferiors
-                if record.get("inferior_id") == inferior_id
-            ),
+            (record for record in payload.inferiors if record.get("inferior_id") == inferior_id),
             None,
         )
 

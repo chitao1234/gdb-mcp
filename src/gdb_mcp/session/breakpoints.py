@@ -145,7 +145,9 @@ class SessionBreakpointService:
         if argument:
             command = f"{command} {argument}"
 
-        result = self._command_runner.execute_command_result(command, timeout_sec=DEFAULT_TIMEOUT_SEC)
+        result = self._command_runner.execute_command_result(
+            command, timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
         if isinstance(result, OperationError):
             return result
 

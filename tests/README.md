@@ -14,6 +14,12 @@ pip install -e ".[dev]"
 ### Run Quality Checks
 
 ```bash
+# Format (Black is the canonical formatter)
+.venv/bin/black src tests
+
+# Format check
+.venv/bin/black --check src tests
+
 # Lint
 .venv/bin/ruff check src tests
 

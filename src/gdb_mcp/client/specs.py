@@ -152,8 +152,7 @@ class ActionVariant:
 TOOL_DESCRIPTIONS = {tool.name: tool.description or "" for tool in build_tool_definitions()}
 
 TOOL_HELP_DESCRIPTIONS = {
-    tool.name: (tool.description or "").replace("%", "%%")
-    for tool in build_tool_definitions()
+    tool.name: (tool.description or "").replace("%", "%%") for tool in build_tool_definitions()
 }
 
 
@@ -178,6 +177,7 @@ def _register_tool_spec(spec: ToolCliSpec[_ToolInputT]) -> RegisteredToolCliSpec
         build_arguments=_erase_builder(spec.build_arguments),
         render_human=spec.render_human,
     )
+
 
 def _configure_session_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--program")
@@ -240,9 +240,7 @@ def _build_action_arguments(
 
 def _raise_invalid_action_flags(action: str, invalid_flags: list[str]) -> None:
     if invalid_flags:
-        raise CliUsageError(
-            f"{', '.join(sorted(invalid_flags))} not valid with --action {action}"
-        )
+        raise CliUsageError(f"{', '.join(sorted(invalid_flags))} not valid with --action {action}")
 
 
 def _validate_inferior_manage_input(typed_input: InferiorManageInput) -> None:
@@ -844,7 +842,9 @@ def _configure_execution_manage(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--wait-timeout-sec", type=int, default=argparse.SUPPRESS)
     parser.add_argument("--timeout-sec", type=int, default=argparse.SUPPRESS)
-    parser.add_argument("--stop-reason", dest="stop_reasons", action="append", default=argparse.SUPPRESS)
+    parser.add_argument(
+        "--stop-reason", dest="stop_reasons", action="append", default=argparse.SUPPRESS
+    )
 
 
 def _build_execution_manage(typed_input: ExecutionManageInput) -> dict[str, object]:
@@ -1295,123 +1295,157 @@ def _build_run_until_failure(typed_input: RunUntilFailureInput) -> dict[str, obj
 
 
 CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
-    TOOL_SESSION_START: _register_tool_spec(ToolCliSpec(
-        name=TOOL_SESSION_START,
-        configure_parser=_configure_session_start,
-        parse_input=parse_session_start_input,
-        build_arguments=_build_session_start,
-        render_human=render_session_start,
-    )),
-    TOOL_SESSION_QUERY: _register_tool_spec(ToolCliSpec(
-        name=TOOL_SESSION_QUERY,
-        configure_parser=_configure_session_query,
-        parse_input=parse_session_query_input,
-        build_arguments=_build_session_query,
-        render_human=render_action_payload,
-    )),
-    TOOL_SESSION_MANAGE: _register_tool_spec(ToolCliSpec(
-        name=TOOL_SESSION_MANAGE,
-        configure_parser=_configure_session_manage,
-        parse_input=_parse_namespace,
-        build_arguments=_build_session_manage,
-        render_human=render_action_payload,
-    )),
-    TOOL_INFERIOR_QUERY: _register_tool_spec(ToolCliSpec(
-        name=TOOL_INFERIOR_QUERY,
-        configure_parser=_configure_inferior_query,
-        parse_input=parse_inferior_query_input,
-        build_arguments=_build_inferior_query,
-        render_human=render_action_payload,
-    )),
-    TOOL_INFERIOR_MANAGE: _register_tool_spec(ToolCliSpec(
-        name=TOOL_INFERIOR_MANAGE,
-        configure_parser=_configure_inferior_manage,
-        parse_input=parse_inferior_manage_input,
-        build_arguments=_build_inferior_manage,
-        render_human=render_action_payload,
-    )),
-    TOOL_EXECUTION_MANAGE: _register_tool_spec(ToolCliSpec(
-        name=TOOL_EXECUTION_MANAGE,
-        configure_parser=_configure_execution_manage,
-        parse_input=parse_execution_manage_input,
-        build_arguments=_build_execution_manage,
-        render_human=render_action_payload,
-    )),
-    TOOL_BREAKPOINT_QUERY: _register_tool_spec(ToolCliSpec(
-        name=TOOL_BREAKPOINT_QUERY,
-        configure_parser=_configure_breakpoint_query,
-        parse_input=parse_breakpoint_query_input,
-        build_arguments=_build_breakpoint_query,
-        render_human=render_action_payload,
-    )),
-    TOOL_BREAKPOINT_MANAGE: _register_tool_spec(ToolCliSpec(
-        name=TOOL_BREAKPOINT_MANAGE,
-        configure_parser=_configure_breakpoint_manage,
-        parse_input=parse_breakpoint_manage_input,
-        build_arguments=_build_breakpoint_manage,
-        render_human=render_action_payload,
-    )),
-    TOOL_EXECUTE_COMMAND: _register_tool_spec(ToolCliSpec(
-        name=TOOL_EXECUTE_COMMAND,
-        configure_parser=_configure_execute_command,
-        parse_input=_parse_namespace,
-        build_arguments=_build_execute_command,
-        render_human=render_mapping,
-    )),
-    TOOL_ATTACH_PROCESS: _register_tool_spec(ToolCliSpec(
-        name=TOOL_ATTACH_PROCESS,
-        configure_parser=_configure_attach_process,
-        parse_input=_parse_namespace,
-        build_arguments=_build_attach_process,
-        render_human=render_mapping,
-    )),
-    TOOL_CONTEXT_QUERY: _register_tool_spec(ToolCliSpec(
-        name=TOOL_CONTEXT_QUERY,
-        configure_parser=_configure_context_query,
-        parse_input=parse_context_query_input,
-        build_arguments=_build_context_query,
-        render_human=render_action_payload,
-    )),
-    TOOL_CONTEXT_MANAGE: _register_tool_spec(ToolCliSpec(
-        name=TOOL_CONTEXT_MANAGE,
-        configure_parser=_configure_context_manage,
-        parse_input=parse_context_manage_input,
-        build_arguments=_build_context_manage,
-        render_human=render_action_payload,
-    )),
-    TOOL_INSPECT_QUERY: _register_tool_spec(ToolCliSpec(
-        name=TOOL_INSPECT_QUERY,
-        configure_parser=_configure_inspect_query,
-        parse_input=parse_inspect_query_input,
-        build_arguments=_build_inspect_query,
-        render_human=render_action_payload,
-    )),
-    TOOL_WORKFLOW_BATCH: _register_tool_spec(ToolCliSpec(
-        name=TOOL_WORKFLOW_BATCH,
-        configure_parser=_configure_workflow_batch,
-        parse_input=parse_workflow_batch_input,
-        build_arguments=_build_workflow_batch,
-        render_human=render_mapping,
-    )),
-    TOOL_CALL_FUNCTION: _register_tool_spec(ToolCliSpec(
-        name=TOOL_CALL_FUNCTION,
-        configure_parser=_configure_call_function,
-        parse_input=_parse_namespace,
-        build_arguments=_build_call_function,
-        render_human=render_mapping,
-    )),
-    TOOL_CAPTURE_BUNDLE: _register_tool_spec(ToolCliSpec(
-        name=TOOL_CAPTURE_BUNDLE,
-        configure_parser=_configure_capture_bundle,
-        parse_input=_parse_namespace,
-        build_arguments=_build_capture_bundle,
-        render_human=render_mapping,
-    )),
-    TOOL_RUN_UNTIL_FAILURE: _register_tool_spec(ToolCliSpec(
-        name=TOOL_RUN_UNTIL_FAILURE,
-        configure_parser=_configure_run_until_failure,
-        parse_input=parse_run_until_failure_input,
-        build_arguments=_build_run_until_failure,
-        render_human=render_mapping,
-    )),
+    TOOL_SESSION_START: _register_tool_spec(
+        ToolCliSpec(
+            name=TOOL_SESSION_START,
+            configure_parser=_configure_session_start,
+            parse_input=parse_session_start_input,
+            build_arguments=_build_session_start,
+            render_human=render_session_start,
+        )
+    ),
+    TOOL_SESSION_QUERY: _register_tool_spec(
+        ToolCliSpec(
+            name=TOOL_SESSION_QUERY,
+            configure_parser=_configure_session_query,
+            parse_input=parse_session_query_input,
+            build_arguments=_build_session_query,
+            render_human=render_action_payload,
+        )
+    ),
+    TOOL_SESSION_MANAGE: _register_tool_spec(
+        ToolCliSpec(
+            name=TOOL_SESSION_MANAGE,
+            configure_parser=_configure_session_manage,
+            parse_input=_parse_namespace,
+            build_arguments=_build_session_manage,
+            render_human=render_action_payload,
+        )
+    ),
+    TOOL_INFERIOR_QUERY: _register_tool_spec(
+        ToolCliSpec(
+            name=TOOL_INFERIOR_QUERY,
+            configure_parser=_configure_inferior_query,
+            parse_input=parse_inferior_query_input,
+            build_arguments=_build_inferior_query,
+            render_human=render_action_payload,
+        )
+    ),
+    TOOL_INFERIOR_MANAGE: _register_tool_spec(
+        ToolCliSpec(
+            name=TOOL_INFERIOR_MANAGE,
+            configure_parser=_configure_inferior_manage,
+            parse_input=parse_inferior_manage_input,
+            build_arguments=_build_inferior_manage,
+            render_human=render_action_payload,
+        )
+    ),
+    TOOL_EXECUTION_MANAGE: _register_tool_spec(
+        ToolCliSpec(
+            name=TOOL_EXECUTION_MANAGE,
+            configure_parser=_configure_execution_manage,
+            parse_input=parse_execution_manage_input,
+            build_arguments=_build_execution_manage,
+            render_human=render_action_payload,
+        )
+    ),
+    TOOL_BREAKPOINT_QUERY: _register_tool_spec(
+        ToolCliSpec(
+            name=TOOL_BREAKPOINT_QUERY,
+            configure_parser=_configure_breakpoint_query,
+            parse_input=parse_breakpoint_query_input,
+            build_arguments=_build_breakpoint_query,
+            render_human=render_action_payload,
+        )
+    ),
+    TOOL_BREAKPOINT_MANAGE: _register_tool_spec(
+        ToolCliSpec(
+            name=TOOL_BREAKPOINT_MANAGE,
+            configure_parser=_configure_breakpoint_manage,
+            parse_input=parse_breakpoint_manage_input,
+            build_arguments=_build_breakpoint_manage,
+            render_human=render_action_payload,
+        )
+    ),
+    TOOL_EXECUTE_COMMAND: _register_tool_spec(
+        ToolCliSpec(
+            name=TOOL_EXECUTE_COMMAND,
+            configure_parser=_configure_execute_command,
+            parse_input=_parse_namespace,
+            build_arguments=_build_execute_command,
+            render_human=render_mapping,
+        )
+    ),
+    TOOL_ATTACH_PROCESS: _register_tool_spec(
+        ToolCliSpec(
+            name=TOOL_ATTACH_PROCESS,
+            configure_parser=_configure_attach_process,
+            parse_input=_parse_namespace,
+            build_arguments=_build_attach_process,
+            render_human=render_mapping,
+        )
+    ),
+    TOOL_CONTEXT_QUERY: _register_tool_spec(
+        ToolCliSpec(
+            name=TOOL_CONTEXT_QUERY,
+            configure_parser=_configure_context_query,
+            parse_input=parse_context_query_input,
+            build_arguments=_build_context_query,
+            render_human=render_action_payload,
+        )
+    ),
+    TOOL_CONTEXT_MANAGE: _register_tool_spec(
+        ToolCliSpec(
+            name=TOOL_CONTEXT_MANAGE,
+            configure_parser=_configure_context_manage,
+            parse_input=parse_context_manage_input,
+            build_arguments=_build_context_manage,
+            render_human=render_action_payload,
+        )
+    ),
+    TOOL_INSPECT_QUERY: _register_tool_spec(
+        ToolCliSpec(
+            name=TOOL_INSPECT_QUERY,
+            configure_parser=_configure_inspect_query,
+            parse_input=parse_inspect_query_input,
+            build_arguments=_build_inspect_query,
+            render_human=render_action_payload,
+        )
+    ),
+    TOOL_WORKFLOW_BATCH: _register_tool_spec(
+        ToolCliSpec(
+            name=TOOL_WORKFLOW_BATCH,
+            configure_parser=_configure_workflow_batch,
+            parse_input=parse_workflow_batch_input,
+            build_arguments=_build_workflow_batch,
+            render_human=render_mapping,
+        )
+    ),
+    TOOL_CALL_FUNCTION: _register_tool_spec(
+        ToolCliSpec(
+            name=TOOL_CALL_FUNCTION,
+            configure_parser=_configure_call_function,
+            parse_input=_parse_namespace,
+            build_arguments=_build_call_function,
+            render_human=render_mapping,
+        )
+    ),
+    TOOL_CAPTURE_BUNDLE: _register_tool_spec(
+        ToolCliSpec(
+            name=TOOL_CAPTURE_BUNDLE,
+            configure_parser=_configure_capture_bundle,
+            parse_input=_parse_namespace,
+            build_arguments=_build_capture_bundle,
+            render_human=render_mapping,
+        )
+    ),
+    TOOL_RUN_UNTIL_FAILURE: _register_tool_spec(
+        ToolCliSpec(
+            name=TOOL_RUN_UNTIL_FAILURE,
+            configure_parser=_configure_run_until_failure,
+            parse_input=parse_run_until_failure_input,
+            build_arguments=_build_run_until_failure,
+            render_human=render_mapping,
+        )
+    ),
 }

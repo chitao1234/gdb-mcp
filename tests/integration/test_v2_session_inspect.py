@@ -271,9 +271,7 @@ def test_get_status_reports_exited_state_after_continue_v2(session_id, call_gdb_
 
 
 @pytest.mark.integration
-def test_attach_process_v2(
-    attachable_program, start_session_result, stop_session, call_gdb_tool
-):
+def test_attach_process_v2(attachable_program, start_session_result, stop_session, call_gdb_tool):
     """Attach-by-PID should work without legacy wrappers or response flattening."""
 
     process = subprocess.Popen([attachable_program])

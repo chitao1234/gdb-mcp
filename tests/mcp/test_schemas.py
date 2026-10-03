@@ -134,6 +134,7 @@ class TestRunArgs:
         args = RunArgs(session_id=1, args='--flag "hello world"')
         assert args.args == '--flag "hello world"'
 
+
 class TestInferiorLifecycleArgs:
     """Test cases for inferior add/remove request validation."""
 

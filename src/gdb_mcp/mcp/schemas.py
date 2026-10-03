@@ -389,7 +389,9 @@ class DisassembleArgs(StrictArgsModel):
         if len(selector_modes) > 1:
             raise ValueError("selector groups are mutually exclusive")
         if has_context_override and selector_modes:
-            raise ValueError("thread_id and frame cannot be combined with direct location selectors")
+            raise ValueError(
+                "thread_id and frame cannot be combined with direct location selectors"
+            )
         return self
 
 
@@ -471,7 +473,9 @@ class GetSourceContextArgs(StrictArgsModel):
         if len(selector_modes) > 1:
             raise ValueError("selector groups are mutually exclusive")
         if has_context_override and selector_modes:
-            raise ValueError("thread_id and frame cannot be combined with direct location selectors")
+            raise ValueError(
+                "thread_id and frame cannot be combined with direct location selectors"
+            )
         return self
 
 
@@ -512,8 +516,7 @@ class GetRegistersArgs(StrictArgsModel):
     register_numbers: list[int | str] = Field(
         default_factory=list,
         description=(
-            "Optional explicit register numbers to query. "
-            "Accepts integers or numeric strings."
+            "Optional explicit register numbers to query. " "Accepts integers or numeric strings."
         ),
     )
     register_names: list[str] = Field(
@@ -820,7 +823,9 @@ class RunUntilFailureCaptureArgs(StrictArgsModel):
         """Reject ambiguous capture naming configuration."""
 
         if self.bundle_name is not None and self.bundle_name_prefix is not None:
-            raise ValueError("capture.bundle_name and capture.bundle_name_prefix are mutually exclusive")
+            raise ValueError(
+                "capture.bundle_name and capture.bundle_name_prefix are mutually exclusive"
+            )
         return self
 
 
@@ -924,7 +929,9 @@ class SessionManageArgs(
 
 class InferiorQueryListAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
-    action: shared_contracts.ActionListName = Field(..., description="List inferiors in one live session")
+    action: shared_contracts.ActionListName = Field(
+        ..., description="List inferiors in one live session"
+    )
     query: EmptyQuery = Field(default_factory=EmptyQuery)
 
 
@@ -1449,9 +1456,7 @@ class ContextQueryFrameAction(StrictArgsModel):
 class ContextQueryArgs(
     RootModel[
         Annotated[
-            ContextQueryThreadsAction
-            | ContextQueryBacktraceAction
-            | ContextQueryFrameAction,
+            ContextQueryThreadsAction | ContextQueryBacktraceAction | ContextQueryFrameAction,
             Field(discriminator="action"),
         ]
     ]
@@ -1489,7 +1494,9 @@ class ContextManageArgs(
 
 
 class InspectEvaluateQueryArgs(StrictArgsModel):
-    context: ThreadFrameContextArgs | None = Field(None, description="Optional thread/frame override")
+    context: ThreadFrameContextArgs | None = Field(
+        None, description="Optional thread/frame override"
+    )
     expression: str = Field(..., description="Expression to evaluate")
 
     @field_validator("expression")
@@ -1502,14 +1509,24 @@ class InspectEvaluateQueryArgs(StrictArgsModel):
 
 
 class InspectVariablesQueryArgs(StrictArgsModel):
-    context: ThreadFrameContextArgs | None = Field(None, description="Optional thread/frame override")
+    context: ThreadFrameContextArgs | None = Field(
+        None, description="Optional thread/frame override"
+    )
 
 
 class InspectRegistersQueryArgs(StrictArgsModel):
-    context: ThreadFrameContextArgs | None = Field(None, description="Optional thread/frame override")
-    register_numbers: list[int | str] = Field(default_factory=list, description="Optional register-number selectors")
-    register_names: list[str] = Field(default_factory=list, description="Optional register-name selectors")
-    include_vector_registers: bool = Field(True, description="Whether to include vector/SIMD registers")
+    context: ThreadFrameContextArgs | None = Field(
+        None, description="Optional thread/frame override"
+    )
+    register_numbers: list[int | str] = Field(
+        default_factory=list, description="Optional register-number selectors"
+    )
+    register_names: list[str] = Field(
+        default_factory=list, description="Optional register-name selectors"
+    )
+    include_vector_registers: bool = Field(
+        True, description="Whether to include vector/SIMD registers"
+    )
     max_registers: int | None = Field(None, gt=0, description="Optional maximum register count")
     value_format: RegisterValueFormat = Field("hex", description="Value rendering mode")
 
@@ -1556,7 +1573,9 @@ class InspectMemoryQueryArgs(StrictArgsModel):
 
 
 class InspectDisassemblyQueryArgs(StrictArgsModel):
-    context: ThreadFrameContextArgs | None = Field(None, description="Optional thread/frame override")
+    context: ThreadFrameContextArgs | None = Field(
+        None, description="Optional thread/frame override"
+    )
     location: LocationSelectorArgs
     instruction_count: int = Field(32, gt=0, description="Upper bound on returned instructions")
     mode: DisassemblyMode = Field(
@@ -1566,7 +1585,9 @@ class InspectDisassemblyQueryArgs(StrictArgsModel):
 
 
 class InspectSourceQueryArgs(StrictArgsModel):
-    context: ThreadFrameContextArgs | None = Field(None, description="Optional thread/frame override")
+    context: ThreadFrameContextArgs | None = Field(
+        None, description="Optional thread/frame override"
+    )
     location: LocationSelectorArgs
     context_before: int = Field(5, ge=0, description="Lines before the focal location")
     context_after: int = Field(5, ge=0, description="Lines after the focal location")

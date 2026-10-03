@@ -89,23 +89,21 @@ class TestCaptureBundle:
                 ExpressionValueInfo(expression=expression, value="5")
             )
         )
-        session_service._inspection.read_memory = (
-            lambda address, count, offset=0: OperationSuccess(
-                MemoryReadInfo(
-                    address=address,
-                    count=count,
-                    offset=offset,
-                    blocks=[
-                        {
-                            "begin": "0x1000",
-                            "offset": "0x0",
-                            "end": "0x1004",
-                            "contents": "01020304",
-                        }
-                    ],
-                    block_count=1,
-                    captured_bytes=4,
-                )
+        session_service._inspection.read_memory = lambda address, count, offset=0: OperationSuccess(
+            MemoryReadInfo(
+                address=address,
+                count=count,
+                offset=offset,
+                blocks=[
+                    {
+                        "begin": "0x1000",
+                        "offset": "0x0",
+                        "end": "0x1004",
+                        "contents": "01020304",
+                    }
+                ],
+                block_count=1,
+                captured_bytes=4,
             )
         )
 

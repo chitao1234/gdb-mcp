@@ -18,7 +18,6 @@ from .parsers import CliUsageError, format_validation_error
 from .runtime import invoke_tool
 from .specs import CLIENT_TOOL_SPECS, TOOL_DESCRIPTIONS, TOOL_HELP_DESCRIPTIONS
 
-
 _BASE_EXCEPTION_GROUP_TYPE = getattr(builtins, "BaseExceptionGroup", None)
 
 

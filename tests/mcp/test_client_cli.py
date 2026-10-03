@@ -98,8 +98,8 @@ class TestClientCli:
 
         assert exc_info.value.code == 0
         help_text = capsys.readouterr().out
-        assert 'x=%d\\n' in help_text
-        assert 'x=%%d\\n' not in help_text
+        assert "x=%d\\n" in help_text
+        assert "x=%%d\\n" not in help_text
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_invokes_session_start_with_flat_flags(self, mock_invoke_tool):
@@ -622,7 +622,11 @@ class TestClientCli:
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_builds_inferior_set_detach_on_fork_default_payload(self, mock_invoke_tool):
         mock_invoke_tool.return_value = ClientToolResponse(
-            payload={"status": "success", "action": "set_detach_on_fork", "result": {"enabled": True}},
+            payload={
+                "status": "success",
+                "action": "set_detach_on_fork",
+                "result": {"enabled": True},
+            },
             is_error=False,
         )
 
@@ -1139,7 +1143,9 @@ class TestClientCli:
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_rejects_breakpoint_query_get_with_list_flags(self, mock_invoke_tool):
-        mock_invoke_tool.return_value = ClientToolResponse(payload={"status": "success"}, is_error=False)
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success"}, is_error=False
+        )
 
         stderr = StringIO()
         with pytest.raises(SystemExit) as exc_info:
@@ -1252,7 +1258,9 @@ class TestClientCli:
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_rejects_breakpoint_update_with_create_flags(self, mock_invoke_tool):
-        mock_invoke_tool.return_value = ClientToolResponse(payload={"status": "success"}, is_error=False)
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success"}, is_error=False
+        )
 
         stderr = StringIO()
         with pytest.raises(SystemExit) as exc_info:
@@ -1281,7 +1289,9 @@ class TestClientCli:
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_rejects_breakpoint_update_with_location_flag_only(self, mock_invoke_tool):
-        mock_invoke_tool.return_value = ClientToolResponse(payload={"status": "success"}, is_error=False)
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success"}, is_error=False
+        )
 
         stderr = StringIO()
         with pytest.raises(SystemExit) as exc_info:
@@ -1310,10 +1320,10 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_breakpoint_update_with_explicit_no_temporary(
-        self, mock_invoke_tool
-    ):
-        mock_invoke_tool.return_value = ClientToolResponse(payload={"status": "success"}, is_error=False)
+    def test_main_rejects_breakpoint_update_with_explicit_no_temporary(self, mock_invoke_tool):
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success"}, is_error=False
+        )
 
         stderr = StringIO()
         with pytest.raises(SystemExit) as exc_info:
@@ -1789,7 +1799,9 @@ class TestClientCli:
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_rejects_workflow_batch_step_session_id_argument(self, mock_invoke_tool):
-        mock_invoke_tool.return_value = ClientToolResponse(payload={"status": "success"}, is_error=False)
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success"}, is_error=False
+        )
 
         stderr = StringIO()
         with pytest.raises(SystemExit) as exc_info:
@@ -1818,7 +1830,9 @@ class TestClientCli:
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_rejects_workflow_batch_session_query_list_step(self, mock_invoke_tool):
-        mock_invoke_tool.return_value = ClientToolResponse(payload={"status": "success"}, is_error=False)
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success"}, is_error=False
+        )
 
         stderr = StringIO()
         with pytest.raises(SystemExit) as exc_info:
@@ -1840,12 +1854,16 @@ class TestClientCli:
             )
 
         assert exc_info.value.code == 2
-        assert "gdb_session_query(action=list) is not valid inside workflow steps" in stderr.getvalue()
+        assert (
+            "gdb_session_query(action=list) is not valid inside workflow steps" in stderr.getvalue()
+        )
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_rejects_workflow_batch_conflicting_dotted_assignments(self, mock_invoke_tool):
-        mock_invoke_tool.return_value = ClientToolResponse(payload={"status": "success"}, is_error=False)
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success"}, is_error=False
+        )
 
         stderr = StringIO()
         with pytest.raises(SystemExit) as exc_info:
@@ -1874,7 +1892,9 @@ class TestClientCli:
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_rejects_workflow_batch_malformed_dotted_assignment(self, mock_invoke_tool):
-        mock_invoke_tool.return_value = ClientToolResponse(payload={"status": "success"}, is_error=False)
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success"}, is_error=False
+        )
 
         stderr = StringIO()
         with pytest.raises(SystemExit) as exc_info:
@@ -2208,7 +2228,9 @@ class TestClientCli:
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_rejects_run_until_failure_invalid_setup_step(self, mock_invoke_tool):
-        mock_invoke_tool.return_value = ClientToolResponse(payload={"status": "success"}, is_error=False)
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success"}, is_error=False
+        )
 
         stderr = StringIO()
         with pytest.raises(SystemExit) as exc_info:
@@ -2233,7 +2255,9 @@ class TestClientCli:
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_rejects_inspect_source_with_disassembly_flags(self, mock_invoke_tool):
-        mock_invoke_tool.return_value = ClientToolResponse(payload={"status": "success"}, is_error=False)
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success"}, is_error=False
+        )
 
         stderr = StringIO()
         with pytest.raises(SystemExit) as exc_info:
@@ -2262,7 +2286,9 @@ class TestClientCli:
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_rejects_inspect_variables_with_file_flag_only(self, mock_invoke_tool):
-        mock_invoke_tool.return_value = ClientToolResponse(payload={"status": "success"}, is_error=False)
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success"}, is_error=False
+        )
 
         stderr = StringIO()
         with pytest.raises(SystemExit) as exc_info:
@@ -2288,10 +2314,10 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_inspect_variables_with_location_selector_flags(
-        self, mock_invoke_tool
-    ):
-        mock_invoke_tool.return_value = ClientToolResponse(payload={"status": "success"}, is_error=False)
+    def test_main_rejects_inspect_variables_with_location_selector_flags(self, mock_invoke_tool):
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success"}, is_error=False
+        )
 
         stderr = StringIO()
         with pytest.raises(SystemExit) as exc_info:
@@ -2324,7 +2350,9 @@ class TestClientCli:
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_rejects_run_until_failure_conflicting_capture_names(self, mock_invoke_tool):
-        mock_invoke_tool.return_value = ClientToolResponse(payload={"status": "success"}, is_error=False)
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success"}, is_error=False
+        )
 
         stderr = StringIO()
         with pytest.raises(SystemExit) as exc_info:

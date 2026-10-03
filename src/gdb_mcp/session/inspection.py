@@ -52,7 +52,7 @@ from .runtime import SessionRuntime
 logger = logging.getLogger(__name__)
 _INFO_LINE_RE = re.compile(
     r'^Line (?P<line>\d+) of "(?P<file>.+)" starts at address '
-    r'(?P<start>0x[0-9a-fA-F]+)(?: <[^>]+>)? and ends at (?P<end>0x[0-9a-fA-F]+)',
+    r"(?P<start>0x[0-9a-fA-F]+)(?: <[^>]+>)? and ends at (?P<end>0x[0-9a-fA-F]+)",
     re.MULTILINE,
 )
 _VECTOR_REGISTER_NAME_RE = re.compile(
@@ -276,7 +276,9 @@ class SessionInspectionService:
     ) -> OperationSuccess[FrameInfo] | OperationError:
         """Get information about the current stack frame or an overridden context."""
 
-        selection = self._capture_selection() if thread_id is not None or frame is not None else None
+        selection = (
+            self._capture_selection() if thread_id is not None or frame is not None else None
+        )
         if isinstance(selection, OperationError):
             return selection
 
@@ -327,7 +329,9 @@ class SessionInspectionService:
         selection: _SelectionSnapshot | None = None
         location_result: _ResolvedCodeLocation | OperationError
 
-        if all(value is None for value in (function, address, start_address, end_address, file, line)):
+        if all(
+            value is None for value in (function, address, start_address, end_address, file, line)
+        ):
             if thread_id is not None or frame is not None:
                 captured_selection = self._capture_selection()
                 if isinstance(captured_selection, OperationError):
@@ -347,9 +351,21 @@ class SessionInspectionService:
                 thread_id=(
                     thread_id
                     if thread_id is not None
-                    else selection.thread_id if selection is not None else self._runtime.current_thread_id
+                    else (
+                        selection.thread_id
+                        if selection is not None
+                        else self._runtime.current_thread_id
+                    )
                 ),
-                frame=frame if frame is not None else selection.frame_number if selection is not None else self._runtime.current_frame,
+                frame=(
+                    frame
+                    if frame is not None
+                    else (
+                        selection.frame_number
+                        if selection is not None
+                        else self._runtime.current_frame
+                    )
+                ),
                 address="$pc",
             )
         elif function is not None:
@@ -363,7 +379,9 @@ class SessionInspectionService:
                 end_address=end_address,
             )
         elif file is not None and line is not None:
-            location_result = _ResolvedCodeLocation(scope="file_line", file=file, fullname=file, line=line)
+            location_result = _ResolvedCodeLocation(
+                scope="file_line", file=file, fullname=file, line=line
+            )
         else:
             return OperationError(message="Invalid disassembly selector combination")
 
@@ -382,7 +400,9 @@ class SessionInspectionService:
                 return command
             return self._selection_error_with_restore(selection, command)
 
-        result = self._command_runner.execute_command_result(command, timeout_sec=DEFAULT_TIMEOUT_SEC)
+        result = self._command_runner.execute_command_result(
+            command, timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
         if isinstance(result, OperationError):
             if selection is None:
                 return result
@@ -403,7 +423,8 @@ class SessionInspectionService:
             file=location_result.file or self._first_instruction_file(instructions),
             fullname=location_result.fullname or self._first_instruction_fullname(instructions),
             line=location_result.line or self._first_instruction_line(instructions),
-            start_address=location_result.start_address or self._first_instruction_address(instructions),
+            start_address=location_result.start_address
+            or self._first_instruction_address(instructions),
             end_address=location_result.end_address or self._last_instruction_address(instructions),
             mode=mode,
             instructions=instructions,
@@ -718,7 +739,9 @@ class SessionInspectionService:
                     return restore_error
             return result
 
-        payload = registers_info_from_payload(extract_mi_result_payload(command_result_payload(result)))
+        payload = registers_info_from_payload(
+            extract_mi_result_payload(command_result_payload(result))
+        )
         filtered_registers = payload.registers
 
         if not include_vector_registers:
@@ -779,10 +802,7 @@ class SessionInspectionService:
 
             if missing_names:
                 return OperationError(
-                    message=(
-                        "Unknown register names: "
-                        + ", ".join(sorted(missing_names))
-                    )
+                    message=("Unknown register names: " + ", ".join(sorted(missing_names)))
                 )
 
         return selected_numbers or None
@@ -799,9 +819,7 @@ class SessionInspectionService:
 
         payload = extract_mi_result_payload(command_result_payload(result))
         if not isinstance(payload, dict):
-            return OperationError(
-                message="GDB returned malformed register-name payload"
-            )
+            return OperationError(message="GDB returned malformed register-name payload")
 
         raw_names = payload.get("register-names")
         if not isinstance(raw_names, list):
@@ -850,7 +868,9 @@ class SessionInspectionService:
 
         raw_names = payload.get("register-names")
         if not isinstance(raw_names, list):
-            return OperationError(message="GDB did not return register names in the expected format")
+            return OperationError(
+                message="GDB did not return register names in the expected format"
+            )
 
         mapping: dict[int, str] = {}
         for index, raw_name in enumerate(raw_names):
@@ -949,7 +969,9 @@ class SessionInspectionService:
                 )
             if location.address is not None:
                 return f"-data-disassemble -a {quote_mi_string(location.address)} -- {mode_token}"
-            return OperationError(message="Unable to resolve a current source line or address for disassembly")
+            return OperationError(
+                message="Unable to resolve a current source line or address for disassembly"
+            )
 
         if location.scope == "function" and location.function is not None:
             return f"-data-disassemble -a {quote_mi_string(location.function)} -- {mode_token}"
@@ -964,7 +986,9 @@ class SessionInspectionService:
                 f"-data-disassemble -s {quote_mi_string(location.start_address)} "
                 f"-e {quote_mi_string(location.end_address)} -- {mode_token}"
             )
-        return OperationError(message="Unable to build a disassembly command for the resolved selector")
+        return OperationError(
+            message="Unable to build a disassembly command for the resolved selector"
+        )
 
     def _normalize_disassembly_payload(
         self,
@@ -1038,7 +1062,9 @@ class SessionInspectionService:
             "address": address,
             "instruction": instruction,
         }
-        function = self._str_or_none(payload.get("func-name")) or self._str_or_none(payload.get("func"))
+        function = self._str_or_none(payload.get("func-name")) or self._str_or_none(
+            payload.get("func")
+        )
         if function is not None:
             record["function"] = function
         offset = self._int_or_none(payload.get("offset"))

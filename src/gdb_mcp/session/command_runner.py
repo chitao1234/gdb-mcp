@@ -257,7 +257,9 @@ class SessionCommandRunner:
             if message == "thread-group-exited":
                 inferior_id = self._parse_inferior_id_from_thread_group(payload_dict.get("id"))
                 group_exit_code = self._parse_exit_code(payload_dict.get("exit-code"))
-                group_reason = self._str_or_none(payload_dict.get("reason")) or "thread-group-exited"
+                group_reason = (
+                    self._str_or_none(payload_dict.get("reason")) or "thread-group-exited"
+                )
                 self._runtime.mark_inferior_exited(
                     group_reason,
                     group_exit_code,
@@ -357,7 +359,9 @@ class SessionCommandRunner:
             inferior_id = self._parse_inferior_id(normalized_command)
             if inferior_id is not None:
                 self._runtime.mark_inferior_selected(inferior_id)
-        elif normalized_command.startswith("set follow-fork-mode ") and not parsed.is_error_result():
+        elif (
+            normalized_command.startswith("set follow-fork-mode ") and not parsed.is_error_result()
+        ):
             follow_fork_mode = self._parse_follow_fork_mode(normalized_command)
             self._runtime.mark_follow_fork_mode(follow_fork_mode)
         elif normalized_command.startswith("set detach-on-fork ") and not parsed.is_error_result():
@@ -375,7 +379,9 @@ class SessionCommandRunner:
             timeout_sec=DEFAULT_TIMEOUT_SEC,
         )
         if "error" in result:
-            logger.debug("Skipping inferior refresh after async topology change: %s", result["error"])
+            logger.debug(
+                "Skipping inferior refresh after async topology change: %s", result["error"]
+            )
             return
         if bool(result.get("timed_out", False)):
             logger.debug("Skipping inferior refresh after async topology change due to timeout")

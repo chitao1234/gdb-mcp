@@ -31,7 +31,9 @@ def parse_inferiors_output(output: str, *, current_inferior_id: int | None) -> I
         inferior_id = int(match.group("inferior_id"))
         is_current = match.group("current") == "*"
         display = match.group("columns").strip()
-        columns = [part.strip() for part in _INFERIOR_COLUMN_SPLIT_RE.split(display) if part.strip()]
+        columns = [
+            part.strip() for part in _INFERIOR_COLUMN_SPLIT_RE.split(display) if part.strip()
+        ]
 
         record: InferiorRecord = {
             "inferior_id": inferior_id,

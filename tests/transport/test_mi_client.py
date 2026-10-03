@@ -348,10 +348,17 @@ class TestMiClient:
                 self._step += 1
                 if self._step == 1:
                     return [
-                        {"type": "result", "token": 1000, "message": "done", "payload": {"ok": True}},
+                        {
+                            "type": "result",
+                            "token": 1000,
+                            "message": "done",
+                            "payload": {"ok": True},
+                        },
                         {"type": "notify", "message": "thread-created", "payload": {"id": "2"}},
                     ]
-                return [{"type": "notify", "message": "library-loaded", "payload": {"id": self._step}}]
+                return [
+                    {"type": "notify", "message": "library-loaded", "payload": {"id": self._step}}
+                ]
 
             def exit(self) -> None:
                 pass
@@ -385,10 +392,16 @@ class TestMiClient:
                 if self._step == 1:
                     return [
                         {"type": "result", "token": 1000, "message": "running", "payload": None},
-                        {"type": "notify", "message": "stopped", "payload": {"reason": "breakpoint-hit"}},
+                        {
+                            "type": "notify",
+                            "message": "stopped",
+                            "payload": {"reason": "breakpoint-hit"},
+                        },
                         {"type": "notify", "message": "thread-created", "payload": {"id": "2"}},
                     ]
-                return [{"type": "notify", "message": "library-loaded", "payload": {"id": self._step}}]
+                return [
+                    {"type": "notify", "message": "library-loaded", "payload": {"id": self._step}}
+                ]
 
             def exit(self) -> None:
                 pass

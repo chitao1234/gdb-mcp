@@ -365,9 +365,7 @@ class SessionCaptureService:
             if not memory_range.name.strip():
                 return OperationError(message=f"Memory range {index} name must not be blank")
             if memory_range.name in memory_range_names:
-                return OperationError(
-                    message=f"Duplicate memory range name: {memory_range.name}"
-                )
+                return OperationError(message=f"Duplicate memory range name: {memory_range.name}")
             memory_range_names.add(memory_range.name)
 
         return None

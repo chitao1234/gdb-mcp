@@ -204,7 +204,9 @@ def _wrap_action_result(action: str, result: ToolResult) -> ToolResult:
 
     if isinstance(result, OperationError):
         details_payload = payload_to_mapping(result.details)
-        details: StructuredPayload = dict(details_payload) if isinstance(details_payload, dict) else {}
+        details: StructuredPayload = (
+            dict(details_payload) if isinstance(details_payload, dict) else {}
+        )
         details.setdefault("action", action)
         return OperationError(
             message=result.message,
@@ -267,6 +269,7 @@ def _execution_wait_policy(wait: ExecutionWaitArgs | None) -> tuple[int, bool]:
 
 def _handle_execute_command(session: SessionService, args: ExecuteCommandArgs) -> ToolResult:
     return session.execute_command(command=args.command, timeout_sec=args.timeout_sec)
+
 
 def _handle_execution_manage(session: SessionService, args: ExecutionManageArgs) -> ToolResult:
     """Route v2 execution actions to the session execution API."""
@@ -375,7 +378,9 @@ def _handle_inferior_query(session: SessionService, args: InferiorQueryArgs) -> 
                     details={"current_inferior_id": current_inferior_id},
                 ),
             )
-        return _wrap_action_result(action_args.action, OperationSuccess({"inferior": current_inferior}))
+        return _wrap_action_result(
+            action_args.action, OperationSuccess({"inferior": current_inferior})
+        )
 
     return OperationError(
         message=f"Unsupported inferior query action: {type(action_args).__name__}",
@@ -747,8 +752,10 @@ def _handle_inspect_query(session: SessionService, args: InspectQueryArgs) -> To
         code="validation_error",
     )
 
+
 def _handle_attach_process(session: SessionService, args: AttachProcessArgs) -> ToolResult:
     return session.attach_process(pid=args.pid, timeout_sec=args.timeout_sec)
+
 
 def _handle_call_function(session: SessionService, args: CallFunctionArgs) -> ToolResult:
     return session.call_function(function_call=args.function_call, timeout_sec=args.timeout_sec)
@@ -1003,7 +1010,9 @@ def _handle_session_manage(
     )
 
 
-def _handle_session_query_for_session(session: SessionService, args: SessionQueryArgs) -> ToolResult:
+def _handle_session_query_for_session(
+    session: SessionService, args: SessionQueryArgs
+) -> ToolResult:
     """Route batch-safe session query actions against an already resolved session."""
 
     action_args = _unwrap_action_args(args)
