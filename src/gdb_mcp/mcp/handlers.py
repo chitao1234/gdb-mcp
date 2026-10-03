@@ -14,6 +14,7 @@ from mcp.types import CallToolResult
 
 from .. import contracts as shared_contracts
 from ..contracts import (
+    ExecutionWaitUntil,
     TOOL_ATTACH_PROCESS,
     TOOL_BREAKPOINT_MANAGE,
     TOOL_BREAKPOINT_QUERY,
@@ -82,7 +83,6 @@ from .schemas import (
     ExecutionRunAction,
     ExecutionStepAction,
     ExecutionWaitForStopAction,
-    ExecutionWaitUntil,
     ExecuteCommandArgs,
     InferiorManageArgs,
     InferiorManageCreateAction,
