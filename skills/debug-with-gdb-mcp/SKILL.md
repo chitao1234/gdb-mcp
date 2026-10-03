@@ -9,13 +9,7 @@ description: Use when Codex needs to debug a native program through gdb-mcp, inc
 
 Use gdb-mcp through its v2 structured interface: one startup tool, domain-specific query and manage families, and dedicated workflow tools for batch execution, capture, and failure campaigns. Prefer structured payloads over ad-hoc CLI transcripts, validate state after every transition, and preserve enough evidence that another agent can reproduce the session.
 
-The debugging workflow is transport-independent. Most local MCP clients launch `gdb-mcp-server` over stdio by default. If your client expects streamable HTTP instead, start:
-
-```bash
-gdb-mcp-server --transport streamable-http --host 127.0.0.1 --port 8000 --path /mcp
-```
-
-Then connect the client to `http://127.0.0.1:8000/mcp`. The tool names and payloads below stay the same across both transports.
+The workflow is transport-independent: every tool and payload below works the same over stdio or streamable HTTP. Server start-up and connection configuration live in [`../../INSTALL.md`](../../INSTALL.md).
 
 ## When to Use
 
@@ -149,6 +143,7 @@ Treat these outcomes as hard gates:
 - Use `gdb_execution_manage(action="finish")` when you want to step out of the current frame and stop in the caller.
 - Use `gdb_inspect_query(action="disassembly")` and `gdb_inspect_query(action="source")` instead of raw `disassemble` or `list`.
 - Use `gdb_inferior_manage(action="create" | "remove" | "select")` when explicit inferior lifecycle management matters.
+- Manage existing breakpoints with `gdb_breakpoint_manage(action="update" | "delete" | "enable" | "disable")` and fetch one by number with `gdb_breakpoint_query(action="get")`.
 - Use `gdb_call_function` only when active code execution side effects are acceptable.
 - Use `gdb_workflow_batch` when ordering matters and you want one structured transcript of the whole sequence.
 - Use `gdb_run_until_failure` when you would otherwise write an ad-hoc rerun loop.
@@ -254,7 +249,8 @@ Treat these outcomes as hard gates:
 - `gdb_inspect_query(action="evaluate")`: use for specific expressions or globals when you already know what to ask
 - `gdb_inspect_query(action="registers")`: request only the registers you need when payload size matters
 - `gdb_inspect_query(action="memory")`: use when raw bytes matter more than pretty-printed values
-- `gdb_breakpoint_query(action="list")`: verify actual installed breakpoint or watchpoint state instead of assuming setup succeeded
+- `gdb_breakpoint_query(action="list" | "get")`: verify installed breakpoints or fetch one by number instead of assuming setup succeeded
+- `gdb_breakpoint_manage(action="update" | "delete" | "enable" | "disable")`: change or clear a condition, remove, or toggle an existing breakpoint
 - `gdb_execution_manage(action="finish")`: use when the top frame is a noisy helper and you want the caller context next
 
 ## Troubleshooting and Common Mistakes

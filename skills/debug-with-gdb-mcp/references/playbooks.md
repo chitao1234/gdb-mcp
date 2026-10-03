@@ -17,22 +17,6 @@ This file contains copy-ready payloads for the current v2 gdb-mcp interface. Use
 | Fork-heavy behavior | `gdb_inferior_manage(action="set_follow_fork_mode" | "set_detach_on_fork")`, `gdb_breakpoint_manage(action="create", breakpoint.kind="catch")` | `gdb_session_query(action="status")`, `gdb_inferior_query(action="list")`, `gdb_inferior_manage(action="select")` |
 | Manual inferior lifecycle | `gdb_inferior_manage(action="create")`, `gdb_inferior_query(action="list")`, `gdb_inferior_manage(action="select")` | `gdb_inferior_manage(action="remove")` |
 
-## Startup Checklist
-
-Run immediately after `gdb_session_start`:
-
-1. Check `status`.
-2. Check `target_loaded`.
-3. Check `warnings`.
-4. Check `execution_state`.
-5. Check `env_output` and `init_output` when startup configuration matters.
-
-Treat these outcomes as hard gates:
-
-- `target_loaded=false`: fix target path, symbols, or core inputs first.
-- warning about missing symbols: continue only if limited inspection is acceptable.
-- unexpected `execution_state=running`: use `gdb_execution_manage(action="interrupt")` before inspection.
-
 ## Startup Recipes
 
 ### Live Launch with Environment, Cwd, and Argv
@@ -142,8 +126,7 @@ Then attach with `gdb_attach_process`:
 ```json
 {
   "session_id": 1,
-  "action": "run",
-  "execution": {}
+  "action": "run"
 }
 ```
 
@@ -184,6 +167,60 @@ Register example:
   "include_registers": true,
   "include_stop_history": true,
   "include_transcript": true
+}
+```
+
+## Breakpoint Lifecycle Payloads
+
+Fetch one breakpoint by number (same shape for watchpoints and catchpoints):
+
+```json
+{
+  "session_id": 1,
+  "action": "get",
+  "query": {
+    "number": 3
+  }
+}
+```
+
+Set a new condition, or clear the existing one explicitly:
+
+```json
+{
+  "session_id": 1,
+  "action": "update",
+  "breakpoint": {
+    "number": 3
+  },
+  "changes": {
+    "condition": "count > 100"
+  }
+}
+```
+
+```json
+{
+  "session_id": 1,
+  "action": "update",
+  "breakpoint": {
+    "number": 3
+  },
+  "changes": {
+    "clear_condition": true
+  }
+}
+```
+
+Disable by number; use the same shape with `"action": "enable"` or `"action": "delete"`:
+
+```json
+{
+  "session_id": 1,
+  "action": "disable",
+  "breakpoint": {
+    "number": 3
+  }
 }
 ```
 
@@ -419,6 +456,28 @@ Use `gdb_run_until_failure` to avoid ad-hoc loops:
 
 When you need a deterministic single output directory name, use `capture.bundle_name` instead of `bundle_name_prefix`.
 
+## Escape Hatches
+
+`gdb_execute_command` for GDB features without a structured tool:
+
+```json
+{
+  "session_id": 1,
+  "command": "info sharedlibrary",
+  "timeout_sec": 30
+}
+```
+
+`gdb_call_function` executes code inside the target process (privileged):
+
+```json
+{
+  "session_id": 1,
+  "function_call": "printf(\"x=%d\\n\", x)",
+  "timeout_sec": 30
+}
+```
+
 ## `gdb_workflow_batch` Template
 
 Use `gdb_workflow_batch` when strict ordering and one-shot orchestration are needed:
@@ -443,8 +502,7 @@ Use `gdb_workflow_batch` when strict ordering and one-shot orchestration are nee
     {
       "tool": "gdb_execution_manage",
       "arguments": {
-        "action": "run",
-        "execution": {}
+        "action": "run"
       }
     },
     {
@@ -459,14 +517,3 @@ Use `gdb_workflow_batch` when strict ordering and one-shot orchestration are nee
   ]
 }
 ```
-
-## Common Failure Modes
-
-- Calling `gdb_execution_manage(action="continue")` while already running
-- Calling `gdb_execution_manage(action="step" | "next")` while not paused
-- Ignoring startup `warnings` and then trusting variable output
-- Hiding launch configuration inside `init_commands` instead of `args`, `env`, or `working_dir`
-- Using raw `run &` instead of `gdb_execution_manage(action="run", execution.wait_until="acknowledged")`
-- Forgetting that attach sessions keep the target's preexisting environment
-- Using only raw `gdb_execute_command` and losing structured outputs
-- Forgetting `gdb_session_manage(action="stop")` and leaking debugger sessions
