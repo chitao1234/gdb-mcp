@@ -108,7 +108,6 @@ def add_boolean_flag(
     parser: argparse.ArgumentParser,
     name: str,
     *,
-    default: bool,
     help_text: str,
     suppress_default: bool = False,
 ) -> None:
@@ -118,7 +117,7 @@ def add_boolean_flag(
         f"--{name.replace('_', '-')}",
         dest=name,
         action=argparse.BooleanOptionalAction,
-        default=argparse.SUPPRESS if suppress_default else default,
+        default=argparse.SUPPRESS if suppress_default else True,
         help=help_text,
     )
 
@@ -127,7 +126,7 @@ def validate_model_payload(model: type[BaseModel], payload: dict[str, object]) -
     """Validate and normalize one CLI-built payload using the shared schema model."""
 
     validated = model.model_validate(payload)
-    dumped = validated.model_dump(mode="python", exclude_none=True)
+    dumped = validated.model_dump(mode="python", exclude_unset=True, exclude_none=True)
     return cast(dict[str, object], dumped)
 
 

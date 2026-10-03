@@ -215,6 +215,8 @@ def _validate_inferior_manage_input(typed_input: InferiorManageInput) -> None:
         if typed_input.enabled is not None:
             invalid_flags.append("--enabled")
     elif typed_input.action in {"remove", "select"}:
+        if typed_input.inferior_id is None:
+            raise CliUsageError(f"--inferior-id required with --action {typed_input.action}")
         if typed_input.executable is not None:
             invalid_flags.append("--executable")
         if typed_input.make_current is not None:
@@ -224,6 +226,8 @@ def _validate_inferior_manage_input(typed_input: InferiorManageInput) -> None:
         if typed_input.enabled is not None:
             invalid_flags.append("--enabled")
     elif typed_input.action == "set_follow_fork_mode":
+        if typed_input.mode is None:
+            raise CliUsageError("--mode required with --action set_follow_fork_mode")
         if typed_input.inferior_id is not None:
             invalid_flags.append("--inferior-id")
         if typed_input.executable is not None:
@@ -295,10 +299,16 @@ def _validate_context_query_input(typed_input: ContextQueryInput) -> None:
 
 def _validate_context_manage_input(typed_input: ContextManageInput) -> None:
     invalid_flags: list[str] = []
-    if typed_input.action == "select_thread" and typed_input.frame is not None:
-        invalid_flags.append("--frame")
-    elif typed_input.action == "select_frame" and typed_input.thread_id is not None:
-        invalid_flags.append("--thread-id")
+    if typed_input.action == "select_thread":
+        if typed_input.thread_id is None:
+            raise CliUsageError("--thread-id required with --action select_thread")
+        if typed_input.frame is not None:
+            invalid_flags.append("--frame")
+    elif typed_input.action == "select_frame":
+        if typed_input.frame is None:
+            raise CliUsageError("--frame required with --action select_frame")
+        if typed_input.thread_id is not None:
+            invalid_flags.append("--thread-id")
 
     _raise_invalid_action_flags(typed_input.action, invalid_flags)
 
@@ -309,6 +319,8 @@ def _validate_breakpoint_query_input(typed_input: BreakpointQueryInput) -> None:
         if typed_input.number is not None:
             invalid_flags.append("--number")
     elif typed_input.action == "get":
+        if typed_input.number is None:
+            raise CliUsageError("--number required with --action get")
         if typed_input.kinds:
             invalid_flags.append("--kind")
         if typed_input.enabled is not None:
@@ -410,6 +422,16 @@ def _validate_breakpoint_manage_input(typed_input: BreakpointManageInput) -> Non
             invalid_flags.append("--clear-condition")
 
     _raise_invalid_action_flags(typed_input.action, invalid_flags)
+
+    if typed_input.action == "update":
+        if typed_input.number is None:
+            raise CliUsageError("--number required with --action update")
+        if typed_input.condition is None and typed_input.clear_condition is not True:
+            raise CliUsageError("--condition or --clear-condition required with --action update")
+
+    if typed_input.action in {"delete", "enable", "disable"}:
+        if typed_input.number is None:
+            raise CliUsageError(f"--number required with --action {typed_input.action}")
 
 
 def _validate_location_input(typed_input: LocationInput | None, *, context: str) -> None:
@@ -563,6 +585,8 @@ def _validate_inspect_query_input(typed_input: InspectQueryInput) -> None:
     invalid_flags: list[str] = []
     location_flags = [format_cli_flag(field_name) for field_name in typed_input.location_fields]
     if typed_input.action == "evaluate":
+        if typed_input.expression is None:
+            raise CliUsageError("--expression required with --action evaluate")
         if typed_input.register_numbers:
             invalid_flags.append("--register-number")
         if typed_input.register_names:
@@ -635,6 +659,10 @@ def _validate_inspect_query_input(typed_input: InspectQueryInput) -> None:
         if typed_input.context_after is not None:
             invalid_flags.append("--context-after")
     elif typed_input.action == "memory":
+        if typed_input.memory_address is None:
+            raise CliUsageError("--address required with --action memory")
+        if typed_input.count is None:
+            raise CliUsageError("--count required with --action memory")
         if typed_input.thread_id is not None:
             invalid_flags.append("--thread-id")
         if typed_input.frame is not None:
@@ -758,7 +786,6 @@ def _configure_inferior_manage(parser: argparse.ArgumentParser) -> None:
     add_boolean_flag(
         parser,
         "make_current",
-        default=False,
         help_text="Select the new inferior after create",
         suppress_default=True,
     )
@@ -766,7 +793,6 @@ def _configure_inferior_manage(parser: argparse.ArgumentParser) -> None:
     add_boolean_flag(
         parser,
         "enabled",
-        default=True,
         help_text="Detach from the non-followed fork",
         suppress_default=True,
     )
@@ -881,36 +907,31 @@ def _configure_capture_bundle(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--expression", dest="expressions", action="append", default=[])
     parser.add_argument("--memory-range", dest="memory_ranges", action="append", default=[])
     parser.add_argument("--max-frames", type=int, default=100)
-    add_boolean_flag(parser, "include_threads", default=True, help_text="Capture thread inventory")
+    add_boolean_flag(parser, "include_threads", help_text="Capture thread inventory")
     add_boolean_flag(
         parser,
         "include_backtraces",
-        default=True,
         help_text="Capture thread backtraces",
     )
-    add_boolean_flag(parser, "include_frame", default=True, help_text="Capture current frame")
+    add_boolean_flag(parser, "include_frame", help_text="Capture current frame")
     add_boolean_flag(
         parser,
         "include_variables",
-        default=True,
         help_text="Capture variables",
     )
     add_boolean_flag(
         parser,
         "include_registers",
-        default=True,
         help_text="Capture registers",
     )
     add_boolean_flag(
         parser,
         "include_transcript",
-        default=True,
         help_text="Capture transcript",
     )
     add_boolean_flag(
         parser,
         "include_stop_history",
-        default=True,
         help_text="Capture stop history",
     )
 
@@ -950,7 +971,6 @@ def _configure_breakpoint_query(parser: argparse.ArgumentParser) -> None:
     add_boolean_flag(
         parser,
         "enabled",
-        default=True,
         help_text="Filter breakpoints by enabled state",
         suppress_default=True,
     )
@@ -986,7 +1006,6 @@ def _configure_breakpoint_manage(parser: argparse.ArgumentParser) -> None:
     add_boolean_flag(
         parser,
         "temporary",
-        default=False,
         help_text="Create a temporary breakpoint or catchpoint",
         suppress_default=True,
     )
@@ -995,7 +1014,6 @@ def _configure_breakpoint_manage(parser: argparse.ArgumentParser) -> None:
     add_boolean_flag(
         parser,
         "clear_condition",
-        default=False,
         help_text="Clear the existing breakpoint condition",
         suppress_default=True,
     )
@@ -1029,7 +1047,6 @@ def _configure_inspect_query(parser: argparse.ArgumentParser) -> None:
     add_boolean_flag(
         parser,
         "include_vector_registers",
-        default=True,
         help_text="Include vector and SIMD registers",
         suppress_default=True,
     )
@@ -1079,14 +1096,12 @@ def _configure_workflow_batch(parser: argparse.ArgumentParser) -> None:
     add_boolean_flag(
         parser,
         "fail_fast",
-        default=True,
         help_text="Stop executing later steps after the first error",
         suppress_default=True,
     )
     add_boolean_flag(
         parser,
         "capture_stop_events",
-        default=True,
         help_text="Include new stop events produced by batch steps",
         suppress_default=True,
     )
@@ -1130,14 +1145,12 @@ def _configure_run_until_failure(parser: argparse.ArgumentParser) -> None:
     add_boolean_flag(
         parser,
         "failure_on_error",
-        default=True,
         help_text="Treat startup or run errors as matching failures",
         suppress_default=True,
     )
     add_boolean_flag(
         parser,
         "failure_on_timeout",
-        default=True,
         help_text="Treat run timeouts as matching failures",
         suppress_default=True,
     )
@@ -1164,7 +1177,6 @@ def _configure_run_until_failure(parser: argparse.ArgumentParser) -> None:
     add_boolean_flag(
         parser,
         "capture_enabled",
-        default=True,
         help_text="Write a capture bundle when a failure matches",
         suppress_default=True,
     )
@@ -1187,49 +1199,42 @@ def _configure_run_until_failure(parser: argparse.ArgumentParser) -> None:
     add_boolean_flag(
         parser,
         "capture_include_threads",
-        default=True,
         help_text="Capture thread inventory",
         suppress_default=True,
     )
     add_boolean_flag(
         parser,
         "capture_include_backtraces",
-        default=True,
         help_text="Capture thread backtraces",
         suppress_default=True,
     )
     add_boolean_flag(
         parser,
         "capture_include_frame",
-        default=True,
         help_text="Capture the selected frame",
         suppress_default=True,
     )
     add_boolean_flag(
         parser,
         "capture_include_variables",
-        default=True,
         help_text="Capture variables for the selected context",
         suppress_default=True,
     )
     add_boolean_flag(
         parser,
         "capture_include_registers",
-        default=True,
         help_text="Capture registers for the selected context",
         suppress_default=True,
     )
     add_boolean_flag(
         parser,
         "capture_include_transcript",
-        default=True,
         help_text="Capture the bounded command transcript",
         suppress_default=True,
     )
     add_boolean_flag(
         parser,
         "capture_include_stop_history",
-        default=True,
         help_text="Capture the bounded stop-event history",
         suppress_default=True,
     )

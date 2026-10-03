@@ -367,7 +367,7 @@ class TestClientCli:
         mock_invoke_tool.assert_awaited_once_with(
             "http://127.0.0.1:8000/mcp",
             "gdb_session_query",
-            {"session_id": 7, "action": "status", "query": {}},
+            {"session_id": 7, "action": "status"},
             http_client=None,
         )
 
@@ -448,7 +448,7 @@ class TestClientCli:
         mock_invoke_tool.assert_awaited_once_with(
             "http://127.0.0.1:8000/mcp",
             "gdb_session_query",
-            {"action": "list", "query": {}},
+            {"action": "list"},
             http_client=None,
         )
 
@@ -542,11 +542,7 @@ class TestClientCli:
         mock_invoke_tool.assert_awaited_once_with(
             "http://127.0.0.1:8000/mcp",
             "gdb_inferior_query",
-            {
-                "session_id": 7,
-                "action": "current",
-                "query": {},
-            },
+            {"session_id": 7, "action": "current"},
             http_client=None,
         )
 
@@ -989,11 +985,7 @@ class TestClientCli:
         mock_invoke_tool.assert_awaited_once_with(
             "http://127.0.0.1:8000/mcp",
             "gdb_breakpoint_query",
-            {
-                "session_id": 7,
-                "action": "list",
-                "query": {},
-            },
+            {"session_id": 7, "action": "list"},
             http_client=None,
         )
 
@@ -1215,7 +1207,7 @@ class TestClientCli:
                 "session_id": 7,
                 "action": "update",
                 "breakpoint": {"number": 1},
-                "changes": {"condition": "i == 3", "clear_condition": False},
+                "changes": {"condition": "i == 3"},
             },
             http_client=None,
         )
@@ -1334,11 +1326,7 @@ class TestClientCli:
         )
         typed_input = client_specs.parse_breakpoint_manage_input(args)
 
-        with patch(
-            "gdb_mcp.client.specs.validate_model_payload",
-            side_effect=lambda _model, payload: payload,
-        ):
-            payload = client_specs._build_breakpoint_manage(typed_input)
+        payload = client_specs._build_breakpoint_manage(typed_input)
 
         assert payload == {
             "session_id": 7,
@@ -1426,11 +1414,7 @@ class TestClientCli:
             {
                 "session_id": 7,
                 "action": "source",
-                "query": {
-                    "location": {"kind": "address", "address": "0x401000"},
-                    "context_before": 5,
-                    "context_after": 5,
-                },
+                "query": {"location": {"kind": "address", "address": "0x401000"}},
             },
             http_client=None,
         )
@@ -1467,11 +1451,7 @@ class TestClientCli:
             {
                 "session_id": 7,
                 "action": "disassembly",
-                "query": {
-                    "location": {"kind": "address", "address": "0x401000"},
-                    "instruction_count": 32,
-                    "mode": "mixed",
-                },
+                "query": {"location": {"kind": "address", "address": "0x401000"}},
             },
             http_client=None,
         )
@@ -1519,8 +1499,8 @@ class TestClientCli:
                 "steps": [
                     {
                         "tool": "gdb_context_query",
-                        "label": "stack",
                         "arguments": {"action": "backtrace", "query": {"max_frames": 20}},
+                        "label": "stack",
                     },
                     {
                         "tool": "gdb_inspect_query",
@@ -1528,7 +1508,6 @@ class TestClientCli:
                     },
                 ],
                 "fail_fast": False,
-                "capture_stop_events": True,
             },
             http_client=None,
         )
@@ -1601,11 +1580,7 @@ class TestClientCli:
         )
         typed_input = client_specs.parse_workflow_batch_input(args)
 
-        with patch(
-            "gdb_mcp.client.specs.validate_model_payload",
-            side_effect=lambda _model, payload: payload,
-        ):
-            payload = client_specs._build_workflow_batch(typed_input)
+        payload = client_specs._build_workflow_batch(typed_input)
 
         assert payload == {
             "session_id": 7,
@@ -1656,8 +1631,6 @@ class TestClientCli:
                         "arguments": {"action": "evaluate", "query": {"expression": "123"}},
                     }
                 ],
-                "fail_fast": True,
-                "capture_stop_events": True,
             },
             http_client=None,
         )
@@ -1702,15 +1675,10 @@ class TestClientCli:
                         "tool": "gdb_execution_manage",
                         "arguments": {
                             "action": "run",
-                            "execution": {
-                                "args": ["one", "two"],
-                                "wait_until": "stop",
-                            },
+                            "execution": {"wait_until": "stop", "args": ["one", "two"]},
                         },
                     }
                 ],
-                "fail_fast": True,
-                "capture_stop_events": True,
             },
             http_client=None,
         )
@@ -1749,14 +1717,9 @@ class TestClientCli:
                 "steps": [
                     {
                         "tool": "gdb_breakpoint_query",
-                        "arguments": {
-                            "action": "list",
-                            "query": {"kinds": ["code"]},
-                        },
+                        "arguments": {"action": "list", "query": {"kinds": ["code"]}},
                     }
                 ],
-                "fail_fast": True,
-                "capture_stop_events": True,
             },
             http_client=None,
         )
@@ -1919,33 +1882,11 @@ class TestClientCli:
             "http://127.0.0.1:8000/mcp",
             "gdb_run_until_failure",
             {
-                "startup": {
-                    "program": "/bin/true",
-                    "init_commands": ["set pagination off"],
-                },
-                "setup_steps": [],
+                "startup": {"program": "/bin/true", "init_commands": ["set pagination off"]},
                 "run_timeout_sec": 15,
                 "max_iterations": 2,
-                "failure": {
-                    "failure_on_error": True,
-                    "failure_on_timeout": True,
-                    "stop_reasons": ["signal-received"],
-                    "execution_states": [],
-                    "exit_codes": [],
-                },
-                "capture": {
-                    "enabled": True,
-                    "expressions": ["errno"],
-                    "memory_ranges": ["&errno:8"],
-                    "max_frames": 100,
-                    "include_threads": True,
-                    "include_backtraces": True,
-                    "include_frame": True,
-                    "include_variables": True,
-                    "include_registers": True,
-                    "include_transcript": True,
-                    "include_stop_history": True,
-                },
+                "failure": {"stop_reasons": ["signal-received"]},
+                "capture": {"expressions": ["errno"], "memory_ranges": ["&errno:8"]},
             },
             http_client=None,
         )
@@ -2031,46 +1972,12 @@ class TestClientCli:
             "http://127.0.0.1:8000/mcp",
             "gdb_run_until_failure",
             {
-                "startup": {},
                 "setup_steps": [
                     {
                         "tool": "gdb_capture_bundle",
-                        "arguments": {
-                            "expressions": ["errno", "counter"],
-                            "memory_ranges": [],
-                            "max_frames": 100,
-                            "include_threads": True,
-                            "include_backtraces": True,
-                            "include_frame": True,
-                            "include_variables": True,
-                            "include_registers": True,
-                            "include_transcript": True,
-                            "include_stop_history": True,
-                        },
+                        "arguments": {"expressions": ["errno", "counter"]},
                     }
-                ],
-                "run_timeout_sec": 30,
-                "max_iterations": 1,
-                "failure": {
-                    "failure_on_error": True,
-                    "failure_on_timeout": True,
-                    "stop_reasons": ["signal-received", "exited-signalled"],
-                    "execution_states": [],
-                    "exit_codes": [],
-                },
-                "capture": {
-                    "enabled": True,
-                    "expressions": [],
-                    "memory_ranges": [],
-                    "max_frames": 100,
-                    "include_threads": True,
-                    "include_backtraces": True,
-                    "include_frame": True,
-                    "include_variables": True,
-                    "include_registers": True,
-                    "include_transcript": True,
-                    "include_stop_history": True,
-                },
+                ]
             },
             http_client=None,
         )
@@ -2104,46 +2011,9 @@ class TestClientCli:
             "http://127.0.0.1:8000/mcp",
             "gdb_run_until_failure",
             {
-                "startup": {},
                 "setup_steps": [
-                    {
-                        "tool": "gdb_capture_bundle",
-                        "arguments": {
-                            "expressions": ["errno"],
-                            "memory_ranges": [],
-                            "max_frames": 100,
-                            "include_threads": True,
-                            "include_backtraces": True,
-                            "include_frame": True,
-                            "include_variables": True,
-                            "include_registers": True,
-                            "include_transcript": True,
-                            "include_stop_history": True,
-                        },
-                    }
-                ],
-                "run_timeout_sec": 30,
-                "max_iterations": 1,
-                "failure": {
-                    "failure_on_error": True,
-                    "failure_on_timeout": True,
-                    "stop_reasons": ["signal-received", "exited-signalled"],
-                    "execution_states": [],
-                    "exit_codes": [],
-                },
-                "capture": {
-                    "enabled": True,
-                    "expressions": [],
-                    "memory_ranges": [],
-                    "max_frames": 100,
-                    "include_threads": True,
-                    "include_backtraces": True,
-                    "include_frame": True,
-                    "include_variables": True,
-                    "include_registers": True,
-                    "include_transcript": True,
-                    "include_stop_history": True,
-                },
+                    {"tool": "gdb_capture_bundle", "arguments": {"expressions": ["errno"]}}
+                ]
             },
             http_client=None,
         )
@@ -2173,11 +2043,7 @@ class TestClientCli:
         )
         typed_input = client_specs.parse_run_until_failure_input(args)
 
-        with patch(
-            "gdb_mcp.client.specs.validate_model_payload",
-            side_effect=lambda _model, payload: payload,
-        ):
-            payload = client_specs._build_run_until_failure(typed_input)
+        payload = client_specs._build_run_until_failure(typed_input)
 
         assert payload == {
             "startup": {"program": "/bin/true"},
