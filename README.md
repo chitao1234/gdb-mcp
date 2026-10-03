@@ -423,6 +423,8 @@ Clients should expect:
 
 The server does not currently publish MCP `outputSchema`, resources, prompts, or event streams. Clients should treat tool responses as authoritative runtime state and manage `session_id` explicitly.
 
+Published tool input schemas avoid JSON Schema union combinators (`oneOf`/`anyOf`) for client compatibility: discriminated unions are flattened, and per-action requirements are documented in the schema description under `Conditional requirements:`.
+
 ## Historical Name Mapping
 
 This interface is a clean break from the earlier one-tool-per-operation surface.

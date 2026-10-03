@@ -113,6 +113,12 @@ Common machine-readable codes include:
 
 Every session-scoped tool takes a `session_id` returned by `gdb_session_start`.
 
+### Published Tool Schemas
+
+Published tool input schemas are flattened for broad MCP client compatibility: they contain no `oneOf`, `anyOf`, `allOf`, `$ref`, or `$defs` constructs.
+Each action-scoped payload is advertised as one object whose discriminator (`action`, `kind`) is an `enum` of the accepted values, and requirements that only apply to some values are spelled out in the schema description under `Conditional requirements:`.
+Request validation is unchanged: the Pydantic models still reject invalid action/payload combinations.
+
 ### Action-Scoped Payloads
 
 Action families use one nested payload object per domain:
