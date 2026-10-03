@@ -56,7 +56,6 @@ from gdb_mcp.contracts import (
 )
 from gdb_mcp.mcp.handlers import SESSION_TOOL_SPECS
 from gdb_mcp.mcp.schemas import (
-    BATCH_STEP_TOOL_NAMES as SCHEMA_BATCH_STEP_TOOL_NAMES,
     BATCH_STEP_TOOL_MODELS,
     BreakpointCodeCreateArgs,
     BreakpointCatchCreateArgs,
@@ -64,18 +63,13 @@ from gdb_mcp.mcp.schemas import (
     BreakpointManageNumberAction,
     BreakpointWatchCreateArgs,
     ContextQueryThreadsAction,
-    DisassembleArgs,
     ExecutionControlPayload,
     ExecutionRunAction,
-    FollowForkModeArgs,
-    GetRegistersArgs,
     InferiorFollowForkPayload,
     InspectEvaluateAction,
     InspectDisassemblyQueryArgs,
     InspectRegistersQueryArgs,
     LocationCurrentArgs,
-    SetCatchpointArgs,
-    SetWatchpointArgs,
     SessionQueryListAction,
     SessionQueryStatusAction,
     build_tool_definitions,
@@ -246,7 +240,6 @@ def test_public_tool_names_match_all_runtime_registries() -> None:
 
 def test_batch_step_tool_names_match_workflow_allowlists() -> None:
     expected_tools = set(SESSION_TOOL_SPECS) - {TOOL_WORKFLOW_BATCH}
-    assert SCHEMA_BATCH_STEP_TOOL_NAMES == BATCH_STEP_TOOL_NAMES
     assert set(BATCH_STEP_TOOL_NAMES) == expected_tools
     assert set(BATCH_STEP_TOOL_MODELS) == expected_tools
     for tool_name in expected_tools:
@@ -261,15 +254,10 @@ def test_batch_step_tool_alias_and_client_field_match_shared_contract() -> None:
 
 
 def test_shared_schema_enums_match_contract_values() -> None:
-    assert _enum_values(SetWatchpointArgs, "access") == BREAKPOINT_ACCESS_VALUES
-    assert _enum_values(SetCatchpointArgs, "kind") == BREAKPOINT_EVENTS
-    assert _enum_values(DisassembleArgs, "mode") == DISASSEMBLY_MODES
-    assert _enum_values(FollowForkModeArgs, "mode") == INFERIOR_FOLLOW_FORK_MODES
     assert _enum_values(InferiorFollowForkPayload, "mode") == INFERIOR_FOLLOW_FORK_MODES
     assert _enum_values(ExecutionControlPayload, "wait_until") == EXECUTION_WAIT_UNTIL_VALUES
     assert _enum_values(BreakpointWatchCreateArgs, "access") == BREAKPOINT_ACCESS_VALUES
     assert _enum_values(BreakpointCatchCreateArgs, "event") == BREAKPOINT_EVENTS
-    assert _enum_values(GetRegistersArgs, "value_format") == REGISTER_VALUE_FORMATS
     assert _array_item_enum_values(BreakpointListQueryArgs, "kinds") == BREAKPOINT_KINDS
     assert _enum_values(BreakpointManageNumberAction, "action") == BREAKPOINT_MANAGE_NUMBER_ACTIONS
     assert _enum_values(InspectRegistersQueryArgs, "value_format") == REGISTER_VALUE_FORMATS

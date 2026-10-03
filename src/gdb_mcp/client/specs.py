@@ -6,7 +6,6 @@ import argparse
 from dataclasses import dataclass
 from typing import Callable, Generic, TypeVar, cast
 
-from pydantic import BaseModel
 
 from gdb_mcp.contracts import (
     BREAKPOINT_ACCESS_VALUES,
@@ -86,7 +85,6 @@ from .input_parsers import (
     parse_session_query_input,
     parse_session_start_input,
     parse_workflow_batch_input,
-    provided_fields,
 )
 from .inputs import (
     BreakpointCreateInput,
@@ -109,7 +107,6 @@ from .parsers import (
     add_boolean_flag,
     CliUsageError,
     dotted_assignment,
-    ensure_action_fields,
     format_cli_flag,
     key_value_entry,
     validate_model_payload,
@@ -139,14 +136,6 @@ class RegisteredToolCliSpec:
     parse_input: Callable[[argparse.Namespace], object]
     build_arguments: Callable[[object], dict[str, object]]
     render_human: Callable[[dict[str, object]], str]
-
-
-@dataclass(frozen=True)
-class ActionVariant:
-    """One CLI action variant within a nested MCP action envelope."""
-
-    build_fields: Callable[[argparse.Namespace], dict[str, object]]
-    allowed_fields: frozenset[str] = frozenset()
 
 
 TOOL_DESCRIPTIONS = {tool.name: tool.description or "" for tool in build_tool_definitions()}
@@ -209,33 +198,6 @@ def _add_session_id(parser: argparse.ArgumentParser, *, required: bool = True) -
 
 def _add_action(parser: argparse.ArgumentParser, *, choices: tuple[str, ...]) -> None:
     parser.add_argument("--action", required=True, choices=choices)
-
-
-def _build_action_arguments(
-    namespace: argparse.Namespace,
-    *,
-    model: type[BaseModel],
-    variants: dict[str, ActionVariant],
-    tracked_fields: frozenset[str] = frozenset(),
-) -> dict[str, object]:
-    variant = variants[namespace.action]
-    explicit_fields = provided_fields(namespace, tracked_fields)
-    ensure_action_fields(
-        explicit_fields,
-        action=namespace.action,
-        allowed_fields=variant.allowed_fields,
-    )
-    payload: dict[str, object] = {"action": namespace.action}
-    session_id = namespace.__dict__.get("session_id")
-    if session_id is not None:
-        payload["session_id"] = session_id
-    variant_fields = variant.build_fields(namespace)
-    reserved_fields = {"action", "session_id"} & set(variant_fields)
-    if reserved_fields:
-        reserved_list = ", ".join(sorted(reserved_fields))
-        raise CliUsageError(f"ActionVariant cannot override reserved fields: {reserved_list}")
-    payload.update(variant_fields)
-    return validate_model_payload(model, payload)
 
 
 def _raise_invalid_action_flags(action: str, invalid_flags: list[str]) -> None:
@@ -754,10 +716,6 @@ def _validate_inspect_query_input(typed_input: InspectQueryInput) -> None:
     _raise_invalid_action_flags(typed_input.action, invalid_flags)
 
 
-def _empty_payload(_: argparse.Namespace) -> dict[str, object]:
-    return {}
-
-
 def _configure_session_query(parser: argparse.ArgumentParser) -> None:
     _add_action(parser, choices=SESSION_QUERY_ACTIONS)
     _add_session_id(parser, required=False)
@@ -776,10 +734,9 @@ def _configure_session_manage(parser: argparse.ArgumentParser) -> None:
 
 
 def _build_session_manage(namespace: argparse.Namespace) -> dict[str, object]:
-    return _build_action_arguments(
-        namespace,
-        model=SessionManageArgs,
-        variants={"stop": ActionVariant(build_fields=lambda _: {"session": {}})},
+    return validate_model_payload(
+        SessionManageArgs,
+        {"session_id": namespace.session_id, "action": namespace.action, "session": {}},
     )
 
 

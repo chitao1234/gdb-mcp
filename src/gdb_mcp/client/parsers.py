@@ -56,12 +56,6 @@ def collapse_key_value_entries(entries: list[tuple[str, str]]) -> dict[str, str]
     return {key: value for key, value in entries}
 
 
-def coerce_scalar(text: str) -> object:
-    """Preserve dotted-assignment values as raw strings until schema validation."""
-
-    return text
-
-
 def dotted_assignment(text: str) -> tuple[str, object]:
     """Parse one PATH=VALUE dotted assignment."""
 
@@ -76,7 +70,7 @@ def dotted_assignment(text: str) -> tuple[str, object]:
             "Expected PATH with non-empty dotted segments in PATH=VALUE"
         )
 
-    return path, coerce_scalar(raw_value)
+    return path, raw_value
 
 
 def assign_dotted_value(target: dict[str, object], path: str, value: object) -> None:

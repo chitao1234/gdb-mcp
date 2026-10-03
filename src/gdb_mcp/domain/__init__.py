@@ -12,7 +12,6 @@ from .adapters import (
     thread_selection_info_from_payload,
     variables_info_from_payload,
 )
-from .errors import FatalTransportError, GdbMcpError, TransportError, ValidationFailure
 from .models import (
     BacktraceInfo,
     BatchExecutionInfo,
@@ -98,7 +97,6 @@ __all__ = [
     "ExpressionValueInfo",
     "FinishInfo",
     "FrameRecord",
-    "FatalTransportError",
     "FollowForkMode",
     "FollowForkModeInfo",
     "FrameInfo",
@@ -119,7 +117,6 @@ __all__ = [
     "MemoryReadInfo",
     "MessageResult",
     "memory_block_records",
-    "GdbMcpError",
     "OperationError",
     "OperationResult",
     "OperationSuccess",
@@ -144,8 +141,6 @@ __all__ = [
     "thread_list_info_from_payload",
     "ThreadSelectionInfo",
     "thread_selection_info_from_payload",
-    "TransportError",
-    "ValidationFailure",
     "VariableRecord",
     "variables_info_from_payload",
     "VariablesInfo",

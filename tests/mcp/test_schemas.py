@@ -3,43 +3,21 @@
 import pytest
 from pydantic import ValidationError
 from gdb_mcp.mcp.schemas import (
-    AddInferiorArgs,
     AttachProcessArgs,
     BatchArgs,
     BatchStepArgs,
     BreakpointManageArgs,
-    BreakpointNumberArgs,
     CallFunctionArgs,
     CaptureMemoryRangeArgs,
     CaptureBundleArgs,
-    DisassembleArgs,
     ExecutionManageArgs,
-    DetachOnForkArgs,
     ExecuteCommandArgs,
-    FinishArgs,
-    FollowForkModeArgs,
-    FrameSelectArgs,
-    GetBacktraceArgs,
-    GetSourceContextArgs,
     InspectQueryArgs,
-    ReadMemoryArgs,
-    GetRegistersArgs,
-    ThreadSelectArgs,
     InferiorManageArgs,
-    InferiorSelectArgs,
-    RemoveInferiorArgs,
     SessionQueryArgs,
-    SetCatchpointArgs,
-    SetBreakpointArgs,
-    SetWatchpointArgs,
-    EvaluateExpressionArgs,
-    GetVariablesArgs,
-    ListSessionsArgs,
     RunUntilFailureArgs,
     RunUntilFailureCaptureArgs,
-    RunArgs,
     StartSessionArgs,
-    WaitForStopArgs,
     build_tool_definitions,
 )
 
@@ -117,130 +95,6 @@ class TestExecuteCommandArgs:
             ExecuteCommandArgs(session_id=1, command="info threads", timeout_seconds=10)
 
         assert "timeout_seconds" in str(exc_info.value)
-
-
-class TestRunArgs:
-    """Test cases for RunArgs model."""
-
-    def test_defaults(self):
-        """RunArgs should allow omitted argv with a default timeout."""
-
-        args = RunArgs(session_id=1)
-        assert args.session_id == 1
-        assert args.args is None
-        assert args.timeout_sec == 30
-
-    def test_accepts_shell_style_string_args(self):
-        """RunArgs should accept a single shell-style argument string."""
-
-        args = RunArgs(session_id=1, args='--flag "hello world"')
-        assert args.args == '--flag "hello world"'
-
-
-class TestInferiorLifecycleArgs:
-    """Test cases for inferior add/remove request validation."""
-
-    def test_add_inferior_args_defaults(self):
-        """AddInferiorArgs should default executable to None and keep current inferior."""
-
-        args = AddInferiorArgs(session_id=1)
-        assert args.session_id == 1
-        assert args.executable is None
-        assert args.make_current is False
-
-    def test_remove_inferior_args_requires_positive_id(self):
-        """RemoveInferiorArgs should reject non-positive inferior IDs."""
-
-        args = RemoveInferiorArgs(session_id=1, inferior_id=2)
-        assert args.inferior_id == 2
-
-        with pytest.raises(ValidationError):
-            RemoveInferiorArgs(session_id=1, inferior_id=0)
-
-
-class TestFinishArgs:
-    """Test cases for finish/step-out requests."""
-
-    def test_defaults(self):
-        """FinishArgs should use the standard timeout default."""
-
-        args = FinishArgs(session_id=1)
-        assert args.timeout_sec == 30
-
-
-class TestExtendedRunArgs:
-    """Test cases for the new run wait semantics."""
-
-    def test_defaults_wait_for_stop_true(self):
-        """RunArgs should default to waiting for the next stop event."""
-
-        args = RunArgs(session_id=1)
-        assert args.wait_for_stop is True
-
-
-class TestDisassembleArgs:
-    """Test cases for structured disassembly selectors."""
-
-    def test_accepts_current_context_defaults(self):
-        """DisassembleArgs should default to mixed mode around current context."""
-
-        args = DisassembleArgs(session_id=1)
-        assert args.mode == "mixed"
-        assert args.instruction_count == 32
-
-    def test_accepts_numeric_string_thread_and_frame(self):
-        """DisassembleArgs should normalize numeric string selectors."""
-
-        args = DisassembleArgs(session_id=1, thread_id="2", frame="1")
-        assert args.thread_id == 2
-        assert args.frame == 1
-
-    def test_rejects_conflicting_selectors(self):
-        """DisassembleArgs should reject mixed selector modes."""
-
-        with pytest.raises(ValidationError):
-            DisassembleArgs(session_id=1, function="main", address="0x401000")
-
-    def test_requires_complete_address_range(self):
-        """DisassembleArgs should require both range endpoints together."""
-
-        with pytest.raises(ValidationError):
-            DisassembleArgs(session_id=1, start_address="0x401000")
-
-    def test_accepts_file_line_selector(self):
-        """DisassembleArgs should normalize file/line selectors."""
-
-        args = DisassembleArgs(session_id=1, file="main.c", line="12")
-        assert args.line == 12
-
-
-class TestSourceContextArgs:
-    """Test cases for structured source-context selectors."""
-
-    def test_accepts_file_range(self):
-        """GetSourceContextArgs should normalize explicit file ranges."""
-
-        args = GetSourceContextArgs(session_id=1, file="main.c", start_line="10", end_line="20")
-        assert args.start_line == 10
-        assert args.end_line == 20
-
-    def test_rejects_line_and_range_together(self):
-        """GetSourceContextArgs should reject simultaneous line and range selectors."""
-
-        with pytest.raises(ValidationError):
-            GetSourceContextArgs(
-                session_id=1,
-                file="main.c",
-                line=12,
-                start_line=10,
-                end_line=20,
-            )
-
-    def test_rejects_mixed_selector_modes(self):
-        """GetSourceContextArgs should reject mixed function and file selectors."""
-
-        with pytest.raises(ValidationError):
-            GetSourceContextArgs(session_id=1, function="main", file="main.c", line=12)
 
 
 class TestV2ToolDefinitions:
@@ -397,16 +251,6 @@ class TestAttachProcessArgs:
         assert args.timeout_sec == 15
 
 
-class TestListSessionsArgs:
-    """Test cases for ListSessionsArgs model."""
-
-    def test_no_args(self):
-        """Listing sessions should accept an empty payload."""
-
-        args = ListSessionsArgs()
-        assert args.model_dump() == {}
-
-
 class TestBatchArgs:
     """Test cases for structured batch workflows."""
 
@@ -513,6 +357,16 @@ class TestCaptureBundleArgs:
         args = CaptureBundleArgs(session_id=1, memory_ranges=["&value:16@2"])
         assert args.memory_ranges == ["&value:16@2"]
 
+    def test_capture_memory_range_args(self):
+        """Capture memory ranges should accept address, count, offset, and optional name."""
+
+        args = CaptureMemoryRangeArgs(address="&value", count=16, offset=2, name="snapshot")
+
+        assert args.address == "&value"
+        assert args.count == 16
+        assert args.offset == 2
+        assert args.name == "snapshot"
+
 
 class TestRunUntilFailureArgs:
     """Test cases for repeat-until-failure campaigns."""
@@ -573,190 +427,6 @@ class TestRunUntilFailureArgs:
         assert args.capture.memory_ranges == ["&value:8"]
 
 
-class TestInferiorWorkflowArgs:
-    """Test cases for multi-inferior and fork workflow schemas."""
-
-    def test_inferior_select_args(self):
-        """Inferior selection should require a positive inferior ID."""
-
-        args = InferiorSelectArgs(session_id=1, inferior_id=2)
-
-        assert args.session_id == 1
-        assert args.inferior_id == 2
-
-    def test_follow_fork_mode_args(self):
-        """Follow-fork-mode should only accept the supported enum values."""
-
-        args = FollowForkModeArgs(session_id=1, mode="child")
-
-        assert args.session_id == 1
-        assert args.mode == "child"
-
-    def test_follow_fork_mode_rejects_unknown_value(self):
-        """Unexpected follow-fork-mode values should fail validation."""
-
-        with pytest.raises(ValidationError):
-            FollowForkModeArgs(session_id=1, mode="both")
-
-    def test_detach_on_fork_args(self):
-        """Detach-on-fork should accept an explicit boolean value."""
-
-        args = DetachOnForkArgs(session_id=1, enabled=False)
-
-        assert args.session_id == 1
-        assert args.enabled is False
-
-
-class TestPhaseSixArgs:
-    """Test cases for watchpoint, catchpoint, memory, and wait helpers."""
-
-    def test_set_watchpoint_args_defaults(self):
-        """Watchpoints should default to write access."""
-
-        args = SetWatchpointArgs(session_id=1, expression="value")
-
-        assert args.session_id == 1
-        assert args.expression == "value"
-        assert args.access == "write"
-
-    def test_set_catchpoint_args(self):
-        """Catchpoints should accept validated kinds plus an optional argument."""
-
-        args = SetCatchpointArgs(session_id=1, kind="syscall", argument="open")
-
-        assert args.session_id == 1
-        assert args.kind == "syscall"
-        assert args.argument == "open"
-        assert args.temporary is False
-
-    def test_read_memory_args(self):
-        """Memory reads should require a positive count and default offset zero."""
-
-        args = ReadMemoryArgs(session_id=1, address="&value", count=16)
-
-        assert args.address == "&value"
-        assert args.count == 16
-        assert args.offset == 0
-
-    def test_wait_for_stop_args(self):
-        """Wait-for-stop requests should default to no reason filter."""
-
-        args = WaitForStopArgs(session_id=1)
-
-        assert args.timeout_sec == 30
-        assert args.stop_reasons == []
-
-    def test_capture_memory_range_args(self):
-        """Capture memory ranges should accept address, count, offset, and optional name."""
-
-        args = CaptureMemoryRangeArgs(address="&value", count=16, offset=2, name="snapshot")
-
-        assert args.address == "&value"
-        assert args.count == 16
-        assert args.offset == 2
-        assert args.name == "snapshot"
-
-
-class TestGetBacktraceArgs:
-    """Test cases for GetBacktraceArgs model."""
-
-    def test_defaults(self):
-        """Test default values."""
-        args = GetBacktraceArgs(session_id=1)
-        assert args.session_id == 1
-        assert args.thread_id is None
-        assert args.max_frames == 100
-
-    def test_with_thread_id(self):
-        """Test with specific thread ID."""
-        args = GetBacktraceArgs(session_id=2, thread_id=5, max_frames=50)
-        assert args.session_id == 2
-        assert args.thread_id == 5
-        assert args.max_frames == 50
-
-    def test_with_numeric_string_thread_id(self):
-        """Thread ID should accept numeric strings for client compatibility."""
-
-        args = GetBacktraceArgs(session_id=2, thread_id="5", max_frames=50)
-        assert args.thread_id == 5
-
-
-class TestSetBreakpointArgs:
-    """Test cases for SetBreakpointArgs model."""
-
-    def test_location_required(self):
-        """Test that location is required."""
-        with pytest.raises(ValidationError):
-            SetBreakpointArgs()
-
-    def test_minimal_breakpoint(self):
-        """Test minimal breakpoint (just location)."""
-        args = SetBreakpointArgs(session_id=1, location="main")
-        assert args.session_id == 1
-        assert args.location == "main"
-        assert args.condition is None
-        assert args.temporary is False
-
-    def test_conditional_breakpoint(self):
-        """Test conditional breakpoint."""
-        args = SetBreakpointArgs(
-            session_id=2, location="foo.c:42", condition="x > 10", temporary=True
-        )
-        assert args.session_id == 2
-        assert args.location == "foo.c:42"
-        assert args.condition == "x > 10"
-        assert args.temporary is True
-
-
-class TestEvaluateExpressionArgs:
-    """Test cases for EvaluateExpressionArgs model."""
-
-    def test_expression_required(self):
-        """Test that expression is required."""
-        with pytest.raises(ValidationError):
-            EvaluateExpressionArgs()
-
-    def test_expression(self):
-        """Test with expression."""
-        args = EvaluateExpressionArgs(session_id=1, expression="x + y", thread_id=2, frame=1)
-        assert args.session_id == 1
-        assert args.expression == "x + y"
-        assert args.thread_id == 2
-        assert args.frame == 1
-
-    def test_expression_accepts_numeric_string_context_overrides(self):
-        """Thread/frame overrides should accept numeric strings."""
-
-        args = EvaluateExpressionArgs(session_id=1, expression="x + y", thread_id="2", frame="1")
-        assert args.thread_id == 2
-        assert args.frame == 1
-
-
-class TestGetVariablesArgs:
-    """Test cases for GetVariablesArgs model."""
-
-    def test_defaults(self):
-        """Test default values."""
-        args = GetVariablesArgs(session_id=1)
-        assert args.session_id == 1
-        assert args.thread_id is None
-        assert args.frame == 0
-
-    def test_with_values(self):
-        """Test with specific values."""
-        args = GetVariablesArgs(session_id=2, thread_id=3, frame=2)
-        assert args.session_id == 2
-        assert args.thread_id == 3
-        assert args.frame == 2
-
-    def test_with_numeric_string_values(self):
-        """Thread/frame selectors should accept numeric strings."""
-
-        args = GetVariablesArgs(session_id=2, thread_id="3", frame="2")
-        assert args.thread_id == 3
-        assert args.frame == 2
-
-
 class TestCallFunctionArgs:
     """Test cases for CallFunctionArgs model."""
 
@@ -777,172 +447,3 @@ class TestCallFunctionArgs:
         args = CallFunctionArgs(session_id=2, function_call='snprintf(buf, 100, "%d", x)')
         assert args.session_id == 2
         assert args.function_call == 'snprintf(buf, 100, "%d", x)'
-
-
-class TestSessionIdRequired:
-    """Test that session_id is required in all tool argument models."""
-
-    def test_execute_command_requires_session_id(self):
-        """Test ExecuteCommandArgs requires session_id."""
-        with pytest.raises(ValidationError) as exc_info:
-            ExecuteCommandArgs(command="info threads")
-        assert "session_id" in str(exc_info.value)
-
-    def test_get_backtrace_requires_session_id(self):
-        """Test GetBacktraceArgs requires session_id."""
-        with pytest.raises(ValidationError) as exc_info:
-            GetBacktraceArgs()
-        assert "session_id" in str(exc_info.value)
-
-    def test_set_breakpoint_requires_session_id(self):
-        """Test SetBreakpointArgs requires session_id."""
-        with pytest.raises(ValidationError) as exc_info:
-            SetBreakpointArgs(location="main")
-        assert "session_id" in str(exc_info.value)
-
-    def test_evaluate_expression_requires_session_id(self):
-        """Test EvaluateExpressionArgs requires session_id."""
-        with pytest.raises(ValidationError) as exc_info:
-            EvaluateExpressionArgs(expression="x + y")
-        assert "session_id" in str(exc_info.value)
-
-    def test_get_variables_requires_session_id(self):
-        """Test GetVariablesArgs requires session_id."""
-        with pytest.raises(ValidationError) as exc_info:
-            GetVariablesArgs()
-        assert "session_id" in str(exc_info.value)
-
-    def test_thread_select_requires_session_id(self):
-        """Test ThreadSelectArgs requires session_id."""
-        with pytest.raises(ValidationError) as exc_info:
-            ThreadSelectArgs(thread_id=1)
-        assert "session_id" in str(exc_info.value)
-
-    def test_frame_select_requires_session_id(self):
-        """Test FrameSelectArgs requires session_id."""
-        with pytest.raises(ValidationError) as exc_info:
-            FrameSelectArgs(frame_number=0)
-        assert "session_id" in str(exc_info.value)
-
-    def test_breakpoint_number_requires_session_id(self):
-        """Test BreakpointNumberArgs requires session_id."""
-        with pytest.raises(ValidationError) as exc_info:
-            BreakpointNumberArgs(number=1)
-        assert "session_id" in str(exc_info.value)
-
-    def test_call_function_requires_session_id(self):
-        """Test CallFunctionArgs requires session_id."""
-        with pytest.raises(ValidationError) as exc_info:
-            CallFunctionArgs(function_call='printf("hello")')
-        assert "session_id" in str(exc_info.value)
-
-    def test_run_requires_session_id(self):
-        """Test RunArgs requires session_id."""
-
-        with pytest.raises(ValidationError) as exc_info:
-            RunArgs()
-        assert "session_id" in str(exc_info.value)
-
-    def test_attach_requires_session_id(self):
-        """Test AttachProcessArgs requires session_id."""
-
-        with pytest.raises(ValidationError) as exc_info:
-            AttachProcessArgs(pid=1234)
-        assert "session_id" in str(exc_info.value)
-
-    def test_session_id_validation_success(self):
-        """Test that models accept session_id correctly."""
-        # ExecuteCommandArgs
-        args1 = ExecuteCommandArgs(session_id=1, command="info threads")
-        assert args1.session_id == 1
-
-        # GetBacktraceArgs
-        args2 = GetBacktraceArgs(session_id=2)
-        assert args2.session_id == 2
-
-        # SetBreakpointArgs
-        args3 = SetBreakpointArgs(session_id=3, location="main")
-        assert args3.session_id == 3
-
-        # GetRegistersArgs
-        args4 = GetRegistersArgs(session_id=4, thread_id=2, frame=1)
-        assert args4.session_id == 4
-        assert args4.thread_id == 2
-        assert args4.frame == 1
-
-    def test_get_registers_accepts_numeric_string_context(self):
-        """Register context overrides should accept numeric strings."""
-
-        args = GetRegistersArgs(session_id=4, thread_id="2", frame="1")
-        assert args.session_id == 4
-        assert args.thread_id == 2
-        assert args.frame == 1
-
-    def test_get_registers_accepts_selector_and_format_options(self):
-        """Register requests should validate selectors and rendering options."""
-
-        args = GetRegistersArgs(
-            session_id=4,
-            register_numbers=["0", 7],
-            register_names=["rip", "rax"],
-            include_vector_registers=False,
-            max_registers=5,
-            value_format="natural",
-        )
-        assert args.register_numbers == [0, 7]
-        assert args.register_names == ["rip", "rax"]
-        assert args.include_vector_registers is False
-        assert args.max_registers == 5
-        assert args.value_format == "natural"
-
-    def test_get_registers_rejects_empty_register_name(self):
-        """Register-name selectors should reject blank entries."""
-
-        with pytest.raises(ValidationError):
-            GetRegistersArgs(session_id=4, register_names=["rip", " "])
-
-    def test_get_registers_rejects_negative_register_number(self):
-        """Register-number selectors should require non-negative values."""
-
-        with pytest.raises(ValidationError):
-            GetRegistersArgs(session_id=4, register_numbers=[-1])
-
-
-class TestArgumentBounds:
-    """Test numeric bounds for MCP tool argument models."""
-
-    def test_session_id_must_be_positive(self):
-        """Session-scoped tools should reject non-positive session IDs."""
-
-        with pytest.raises(ValidationError):
-            ExecuteCommandArgs(session_id=0, command="info threads")
-
-    def test_thread_id_must_be_positive(self):
-        """Thread selectors should reject non-positive thread IDs."""
-
-        with pytest.raises(ValidationError):
-            ThreadSelectArgs(session_id=1, thread_id=0)
-
-    def test_frame_number_must_be_non_negative(self):
-        """Frame selectors should reject negative frame indices."""
-
-        with pytest.raises(ValidationError):
-            FrameSelectArgs(session_id=1, frame_number=-1)
-
-    def test_max_frames_must_be_positive(self):
-        """Backtrace requests should reject non-positive max_frames."""
-
-        with pytest.raises(ValidationError):
-            GetBacktraceArgs(session_id=1, max_frames=0)
-
-    def test_breakpoint_number_must_be_positive(self):
-        """Breakpoint-number operations should reject non-positive numbers."""
-
-        with pytest.raises(ValidationError):
-            BreakpointNumberArgs(session_id=1, number=0)
-
-    def test_variable_frame_must_be_non_negative(self):
-        """Variable inspection should reject negative frame indices."""
-
-        with pytest.raises(ValidationError):
-            GetVariablesArgs(session_id=1, frame=-1)

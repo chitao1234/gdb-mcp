@@ -34,7 +34,7 @@ from ..transport import (
 )
 from .command_runner import SessionCommandRunner
 from .constants import DEFAULT_TIMEOUT_SEC, INTERRUPT_RESPONSE_TIMEOUT_SEC
-from .inferiors import inferior_ids, looks_like_connection, parse_inferiors_output
+from .inferiors import inferior_ids, parse_inferiors_output
 from .result_utils import command_result_payload
 from .runtime import SessionRuntime
 
@@ -717,9 +717,3 @@ class SessionExecutionService:
             (record for record in payload.inferiors if record.get("inferior_id") == inferior_id),
             None,
         )
-
-    @staticmethod
-    def _looks_like_connection(value: str) -> bool:
-        """Heuristically identify a connection column from `info inferiors` output."""
-
-        return looks_like_connection(value)
