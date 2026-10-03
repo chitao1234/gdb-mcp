@@ -9,8 +9,8 @@ import shlex
 from collections.abc import Callable, Sequence
 from typing import Protocol, TypeAlias, TypeVar, cast
 
-from pydantic import BaseModel, RootModel
-from mcp.types import TextContent
+from pydantic import BaseModel, RootModel, ValidationError
+from mcp.types import CallToolResult
 
 from .. import contracts as shared_contracts
 from ..contracts import (
@@ -116,6 +116,7 @@ from .schemas import (
     ThreadFrameContextArgs,
 )
 from .serializer import serialize_exception, serialize_result
+from .validation_errors import build_validation_error
 
 
 class SessionArgsProtocol(Protocol):
@@ -1114,6 +1115,13 @@ SESSION_TOOL_SPECS: dict[str, SessionToolSpec] = {
     TOOL_CALL_FUNCTION: session_tool_spec(CallFunctionArgs, _handle_call_function),
 }
 
+_TOOL_MODELS: dict[str, type[BaseModel]] = {
+    TOOL_SESSION_START: StartSessionArgs,
+    TOOL_SESSION_MANAGE: SessionManageArgs,
+    TOOL_RUN_UNTIL_FAILURE: RunUntilFailureArgs,
+    **{tool_name: spec.model for tool_name, spec in SESSION_TOOL_SPECS.items()},
+}
+
 
 async def dispatch_tool_call(
     name: str,
@@ -1121,12 +1129,26 @@ async def dispatch_tool_call(
     session_manager: SessionRegistry,
     *,
     logger: logging.Logger,
-) -> list[TextContent]:
+) -> CallToolResult:
     """Dispatch one MCP tool call using structured validation and handlers."""
 
     try:
         normalized_args = _normalize_arguments(arguments)
+    except TypeError as exc:
+        return serialize_result(
+            OperationError(
+                message=str(exc),
+                code="validation_error",
+                details={
+                    "tool": name,
+                    "field_errors": [
+                        {"field": "(arguments)", "issue": "invalid", "message": str(exc)}
+                    ],
+                },
+            )
+        )
 
+    try:
         if name == TOOL_SESSION_START:
             return serialize_result(_handle_start_session(normalized_args, session_manager))
         if name == TOOL_SESSION_QUERY:
@@ -1144,6 +1166,10 @@ async def dispatch_tool_call(
 
         return serialize_result(_dispatch_session_tool(normalized_args, session_manager, tool_spec))
 
+    except ValidationError as exc:
+        return serialize_result(
+            build_validation_error(exc, tool_name=name, model=_TOOL_MODELS.get(name))
+        )
     except Exception as exc:
         logger.error("Error executing tool %s: %s", name, exc, exc_info=True)
         return serialize_exception(name, exc)

@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from collections.abc import Callable
 
 from mcp.server import Server
-from mcp.types import TextContent, Tool
+from mcp.types import CallToolResult, Tool
 
 from ..session.registry import SessionRegistry
 from .app import create_mcp_app, run_stdio_app, run_streamable_http_app
@@ -42,7 +42,7 @@ class ServerRuntime:
 
         return build_tool_definitions()
 
-    async def call_tool(self, name: str, arguments: object) -> list[TextContent]:
+    async def call_tool(self, name: str, arguments: object) -> CallToolResult:
         """Dispatch one tool call through the injected session manager."""
 
         return await dispatch_tool_call(name, arguments, self.session_manager, logger=self.logger)

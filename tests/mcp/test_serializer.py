@@ -118,7 +118,7 @@ class TestMcpSerializer:
         """Unexpected exceptions should still include the originating tool name."""
 
         contents = serialize_exception("gdb_get_status", RuntimeError("bad"))
-        payload = json.loads(contents[0].text)
+        payload = json.loads(contents.content[0].text)
 
         assert payload == {
             "status": "error",
@@ -131,7 +131,7 @@ class TestMcpSerializer:
         """Typed payload objects should serialize through the shared result mapper."""
 
         contents = serialize_result(OperationSuccess(SessionMessage(message="ok")))
-        payload = json.loads(contents[0].text)
+        payload = json.loads(contents.content[0].text)
 
         assert payload == {"status": "success", "message": "ok"}
 
@@ -144,13 +144,28 @@ class TestMcpSerializer:
                 warnings=("symbols missing",),
             )
         )
-        payload = json.loads(contents[0].text)
+        payload = json.loads(contents.content[0].text)
 
         assert payload == {
             "status": "success",
             "message": "ok",
             "warnings": ["symbols missing"],
         }
+
+    def test_serialize_result_marks_errors_as_mcp_errors(self):
+        """Error results should set the MCP isError flag."""
+
+        contents = serialize_result(OperationError(message="boom"))
+
+        assert contents.isError is True
+        assert json.loads(contents.content[0].text)["status"] == "error"
+
+    def test_serialize_result_marks_success_as_non_error(self):
+        """Success results should keep the MCP isError flag false."""
+
+        contents = serialize_result(OperationSuccess(SessionMessage(message="ok")))
+
+        assert contents.isError is False
 
     def test_result_to_payload_normalizes_nested_typed_payloads(self):
         """Nested typed payload objects should be converted into JSON-ready structures."""

@@ -75,7 +75,7 @@ The wrapped `result` object is action-specific.
 
 ### Error Envelope
 
-Errors are uniform across all tools:
+Errors are uniform across all tools and are returned as MCP tool results with `isError: true`:
 
 ```json
 {
@@ -87,24 +87,23 @@ Errors are uniform across all tools:
     "field_errors": [
       {
         "field": "breakpoint.location",
-        "issue": "missing"
+        "issue": "missing",
+        "message": "breakpoint.location is required for kind=code"
       }
     ]
   }
 }
 ```
 
+Validation failures use `code="validation_error"` and populate `details.field_errors`; the top-level `message` summarizes the first error, including the selecting union tag when one applies.
+
 Common machine-readable codes include:
 
 - `validation_error`
-- `unknown_action`
 - `unsupported_combination`
-- `invalid_state`
+- `unknown_tool`
 - `not_found`
-- `timeout`
-- `permission_denied`
-- `transport_error`
-- `gdb_error`
+- `error`
 - `internal_error`
 
 ## Shared Request Patterns
@@ -117,7 +116,7 @@ Every session-scoped tool takes a `session_id` returned by `gdb_session_start`.
 
 Published tool input schemas are flattened for broad MCP client compatibility: they contain no `oneOf`, `anyOf`, `allOf`, `$ref`, or `$defs` constructs.
 Each action-scoped payload is advertised as one object whose discriminator (`action`, `kind`) is an `enum` of the accepted values, and requirements that only apply to some values are spelled out in the schema description under `Conditional requirements:`.
-Request validation is unchanged: the Pydantic models still reject invalid action/payload combinations.
+Requests are validated against the typed request models rather than by re-validating the published schema, so the schema stays a descriptive client contract while the models remain authoritative.
 
 ### Action-Scoped Payloads
 
@@ -135,11 +134,11 @@ Dedicated workflow tools use their own top-level objects such as `startup`, `fai
 
 ### Empty Payload Objects
 
-Some actions still require an explicit empty object for strict validation:
+Actions whose payload has no fields accept an omitted payload; passing an explicit empty object stays valid:
 
-- `gdb_session_query(action="list", query={})`
-- `gdb_session_manage(action="stop", session={})`
-- `gdb_context_query(action="threads", query={})`
+- `gdb_session_query(action="list")` or `gdb_session_query(action="list", query={})`
+- `gdb_session_manage(action="stop")` or `gdb_session_manage(action="stop", session={})`
+- `gdb_context_query(action="threads")` or `gdb_context_query(action="threads", query={})`
 
 ### Thread/Frame Context
 

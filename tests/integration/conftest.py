@@ -39,7 +39,7 @@ def call_gdb_tool(integration_runtime):
 
     def invoke(tool_name: str, arguments: dict[str, object]) -> dict[str, object]:
         result = asyncio.run(integration_runtime.call_tool(tool_name, arguments))
-        return cast(dict[str, object], json.loads(result[0].text))
+        return cast(dict[str, object], json.loads(result.content[0].text))
 
     return invoke
 

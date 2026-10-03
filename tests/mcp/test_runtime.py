@@ -44,7 +44,7 @@ class TestServerRuntime:
                 {"session_id": 7, "action": "status", "query": {}},
             )
         )
-        result_data = json.loads(result[0].text)
+        result_data = json.loads(result.content[0].text)
 
         assert result_data["status"] == "success"
         assert result_data["action"] == "status"

@@ -56,7 +56,7 @@ def dispatch(name: str, arguments, session_manager) -> dict[str, object]:
             logger=logging.getLogger("test-mcp-handlers"),
         )
     )
-    return json.loads(result[0].text)
+    return json.loads(result.content[0].text)
 
 
 class TestHandlerDispatch:

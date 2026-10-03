@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from mcp.server import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
-from mcp.types import TextContent, Tool
+from mcp.types import CallToolResult, Tool
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.types import Receive, Scope, Send
@@ -18,7 +18,7 @@ from starlette.types import Receive, Scope, Send
 def create_mcp_app(
     *,
     list_tools_handler: Callable[[], Awaitable[list[Tool]]],
-    call_tool_handler: Callable[[str, object], Awaitable[list[TextContent]]],
+    call_tool_handler: Callable[[str, object], Awaitable[CallToolResult]],
 ) -> Server:
     """Create an MCP app and register the provided handlers."""
 
@@ -28,8 +28,11 @@ def create_mcp_app(
     async def list_tools() -> list[Tool]:
         return await list_tools_handler()
 
-    @app.call_tool()
-    async def call_tool(name: str, arguments: object) -> list[TextContent]:
+    # The SDK's own inputSchema gate is disabled on purpose: the typed request
+    # models are the single source of truth, while the published flattened
+    # schema is a client-facing summary that drops union alternatives.
+    @app.call_tool(validate_input=False)
+    async def call_tool(name: str, arguments: object) -> CallToolResult:
         return await call_tool_handler(name, arguments)
 
     return app

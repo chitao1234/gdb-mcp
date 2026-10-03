@@ -211,7 +211,7 @@ Action-based tools return a uniform envelope:
 }
 ```
 
-Errors always use a machine-readable envelope:
+Errors always use a machine-readable envelope and are returned with MCP `isError: true`:
 
 ```json
 {
@@ -223,7 +223,8 @@ Errors always use a machine-readable envelope:
     "field_errors": [
       {
         "field": "breakpoint.location",
-        "issue": "missing"
+        "issue": "missing",
+        "message": "breakpoint.location is required for kind=code"
       }
     ]
   }
@@ -420,6 +421,7 @@ Clients should expect:
 - `action` plus nested `result` on action-based tools
 - direct structured success payloads on dedicated tools without `action`
 - `code` plus `message` on every error payload
+- MCP `isError: true` on failure results
 
 The server does not currently publish MCP `outputSchema`, resources, prompts, or event streams. Clients should treat tool responses as authoritative runtime state and manage `session_id` explicitly.
 

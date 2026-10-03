@@ -10,7 +10,48 @@ from starlette.responses import PlainTextResponse
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
-from gdb_mcp.mcp.app import create_streamable_http_app, run_streamable_http_app
+from mcp.types import TextContent, Tool
+
+from gdb_mcp.mcp.app import create_mcp_app, create_streamable_http_app, run_streamable_http_app
+
+
+class TestMcpAppToolRegistration:
+    """Verify registered call tool handlers bypass the SDK schema gate."""
+
+    def test_call_tool_skips_sdk_input_schema_validation(self):
+        """Inputs valid for the typed models must reach the handler unchanged."""
+
+        from mcp.shared.memory import create_connected_server_and_client_session
+
+        seen: list[object] = []
+
+        async def list_tools() -> list[Tool]:
+            return [
+                Tool(
+                    name="probe",
+                    description="probe tool",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {"args": {"type": "array"}},
+                        "required": ["args"],
+                    },
+                )
+            ]
+
+        async def call_tool(name: str, arguments: object) -> list[TextContent]:
+            seen.append(arguments)
+            return [TextContent(type="text", text='{"status": "success"}')]
+
+        app = create_mcp_app(list_tools_handler=list_tools, call_tool_handler=call_tool)
+
+        async def exercise():
+            async with create_connected_server_and_client_session(app) as session:
+                return await session.call_tool("probe", {"args": "not-an-array"})
+
+        result = asyncio.run(exercise())
+
+        assert result.isError is False
+        assert seen == [{"args": "not-an-array"}]
 
 
 class TestStreamableHttpApp:

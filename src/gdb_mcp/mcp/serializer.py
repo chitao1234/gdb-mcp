@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from mcp.types import TextContent
+from mcp.types import CallToolResult, TextContent
 
 from ..domain import OperationError, OperationResult, StructuredPayload, result_to_mapping
 
@@ -19,13 +19,17 @@ def result_to_payload(
 
 def serialize_result(
     result: OperationResult[object],
-) -> list[TextContent]:
-    """Serialize a typed tool result into MCP text content."""
+) -> CallToolResult:
+    """Serialize a typed tool result with a truthful MCP ``isError`` flag."""
 
-    return [TextContent(type="text", text=json.dumps(result_to_payload(result), indent=2))]
+    payload = result_to_payload(result)
+    return CallToolResult(
+        content=[TextContent(type="text", text=json.dumps(payload, indent=2))],
+        isError=isinstance(result, OperationError),
+    )
 
 
-def serialize_exception(tool_name: str, exc: Exception) -> list[TextContent]:
+def serialize_exception(tool_name: str, exc: Exception) -> CallToolResult:
     """Serialize an unexpected exception into the standard MCP error shape."""
 
     error_result = OperationError(
