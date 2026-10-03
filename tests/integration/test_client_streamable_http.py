@@ -155,7 +155,7 @@ def test_cli_calls_real_streamable_http_workflow_batch_with_nested_step_args(
                         "--step-arg",
                         "action=run",
                         "--step-arg",
-                        "execution.wait.until=stop",
+                        "execution.wait_until=stop",
                         "--step",
                         "gdb_context_query",
                         "--step-label",

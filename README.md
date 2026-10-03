@@ -283,10 +283,8 @@ Continue execution:
   "session_id": 7,
   "action": "continue",
   "execution": {
-    "wait": {
-      "until": "stop",
-      "timeout_sec": 30
-    }
+    "wait_until": "stop",
+    "timeout_sec": 30
   }
 }
 ```

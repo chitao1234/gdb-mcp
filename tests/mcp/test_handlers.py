@@ -304,7 +304,8 @@ class TestHandlerDispatch:
                 "action": "run",
                 "execution": {
                     "args": ["--flag", "value"],
-                    "wait": {"until": "acknowledged", "timeout_sec": 7},
+                    "wait_until": "acknowledged",
+                    "timeout_sec": 7,
                 },
             },
             manager,
@@ -316,6 +317,22 @@ class TestHandlerDispatch:
             timeout_sec=7,
             wait_for_stop=False,
         )
+
+    def test_execution_run_accepts_omitted_execution_payload(self):
+        """Run should work without an explicit execution payload."""
+
+        manager = Mock()
+        session = _session_double()
+        session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_execution_manage",
+            {"session_id": 5, "action": "run"},
+            manager,
+        )
+
+        session.run.assert_called_once_with(args=None, timeout_sec=30, wait_for_stop=True)
 
     def test_run_accepts_shell_style_string_args(self):
         """String-form run args should be shell-split before forwarding."""
@@ -332,7 +349,7 @@ class TestHandlerDispatch:
                 "action": "run",
                 "execution": {
                     "args": '--flag "hello world"',
-                    "wait": {"timeout_sec": 7},
+                    "timeout_sec": 7,
                 },
             },
             manager,
@@ -367,6 +384,22 @@ class TestHandlerDispatch:
             make_current=True,
         )
 
+    def test_add_inferior_accepts_omitted_inferior_payload(self):
+        """Inferior creation should work without an explicit inferior payload."""
+
+        manager = Mock()
+        session = _session_double()
+        session.add_inferior.return_value = OperationSuccess({"inferior_id": 2})
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_inferior_manage",
+            {"session_id": 4, "action": "create"},
+            manager,
+        )
+
+        session.add_inferior.assert_called_once_with(executable=None, make_current=False)
+
     def test_remove_inferior_routes_to_correct_session(self):
         """Inferior removal requests should forward the normalized inferior ID."""
 
@@ -396,7 +429,7 @@ class TestHandlerDispatch:
             {
                 "session_id": 4,
                 "action": "continue",
-                "execution": {"wait": {"until": "acknowledged", "timeout_sec": 5}},
+                "execution": {"wait_until": "acknowledged", "timeout_sec": 5},
             },
             manager,
         )
@@ -419,7 +452,7 @@ class TestHandlerDispatch:
             {
                 "session_id": 4,
                 "action": "finish",
-                "execution": {"wait": {"timeout_sec": 9}},
+                "execution": {"timeout_sec": 9},
             },
             manager,
         )

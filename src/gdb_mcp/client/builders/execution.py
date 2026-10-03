@@ -2,21 +2,7 @@
 
 from __future__ import annotations
 
-from gdb_mcp.client.inputs import ExecutionManageInput, ExecutionWaitInput
-
-
-def _build_execution_wait_payload(
-    typed_input: ExecutionWaitInput | None,
-) -> dict[str, object] | None:
-    if typed_input is None:
-        return None
-
-    payload: dict[str, object] = {}
-    if typed_input.until is not None:
-        payload["until"] = typed_input.until
-    if typed_input.timeout_sec is not None:
-        payload["timeout_sec"] = typed_input.timeout_sec
-    return payload or None
+from gdb_mcp.client.inputs import ExecutionManageInput
 
 
 def build_execution_manage_payload(typed_input: ExecutionManageInput) -> dict[str, object]:
@@ -43,10 +29,10 @@ def build_execution_manage_payload(typed_input: ExecutionManageInput) -> dict[st
     execution_payload: dict[str, object] = {}
     if typed_input.action == "run" and typed_input.args:
         execution_payload["args"] = list(typed_input.args)
-
-    wait_payload = _build_execution_wait_payload(typed_input.wait)
-    if wait_payload is not None:
-        execution_payload["wait"] = wait_payload
+    if typed_input.wait_until is not None:
+        execution_payload["wait_until"] = typed_input.wait_until
+    if typed_input.timeout_sec is not None:
+        execution_payload["timeout_sec"] = typed_input.timeout_sec
 
     payload["execution"] = execution_payload
     return payload

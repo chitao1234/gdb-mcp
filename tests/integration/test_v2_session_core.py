@@ -364,7 +364,7 @@ def test_wait_for_stop_after_background_run_v2(
             {
                 "session_id": session_id,
                 "action": "run",
-                "execution": {"wait": {"until": "acknowledged"}},
+                "execution": {"wait_until": "acknowledged"},
             },
         )
         assert background["status"] == "success"

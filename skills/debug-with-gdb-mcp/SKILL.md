@@ -89,7 +89,7 @@ When referring to an action-based tool below, use the full form such as `gdb_exe
 - Pair `env` with `working_dir` when launch behavior depends on both environment and cwd.
 - Keep `init_commands` for GDB configuration, symbol paths, and one-off debugger commands.
 - If you need different argv on a later rerun, prefer `gdb_execution_manage(action="run", execution.args=...)` instead of recreating the whole session.
-- If you need a background-style launch, prefer `gdb_execution_manage(action="run", execution.wait.until="acknowledged")` over raw `run &`.
+- If you need a background-style launch, prefer `gdb_execution_manage(action="run", execution.wait_until="acknowledged")` over raw `run &`.
 - `env` affects launches from this GDB session; it does not retroactively change a process you attach to later.
 
 ### Copy-Ready Startup Patterns
@@ -142,7 +142,7 @@ Treat these outcomes as hard gates:
 
 - Prefer structured tools such as `gdb_execution_manage`, `gdb_context_query`, `gdb_inspect_query`, `gdb_breakpoint_manage`, and `gdb_breakpoint_query`.
 - Use `gdb_execute_command` only for GDB features not covered by dedicated structured tools.
-- Use `gdb_execution_manage(action="run", execution.wait.until="acknowledged")` when you need the structured replacement for background `run &`; follow it with `gdb_execution_manage(action="wait_for_stop")` or `gdb_execution_manage(action="interrupt")`.
+- Use `gdb_execution_manage(action="run", execution.wait_until="acknowledged")` when you need the structured replacement for background `run &`; follow it with `gdb_execution_manage(action="wait_for_stop")` or `gdb_execution_manage(action="interrupt")`.
 - Use `gdb_execution_manage(action="wait_for_stop")` after a background run or continue when you expect a later stop event and want a blocking handoff point.
 - Use `gdb_execution_manage(action="interrupt")` before inspection when the inferior is still running.
 - Use `gdb_execution_manage(action="step")` and `gdb_execution_manage(action="next")` only when execution is paused.
@@ -158,7 +158,7 @@ Treat these outcomes as hard gates:
 - Treat `gdb_session_query(action="status")` as authoritative for execution state, selected inferior, and stop reason.
 - In fork or multi-inferior workflows, inspect `inferior_states` from `gdb_session_query(action="status")` for full process state.
 - Run `gdb_execution_manage(action="run")` only when target startup has completed and execution is not already running.
-- After `gdb_execution_manage(action="run", execution.wait.until="acknowledged")` or any resume that leaves the inferior running, synchronize with `gdb_execution_manage(action="wait_for_stop")` or `gdb_execution_manage(action="interrupt")` before inspection.
+- After `gdb_execution_manage(action="run", execution.wait_until="acknowledged")` or any resume that leaves the inferior running, synchronize with `gdb_execution_manage(action="wait_for_stop")` or `gdb_execution_manage(action="interrupt")` before inspection.
 - Run `gdb_execution_manage(action="continue")` only from a paused state.
 - For core dumps, expect `execution_state=paused` at startup.
 - For live programs, expect `execution_state=not_started` before the first run.
@@ -180,7 +180,7 @@ Treat these outcomes as hard gates:
 ### Background Launch and Later Synchronization
 
 1. Start the session and configure breakpoints or catchpoints first.
-2. Launch with `gdb_execution_manage(action="run", execution.wait.until="acknowledged")` when you intentionally want the inferior to keep running.
+2. Launch with `gdb_execution_manage(action="run", execution.wait_until="acknowledged")` when you intentionally want the inferior to keep running.
 3. Use `gdb_execution_manage(action="wait_for_stop")` when you expect a later stop event.
 4. Use `gdb_execution_manage(action="interrupt")` if you need to force a pause before inspection.
 5. Do not inspect threads, frames, locals, or source context until execution is paused again.
@@ -262,7 +262,7 @@ Treat these outcomes as hard gates:
 - Ignoring `warnings` and then trusting broken symbols or empty locals
 - Forgetting that `args` and `core` are mutually exclusive
 - Using `init_commands` to fake launch configuration that belongs in `args`, `env`, or `working_dir`
-- Launching a background-style run with raw `run &` instead of `gdb_execution_manage(action="run", execution.wait.until="acknowledged")`
+- Launching a background-style run with raw `run &` instead of `gdb_execution_manage(action="run", execution.wait_until="acknowledged")`
 - Inspecting while the inferior is still running instead of interrupting first
 - Calling `gdb_execution_manage(action="continue")` when execution is already running
 - Calling `gdb_execution_manage(action="step" | "next")` when the inferior is not paused

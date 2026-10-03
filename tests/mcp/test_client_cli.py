@@ -739,7 +739,7 @@ class TestClientCli:
                     "fast",
                     "--wait-until",
                     "stop",
-                    "--wait-timeout-sec",
+                    "--timeout-sec",
                     "30",
                 ],
                 stdout=stdout,
@@ -755,7 +755,8 @@ class TestClientCli:
                 "action": "run",
                 "execution": {
                     "args": ["--mode", "fast"],
-                    "wait": {"until": "stop", "timeout_sec": 30},
+                    "wait_until": "stop",
+                    "timeout_sec": 30,
                 },
             },
             http_client=None,
@@ -1722,7 +1723,7 @@ class TestClientCli:
                     "--step-arg",
                     "execution.args=two",
                     "--step-arg",
-                    "execution.wait.until=stop",
+                    "execution.wait_until=stop",
                 ]
             )
         )
@@ -1740,7 +1741,7 @@ class TestClientCli:
                             "action": "run",
                             "execution": {
                                 "args": ["one", "two"],
-                                "wait": {"until": "stop"},
+                                "wait_until": "stop",
                             },
                         },
                     }

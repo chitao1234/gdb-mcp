@@ -73,7 +73,7 @@ def test_required_lists_keep_only_unconditional_requirements() -> None:
     schemas = _tool_schemas()
 
     assert schemas["gdb_session_query"]["required"] == ["action"]
-    assert schemas["gdb_inferior_manage"]["required"] == ["session_id", "action", "inferior"]
+    assert schemas["gdb_inferior_manage"]["required"] == ["session_id", "action"]
     assert schemas["gdb_inspect_query"]["required"] == ["session_id", "action"]
     assert schemas["gdb_breakpoint_manage"]["required"] == ["session_id", "action", "breakpoint"]
     assert "required" not in schemas["gdb_breakpoint_manage"]["properties"]["breakpoint"]
@@ -96,6 +96,8 @@ def test_conditional_requirements_stay_documented() -> None:
     inspect_description = schemas["gdb_inspect_query"]["description"]
     assert "action='evaluate' requires query, query.expression" in inspect_description
     assert "action='memory' requires query, query.address, query.count" in inspect_description
+
+    assert "Conditional requirements" not in schemas["gdb_execution_manage"]["description"]
 
 
 def test_nested_location_union_merges_every_selector_kind() -> None:

@@ -23,6 +23,7 @@ Pydantic request models, so request semantics remain fully enforced.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from pydantic import BaseModel
@@ -32,10 +33,17 @@ Schema = dict[str, Any]
 _MISSING = object()
 
 
-def public_input_schema(model: type[BaseModel]) -> Schema:
+def public_input_schema(
+    model: type[BaseModel],
+    *,
+    examples: Sequence[dict[str, object]] | None = None,
+) -> Schema:
     """Return a client-friendly JSON Schema for one MCP tool input model."""
 
-    return normalize_input_schema(model.model_json_schema())
+    schema = normalize_input_schema(model.model_json_schema())
+    if examples:
+        schema["examples"] = [dict(example) for example in examples]
+    return schema
 
 
 def normalize_input_schema(schema: Schema) -> Schema:

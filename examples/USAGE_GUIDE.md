@@ -376,7 +376,7 @@ threads are blocked on mutexes.
 AI will call:
 
 1. `gdb_session_start`
-2. `gdb_execution_manage(action="run")` with `wait.until="acknowledged"`
+2. `gdb_execution_manage(action="run")` with `wait_until="acknowledged"`
 3. `gdb_execution_manage(action="interrupt")`
 4. `gdb_context_query(action="threads")`
 5. `gdb_context_query(action="backtrace")` for the interesting threads
@@ -388,9 +388,7 @@ Background run payload:
   "session_id": 1,
   "action": "run",
   "execution": {
-    "wait": {
-      "until": "acknowledged"
-    }
+    "wait_until": "acknowledged"
   }
 }
 ```
@@ -591,7 +589,7 @@ Use `gdb_run_until_failure` instead of hand-written rerun loops:
 
 - Increase `timeout_sec` on the structured tool you are calling
 - If execution is still running, use `gdb_execution_manage(action="wait_for_stop")` or `gdb_execution_manage(action="interrupt")`
-- For long-running launches, prefer `gdb_execution_manage(action="run", execution.wait.until="acknowledged")`
+- For long-running launches, prefer `gdb_execution_manage(action="run", execution.wait_until="acknowledged")`
 
 ## Tips for Working with AI
 

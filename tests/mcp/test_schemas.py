@@ -13,6 +13,7 @@ from gdb_mcp.mcp.schemas import (
     CaptureMemoryRangeArgs,
     CaptureBundleArgs,
     DisassembleArgs,
+    ExecutionManageArgs,
     DetachOnForkArgs,
     ExecuteCommandArgs,
     FinishArgs,
@@ -24,6 +25,7 @@ from gdb_mcp.mcp.schemas import (
     ReadMemoryArgs,
     GetRegistersArgs,
     ThreadSelectArgs,
+    InferiorManageArgs,
     InferiorSelectArgs,
     RemoveInferiorArgs,
     SessionQueryArgs,
@@ -344,6 +346,37 @@ class TestV2ActionArgs:
 
         assert args.root.action == "source"
         assert args.root.query.location.kind == "file_range"
+
+    def test_execution_run_accepts_omitted_execution_payload(self):
+        """Run should default its flattened execution payload when omitted."""
+
+        args = ExecutionManageArgs.model_validate({"session_id": 4, "action": "run"})
+
+        assert args.root.execution.wait_until == "stop"
+        assert args.root.execution.timeout_sec is None
+        assert args.root.execution.args is None
+
+    def test_execution_continue_accepts_flattened_wait_fields(self):
+        """Continue should accept wait_until and timeout_sec directly."""
+
+        args = ExecutionManageArgs.model_validate(
+            {
+                "session_id": 4,
+                "action": "continue",
+                "execution": {"wait_until": "acknowledged", "timeout_sec": 5},
+            }
+        )
+
+        assert args.root.execution.wait_until == "acknowledged"
+        assert args.root.execution.timeout_sec == 5
+
+    def test_inferior_create_accepts_omitted_inferior_payload(self):
+        """Inferior creation should default its payload when omitted."""
+
+        args = InferiorManageArgs.model_validate({"session_id": 4, "action": "create"})
+
+        assert args.root.inferior.executable is None
+        assert args.root.inferior.make_current is False
 
 
 class TestAttachProcessArgs:

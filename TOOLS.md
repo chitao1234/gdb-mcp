@@ -117,6 +117,7 @@ Every session-scoped tool takes a `session_id` returned by `gdb_session_start`.
 Published tool input schemas are flattened for broad MCP client compatibility: they contain no `oneOf`, `anyOf`, `allOf`, `$ref`, or `$defs` constructs.
 Each action-scoped payload is advertised as one object whose discriminator (`action`, `kind`) is an `enum` of the accepted values, and requirements that only apply to some values are spelled out in the schema description under `Conditional requirements:`.
 Requests are validated against the typed request models rather than by re-validating the published schema, so the schema stays a descriptive client contract while the models remain authoritative.
+High-complexity tools also publish request `examples` inside their `inputSchema`.
 
 ### Action-Scoped Payloads
 
@@ -318,31 +319,28 @@ Run or synchronize execution state.
 
 | Action | Request Shape | Success `result` |
 | --- | --- | --- |
-| `run` | `{"session_id":7,"action":"run","execution":{"args":["--mode","fast"],"wait":{"until":"stop","timeout_sec":30}}}` | direct execution payload under `result` |
-| `continue` | `{"session_id":7,"action":"continue","execution":{"wait":{"until":"acknowledged"}}}` | direct execution payload under `result` |
-| `interrupt` | `{"session_id":7,"action":"interrupt","execution":{}}` | direct execution payload under `result` |
-| `step` | `{"session_id":7,"action":"step","execution":{"wait":{"until":"stop","timeout_sec":30}}}` | direct execution payload under `result` |
-| `next` | `{"session_id":7,"action":"next","execution":{"wait":{"until":"stop","timeout_sec":30}}}` | direct execution payload under `result` |
-| `finish` | `{"session_id":7,"action":"finish","execution":{"wait":{"until":"stop","timeout_sec":30}}}` | `message`, `return_value`, `gdb_result_var`, `frame`, `execution_state`, `stop_reason`, `last_stop_event` |
+| `run` | `{"session_id":7,"action":"run"}` | direct execution payload under `result` |
+| `continue` | `{"session_id":7,"action":"continue"}` | direct execution payload under `result` |
+| `interrupt` | `{"session_id":7,"action":"interrupt"}` | direct execution payload under `result` |
+| `step` | `{"session_id":7,"action":"step"}` | direct execution payload under `result` |
+| `next` | `{"session_id":7,"action":"next"}` | direct execution payload under `result` |
+| `finish` | `{"session_id":7,"action":"finish"}` | `message`, `return_value`, `gdb_result_var`, `frame`, `execution_state`, `stop_reason`, `last_stop_event` |
 | `wait_for_stop` | `{"session_id":7,"action":"wait_for_stop","execution":{"timeout_sec":10,"stop_reasons":["breakpoint-hit"]}}` | `message`, `matched`, `timed_out`, `source`, `execution_state`, `stop_reason`, `reason_filter`, `last_stop_event` |
 
 ### Wait Policy
 
-`run`, `continue`, `step`, `next`, and `finish` accept:
+`run`, `continue`, `step`, `next`, and `finish` accept an optional `execution` payload with a flattened wait policy:
 
 ```json
 {
-  "wait": {
-    "until": "acknowledged",
+  "execution": {
+    "wait_until": "acknowledged",
     "timeout_sec": 30
   }
 }
 ```
 
-`until` can be:
-
-- `acknowledged`
-- `stop`
+`wait_until` can be `acknowledged` or `stop` (default `stop`). Omitting `execution` entirely is equivalent to `wait_until="stop"` with the default timeout. For `run`, `execution.args` may also override the inferior argv as an explicit list or one shell-style string.
 
 ### Notes
 

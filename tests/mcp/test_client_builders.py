@@ -28,7 +28,6 @@ from gdb_mcp.client.inputs import SessionQueryInput, SessionStartInput
 from gdb_mcp.client.inputs import (
     ContextQueryInput,
     ExecutionManageInput,
-    ExecutionWaitInput,
     InferiorManageInput,
     BreakpointCreateInput,
     BreakpointManageInput,
@@ -153,8 +152,8 @@ def test_build_execution_manage_run_payload() -> None:
         action="run",
         session_id=7,
         args=("--mode", "fast"),
-        wait=ExecutionWaitInput(until="stop", timeout_sec=30),
-        timeout_sec=None,
+        wait_until="stop",
+        timeout_sec=30,
         stop_reasons=(),
     )
 
@@ -163,7 +162,8 @@ def test_build_execution_manage_run_payload() -> None:
         "action": "run",
         "execution": {
             "args": ["--mode", "fast"],
-            "wait": {"until": "stop", "timeout_sec": 30},
+            "wait_until": "stop",
+            "timeout_sec": 30,
         },
     }
 
@@ -173,7 +173,7 @@ def test_build_execution_manage_wait_for_stop_preserves_explicit_zero_timeout() 
         action="wait_for_stop",
         session_id=7,
         args=(),
-        wait=None,
+        wait_until=None,
         timeout_sec=0,
         stop_reasons=(),
     )

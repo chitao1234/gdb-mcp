@@ -285,10 +285,12 @@ def _validate_inferior_manage_input(typed_input: InferiorManageInput) -> None:
 
 def _validate_execution_manage_input(typed_input: ExecutionManageInput) -> None:
     invalid_flags: list[str] = []
-    has_wait_until = typed_input.wait is not None and typed_input.wait.until is not None
-    has_wait_timeout = typed_input.wait is not None and typed_input.wait.timeout_sec is not None
 
-    if typed_input.action == "run":
+    if typed_input.action == "interrupt":
+        if typed_input.args:
+            invalid_flags.append("--arg")
+        if typed_input.wait_until is not None:
+            invalid_flags.append("--wait-until")
         if typed_input.timeout_sec is not None:
             invalid_flags.append("--timeout-sec")
         if typed_input.stop_reasons:
@@ -296,28 +298,16 @@ def _validate_execution_manage_input(typed_input: ExecutionManageInput) -> None:
     elif typed_input.action in {"continue", "step", "next", "finish"}:
         if typed_input.args:
             invalid_flags.append("--arg")
-        if typed_input.timeout_sec is not None:
-            invalid_flags.append("--timeout-sec")
         if typed_input.stop_reasons:
             invalid_flags.append("--stop-reason")
-    elif typed_input.action == "interrupt":
-        if typed_input.args:
-            invalid_flags.append("--arg")
-        if has_wait_until:
-            invalid_flags.append("--wait-until")
-        if has_wait_timeout:
-            invalid_flags.append("--wait-timeout-sec")
-        if typed_input.timeout_sec is not None:
-            invalid_flags.append("--timeout-sec")
+    elif typed_input.action == "run":
         if typed_input.stop_reasons:
             invalid_flags.append("--stop-reason")
     elif typed_input.action == "wait_for_stop":
         if typed_input.args:
             invalid_flags.append("--arg")
-        if has_wait_until:
+        if typed_input.wait_until is not None:
             invalid_flags.append("--wait-until")
-        if has_wait_timeout:
-            invalid_flags.append("--wait-timeout-sec")
 
     _raise_invalid_action_flags(typed_input.action, invalid_flags)
 
@@ -840,7 +830,6 @@ def _configure_execution_manage(parser: argparse.ArgumentParser) -> None:
         choices=EXECUTION_WAIT_UNTIL_VALUES,
         default=argparse.SUPPRESS,
     )
-    parser.add_argument("--wait-timeout-sec", type=int, default=argparse.SUPPRESS)
     parser.add_argument("--timeout-sec", type=int, default=argparse.SUPPRESS)
     parser.add_argument(
         "--stop-reason", dest="stop_reasons", action="append", default=argparse.SUPPRESS

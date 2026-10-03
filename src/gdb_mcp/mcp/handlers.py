@@ -81,8 +81,8 @@ from .schemas import (
     ExecutionNextAction,
     ExecutionRunAction,
     ExecutionStepAction,
-    ExecutionWaitArgs,
     ExecutionWaitForStopAction,
+    ExecutionWaitUntil,
     ExecuteCommandArgs,
     InferiorManageArgs,
     InferiorManageCreateAction,
@@ -258,14 +258,14 @@ def _workflow_step_validation_error(
     )
 
 
-def _execution_wait_policy(wait: ExecutionWaitArgs | None) -> tuple[int, bool]:
-    """Translate an execution wait payload into service-layer arguments."""
+def _execution_wait_policy(
+    wait_until: ExecutionWaitUntil,
+    timeout_sec: int | None,
+) -> tuple[int, bool]:
+    """Translate a flattened execution wait policy into service-layer arguments."""
 
-    timeout_sec = DEFAULT_TIMEOUT_SEC
-    if wait is not None and wait.timeout_sec is not None:
-        timeout_sec = wait.timeout_sec
-    wait_for_stop = wait is None or wait.until == "stop"
-    return timeout_sec, wait_for_stop
+    resolved_timeout = timeout_sec if timeout_sec is not None else DEFAULT_TIMEOUT_SEC
+    return resolved_timeout, wait_until == "stop"
 
 
 def _handle_execute_command(session: SessionService, args: ExecuteCommandArgs) -> ToolResult:
@@ -278,7 +278,9 @@ def _handle_execution_manage(session: SessionService, args: ExecutionManageArgs)
     action_args = _unwrap_action_args(args)
 
     if isinstance(action_args, ExecutionRunAction):
-        timeout_sec, wait_for_stop = _execution_wait_policy(action_args.execution.wait)
+        timeout_sec, wait_for_stop = _execution_wait_policy(
+            action_args.execution.wait_until, action_args.execution.timeout_sec
+        )
         run_args = _normalize_run_args(action_args.execution.args)
         if isinstance(run_args, OperationError):
             return _wrap_action_result(action_args.action, run_args)
@@ -292,7 +294,9 @@ def _handle_execution_manage(session: SessionService, args: ExecutionManageArgs)
         )
 
     if isinstance(action_args, ExecutionContinueAction):
-        timeout_sec, wait_for_stop = _execution_wait_policy(action_args.execution.wait)
+        timeout_sec, wait_for_stop = _execution_wait_policy(
+            action_args.execution.wait_until, action_args.execution.timeout_sec
+        )
         return _wrap_action_result(
             action_args.action,
             session.continue_execution(
@@ -305,7 +309,9 @@ def _handle_execution_manage(session: SessionService, args: ExecutionManageArgs)
         return _wrap_action_result(action_args.action, session.interrupt())
 
     if isinstance(action_args, ExecutionStepAction):
-        timeout_sec, wait_for_stop = _execution_wait_policy(action_args.execution.wait)
+        timeout_sec, wait_for_stop = _execution_wait_policy(
+            action_args.execution.wait_until, action_args.execution.timeout_sec
+        )
         return _wrap_action_result(
             action_args.action,
             session.step(
@@ -315,7 +321,9 @@ def _handle_execution_manage(session: SessionService, args: ExecutionManageArgs)
         )
 
     if isinstance(action_args, ExecutionNextAction):
-        timeout_sec, wait_for_stop = _execution_wait_policy(action_args.execution.wait)
+        timeout_sec, wait_for_stop = _execution_wait_policy(
+            action_args.execution.wait_until, action_args.execution.timeout_sec
+        )
         return _wrap_action_result(
             action_args.action,
             session.next(
@@ -325,7 +333,9 @@ def _handle_execution_manage(session: SessionService, args: ExecutionManageArgs)
         )
 
     if isinstance(action_args, ExecutionFinishAction):
-        timeout_sec, wait_for_stop = _execution_wait_policy(action_args.execution.wait)
+        timeout_sec, wait_for_stop = _execution_wait_policy(
+            action_args.execution.wait_until, action_args.execution.timeout_sec
+        )
         return _wrap_action_result(
             action_args.action,
             session.finish(

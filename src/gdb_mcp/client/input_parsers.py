@@ -32,7 +32,6 @@ from .inputs import (
     DisassemblyMode,
     ExecutionManageAction,
     ExecutionManageInput,
-    ExecutionWaitInput,
     ExecutionWaitUntil,
     InferiorFollowForkMode,
     InferiorManageAction,
@@ -133,18 +132,11 @@ def parse_inferior_manage_input(namespace: argparse.Namespace) -> InferiorManage
 def parse_execution_manage_input(namespace: argparse.Namespace) -> ExecutionManageInput:
     """Parse one execution-manage namespace into a typed input object."""
 
-    wait_until = cast(ExecutionWaitUntil | None, namespace.__dict__.get("wait_until"))
-    wait_timeout_sec = namespace.__dict__.get("wait_timeout_sec")
-    wait = (
-        ExecutionWaitInput(until=wait_until, timeout_sec=wait_timeout_sec)
-        if wait_until is not None or wait_timeout_sec is not None
-        else None
-    )
     return ExecutionManageInput(
         action=cast(ExecutionManageAction, namespace.action),
         session_id=namespace.session_id,
         args=tuple(namespace.__dict__.get("args", ())),
-        wait=wait,
+        wait_until=cast(ExecutionWaitUntil | None, namespace.__dict__.get("wait_until")),
         timeout_sec=namespace.__dict__.get("timeout_sec"),
         stop_reasons=tuple(namespace.__dict__.get("stop_reasons", ())),
     )

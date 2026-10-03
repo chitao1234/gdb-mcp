@@ -47,6 +47,7 @@ from ..contracts import (
 )
 
 from .schema_normalizer import public_input_schema
+from .tool_examples import TOOL_EXAMPLES
 
 # Re-export the batch-step allowlist for callers that still import it from this module.
 BATCH_STEP_TOOL_NAMES = CONTRACT_BATCH_STEP_TOOL_NAMES
@@ -989,7 +990,9 @@ class InferiorDetachOnForkPayload(StrictArgsModel):
 class InferiorManageCreateAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     action: shared_contracts.ActionCreateName = Field(..., description="Create a new inferior")
-    inferior: InferiorCreatePayload
+    inferior: InferiorCreatePayload = Field(
+        default_factory=lambda: InferiorCreatePayload.model_validate({})
+    )
 
 
 class InferiorManageRemoveAction(StrictArgsModel):
@@ -1037,8 +1040,8 @@ class InferiorManageArgs(
     """Public v2 request model for inferior mutations."""
 
 
-class ExecutionWaitArgs(StrictArgsModel):
-    until: ExecutionWaitUntil = Field(
+class ExecutionWaitPolicy(StrictArgsModel):
+    wait_until: ExecutionWaitUntil = Field(
         "stop",
         description="Whether to return when GDB acknowledges running or when a stop is observed.",
     )
@@ -1049,22 +1052,15 @@ class ExecutionWaitArgs(StrictArgsModel):
     )
 
 
-class ExecutionRunPayload(StrictArgsModel):
+class ExecutionRunPayload(ExecutionWaitPolicy):
     args: list[str] | str | None = Field(
         None,
         description="Optional inferior argv override for this run.",
     )
-    wait: ExecutionWaitArgs | None = Field(
-        None,
-        description="Optional wait policy for the run command.",
-    )
 
 
-class ExecutionControlPayload(StrictArgsModel):
-    wait: ExecutionWaitArgs | None = Field(
-        None,
-        description="Optional wait policy for the execution command.",
-    )
+class ExecutionControlPayload(ExecutionWaitPolicy):
+    pass
 
 
 class ExecutionWaitForStopPayload(StrictArgsModel):
@@ -1078,7 +1074,9 @@ class ExecutionWaitForStopPayload(StrictArgsModel):
 class ExecutionRunAction(StrictArgsModel):
     session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     action: shared_contracts.ActionRunName = Field(..., description="Start the inferior")
-    execution: ExecutionRunPayload
+    execution: ExecutionRunPayload = Field(
+        default_factory=lambda: ExecutionRunPayload.model_validate({})
+    )
 
 
 class ExecutionContinueAction(StrictArgsModel):
@@ -1134,7 +1132,9 @@ class ExecutionWaitForStopAction(StrictArgsModel):
         ...,
         description="Wait for the next stop event",
     )
-    execution: ExecutionWaitForStopPayload
+    execution: ExecutionWaitForStopPayload = Field(
+        default_factory=lambda: ExecutionWaitForStopPayload.model_validate({})
+    )
 
 
 class ExecutionManageArgs(
@@ -1711,7 +1711,10 @@ def build_tool_definitions() -> list[Tool]:
                 "Query session inventory or inspect one live session. "
                 "Use action='list' to enumerate active sessions or action='status' to inspect one session."
             ),
-            inputSchema=public_input_schema(SessionQueryArgs),
+            inputSchema=public_input_schema(
+                SessionQueryArgs,
+                examples=TOOL_EXAMPLES[TOOL_SESSION_QUERY],
+            ),
         ),
         Tool(
             name=TOOL_SESSION_MANAGE,
@@ -1730,7 +1733,10 @@ def build_tool_definitions() -> list[Tool]:
             description=(
                 "Create, remove, select, or reconfigure inferiors and fork-follow settings."
             ),
-            inputSchema=public_input_schema(InferiorManageArgs),
+            inputSchema=public_input_schema(
+                InferiorManageArgs,
+                examples=TOOL_EXAMPLES[TOOL_INFERIOR_MANAGE],
+            ),
         ),
         Tool(
             name=TOOL_EXECUTION_MANAGE,
@@ -1738,7 +1744,10 @@ def build_tool_definitions() -> list[Tool]:
                 "Run, continue, interrupt, step, next, finish, or wait for stop events "
                 "using action-scoped execution payloads."
             ),
-            inputSchema=public_input_schema(ExecutionManageArgs),
+            inputSchema=public_input_schema(
+                ExecutionManageArgs,
+                examples=TOOL_EXAMPLES[TOOL_EXECUTION_MANAGE],
+            ),
         ),
         Tool(
             name=TOOL_BREAKPOINT_QUERY,
@@ -1751,7 +1760,10 @@ def build_tool_definitions() -> list[Tool]:
                 "Create, delete, enable, disable, or update code breakpoints, watchpoints, "
                 "and catchpoints through one action-based tool."
             ),
-            inputSchema=public_input_schema(BreakpointManageArgs),
+            inputSchema=public_input_schema(
+                BreakpointManageArgs,
+                examples=TOOL_EXAMPLES[TOOL_BREAKPOINT_MANAGE],
+            ),
         ),
         Tool(
             name=TOOL_CONTEXT_QUERY,
@@ -1769,7 +1781,10 @@ def build_tool_definitions() -> list[Tool]:
                 "Evaluate expressions and inspect variables, registers, memory, source context, "
                 "or disassembly without using raw debugger commands."
             ),
-            inputSchema=public_input_schema(InspectQueryArgs),
+            inputSchema=public_input_schema(
+                InspectQueryArgs,
+                examples=TOOL_EXAMPLES[TOOL_INSPECT_QUERY],
+            ),
         ),
         Tool(
             name=TOOL_WORKFLOW_BATCH,
@@ -1778,7 +1793,10 @@ def build_tool_definitions() -> list[Tool]:
                 "Each step names an existing tool plus tool-specific arguments excluding "
                 "session_id, which is inherited from the enclosing batch request."
             ),
-            inputSchema=public_input_schema(BatchArgs),
+            inputSchema=public_input_schema(
+                BatchArgs,
+                examples=TOOL_EXAMPLES[TOOL_WORKFLOW_BATCH],
+            ),
         ),
         Tool(
             name=TOOL_CAPTURE_BUNDLE,
@@ -1790,7 +1808,10 @@ def build_tool_definitions() -> list[Tool]:
                 "expression evaluations, and any explicitly requested memory ranges. "
                 "Use output_dir and bundle_name when you need deterministic artifact paths."
             ),
-            inputSchema=public_input_schema(CaptureBundleArgs),
+            inputSchema=public_input_schema(
+                CaptureBundleArgs,
+                examples=TOOL_EXAMPLES[TOOL_CAPTURE_BUNDLE],
+            ),
         ),
         Tool(
             name=TOOL_RUN_UNTIL_FAILURE,
@@ -1803,7 +1824,10 @@ def build_tool_definitions() -> list[Tool]:
                 "disk and return the bundle metadata, including any explicitly requested memory "
                 "ranges."
             ),
-            inputSchema=public_input_schema(RunUntilFailureArgs),
+            inputSchema=public_input_schema(
+                RunUntilFailureArgs,
+                examples=TOOL_EXAMPLES[TOOL_RUN_UNTIL_FAILURE],
+            ),
         ),
         Tool(
             name=TOOL_EXECUTE_COMMAND,

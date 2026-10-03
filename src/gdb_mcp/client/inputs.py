@@ -69,21 +69,13 @@ class InferiorManageInput:
 
 
 @dataclass(frozen=True, slots=True)
-class ExecutionWaitInput:
-    """Optional wait configuration for execution actions."""
-
-    until: ExecutionWaitUntil | None
-    timeout_sec: int | None
-
-
-@dataclass(frozen=True, slots=True)
 class ExecutionManageInput:
     """Parsed input for ``gdb_execution_manage``."""
 
     action: ExecutionManageAction
     session_id: int
     args: tuple[str, ...]
-    wait: ExecutionWaitInput | None
+    wait_until: ExecutionWaitUntil | None
     timeout_sec: int | None
     stop_reasons: tuple[str, ...]
 

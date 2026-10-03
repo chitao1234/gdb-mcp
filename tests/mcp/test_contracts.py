@@ -65,8 +65,8 @@ from gdb_mcp.mcp.schemas import (
     BreakpointWatchCreateArgs,
     ContextQueryThreadsAction,
     DisassembleArgs,
+    ExecutionControlPayload,
     ExecutionRunAction,
-    ExecutionWaitArgs,
     FollowForkModeArgs,
     GetRegistersArgs,
     InferiorFollowForkPayload,
@@ -266,7 +266,7 @@ def test_shared_schema_enums_match_contract_values() -> None:
     assert _enum_values(DisassembleArgs, "mode") == DISASSEMBLY_MODES
     assert _enum_values(FollowForkModeArgs, "mode") == INFERIOR_FOLLOW_FORK_MODES
     assert _enum_values(InferiorFollowForkPayload, "mode") == INFERIOR_FOLLOW_FORK_MODES
-    assert _enum_values(ExecutionWaitArgs, "until") == EXECUTION_WAIT_UNTIL_VALUES
+    assert _enum_values(ExecutionControlPayload, "wait_until") == EXECUTION_WAIT_UNTIL_VALUES
     assert _enum_values(BreakpointWatchCreateArgs, "access") == BREAKPOINT_ACCESS_VALUES
     assert _enum_values(BreakpointCatchCreateArgs, "event") == BREAKPOINT_EVENTS
     assert _enum_values(GetRegistersArgs, "value_format") == REGISTER_VALUE_FORMATS

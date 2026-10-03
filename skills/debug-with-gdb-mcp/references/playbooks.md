@@ -8,7 +8,7 @@ This file contains copy-ready payloads for the current v2 gdb-mcp interface. Use
 | --- | --- | --- |
 | New live debug session | `gdb_session_start`, `gdb_breakpoint_manage(action="create")`, `gdb_execution_manage(action="run")` | `gdb_context_query(action="backtrace")`, `gdb_inspect_query(action="variables")` |
 | Live launch with custom env, cwd, or argv | `gdb_session_start` with `args`, `env`, `working_dir` | later `gdb_execution_manage(action="run", execution.args=...)` if rerun args change |
-| Background launch and inspect later | `gdb_execution_manage(action="run", execution.wait.until="acknowledged")` | `gdb_execution_manage(action="wait_for_stop" | "interrupt")`, then thread and frame inspection |
+| Background launch and inspect later | `gdb_execution_manage(action="run", execution.wait_until="acknowledged")` | `gdb_execution_manage(action="wait_for_stop" | "interrupt")`, then thread and frame inspection |
 | Attach to running process | `gdb_session_start`, `gdb_attach_process` | `gdb_session_query(action="status")`, `gdb_context_query(action="threads" | "backtrace")` |
 | Core dump analysis | `gdb_session_start` with `core` | `gdb_context_query(action="threads" | "backtrace")`, `gdb_inspect_query(action="evaluate")` |
 | Program appears stuck | `gdb_session_query(action="status")`, `gdb_execution_manage(action="interrupt")` | `gdb_context_query(action="threads" | "backtrace")` |
@@ -75,10 +75,8 @@ Treat these outcomes as hard gates:
   "session_id": 1,
   "action": "run",
   "execution": {
-    "wait": {
-      "until": "acknowledged",
-      "timeout_sec": 1
-    }
+    "wait_until": "acknowledged",
+    "timeout_sec": 1
   }
 }
 ```
@@ -468,7 +466,7 @@ Use `gdb_workflow_batch` when strict ordering and one-shot orchestration are nee
 - Calling `gdb_execution_manage(action="step" | "next")` while not paused
 - Ignoring startup `warnings` and then trusting variable output
 - Hiding launch configuration inside `init_commands` instead of `args`, `env`, or `working_dir`
-- Using raw `run &` instead of `gdb_execution_manage(action="run", execution.wait.until="acknowledged")`
+- Using raw `run &` instead of `gdb_execution_manage(action="run", execution.wait_until="acknowledged")`
 - Forgetting that attach sessions keep the target's preexisting environment
 - Using only raw `gdb_execute_command` and losing structured outputs
 - Forgetting `gdb_session_manage(action="stop")` and leaking debugger sessions
