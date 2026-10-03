@@ -118,7 +118,7 @@ def test_resolve_server_reuses_a_live_cookie(monkeypatch, tmp_path: Path) -> Non
     ):
         resolved = asyncio.run(resolve_server(explicit_url=None))
 
-    assert resolved == ResolvedServer("http://127.0.0.1:9/mcp", "tok", False)
+    assert resolved == ResolvedServer("http://127.0.0.1:9/mcp", "tok", False, True)
     mock_spawn.assert_not_awaited()
 
 

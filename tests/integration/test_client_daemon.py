@@ -43,6 +43,8 @@ def test_cli_daemon_lifecycle(monkeypatch, tmp_path: Path) -> None:
         assert asyncio.run(main(["gdb_session_query", "--action", "list"], stdout=stdout)) == 0
         assert _cookie(tmp_path)["pid"] == cookie["pid"]
 
+        assert asyncio.run(main(["status"], stdout=stdout)) == 0
+
         status = StringIO()
         assert asyncio.run(main(["daemon", "status"], stdout=status)) == 0
         assert "running" in status.getvalue()

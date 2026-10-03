@@ -71,16 +71,12 @@ def _register_tool_spec(spec: ToolCliSpec[_ToolInputT]) -> RegisteredToolCliSpec
 
 
 def _configure_session_id_and_timeout(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--session-id", type=int, required=True)
+    parser.add_argument("--session-id", type=int, default=None)
     parser.add_argument("--timeout-sec", type=int, default=30)
 
 
-def _add_session_id(parser: argparse.ArgumentParser, *, required: bool = True) -> None:
-    if required:
-        parser.add_argument("--session-id", type=int, required=True)
-        return
-
-    parser.add_argument("--session-id", type=int, required=False, default=argparse.SUPPRESS)
+def _add_session_id(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--session-id", type=int, default=None)
 
 
 def _add_action(parser: argparse.ArgumentParser, *, choices: tuple[str, ...]) -> None:

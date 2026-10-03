@@ -82,11 +82,23 @@ That exposes the MCP endpoint at `http://127.0.0.1:8000/mcp`.
 
 ### CLI Client
 
-`gdb-mcp-client` calls an MCP endpoint over streamable HTTP. When you omit `--server-url` and `GDB_MCP_SERVER_URL` is unset, the client starts a background server for the current project (the nearest VCS root, else the working directory), records it in a per-user cache cookie, and reuses it for later commands:
+`gdb-mcp-client` calls an MCP endpoint over streamable HTTP. When you omit `--server-url` and `GDB_MCP_SERVER_URL` is unset, the client starts a background server for the current project (the nearest VCS root, else the working directory), records it in a per-user cache cookie, and reuses it for later commands.
+
+Debugging commands read like a normal debugger, and `--session-id` defaults to the session you started most recently:
 
 ```bash
-gdb-mcp-client gdb_session_query --action list
+gdb-mcp-client status                  # list sessions
+gdb-mcp-client start ./build/app       # start one and remember it
+gdb-mcp-client break add main
+gdb-mcp-client run
+gdb-mcp-client bt
+gdb-mcp-client locals
+gdb-mcp-client continue
+gdb-mcp-client exec "info files"
+gdb-mcp-client stop
 ```
+
+Run `gdb-mcp-client --help` for the full list (`run`, `step`, `next`, `finish`, `interrupt`, `attach`, `threads`, `frame`, `regs`, `memory`, `disasm`, `list`, `break add|list|rm|enable|disable`, `watch`, `catch`, `call`, `capture`, `batch`, `campaign`). Every command takes the same flags as the underlying tool, and extra flags can be passed with `--payload-json`.
 
 Background servers bind `127.0.0.1` on an ephemeral port and require a bearer token that is stored only in the cookie. They exit after 15 minutes without requests or active debug sessions. Manage them with:
 
@@ -100,29 +112,23 @@ To talk to a server you started yourself, pass `--server-url` or set `GDB_MCP_SE
 
 ```bash
 gdb-mcp-server --transport streamable-http --host 127.0.0.1 --port 8000 --path /mcp
-gdb-mcp-client \
-  --server-url http://127.0.0.1:8000/mcp \
-  gdb_session_query \
-  --action list
+gdb-mcp-client --server-url http://127.0.0.1:8000/mcp status
 ```
 
 Servers started by hand never idle-exit; only background servers created by the client do.
 
-Request raw JSON instead of human-oriented output:
+Request raw JSON instead of human-oriented output, or reach a tool directly through the `tool` escape hatch (the `gdb_` prefix is optional):
 
 ```bash
-gdb-mcp-client \
-  --json \
-  gdb_execution_manage \
-  --session-id 7 \
-  --action continue
+gdb-mcp-client --json continue
+gdb-mcp-client tool session_query --action list
+gdb-mcp-client tool inferior_manage --action create --executable ./other
 ```
 
 To send a raw MCP payload (for example one listed by `--help`), use `--payload-json`, which is mutually exclusive with the field flags:
 
 ```bash
-gdb-mcp-client \
-  gdb_breakpoint_manage \
+gdb-mcp-client tool breakpoint_manage \
   --payload-json '{"session_id": 7, "action": "disable", "breakpoint": {"number": 3}}'
 ```
 
@@ -159,7 +165,7 @@ Bearer token for the streamable HTTP transport. `gdb-mcp-server` uses it when `-
 ```bash
 export GDB_MCP_AUTH_TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
 gdb-mcp-server --transport streamable-http --port 8000
-gdb-mcp-client --server-url http://127.0.0.1:8000/mcp gdb_session_query --action list
+gdb-mcp-client --server-url http://127.0.0.1:8000/mcp status
 ```
 
 ### `GDB_MCP_STATE_DIR`

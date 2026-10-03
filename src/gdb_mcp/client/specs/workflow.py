@@ -26,7 +26,7 @@ from ..parsers import (
 
 
 def _configure_capture_bundle(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--session-id", type=int, required=True)
+    parser.add_argument("--session-id", type=int, default=None)
     parser.add_argument("--output-dir")
     parser.add_argument("--bundle-name")
     parser.add_argument("--expression", dest="expressions", action="append", default=[])
@@ -83,7 +83,7 @@ def _build_capture_bundle(namespace: argparse.Namespace) -> dict[str, object]:
 
 
 def _configure_workflow_batch(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--session-id", type=int, required=True)
+    parser.add_argument("--session-id", type=int, default=None)
     parser.add_argument("--step", dest="step_events", action=AppendTaggedValue)
     parser.add_argument("--step-label", dest="step_events", action=AppendTaggedValue)
     parser.add_argument(

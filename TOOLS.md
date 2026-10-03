@@ -20,12 +20,14 @@ The same public tool inventory is also available through the first-party `gdb-mc
 ```bash
 gdb-mcp-client \
   --server-url http://127.0.0.1:8000/mcp \
-  gdb_breakpoint_manage \
+  tool breakpoint_manage \
   --session-id 7 \
   --action create \
   --breakpoint-kind code \
   --location main
 ```
+
+Debugging shortcuts such as `break add main`, `run`, `bt`, and `exec "info files"` wrap the same tools, and `--session-id` defaults to the session started most recently.
 
 Add `--json` when you want the structured payload instead of human-oriented text.
 

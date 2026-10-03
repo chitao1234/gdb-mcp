@@ -62,6 +62,7 @@ class ResolvedServer:
     url: str
     token: str | None
     spawned: bool
+    managed: bool = False
 
 
 @dataclass(frozen=True)
@@ -275,14 +276,14 @@ async def _spawn(paths: DaemonPaths) -> ResolvedServer:
             "started_at": time.time(),
         },
     )
-    return ResolvedServer(url, token, True)
+    return ResolvedServer(url, token, True, True)
 
 
 async def resolve_server(*, explicit_url: str | None) -> ResolvedServer:
     """Resolve the server for one invocation, starting a daemon when needed."""
 
     if explicit_url:
-        return ResolvedServer(explicit_url, os.environ.get(_AUTH_TOKEN_ENV), False)
+        return ResolvedServer(explicit_url, os.environ.get(_AUTH_TOKEN_ENV), False, False)
 
     paths = daemon_paths()
     with _exclusive_lock(paths.lock):
@@ -293,9 +294,27 @@ async def resolve_server(*, explicit_url: str | None) -> ResolvedServer:
             if isinstance(url, str) and await _server_reachable(
                 url, token if isinstance(token, str) else None
             ):
-                return ResolvedServer(url, token if isinstance(token, str) else None, False)
+                return ResolvedServer(url, token if isinstance(token, str) else None, False, True)
             _remove_cookie(paths)
         return await _spawn(paths)
+
+
+def remembered_session_id() -> int | None:
+    """Return the session recorded for the current project, if any."""
+
+    cookie = _read_cookie(daemon_paths())
+    value = cookie.get("last_session_id") if cookie is not None else None
+    return value if isinstance(value, int) else None
+
+
+def remember_session_id(session_id: int) -> None:
+    """Record the project's most recent session in its cookie."""
+
+    paths = daemon_paths()
+    with _exclusive_lock(paths.lock):
+        cookie = _read_cookie(paths) or {}
+        cookie["last_session_id"] = session_id
+        _write_cookie(paths, cookie)
 
 
 async def daemon_status() -> str:

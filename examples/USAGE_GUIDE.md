@@ -17,23 +17,18 @@ When you want to drive the same workflows directly from the shell, use `gdb-mcp-
 ```bash
 gdb-mcp-client \
   --server-url http://127.0.0.1:8000/mcp \
-  gdb_session_start \
-  --program examples/sample_program
+  start examples/sample_program
 
 gdb-mcp-client \
   --server-url http://127.0.0.1:8000/mcp \
-  gdb_breakpoint_manage \
-  --session-id 1 \
-  --action create \
-  --breakpoint-kind code \
-  --location main
+  break add main --session-id 1
 
 gdb-mcp-client \
   --server-url http://127.0.0.1:8000/mcp \
-  gdb_execution_manage \
-  --session-id 1 \
-  --action run
+  run --session-id 1
 ```
+
+Without `--server-url`, the client starts and reuses its own background server for the current project, and `--session-id` defaults to the session started most recently.
 
 ## Prerequisites
 

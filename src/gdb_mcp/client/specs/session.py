@@ -48,7 +48,7 @@ def _build_session_start(typed_input: SessionStartInput) -> dict[str, object]:
 
 def _configure_session_query(parser: argparse.ArgumentParser) -> None:
     _add_action(parser, choices=SESSION_QUERY_ACTIONS)
-    _add_session_id(parser, required=False)
+    _add_session_id(parser)
 
 
 def _build_session_query(typed_input: SessionQueryInput) -> dict[str, object]:

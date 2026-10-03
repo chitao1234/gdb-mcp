@@ -19,8 +19,9 @@ If you want to exercise the examples without a separate MCP host application, ca
 ```bash
 gdb-mcp-client \
   --server-url http://127.0.0.1:8000/mcp \
-  gdb_session_start \
-  --program examples/sample_program
+  start examples/sample_program
+
+gdb-mcp-client --server-url http://127.0.0.1:8000/mcp break add main --session-id 1
 ```
 
 ## Files
