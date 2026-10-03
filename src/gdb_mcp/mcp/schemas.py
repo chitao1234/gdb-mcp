@@ -56,6 +56,9 @@ class StrictArgsModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+SessionId = Annotated[int, Field(gt=0, description="Session ID from gdb_session_start")]
+
+
 def _coerce_int_like(
     value: object,
     *,
@@ -159,19 +162,19 @@ class StartSessionArgs(StrictArgsModel):
 
 
 class ExecuteCommandArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     command: str = Field(..., description="GDB command to execute")
     timeout_sec: int = Field(30, gt=0, description="Timeout in seconds")
 
 
 class AttachProcessArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     pid: int = Field(..., gt=0, description="PID of the process to attach to")
     timeout_sec: int = Field(30, gt=0, description="Timeout in seconds")
 
 
 class CallFunctionArgs(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     function_call: str = Field(
         ...,
         description="Function call expression (e.g., 'printf(\"hello\\n\")' or 'my_func(arg1, arg2)')",
@@ -211,7 +214,7 @@ BatchStepInput: TypeAlias = BatchStepArgs | BatchStepToolName
 class BatchArgs(StrictArgsModel):
     """Arguments for executing a structured batch against one live session."""
 
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     steps: list[BatchStepInput] = Field(
         ...,
         min_length=1,
@@ -232,10 +235,9 @@ class BatchArgs(StrictArgsModel):
     )
 
 
-class CaptureBundleArgs(StrictArgsModel):
-    """Arguments for writing a structured capture bundle to disk."""
+class CaptureOptionsArgs(StrictArgsModel):
+    """Shared capture artifact options for bundle and campaign requests."""
 
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
     output_dir: Optional[str] = Field(
         None,
         description="Directory in which to create the capture bundle. Defaults to artifact_root or the system temp directory.",
@@ -277,6 +279,12 @@ class CaptureBundleArgs(StrictArgsModel):
     include_stop_history: bool = Field(True, description="Capture the bounded stop-event history.")
 
 
+class CaptureBundleArgs(CaptureOptionsArgs):
+    """Arguments for writing a structured capture bundle to disk."""
+
+    session_id: SessionId
+
+
 class RunUntilFailureFailureArgs(StrictArgsModel):
     """Failure predicates for repeat-until-failure campaigns."""
 
@@ -306,17 +314,17 @@ class RunUntilFailureFailureArgs(StrictArgsModel):
     )
 
 
-class RunUntilFailureCaptureArgs(StrictArgsModel):
+class RunUntilFailureCaptureArgs(CaptureOptionsArgs):
     """Capture settings used when a run-until-failure campaign matches."""
 
     enabled: bool = Field(True, description="Capture a forensic bundle when a failure matches.")
-    output_dir: Optional[str] = Field(
-        None,
-        description="Directory in which to place the capture bundle for the matching iteration.",
-    )
     bundle_name_prefix: Optional[str] = Field(
         None,
         description="Deterministic bundle name prefix. The iteration number is appended automatically.",
+    )
+    output_dir: Optional[str] = Field(
+        None,
+        description="Directory in which to place the capture bundle for the matching iteration.",
     )
     bundle_name: Optional[str] = Field(
         None,
@@ -325,30 +333,6 @@ class RunUntilFailureCaptureArgs(StrictArgsModel):
             "Cannot be combined with bundle_name_prefix."
         ),
     )
-    expressions: list[str] = Field(
-        default_factory=list,
-        description="Expressions to evaluate and include in the capture bundle.",
-    )
-    memory_ranges: list[CaptureMemoryRangeArgs | str] = Field(
-        default_factory=list,
-        description=(
-            "Explicit memory ranges to capture when a failure matches. "
-            "Each entry can be either a structured object or shorthand "
-            "string '<address>:<count>' (optional offset: '<address>:<count>@<offset>')."
-        ),
-    )
-    max_frames: int = Field(100, gt=0, description="Maximum frames per thread backtrace.")
-    include_threads: bool = Field(True, description="Capture thread inventory.")
-    include_backtraces: bool = Field(True, description="Capture backtraces for all threads.")
-    include_frame: bool = Field(True, description="Capture the currently selected frame.")
-    include_variables: bool = Field(
-        True, description="Capture variables for the current selection."
-    )
-    include_registers: bool = Field(
-        True, description="Capture registers for the current selection."
-    )
-    include_transcript: bool = Field(True, description="Capture the bounded command transcript.")
-    include_stop_history: bool = Field(True, description="Capture the bounded stop-event history.")
 
     @model_validator(mode="after")
     def validate_bundle_naming(self) -> "RunUntilFailureCaptureArgs":
@@ -426,7 +410,7 @@ class SessionQueryListAction(StrictArgsModel):
 
 
 class SessionQueryStatusAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionStatusName = Field(..., description="Query one live session")
     query: EmptyQuery = Field(default_factory=EmptyQuery)
 
@@ -443,7 +427,7 @@ class SessionQueryArgs(
 
 
 class SessionManageStopAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionStopName = Field(..., description="Stop one live session")
     session: EmptyQuery = Field(default_factory=EmptyQuery)
 
@@ -460,7 +444,7 @@ class SessionManageArgs(
 
 
 class InferiorQueryListAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionListName = Field(
         ..., description="List inferiors in one live session"
     )
@@ -468,7 +452,7 @@ class InferiorQueryListAction(StrictArgsModel):
 
 
 class InferiorQueryCurrentAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionCurrentName = Field(
         ...,
         description="Inspect the selected inferior",
@@ -519,7 +503,7 @@ class InferiorDetachOnForkPayload(StrictArgsModel):
 
 
 class InferiorManageCreateAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionCreateName = Field(..., description="Create a new inferior")
     inferior: InferiorCreatePayload = Field(
         default_factory=lambda: InferiorCreatePayload.model_validate({})
@@ -527,19 +511,19 @@ class InferiorManageCreateAction(StrictArgsModel):
 
 
 class InferiorManageRemoveAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionRemoveName = Field(..., description="Remove one inferior")
     inferior: InferiorIdPayload
 
 
 class InferiorManageSelectAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionSelectName = Field(..., description="Select the active inferior")
     inferior: InferiorIdPayload
 
 
 class InferiorManageFollowForkAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionSetFollowForkModeName = Field(
         ...,
         description="Change follow-fork-mode",
@@ -548,7 +532,7 @@ class InferiorManageFollowForkAction(StrictArgsModel):
 
 
 class InferiorManageDetachOnForkAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionSetDetachOnForkName = Field(
         ...,
         description="Change detach-on-fork",
@@ -603,7 +587,7 @@ class ExecutionWaitForStopPayload(StrictArgsModel):
 
 
 class ExecutionRunAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionRunName = Field(..., description="Start the inferior")
     execution: ExecutionRunPayload = Field(
         default_factory=lambda: ExecutionRunPayload.model_validate({})
@@ -611,7 +595,7 @@ class ExecutionRunAction(StrictArgsModel):
 
 
 class ExecutionContinueAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionContinueName = Field(..., description="Continue execution")
     execution: ExecutionControlPayload = Field(
         default_factory=lambda: ExecutionControlPayload.model_validate({})
@@ -619,7 +603,7 @@ class ExecutionContinueAction(StrictArgsModel):
 
 
 class ExecutionInterruptAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionInterruptName = Field(
         ...,
         description="Interrupt the running inferior",
@@ -628,7 +612,7 @@ class ExecutionInterruptAction(StrictArgsModel):
 
 
 class ExecutionStepAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionStepName = Field(
         ...,
         description="Step into the next line or instruction",
@@ -639,7 +623,7 @@ class ExecutionStepAction(StrictArgsModel):
 
 
 class ExecutionNextAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionNextName = Field(
         ...,
         description="Step over the next line or instruction",
@@ -650,7 +634,7 @@ class ExecutionNextAction(StrictArgsModel):
 
 
 class ExecutionFinishAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionFinishName = Field(..., description="Finish the current frame")
     execution: ExecutionControlPayload = Field(
         default_factory=lambda: ExecutionControlPayload.model_validate({})
@@ -658,7 +642,7 @@ class ExecutionFinishAction(StrictArgsModel):
 
 
 class ExecutionWaitForStopAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionWaitForStopName = Field(
         ...,
         description="Wait for the next stop event",
@@ -778,7 +762,7 @@ class BreakpointGetQueryArgs(StrictArgsModel):
 
 
 class BreakpointManageCreateAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionCreateName = Field(
         ...,
         description="Create a breakpoint/watchpoint/catchpoint",
@@ -787,7 +771,7 @@ class BreakpointManageCreateAction(StrictArgsModel):
 
 
 class BreakpointManageUpdateAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionUpdateName = Field(
         ...,
         description="Update one existing breakpoint",
@@ -797,7 +781,7 @@ class BreakpointManageUpdateAction(StrictArgsModel):
 
 
 class BreakpointManageNumberAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: BreakpointManageNumberActionName = Field(
         ...,
         description="Mutate one existing breakpoint",
@@ -819,7 +803,7 @@ class BreakpointManageArgs(
 
 
 class BreakpointQueryListAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionListName = Field(..., description="List all breakpoints")
     query: BreakpointListQueryArgs = Field(
         default_factory=lambda: BreakpointListQueryArgs.model_validate({})
@@ -827,7 +811,7 @@ class BreakpointQueryListAction(StrictArgsModel):
 
 
 class BreakpointQueryGetAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionGetName = Field(..., description="Fetch one breakpoint")
     query: BreakpointGetQueryArgs
 
@@ -957,13 +941,13 @@ class ContextFrameQueryArgs(StrictArgsModel):
 
 
 class ContextQueryThreadsAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionThreadsName = Field(..., description="List threads")
     query: EmptyQuery = Field(default_factory=EmptyQuery)
 
 
 class ContextQueryBacktraceAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionBacktraceName = Field(
         ...,
         description="Inspect a backtrace",
@@ -974,7 +958,7 @@ class ContextQueryBacktraceAction(StrictArgsModel):
 
 
 class ContextQueryFrameAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionFrameName = Field(
         ...,
         description="Inspect frame information",
@@ -996,7 +980,7 @@ class ContextQueryArgs(
 
 
 class ContextManageSelectThreadAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionSelectThreadName = Field(
         ...,
         description="Select the current thread",
@@ -1005,7 +989,7 @@ class ContextManageSelectThreadAction(StrictArgsModel):
 
 
 class ContextManageSelectFrameAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionSelectFrameName = Field(
         ...,
         description="Select the current frame",
@@ -1125,13 +1109,13 @@ class InspectSourceQueryArgs(StrictArgsModel):
 
 
 class InspectEvaluateAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionEvaluateName = Field(..., description="Evaluate one expression")
     query: InspectEvaluateQueryArgs
 
 
 class InspectVariablesAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionVariablesName = Field(
         ...,
         description="Inspect variables in one context",
@@ -1142,7 +1126,7 @@ class InspectVariablesAction(StrictArgsModel):
 
 
 class InspectRegistersAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionRegistersName = Field(
         ...,
         description="Inspect registers in one context",
@@ -1153,13 +1137,13 @@ class InspectRegistersAction(StrictArgsModel):
 
 
 class InspectMemoryAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionMemoryName = Field(..., description="Read target memory")
     query: InspectMemoryQueryArgs
 
 
 class InspectDisassemblyAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionDisassemblyName = Field(
         ...,
         description="Inspect disassembly for one location",
@@ -1168,7 +1152,7 @@ class InspectDisassemblyAction(StrictArgsModel):
 
 
 class InspectSourceAction(StrictArgsModel):
-    session_id: int = Field(..., gt=0, description="Session ID from gdb_session_start")
+    session_id: SessionId
     action: shared_contracts.ActionSourceName = Field(
         ...,
         description="Inspect source context for one location",
