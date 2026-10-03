@@ -55,7 +55,7 @@ class InspectionDisassemblyMixin(InspectionBase):
                     return captured_selection
                 selection = captured_selection
 
-            selection_error = self._select_for_inspection(
+            selection_changed, selection_error = self._select_for_inspection(
                 selection,
                 thread_id=thread_id,
                 frame=frame,
@@ -149,7 +149,7 @@ class InspectionDisassemblyMixin(InspectionBase):
         )
 
         if selection is not None:
-            restore_error = self._restore_selection(selection)
+            restore_error = self._restore_selection_if_changed(selection, selection_changed)
             if restore_error is not None:
                 return restore_error
 

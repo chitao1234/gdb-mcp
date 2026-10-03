@@ -52,6 +52,25 @@ def test_normalization_only_affects_the_published_copy() -> None:
     assert _find_unsupported_keys(public_input_schema(StartSessionArgs)) == []
 
 
+def test_public_input_schema_is_cached_per_model() -> None:
+    first = public_input_schema(StartSessionArgs)
+
+    assert public_input_schema(StartSessionArgs) is first
+
+
+def test_public_input_schema_examples_do_not_pollute_the_cache() -> None:
+    cached = public_input_schema(StartSessionArgs)
+
+    with_examples = public_input_schema(
+        StartSessionArgs,
+        examples=({"program": "/bin/true"},),
+    )
+
+    assert "examples" not in cached
+    assert with_examples is not cached
+    assert with_examples["examples"] == [{"program": "/bin/true"}]
+
+
 def test_action_discriminators_merge_into_enums() -> None:
     schemas = _tool_schemas()
 

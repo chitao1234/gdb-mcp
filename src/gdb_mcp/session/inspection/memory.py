@@ -39,7 +39,7 @@ class InspectionMemoryMixin(InspectionBase):
         if isinstance(selection, OperationError):
             return selection
 
-        selection_error = self._select_for_inspection(
+        selection_changed, selection_error = self._select_for_inspection(
             selection,
             thread_id=thread_id,
             frame=frame,
@@ -53,7 +53,7 @@ class InspectionMemoryMixin(InspectionBase):
 
         if isinstance(result, OperationError):
             if selection is not None:
-                restore_error = self._restore_selection(selection)
+                restore_error = self._restore_selection_if_changed(selection, selection_changed)
                 if restore_error is not None:
                     return restore_error
             return result
@@ -61,7 +61,7 @@ class InspectionMemoryMixin(InspectionBase):
         raw_payload = extract_mi_result_payload(command_result_payload(result))
         value = raw_payload.get("value") if isinstance(raw_payload, dict) else None
         if selection is not None:
-            restore_error = self._restore_selection(selection)
+            restore_error = self._restore_selection_if_changed(selection, selection_changed)
             if restore_error is not None:
                 return restore_error
 

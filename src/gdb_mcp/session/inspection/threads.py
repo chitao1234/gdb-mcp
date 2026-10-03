@@ -34,18 +34,14 @@ class InspectionThreadsMixin(InspectionBase):
 
     def get_threads(self) -> OperationSuccess[ThreadListInfo] | OperationError:
         """Get information about all threads in the debugged process."""
-        logger.debug("get_threads() called")
         result = self._command_runner.execute_command_result(
             "-thread-info", timeout_sec=DEFAULT_TIMEOUT_SEC
         )
-        logger.debug("get_threads: execute_command returned: %s", result)
 
         if isinstance(result, OperationError):
-            logger.debug("get_threads: returning error from execute_command")
             return result
 
         thread_info = extract_mi_result_payload(command_result_payload(result))
-        logger.debug("get_threads: thread_info type=%s, value=%s", type(thread_info), thread_info)
 
         if thread_info is None:
             logger.warning("get_threads: thread_info is None - GDB returned incomplete data")
@@ -53,12 +49,6 @@ class InspectionThreadsMixin(InspectionBase):
                 message="GDB returned incomplete data - may still be loading symbols"
             )
         payload = thread_list_info_from_payload(thread_info)
-        logger.debug(
-            "get_threads: found %s threads, current_thread_id=%s",
-            payload.count,
-            payload.current_thread_id,
-        )
-        logger.debug("get_threads: threads data: %s", payload.threads)
 
         return OperationSuccess(payload)
 
@@ -142,7 +132,7 @@ class InspectionThreadsMixin(InspectionBase):
         if isinstance(selection, OperationError):
             return selection
 
-        selection_error = self._select_for_inspection(
+        selection_changed, selection_error = self._select_for_inspection(
             selection,
             thread_id=thread_id,
             frame=frame,
@@ -164,7 +154,7 @@ class InspectionThreadsMixin(InspectionBase):
         self._runtime.mark_frame_selected(self._int_or_none(level))
 
         if selection is not None:
-            restore_error = self._restore_selection(selection)
+            restore_error = self._restore_selection_if_changed(selection, selection_changed)
             if restore_error is not None:
                 return restore_error
 

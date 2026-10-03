@@ -35,7 +35,7 @@ class InspectionVariablesMixin(InspectionBase):
         if isinstance(selection, OperationError):
             return selection
 
-        selection_error = self._select_for_inspection(
+        selection_changed, selection_error = self._select_for_inspection(
             selection,
             thread_id=thread_id,
             frame=frame,
@@ -48,7 +48,7 @@ class InspectionVariablesMixin(InspectionBase):
         )
 
         if isinstance(result, OperationError):
-            restore_error = self._restore_selection(selection)
+            restore_error = self._restore_selection_if_changed(selection, selection_changed)
             if restore_error is not None:
                 return restore_error
             return result
@@ -59,7 +59,7 @@ class InspectionVariablesMixin(InspectionBase):
             frame,
             extract_mi_result_payload(command_result_payload(result)),
         )
-        restore_error = self._restore_selection(selection)
+        restore_error = self._restore_selection_if_changed(selection, selection_changed)
         if restore_error is not None:
             return restore_error
 
@@ -82,7 +82,7 @@ class InspectionVariablesMixin(InspectionBase):
         if isinstance(selection, OperationError):
             return selection
 
-        selection_error = self._select_for_inspection(
+        selection_changed, selection_error = self._select_for_inspection(
             selection,
             thread_id=thread_id,
             frame=frame,
@@ -96,7 +96,7 @@ class InspectionVariablesMixin(InspectionBase):
         )
         if isinstance(resolved_numbers, OperationError):
             if selection is not None:
-                restore_error = self._restore_selection(selection)
+                restore_error = self._restore_selection_if_changed(selection, selection_changed)
                 if restore_error is not None:
                     return restore_error
             return resolved_numbers
@@ -110,7 +110,7 @@ class InspectionVariablesMixin(InspectionBase):
 
         if isinstance(result, OperationError):
             if selection is not None:
-                restore_error = self._restore_selection(selection)
+                restore_error = self._restore_selection_if_changed(selection, selection_changed)
                 if restore_error is not None:
                     return restore_error
             return result
@@ -124,7 +124,7 @@ class InspectionVariablesMixin(InspectionBase):
             name_map_result = self._load_register_name_map(filtered_registers)
             if isinstance(name_map_result, OperationError):
                 if selection is not None:
-                    restore_error = self._restore_selection(selection)
+                    restore_error = self._restore_selection_if_changed(selection, selection_changed)
                     if restore_error is not None:
                         return restore_error
                 return name_map_result
@@ -138,7 +138,7 @@ class InspectionVariablesMixin(InspectionBase):
 
         payload = RegistersInfo(registers=filtered_registers)
         if selection is not None:
-            restore_error = self._restore_selection(selection)
+            restore_error = self._restore_selection_if_changed(selection, selection_changed)
             if restore_error is not None:
                 return restore_error
 

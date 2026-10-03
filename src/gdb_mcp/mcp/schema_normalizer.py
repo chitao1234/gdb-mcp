@@ -33,6 +33,23 @@ Schema = dict[str, Any]
 _MISSING = object()
 
 
+_SCHEMA_CACHE: dict[type[BaseModel], Schema] = {}
+
+
+def _cached_input_schema(model: type[BaseModel]) -> Schema:
+    """Return the normalized schema for a model, computed once per process.
+
+    Model definitions are fixed at import time, so the normalized result is
+    deterministic; callers must treat the returned dict as read-only.
+    """
+
+    cached = _SCHEMA_CACHE.get(model)
+    if cached is None:
+        cached = normalize_input_schema(model.model_json_schema())
+        _SCHEMA_CACHE[model] = cached
+    return cached
+
+
 def public_input_schema(
     model: type[BaseModel],
     *,
@@ -40,9 +57,9 @@ def public_input_schema(
 ) -> Schema:
     """Return a client-friendly JSON Schema for one MCP tool input model."""
 
-    schema = normalize_input_schema(model.model_json_schema())
+    schema = _cached_input_schema(model)
     if examples:
-        schema["examples"] = [dict(example) for example in examples]
+        return {**schema, "examples": [dict(example) for example in examples]}
     return schema
 
 

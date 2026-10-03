@@ -40,12 +40,11 @@ class RegisteredToolCliSpec:
     render_human: Callable[[dict[str, object]], str]
 
 
-TOOL_DESCRIPTIONS = {tool.name: tool.description or "" for tool in build_tool_definitions()}
-
-
-TOOL_HELP_DESCRIPTIONS = {
-    tool.name: (tool.description or "").replace("%", "%%") for tool in build_tool_definitions()
-}
+TOOL_DESCRIPTIONS: dict[str, str] = {}
+TOOL_HELP_DESCRIPTIONS: dict[str, str] = {}
+for _tool in build_tool_definitions():
+    TOOL_DESCRIPTIONS[_tool.name] = _tool.description or ""
+    TOOL_HELP_DESCRIPTIONS[_tool.name] = (_tool.description or "").replace("%", "%%")
 
 
 def _parse_namespace(namespace: argparse.Namespace) -> argparse.Namespace:

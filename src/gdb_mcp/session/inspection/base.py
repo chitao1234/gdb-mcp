@@ -145,24 +145,43 @@ class InspectionBase:
         *,
         thread_id: int | None,
         frame: int | None,
-    ) -> OperationError | None:
-        """Temporarily switch thread/frame for one inspection call."""
+    ) -> tuple[bool, OperationError | None]:
+        """Temporarily switch thread/frame for one inspection call.
+
+        Returns whether the selection actually changed together with an
+        optional error, so callers can skip restoring an untouched selection.
+        """
+
+        changed = False
 
         if selection is not None and thread_id is not None and selection.thread_id != thread_id:
             thread_result = self._command_runner.execute_command_result(
                 f"-thread-select {thread_id}", timeout_sec=DEFAULT_TIMEOUT_SEC
             )
             if isinstance(thread_result, OperationError):
-                return thread_result
+                return changed, thread_result
+            changed = True
 
         if selection is not None and frame is not None and selection.frame_number != frame:
             frame_result = self._command_runner.execute_command_result(
                 f"-stack-select-frame {frame}", timeout_sec=DEFAULT_TIMEOUT_SEC
             )
             if isinstance(frame_result, OperationError):
-                return frame_result
+                return changed, frame_result
+            changed = True
 
-        return None
+        return changed, None
+
+    def _restore_selection_if_changed(
+        self,
+        selection: _SelectionSnapshot | None,
+        changed: bool,
+    ) -> OperationError | None:
+        """Restore a captured selection only when it was actually changed."""
+
+        if not changed or selection is None:
+            return None
+        return self._restore_selection(selection)
 
     def _selection_error_with_restore(
         self,
