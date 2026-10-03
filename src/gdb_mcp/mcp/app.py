@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import sys
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING, cast
 
 import uvicorn
 from mcp.server import Server
@@ -13,6 +15,11 @@ from mcp.types import CallToolResult, Tool
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.types import Receive, Scope, Send
+
+from .stdio_input import DaemonStdinLines
+
+if TYPE_CHECKING:
+    from anyio import AsyncFile
 
 
 def create_mcp_app(
@@ -74,6 +81,21 @@ def create_streamable_http_app(
     )
 
 
+def _daemon_stdin_lines() -> "AsyncFile[str] | None":
+    """Return the daemon-backed stdin reader, or None when stdin is not a real fd.
+
+    The SDK's default reader is used as a fallback so environments with a
+    replaced stdin keep working; the daemon reader is what makes Ctrl-C exit
+    reliably for the normal server entrypoint.
+    """
+
+    try:
+        fd = sys.stdin.fileno()
+    except (AttributeError, OSError, ValueError):
+        return None
+    return cast("AsyncFile[str]", DaemonStdinLines(fd))
+
+
 async def run_stdio_app(
     app: Server,
     *,
@@ -84,7 +106,9 @@ async def run_stdio_app(
 
     from mcp.server.stdio import stdio_server
 
-    async with stdio_server() as (read_stream, write_stream):
+    # The SDK reads stdin through a non-cancellable worker-thread read, so a
+    # Ctrl-C during shutdown would wait on a thread blocked in read() forever.
+    async with stdio_server(stdin=_daemon_stdin_lines()) as (read_stream, write_stream):
         if startup_message:
             import logging
 

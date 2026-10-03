@@ -120,7 +120,10 @@ def run_server(argv: Sequence[str] | None = None) -> None:
 
     configure_logging()
     _warn_if_shadowed_by_build_lib()
-    asyncio.run(main(argv))
+    try:
+        asyncio.run(main(argv))
+    except KeyboardInterrupt:
+        raise SystemExit(130) from None
 
 
 def configure_logging() -> None:
