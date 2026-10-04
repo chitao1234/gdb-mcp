@@ -35,12 +35,12 @@ def test_cli_daemon_lifecycle(monkeypatch, tmp_path: Path) -> None:
 
     try:
         stdout = StringIO()
-        assert asyncio.run(main(["gdb_session_query", "--action", "list"], stdout=stdout)) == 0
+        assert asyncio.run(main(["status"], stdout=stdout)) == 0
         cookie = _cookie(tmp_path)
         assert str(cookie["url"]).startswith("http://127.0.0.1:")
         assert cookie["token"]
 
-        assert asyncio.run(main(["gdb_session_query", "--action", "list"], stdout=stdout)) == 0
+        assert asyncio.run(main(["status"], stdout=stdout)) == 0
         assert _cookie(tmp_path)["pid"] == cookie["pid"]
 
         assert asyncio.run(main(["status"], stdout=stdout)) == 0
@@ -63,7 +63,7 @@ def test_daemon_exits_when_idle(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
 
     try:
-        assert asyncio.run(main(["gdb_session_query", "--action", "list"], stdout=StringIO())) == 0
+        assert asyncio.run(main(["status"], stdout=StringIO())) == 0
         pid = int(_cookie(tmp_path)["pid"])
 
         assert _wait_for_exit(pid, 30)

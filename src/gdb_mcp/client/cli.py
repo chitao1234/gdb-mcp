@@ -190,15 +190,13 @@ def _add_tool_command(
     container: argparse._SubParsersAction,
     tool_name: str,
     spec: RegisteredToolCliSpec,
-    *,
-    hidden: bool,
 ) -> None:
-    """Register one tool subcommand, under `tool` or as a hidden top-level alias."""
+    """Register one tool subcommand under `tool`, gdb_ prefix optional."""
 
     subparser = container.add_parser(
         tool_name,
         aliases=[tool_name.removeprefix("gdb_")],
-        help=argparse.SUPPRESS if hidden else TOOL_HELP_DESCRIPTIONS.get(tool_name, ""),
+        help=TOOL_HELP_DESCRIPTIONS.get(tool_name, ""),
         description=TOOL_DESCRIPTIONS.get(tool_name, ""),
         epilog=_tool_epilog(tool_name),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -223,8 +221,7 @@ def build_parser() -> argparse.ArgumentParser:
         dest="tool_name", required=True, metavar="tool_name"
     )
     for tool_name, spec in CLIENT_TOOL_SPECS.items():
-        _add_tool_command(tool_subparsers, tool_name, spec, hidden=False)
-        _add_tool_command(subparsers, tool_name, spec, hidden=True)
+        _add_tool_command(tool_subparsers, tool_name, spec)
 
     daemon_parser = subparsers.add_parser(
         "daemon",

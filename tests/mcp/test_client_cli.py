@@ -41,24 +41,25 @@ class TestClientCli:
     def test_parse_client_args_allows_missing_server_url(self, monkeypatch):
         monkeypatch.delenv("GDB_MCP_SERVER_URL", raising=False)
 
-        args = parse_client_args(["gdb_session_start", "--program", "/bin/true"])
+        args = parse_client_args(["start", "--program", "/bin/true"])
 
         assert args.server_url is None
 
     def test_build_parser_formats_help_with_percent_descriptions(self):
         help_text = build_parser().format_help()
 
-        assert "gdb_call_function" in help_text
+        assert "Call an MCP tool by name" in help_text
 
-    def test_build_parser_still_exposes_session_subcommands(self):
+    def test_build_parser_exposes_the_facade_commands(self):
         help_text = build_parser().format_help()
 
-        assert "gdb_session_start" in help_text
-        assert "gdb_session_query" in help_text
+        assert "start" in help_text
+        assert "status" in help_text
+        assert "break" in help_text
 
     def test_subcommand_help_preserves_percent_description(self, capsys):
         with pytest.raises(SystemExit) as exc_info:
-            build_parser().parse_args(["gdb_call_function", "--help"])
+            build_parser().parse_args(["tool", "gdb_call_function", "--help"])
 
         assert exc_info.value.code == 0
         help_text = capsys.readouterr().out
@@ -84,7 +85,7 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_session_start",
+                    "start",
                     "--program",
                     "/bin/true",
                     "--arg=--mode",
@@ -130,7 +131,7 @@ class TestClientCli:
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
                     "--json",
-                    "gdb_attach_process",
+                    "attach",
                     "--session-id",
                     "7",
                     "--pid",
@@ -154,7 +155,7 @@ class TestClientCli:
         exit_code = asyncio.run(
             main(
                 [
-                    "gdb_attach_process",
+                    "attach",
                     "--session-id",
                     "7",
                     "--pid",
@@ -186,7 +187,7 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
-                        "gdb_execute_command",
+                        "exec",
                         "--session-id",
                         "7",
                         "--command",
@@ -213,7 +214,7 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_execute_command",
+                    "exec",
                     "--session-id",
                     "7",
                     "--command",
@@ -245,7 +246,7 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_call_function",
+                    "call",
                     "--session-id",
                     "7",
                     "--function-call",
@@ -275,7 +276,7 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_capture_bundle",
+                    "capture",
                     "--session-id",
                     "7",
                     "--output-dir",
@@ -335,7 +336,7 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_attach_process",
+                    "attach",
                     "--session-id",
                     "7",
                     "--pid",
@@ -360,6 +361,7 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
+                    "tool",
                     "gdb_session_query",
                     "--session-id",
                     "7",
@@ -392,9 +394,7 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
-                        "gdb_session_query",
-                        "--action",
-                        "list",
+                        "status",
                         "--session-id",
                         "7",
                     ],
@@ -420,6 +420,7 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
+                        "tool",
                         "gdb_session_query",
                         "--action",
                         "status",
@@ -444,9 +445,7 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_session_query",
-                    "--action",
-                    "list",
+                    "status",
                 ]
             )
         )
@@ -472,11 +471,9 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_session_manage",
+                    "stop",
                     "--session-id",
                     "7",
-                    "--action",
-                    "stop",
                 ]
             )
         )
@@ -502,6 +499,7 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
+                    "tool",
                     "gdb_inferior_manage",
                     "--session-id",
                     "7",
@@ -539,6 +537,7 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
+                    "tool",
                     "gdb_inferior_query",
                     "--session-id",
                     "7",
@@ -571,6 +570,7 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
+                        "tool",
                         "gdb_inferior_manage",
                         "--session-id",
                         "7",
@@ -605,6 +605,7 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
+                    "tool",
                     "gdb_inferior_manage",
                     "--session-id",
                     "7",
@@ -641,11 +642,9 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
-                        "gdb_execution_manage",
+                        "interrupt",
                         "--session-id",
                         "7",
-                        "--action",
-                        "interrupt",
                         "--wait-until",
                         "stop",
                     ],
@@ -671,11 +670,9 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
-                        "gdb_execution_manage",
+                        "interrupt",
                         "--session-id",
                         "7",
-                        "--action",
-                        "interrupt",
                         "--arg",
                         "x",
                     ],
@@ -700,11 +697,9 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_execution_manage",
+                    "run",
                     "--session-id",
                     "7",
-                    "--action",
-                    "run",
                     "--arg=--mode",
                     "--arg",
                     "fast",
@@ -749,11 +744,9 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_execution_manage",
+                    "wait-stop",
                     "--session-id",
                     "7",
-                    "--action",
-                    "wait_for_stop",
                     "--timeout-sec",
                     "9",
                     "--stop-reason",
@@ -794,11 +787,9 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
-                        "gdb_execution_manage",
+                        "wait-stop",
                         "--session-id",
                         "7",
-                        "--action",
-                        "wait_for_stop",
                         "--timeout-sec",
                         "0",
                     ],
@@ -824,11 +815,9 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
-                        "gdb_context_query",
+                        "threads",
                         "--session-id",
                         "7",
-                        "--action",
-                        "threads",
                         "--thread-id",
                         "2",
                     ],
@@ -852,11 +841,9 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_context_query",
+                    "bt",
                     "--session-id",
                     "7",
-                    "--action",
-                    "backtrace",
                     "--thread-id",
                     "2",
                     "--max-frames",
@@ -892,11 +879,9 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
-                        "gdb_context_query",
+                        "bt",
                         "--session-id",
                         "7",
-                        "--action",
-                        "backtrace",
                         "--frame",
                         "2",
                     ],
@@ -920,6 +905,7 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
+                    "tool",
                     "gdb_context_manage",
                     "--session-id",
                     "7",
@@ -958,6 +944,7 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
+                        "tool",
                         "gdb_context_manage",
                         "--session-id",
                         "7",
@@ -988,11 +975,10 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_breakpoint_query",
+                    "break",
+                    "list",
                     "--session-id",
                     "7",
-                    "--action",
-                    "list",
                 ]
             )
         )
@@ -1018,11 +1004,10 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_breakpoint_query",
+                    "break",
+                    "list",
                     "--session-id",
                     "7",
-                    "--action",
-                    "list",
                     "--kind",
                     "code",
                     "--kind",
@@ -1063,11 +1048,10 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_breakpoint_query",
+                    "break",
+                    "list",
                     "--session-id",
                     "7",
-                    "--action",
-                    "list",
                 ],
                 stdout=stdout,
             )
@@ -1092,6 +1076,7 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
+                    "tool",
                     "gdb_breakpoint_query",
                     "--session-id",
                     "7",
@@ -1129,6 +1114,7 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
+                        "tool",
                         "gdb_breakpoint_query",
                         "--session-id",
                         "7",
@@ -1163,11 +1149,10 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_breakpoint_manage",
+                    "break",
+                    "add",
                     "--session-id",
                     "7",
-                    "--action",
-                    "create",
                     "--breakpoint-kind",
                     "code",
                     "--location",
@@ -1206,6 +1191,7 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
+                    "tool",
                     "gdb_breakpoint_manage",
                     "--session-id",
                     "7",
@@ -1246,6 +1232,7 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
+                        "tool",
                         "gdb_breakpoint_manage",
                         "--session-id",
                         "7",
@@ -1277,6 +1264,7 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
+                        "tool",
                         "gdb_breakpoint_manage",
                         "--session-id",
                         "7",
@@ -1309,6 +1297,7 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
+                        "tool",
                         "gdb_breakpoint_manage",
                         "--session-id",
                         "7",
@@ -1333,6 +1322,7 @@ class TestClientCli:
             [
                 "--server-url",
                 "http://127.0.0.1:8000/mcp",
+                "tool",
                 "gdb_breakpoint_manage",
                 "--session-id",
                 "7",
@@ -1368,11 +1358,9 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_inspect_query",
+                    "list",
                     "--session-id",
                     "7",
-                    "--action",
-                    "source",
                     "--location-kind",
                     "file-line",
                     "--file",
@@ -1416,11 +1404,9 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_inspect_query",
+                    "list",
                     "--session-id",
                     "7",
-                    "--action",
-                    "source",
                     "--location-kind",
                     "address",
                     "--address",
@@ -1454,11 +1440,9 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_inspect_query",
+                    "disasm",
                     "--session-id",
                     "7",
-                    "--action",
-                    "disassembly",
                     "--location-kind",
                     "address",
                     "--address",
@@ -1492,7 +1476,7 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_workflow_batch",
+                    "batch",
                     "--session-id",
                     "7",
                     "--step",
@@ -1562,7 +1546,7 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_workflow_batch",
+                    "batch",
                     "--session-id",
                     "7",
                     "--step",
@@ -1588,7 +1572,7 @@ class TestClientCli:
             [
                 "--server-url",
                 "http://127.0.0.1:8000/mcp",
-                "gdb_workflow_batch",
+                "batch",
                 "--session-id",
                 "7",
                 "--step",
@@ -1631,7 +1615,7 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_workflow_batch",
+                    "batch",
                     "--session-id",
                     "7",
                     "--step",
@@ -1673,7 +1657,7 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_workflow_batch",
+                    "batch",
                     "--session-id",
                     "7",
                     "--step",
@@ -1722,7 +1706,7 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_workflow_batch",
+                    "batch",
                     "--session-id",
                     "7",
                     "--step",
@@ -1765,7 +1749,7 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
-                        "gdb_workflow_batch",
+                        "batch",
                         "--session-id",
                         "7",
                         "--step",
@@ -1796,7 +1780,7 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
-                        "gdb_workflow_batch",
+                        "batch",
                         "--session-id",
                         "7",
                         "--step",
@@ -1827,7 +1811,7 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
-                        "gdb_workflow_batch",
+                        "batch",
                         "--session-id",
                         "7",
                         "--step",
@@ -1858,7 +1842,7 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
-                        "gdb_workflow_batch",
+                        "batch",
                         "--session-id",
                         "7",
                         "--step",
@@ -1886,7 +1870,7 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_run_until_failure",
+                    "campaign",
                     "--startup-program",
                     "/bin/true",
                     "--startup-init-command",
@@ -1954,7 +1938,7 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_run_until_failure",
+                    "campaign",
                     "--startup-program",
                     "/bin/true",
                 ],
@@ -1985,7 +1969,7 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_run_until_failure",
+                    "campaign",
                     "--setup-step",
                     "gdb_capture_bundle",
                     "--setup-step-arg",
@@ -2027,7 +2011,7 @@ class TestClientCli:
                 [
                     "--server-url",
                     "http://127.0.0.1:8000/mcp",
-                    "gdb_run_until_failure",
+                    "campaign",
                     "--setup-step",
                     "gdb_capture_bundle",
                     "--setup-step-arg",
@@ -2056,7 +2040,7 @@ class TestClientCli:
             [
                 "--server-url",
                 "http://127.0.0.1:8000/mcp",
-                "gdb_run_until_failure",
+                "campaign",
                 "--startup-program",
                 "/bin/true",
                 "--max-iterations",
@@ -2100,7 +2084,7 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
-                        "gdb_run_until_failure",
+                        "campaign",
                         "--setup-step",
                         "gdb_session_manage",
                         "--setup-step-arg",
@@ -2127,11 +2111,9 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
-                        "gdb_inspect_query",
+                        "list",
                         "--session-id",
                         "7",
-                        "--action",
-                        "source",
                         "--location-kind",
                         "current",
                         "--instruction-count",
@@ -2158,11 +2140,9 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
-                        "gdb_inspect_query",
+                        "locals",
                         "--session-id",
                         "7",
-                        "--action",
-                        "variables",
                         "--file",
                         "src/main.c",
                     ],
@@ -2187,11 +2167,9 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
-                        "gdb_inspect_query",
+                        "locals",
                         "--session-id",
                         "7",
-                        "--action",
-                        "variables",
                         "--location-kind",
                         "file-line",
                         "--file",
@@ -2222,7 +2200,7 @@ class TestClientCli:
                     [
                         "--server-url",
                         "http://127.0.0.1:8000/mcp",
-                        "gdb_run_until_failure",
+                        "campaign",
                         "--capture-bundle-name",
                         "exact-name",
                         "--capture-bundle-name-prefix",

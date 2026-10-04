@@ -19,7 +19,7 @@ def test_server_url_falls_back_to_environment(monkeypatch) -> None:
     monkeypatch.setenv("GDB_MCP_SERVER_URL", SERVER_URL)
 
     args = parse_client_args(
-        ["gdb_session_query", "--action", "list"],
+        ["status"],
         parser=build_parser(),
     )
 
@@ -30,7 +30,7 @@ def test_explicit_server_url_wins_over_environment(monkeypatch) -> None:
     monkeypatch.setenv("GDB_MCP_SERVER_URL", "http://elsewhere.invalid/mcp")
 
     args = parse_client_args(
-        ["--server-url", SERVER_URL, "gdb_session_query", "--action", "list"],
+        ["--server-url", SERVER_URL, "status"],
         parser=build_parser(),
     )
 
@@ -47,7 +47,7 @@ def test_missing_server_url_is_resolved_from_the_daemon(mock_invoke_tool, monkey
 
     with patch("gdb_mcp.client.cli.resolve_server", new_callable=AsyncMock) as mock_resolve:
         mock_resolve.return_value = daemon
-        exit_code = asyncio.run(main(["gdb_session_query", "--action", "list"], stdout=StringIO()))
+        exit_code = asyncio.run(main(["status"], stdout=StringIO()))
 
     assert exit_code == 0
     mock_resolve.assert_awaited_once_with(explicit_url=None)
@@ -67,7 +67,7 @@ def test_daemon_failure_is_reported_with_exit_code_one(mock_invoke_tool, monkeyp
 
     with patch("gdb_mcp.client.cli.resolve_server", new_callable=AsyncMock) as mock_resolve:
         mock_resolve.side_effect = DaemonError("background server did not become ready")
-        exit_code = asyncio.run(main(["gdb_session_query", "--action", "list"], stderr=stderr))
+        exit_code = asyncio.run(main(["status"], stderr=stderr))
 
     assert exit_code == 1
     assert "background server did not become ready" in stderr.getvalue()
@@ -172,7 +172,7 @@ def test_batch_step_failures_set_a_nonzero_exit_code(mock_invoke_tool, monkeypat
 
 def test_subcommand_help_lists_validated_payload_examples(capsys) -> None:
     with pytest.raises(SystemExit) as exc_info:
-        asyncio.run(main(["gdb_breakpoint_manage", "--help"]))
+        asyncio.run(main(["tool", "gdb_breakpoint_manage", "--help"]))
 
     assert exc_info.value.code == 0
     output = capsys.readouterr().out
