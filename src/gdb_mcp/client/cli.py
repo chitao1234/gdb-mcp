@@ -15,7 +15,14 @@ from typing import TextIO
 import httpx
 from pydantic import ValidationError
 
-from gdb_mcp.contracts import TOOL_SESSION_START
+from gdb_mcp.contracts import (
+    ACTION_LIST,
+    ACTION_STATUS,
+    ACTION_STOP,
+    TOOL_SESSION_MANAGE,
+    TOOL_SESSION_QUERY,
+    TOOL_SESSION_START,
+)
 from gdb_mcp.mcp.schemas import TOOL_MODELS
 from gdb_mcp.mcp.tool_examples import TOOL_EXAMPLES
 
@@ -23,6 +30,7 @@ from .daemon import (
     DaemonError,
     ResolvedServer,
     daemon_status,
+    forget_session_id,
     remembered_session_id,
     remember_session_id,
     resolve_server,
@@ -236,6 +244,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Stop even when debug sessions are active",
     )
 
+    session_parser = subparsers.add_parser(
+        "session",
+        help="Manage the project's default session",
+    )
+    session_commands = session_parser.add_subparsers(dest="session_command", required=True)
+    use_parser = session_commands.add_parser(
+        "use",
+        help="Make one session the default for this project",
+    )
+    _add_invocation_flags(use_parser, suppress_defaults=True)
+    use_parser.add_argument("session_id", type=int, metavar="session_id")
+    session_commands.add_parser("current", help="Print the default session for this project")
+
     return parser
 
 
@@ -343,6 +364,79 @@ def _session_id_from_payload(payload: dict[str, object]) -> int | None:
     return next((value for value in candidates if isinstance(value, int)), None)
 
 
+def _default_session_annotation(
+    args: argparse.Namespace,
+    payload: dict[str, object],
+    resolved: ResolvedServer,
+) -> str:
+    """Describe the default session on session listings."""
+
+    if not resolved.managed or args.tool_name != TOOL_SESSION_QUERY:
+        return ""
+    if payload.get("action") != ACTION_LIST:
+        return ""
+    session_id = remembered_session_id()
+    if session_id is None:
+        return ""
+    result = payload.get("result")
+    sessions = result.get("sessions") if isinstance(result, dict) else None
+    running = isinstance(sessions, list) and any(
+        isinstance(item, dict) and item.get("session_id") == session_id for item in sessions
+    )
+    suffix = "" if running else " (not running)"
+    return f"\ndefault session: {session_id}{suffix}"
+
+
+async def _run_session_command(
+    args: argparse.Namespace,
+    output: TextIO,
+    error_output: TextIO,
+) -> int:
+    """Handle the session meta commands."""
+
+    if args.session_command == "current":
+        session_id = remembered_session_id()
+        if session_id is None:
+            error_output.write("gdb-mcp-client: no default session for this project\n")
+            return 1
+        output.write(f"{session_id}\n")
+        return 0
+
+    try:
+        resolved = await resolve_server(explicit_url=args.server_url)
+    except DaemonError as exc:
+        error_output.write(f"gdb-mcp-client: error: {exc}\n")
+        return 1
+    if not resolved.managed:
+        error_output.write(
+            "gdb-mcp-client: error: default sessions need the project background server; "
+            "pass --session-id when using --server-url\n"
+        )
+        return 1
+    try:
+        response = await invoke_tool(
+            resolved.url,
+            TOOL_SESSION_QUERY,
+            {"action": ACTION_STATUS, "session_id": args.session_id},
+            auth_token=resolved.token,
+        )
+    except Exception as exc:
+        error_output.write(f"gdb-mcp-client: error: {_format_runtime_error(exc)}\n")
+        return 1
+    except BaseException as exc:
+        if _is_exception_group(exc):
+            error_output.write(f"gdb-mcp-client: error: {_format_runtime_error(exc)}\n")
+            return 1
+        raise
+    if response.is_error:
+        message = response.payload.get("message", "request failed")
+        error_output.write(f"gdb-mcp-client: error: {message}\n")
+        return 1
+    remember_session_id(args.session_id)
+    output.write(f"default session: {args.session_id}\n")
+    return 0
+
+
 async def _run_daemon_command(args: argparse.Namespace, output: TextIO) -> int:
     """Handle the daemon meta commands."""
 
@@ -378,6 +472,8 @@ async def main(
         args = parse_client_args(effective_argv, parser=parser)
         if getattr(args, "command", None) == "daemon":
             return await _run_daemon_command(args, output)
+        if getattr(args, "command", None) == "session":
+            return await _run_session_command(args, output, error_output)
         canonical = _normalize_tool_name(args.tool_name)
         if canonical is None:
             parser.error(f"unknown tool: {args.tool_name}")
@@ -424,11 +520,22 @@ async def main(
         session_id = _session_id_from_payload(response.payload)
         if session_id is not None:
             remember_session_id(session_id)
+    if (
+        resolved.managed
+        and not response.is_error
+        and args.tool_name == TOOL_SESSION_MANAGE
+        and response.payload.get("action") == ACTION_STOP
+        and getattr(args, "session_id", None) == remembered_session_id()
+    ):
+        forget_session_id()
 
     if args.json:
         output.write(json.dumps(response.payload, indent=2) + "\n")
     else:
-        output.write(spec.render_human(response.payload) + "\n")
+        rendered = spec.render_human(response.payload)
+        output.write(
+            rendered + _default_session_annotation(args, response.payload, resolved) + "\n"
+        )
 
     if response.is_error:
         return 1

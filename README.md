@@ -98,6 +98,15 @@ gdb-mcp-client exec "info files"
 gdb-mcp-client stop
 ```
 
+`start` records the new session as this project's default; later commands use it when `--session-id` is omitted, and `status` marks it. Switch or inspect it with:
+
+```bash
+gdb-mcp-client session current   # print the default session id (exit 1 when there is none)
+gdb-mcp-client session use 2     # make session 2 the default
+```
+
+Stopping the default session clears it.
+
 Run `gdb-mcp-client --help` for the full list (`run`, `step`, `next`, `finish`, `interrupt`, `attach`, `threads`, `frame`, `regs`, `memory`, `disasm`, `list`, `break add|list|rm|enable|disable`, `watch`, `catch`, `call`, `capture`, `batch`, `campaign`). Every command takes the same flags as the underlying tool, and extra flags can be passed with `--payload-json`.
 
 Background servers bind `127.0.0.1` on an ephemeral port and require a bearer token that is stored only in the cookie. They exit after 15 minutes without requests or active debug sessions. Manage them with:

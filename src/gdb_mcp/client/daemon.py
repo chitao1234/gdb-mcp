@@ -317,6 +317,18 @@ def remember_session_id(session_id: int) -> None:
         _write_cookie(paths, cookie)
 
 
+def forget_session_id() -> None:
+    """Drop the project's remembered session, if any."""
+
+    paths = daemon_paths()
+    with _exclusive_lock(paths.lock):
+        cookie = _read_cookie(paths)
+        if cookie is None or "last_session_id" not in cookie:
+            return
+        cookie.pop("last_session_id", None)
+        _write_cookie(paths, cookie)
+
+
 async def daemon_status() -> str:
     """Describe the background server for the current project."""
 
