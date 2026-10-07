@@ -17,7 +17,7 @@ This file defines repository-specific guidance for agents and contributors worki
 - Transport layers: `src/gdb_mcp/transport/`
 - Test suites: `tests/`
 - API and usage docs: `README.md`, `TOOLS.md`, `examples/README.md`, `examples/USAGE_GUIDE.md`
-- Skill definitions and playbooks: `skills/`, especially `skills/debug-with-gdb-mcp/`
+- Skill definitions and playbooks: `skills/`, especially `skills/debug-with-gdb-mcp/` (MCP tools) and `skills/gdb-mcp-cli/` (client command line)
 
 ## Development Workflow
 
@@ -49,7 +49,7 @@ When adding or changing MCP tools, keep schemas, runtime behavior, tests, and do
 3. Update session/domain code under `src/gdb_mcp/session/` or `src/gdb_mcp/domain/` if behavior requires it.
 4. Add or update tests in `tests/mcp/`, `tests/session/`, and `tests/integration/` as needed.
 5. Update user-facing docs in `TOOLS.md` and any relevant overview text in `README.md`.
-6. Update workflow-facing docs and skills when examples or debugging playbooks change: `examples/USAGE_GUIDE.md`, `examples/README.md`, and `skills/debug-with-gdb-mcp/`.
+6. Update workflow-facing docs and skills when examples or debugging playbooks change: `examples/USAGE_GUIDE.md`, `examples/README.md`, `skills/debug-with-gdb-mcp/`, and `skills/gdb-mcp-cli/`.
 
 ## Coding Expectations
 
@@ -64,4 +64,4 @@ When adding or changing MCP tools, keep schemas, runtime behavior, tests, and do
 - When behavior changes, document exact parameter and response shapes.
 - Use relative repository paths in documentation and internal guidance.
 - Keep public examples and skill docs on v2 tool names; reserve historical names for dedicated migration sections only.
-- When updating skill docs under `skills/`, keep them aligned with `README.md`, `TOOLS.md`, and `examples/USAGE_GUIDE.md`.
+- When updating skill docs under `skills/`, keep them aligned with `README.md`, `TOOLS.md`, and `examples/USAGE_GUIDE.md`; the CLI skill must match `gdb-mcp-client --help`.

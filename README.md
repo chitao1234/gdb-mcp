@@ -226,7 +226,7 @@ Examples:
 `gdb_session_start` remains separate because startup has a unique request shape. `gdb_execute_command`, `gdb_attach_process`, and `gdb_call_function` also remain separate so escape-hatch and privileged operations are easy to permission independently.
 
 Detailed request and response documentation lives in [TOOLS.md](TOOLS.md).
-Representative end-to-end prompts and workflows live in [examples/USAGE_GUIDE.md](examples/USAGE_GUIDE.md) and [skills/debug-with-gdb-mcp/SKILL.md](skills/debug-with-gdb-mcp/SKILL.md).
+Representative end-to-end prompts and workflows live in [examples/USAGE_GUIDE.md](examples/USAGE_GUIDE.md), [skills/debug-with-gdb-mcp/SKILL.md](skills/debug-with-gdb-mcp/SKILL.md) for the MCP tools, and [skills/gdb-mcp-cli/SKILL.md](skills/gdb-mcp-cli/SKILL.md) for the command line.
 
 ## Response Model
 

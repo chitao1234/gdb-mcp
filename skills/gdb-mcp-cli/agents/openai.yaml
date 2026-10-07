@@ -1,0 +1,4 @@
+interface:
+  display_name: "gdb-mcp CLI"
+  short_description: "Drive GDB sessions from the gdb-mcp-client shell command"
+  default_prompt: "Use $gdb-mcp-cli to debug this program from the shell with gdb-mcp-client."
