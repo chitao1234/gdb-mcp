@@ -59,16 +59,14 @@ def _validate_execution_manage_input(typed_input: ExecutionManageInput) -> None:
 def _configure_execution_manage(parser: argparse.ArgumentParser) -> None:
     _add_session_id(parser)
     _add_action(parser, choices=EXECUTION_MANAGE_ACTIONS)
-    parser.add_argument("--arg", dest="args", action="append", default=argparse.SUPPRESS)
+    parser.add_argument("--arg", dest="args", action="append", default=None)
     parser.add_argument(
         "--wait-until",
         choices=EXECUTION_WAIT_UNTIL_VALUES,
-        default=argparse.SUPPRESS,
+        default=None,
     )
-    parser.add_argument("--timeout-sec", type=int, default=argparse.SUPPRESS)
-    parser.add_argument(
-        "--stop-reason", dest="stop_reasons", action="append", default=argparse.SUPPRESS
-    )
+    parser.add_argument("--timeout-sec", type=int, default=None)
+    parser.add_argument("--stop-reason", dest="stop_reasons", action="append", default=None)
 
 
 def _build_execution_manage(typed_input: ExecutionManageInput) -> dict[str, object]:

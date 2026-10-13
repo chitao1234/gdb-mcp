@@ -159,19 +159,19 @@ def _validate_breakpoint_manage_input(typed_input: BreakpointManageInput) -> Non
 def _configure_breakpoint_query(parser: argparse.ArgumentParser) -> None:
     _add_session_id(parser)
     _add_action(parser, choices=BREAKPOINT_QUERY_ACTIONS)
-    parser.add_argument("--number", type=int, default=argparse.SUPPRESS)
+    parser.add_argument("--number", type=int, default=None)
     parser.add_argument(
         "--kind",
         dest="kinds",
         action="append",
         choices=BREAKPOINT_KINDS,
-        default=argparse.SUPPRESS,
+        default=None,
     )
     add_boolean_flag(
         parser,
         "enabled",
         help_text="Filter breakpoints by enabled state",
-        suppress_default=True,
+        optional=True,
     )
 
 
@@ -191,30 +191,30 @@ def _configure_breakpoint_manage(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--breakpoint-kind",
         choices=BREAKPOINT_KINDS,
-        default=argparse.SUPPRESS,
+        default=None,
     )
-    parser.add_argument("--location", default=argparse.SUPPRESS)
-    parser.add_argument("--expression", default=argparse.SUPPRESS)
+    parser.add_argument("--location", default=None)
+    parser.add_argument("--expression", default=None)
     parser.add_argument(
         "--access",
         choices=BREAKPOINT_ACCESS_VALUES,
-        default=argparse.SUPPRESS,
+        default=None,
     )
-    parser.add_argument("--event", choices=BREAKPOINT_EVENTS, default=argparse.SUPPRESS)
-    parser.add_argument("--argument", default=argparse.SUPPRESS)
+    parser.add_argument("--event", choices=BREAKPOINT_EVENTS, default=None)
+    parser.add_argument("--argument", default=None)
     add_boolean_flag(
         parser,
         "temporary",
         help_text="Create a temporary breakpoint or catchpoint",
-        suppress_default=True,
+        optional=True,
     )
-    parser.add_argument("--number", type=int, default=argparse.SUPPRESS)
-    parser.add_argument("--condition", default=argparse.SUPPRESS)
+    parser.add_argument("--number", type=int, default=None)
+    parser.add_argument("--condition", default=None)
     add_boolean_flag(
         parser,
         "clear_condition",
         help_text="Clear the existing breakpoint condition",
-        suppress_default=True,
+        optional=True,
     )
 
 

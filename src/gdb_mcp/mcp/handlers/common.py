@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import re
 import shlex
 from collections.abc import Callable, Sequence
-from typing import Protocol, TypeAlias, TypeVar, cast
+from typing import Protocol, TypeAlias, TypeVar, cast, runtime_checkable
 
 from pydantic import BaseModel, RootModel
 
@@ -50,6 +50,13 @@ class MemoryRangeArgsProtocol(Protocol):
     count: int
     offset: int
     name: str | None
+
+
+@runtime_checkable
+class ActionArgsProtocol(Protocol):
+    """Validated MCP argument models that expose an action selector."""
+
+    action: object
 
 
 SessionToolArgsT = TypeVar("SessionToolArgsT", bound=BaseModel)
@@ -154,10 +161,10 @@ def _wrap_action_result(action: str, result: ToolResult) -> ToolResult:
 def _wrap_action_result_for(validated_args: BaseModel, result: ToolResult) -> ToolResult:
     """Wrap one raw tool result in the action envelope when the request has an action."""
 
-    action = getattr(_unwrap_action_args(validated_args), "action", None)
-    if not isinstance(action, str):
-        return result
-    return _wrap_action_result(action, result)
+    action_args = _unwrap_action_args(validated_args)
+    if isinstance(action_args, ActionArgsProtocol) and isinstance(action_args.action, str):
+        return _wrap_action_result(action_args.action, result)
+    return result
 
 
 def _workflow_step_validation_error(

@@ -26,12 +26,13 @@ class AppendTaggedValue(argparse.Action):
     ) -> None:
         del parser
 
-        events = getattr(namespace, self.dest, None)
-        if events is None:
-            events = []
-            setattr(namespace, self.dest, events)
-
-        events.append((option_string or self.option_strings[0], values))
+        tag = option_string if option_string is not None else self.option_strings[0]
+        if self.dest == "step_events":
+            namespace.step_events.append((tag, values))
+        elif self.dest == "setup_step_events":
+            namespace.setup_step_events.append((tag, values))
+        else:
+            raise CliUsageError(f"unsupported tagged-value destination: {self.dest}")
 
 
 def key_value_entry(text: str) -> tuple[str, str]:
@@ -109,15 +110,19 @@ def add_boolean_flag(
     name: str,
     *,
     help_text: str,
-    suppress_default: bool = False,
+    optional: bool = False,
 ) -> None:
-    """Add a paired boolean flag using argparse's optional boolean action."""
+    """Add a paired `--flag` / `--no-flag` argument.
+
+    Optional flags default to ``None`` so callers can distinguish "not
+    provided" from an explicit ``False``; always-on flags default to ``True``.
+    """
 
     parser.add_argument(
         f"--{name.replace('_', '-')}",
         dest=name,
         action=argparse.BooleanOptionalAction,
-        default=argparse.SUPPRESS if suppress_default else True,
+        default=None if optional else True,
         help=help_text,
     )
 

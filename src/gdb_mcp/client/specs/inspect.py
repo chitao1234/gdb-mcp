@@ -346,53 +346,53 @@ def _validate_inspect_query_input(typed_input: InspectQueryInput) -> None:
 def _configure_inspect_query(parser: argparse.ArgumentParser) -> None:
     _add_session_id(parser)
     _add_action(parser, choices=INSPECT_QUERY_ACTIONS)
-    parser.add_argument("--thread-id", type=int, default=argparse.SUPPRESS)
-    parser.add_argument("--frame", type=int, default=argparse.SUPPRESS)
-    parser.add_argument("--expression", default=argparse.SUPPRESS)
+    parser.add_argument("--thread-id", type=int, default=None)
+    parser.add_argument("--frame", type=int, default=None)
+    parser.add_argument("--expression", default=None)
     parser.add_argument(
         "--register-number",
         dest="register_numbers",
         action="append",
         type=int,
-        default=argparse.SUPPRESS,
+        default=None,
     )
     parser.add_argument(
         "--register-name",
         dest="register_names",
         action="append",
-        default=argparse.SUPPRESS,
+        default=None,
     )
     add_boolean_flag(
         parser,
         "include_vector_registers",
         help_text="Include vector and SIMD registers",
-        suppress_default=True,
+        optional=True,
     )
-    parser.add_argument("--max-registers", type=int, default=argparse.SUPPRESS)
+    parser.add_argument("--max-registers", type=int, default=None)
     parser.add_argument(
         "--value-format",
         choices=REGISTER_VALUE_FORMATS,
-        default=argparse.SUPPRESS,
+        default=None,
     )
-    parser.add_argument("--address", default=argparse.SUPPRESS)
-    parser.add_argument("--count", type=int, default=argparse.SUPPRESS)
-    parser.add_argument("--offset", type=int, default=argparse.SUPPRESS)
+    parser.add_argument("--address", default=None)
+    parser.add_argument("--count", type=int, default=None)
+    parser.add_argument("--offset", type=int, default=None)
     parser.add_argument(
         "--location-kind",
         choices=CLI_LOCATION_KIND_CHOICES,
-        default=argparse.SUPPRESS,
+        default=None,
     )
-    parser.add_argument("--function", default=argparse.SUPPRESS)
-    parser.add_argument("--start-address", default=argparse.SUPPRESS)
-    parser.add_argument("--end-address", default=argparse.SUPPRESS)
-    parser.add_argument("--file", default=argparse.SUPPRESS)
-    parser.add_argument("--line", type=int, default=argparse.SUPPRESS)
-    parser.add_argument("--start-line", type=int, default=argparse.SUPPRESS)
-    parser.add_argument("--end-line", type=int, default=argparse.SUPPRESS)
-    parser.add_argument("--instruction-count", type=int, default=argparse.SUPPRESS)
-    parser.add_argument("--mode", choices=DISASSEMBLY_MODES, default=argparse.SUPPRESS)
-    parser.add_argument("--context-before", type=int, default=argparse.SUPPRESS)
-    parser.add_argument("--context-after", type=int, default=argparse.SUPPRESS)
+    parser.add_argument("--function", default=None)
+    parser.add_argument("--start-address", default=None)
+    parser.add_argument("--end-address", default=None)
+    parser.add_argument("--file", default=None)
+    parser.add_argument("--line", type=int, default=None)
+    parser.add_argument("--start-line", type=int, default=None)
+    parser.add_argument("--end-line", type=int, default=None)
+    parser.add_argument("--instruction-count", type=int, default=None)
+    parser.add_argument("--mode", choices=DISASSEMBLY_MODES, default=None)
+    parser.add_argument("--context-before", type=int, default=None)
+    parser.add_argument("--context-after", type=int, default=None)
 
 
 def _build_inspect_query(typed_input: InspectQueryInput) -> dict[str, object]:

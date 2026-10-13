@@ -89,20 +89,20 @@ def _build_inferior_query(typed_input: InferiorQueryInput) -> dict[str, object]:
 def _configure_inferior_manage(parser: argparse.ArgumentParser) -> None:
     _add_session_id(parser)
     _add_action(parser, choices=INFERIOR_MANAGE_ACTIONS)
-    parser.add_argument("--inferior-id", type=int, default=argparse.SUPPRESS)
-    parser.add_argument("--executable", default=argparse.SUPPRESS)
+    parser.add_argument("--inferior-id", type=int, default=None)
+    parser.add_argument("--executable", default=None)
     add_boolean_flag(
         parser,
         "make_current",
         help_text="Select the new inferior after create",
-        suppress_default=True,
+        optional=True,
     )
-    parser.add_argument("--mode", choices=INFERIOR_FOLLOW_FORK_MODES, default=argparse.SUPPRESS)
+    parser.add_argument("--mode", choices=INFERIOR_FOLLOW_FORK_MODES, default=None)
     add_boolean_flag(
         parser,
         "enabled",
         help_text="Detach from the non-followed fork",
-        suppress_default=True,
+        optional=True,
     )
 
 

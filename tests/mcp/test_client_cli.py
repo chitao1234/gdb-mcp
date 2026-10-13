@@ -1465,6 +1465,135 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
+    def test_main_defaults_source_location_to_current(self, mock_invoke_tool):
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success", "action": "source", "result": {"line_start": 40}},
+            is_error=False,
+        )
+
+        exit_code = asyncio.run(
+            main(
+                [
+                    "--server-url",
+                    "http://127.0.0.1:8000/mcp",
+                    "list",
+                    "--session-id",
+                    "7",
+                ]
+            )
+        )
+
+        assert exit_code == 0
+        mock_invoke_tool.assert_awaited_once_with(
+            "http://127.0.0.1:8000/mcp",
+            "gdb_inspect_query",
+            {
+                "session_id": 7,
+                "action": "source",
+                "query": {"location": {"kind": "current"}},
+            },
+            http_client=None,
+            auth_token=None,
+        )
+
+    @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
+    def test_main_defaults_disassembly_location_to_current(self, mock_invoke_tool):
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success", "action": "disassembly", "result": {"count": 4}},
+            is_error=False,
+        )
+
+        exit_code = asyncio.run(
+            main(
+                [
+                    "--server-url",
+                    "http://127.0.0.1:8000/mcp",
+                    "disasm",
+                    "--session-id",
+                    "7",
+                ]
+            )
+        )
+
+        assert exit_code == 0
+        mock_invoke_tool.assert_awaited_once_with(
+            "http://127.0.0.1:8000/mcp",
+            "gdb_inspect_query",
+            {
+                "session_id": 7,
+                "action": "disassembly",
+                "query": {"location": {"kind": "current"}},
+            },
+            http_client=None,
+            auth_token=None,
+        )
+
+    @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
+    def test_main_honors_an_explicit_session_query_status_action(self, mock_invoke_tool):
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success", "action": "status", "result": {"is_running": False}},
+            is_error=False,
+        )
+
+        exit_code = asyncio.run(
+            main(
+                [
+                    "--server-url",
+                    "http://127.0.0.1:8000/mcp",
+                    "status",
+                    "--action",
+                    "status",
+                    "--session-id",
+                    "7",
+                ]
+            )
+        )
+
+        assert exit_code == 0
+        mock_invoke_tool.assert_awaited_once_with(
+            "http://127.0.0.1:8000/mcp",
+            "gdb_session_query",
+            {"session_id": 7, "action": "status"},
+            http_client=None,
+            auth_token=None,
+        )
+
+    @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
+    def test_main_normalizes_short_workflow_step_tool_names(self, mock_invoke_tool):
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={"status": "success", "count": 1, "error_count": 0},
+            is_error=False,
+        )
+
+        exit_code = asyncio.run(
+            main(
+                [
+                    "--server-url",
+                    "http://127.0.0.1:8000/mcp",
+                    "batch",
+                    "--session-id",
+                    "7",
+                    "--step",
+                    "context_query",
+                    "--step-arg",
+                    "action=threads",
+                ]
+            )
+        )
+
+        assert exit_code == 0
+        mock_invoke_tool.assert_awaited_once_with(
+            "http://127.0.0.1:8000/mcp",
+            "gdb_workflow_batch",
+            {
+                "session_id": 7,
+                "steps": [{"tool": "gdb_context_query", "arguments": {"action": "threads"}}],
+            },
+            http_client=None,
+            auth_token=None,
+        )
+
+    @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_builds_workflow_batch_from_grouped_step_flags(self, mock_invoke_tool):
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "count": 2, "error_count": 0},

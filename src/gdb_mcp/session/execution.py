@@ -41,6 +41,16 @@ from .runtime import SessionRuntime
 logger = logging.getLogger(__name__)
 
 
+def _augment_call_error(message: str, function_call: str) -> str:
+    """Add a cast hint when GDB cannot infer the called function's return type."""
+
+    if "unknown return type" not in message.lower():
+        return message
+    if function_call.lstrip().startswith("("):
+        return message
+    return f"{message} (cast the call, e.g. 'call (int){function_call}')"
+
+
 class SessionExecutionService:
     """Execution and command-control operations."""
 
@@ -578,7 +588,7 @@ class SessionExecutionService:
                 )
             )
             return OperationError(
-                message=str(result["error"]),
+                message=_augment_call_error(str(result["error"]), function_call),
                 details={"function_call": function_call},
             )
 
@@ -618,7 +628,10 @@ class SessionExecutionService:
                 )
             )
             return OperationError(
-                message=parsed.error_message() or "GDB returned an error",
+                message=_augment_call_error(
+                    parsed.error_message() or "GDB returned an error",
+                    function_call,
+                ),
                 details={"function_call": function_call},
             )
         console_output = "".join(item for item in parsed.console if isinstance(item, str))

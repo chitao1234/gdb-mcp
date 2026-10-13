@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Iterable
 from typing import cast
 
 from pydantic import ValidationError
@@ -58,17 +57,6 @@ from .parsers import (
     validate_model_payload_with_list_coercion,
 )
 
-_LOCATION_FIELD_NAMES = (
-    "location_kind",
-    "function",
-    "address",
-    "start_address",
-    "end_address",
-    "file",
-    "line",
-    "start_line",
-    "end_line",
-)
 _WORKFLOW_STEP_OPTION_MAP = {
     "--setup-step": "--step",
     "--setup-step-label": "--step-label",
@@ -76,11 +64,15 @@ _WORKFLOW_STEP_OPTION_MAP = {
 }
 
 
-def provided_fields(namespace: argparse.Namespace, tracked_fields: Iterable[str]) -> set[str]:
-    """Return the tracked CLI fields that were explicitly provided on one namespace."""
+def _normalize_step_tool_name(tool_name: str) -> str:
+    """Accept the gdb_-less tool spelling inside workflow steps."""
 
-    namespace_fields = namespace.__dict__
-    return {field_name for field_name in tracked_fields if field_name in namespace_fields}
+    if tool_name.startswith("gdb_"):
+        return tool_name
+    prefixed = f"gdb_{tool_name}"
+    if prefixed in shared_contracts.PUBLIC_TOOL_NAMES:
+        return prefixed
+    return tool_name
 
 
 def parse_session_start_input(namespace: argparse.Namespace) -> SessionStartInput:
@@ -102,7 +94,7 @@ def parse_session_query_input(namespace: argparse.Namespace) -> SessionQueryInpu
 
     return SessionQueryInput(
         action=cast(SessionQueryAction, namespace.action),
-        session_id=namespace.__dict__.get("session_id"),
+        session_id=namespace.session_id,
     )
 
 
@@ -121,11 +113,11 @@ def parse_inferior_manage_input(namespace: argparse.Namespace) -> InferiorManage
     return InferiorManageInput(
         action=cast(InferiorManageAction, namespace.action),
         session_id=namespace.session_id,
-        executable=namespace.__dict__.get("executable"),
-        make_current=namespace.__dict__.get("make_current"),
-        inferior_id=namespace.__dict__.get("inferior_id"),
-        mode=cast(InferiorFollowForkMode | None, namespace.__dict__.get("mode")),
-        enabled=namespace.__dict__.get("enabled"),
+        executable=namespace.executable,
+        make_current=namespace.make_current,
+        inferior_id=namespace.inferior_id,
+        mode=cast(InferiorFollowForkMode | None, namespace.mode),
+        enabled=namespace.enabled,
     )
 
 
@@ -135,10 +127,10 @@ def parse_execution_manage_input(namespace: argparse.Namespace) -> ExecutionMana
     return ExecutionManageInput(
         action=cast(ExecutionManageAction, namespace.action),
         session_id=namespace.session_id,
-        args=tuple(namespace.__dict__.get("args", ())),
-        wait_until=cast(ExecutionWaitUntil | None, namespace.__dict__.get("wait_until")),
-        timeout_sec=namespace.__dict__.get("timeout_sec"),
-        stop_reasons=tuple(namespace.__dict__.get("stop_reasons", ())),
+        args=tuple(namespace.args or ()),
+        wait_until=cast(ExecutionWaitUntil | None, namespace.wait_until),
+        timeout_sec=namespace.timeout_sec,
+        stop_reasons=tuple(namespace.stop_reasons or ()),
     )
 
 
@@ -148,9 +140,9 @@ def parse_context_query_input(namespace: argparse.Namespace) -> ContextQueryInpu
     return ContextQueryInput(
         action=cast(ContextQueryAction, namespace.action),
         session_id=namespace.session_id,
-        thread_id=namespace.__dict__.get("thread_id"),
-        frame=namespace.__dict__.get("frame"),
-        max_frames=namespace.__dict__.get("max_frames"),
+        thread_id=namespace.thread_id,
+        frame=namespace.frame,
+        max_frames=namespace.max_frames,
     )
 
 
@@ -160,26 +152,26 @@ def parse_context_manage_input(namespace: argparse.Namespace) -> ContextManageIn
     return ContextManageInput(
         action=cast(ContextManageAction, namespace.action),
         session_id=namespace.session_id,
-        thread_id=namespace.__dict__.get("thread_id"),
-        frame=namespace.__dict__.get("frame"),
+        thread_id=namespace.thread_id,
+        frame=namespace.frame,
     )
 
 
 def _parse_location_input(namespace: argparse.Namespace) -> LocationInput | None:
-    location_kind = namespace.__dict__.get("location_kind")
+    location_kind = namespace.location_kind
     if location_kind is None:
         return None
 
     return LocationInput(
         kind=cast(LocationKind, location_kind.replace("-", "_")),
-        function=namespace.__dict__.get("function"),
-        address=namespace.__dict__.get("address"),
-        start_address=namespace.__dict__.get("start_address"),
-        end_address=namespace.__dict__.get("end_address"),
-        file=namespace.__dict__.get("file"),
-        line=namespace.__dict__.get("line"),
-        start_line=namespace.__dict__.get("start_line"),
-        end_line=namespace.__dict__.get("end_line"),
+        function=namespace.function,
+        address=namespace.address,
+        start_address=namespace.start_address,
+        end_address=namespace.end_address,
+        file=namespace.file,
+        line=namespace.line,
+        start_line=namespace.start_line,
+        end_line=namespace.end_line,
     )
 
 
@@ -252,7 +244,7 @@ def parse_step_inputs(
 
     for option, value in normalized_events:
         if option == "--step":
-            current_tool = cast(BatchStepToolName, value)
+            current_tool = cast(BatchStepToolName, _normalize_step_tool_name(str(value)))
             current_label = None
             current_arguments = {}
             steps.append(
@@ -303,37 +295,36 @@ def parse_breakpoint_query_input(namespace: argparse.Namespace) -> BreakpointQue
     return BreakpointQueryInput(
         action=cast(BreakpointQueryAction, namespace.action),
         session_id=namespace.session_id,
-        number=namespace.__dict__.get("number"),
-        kinds=tuple(cast(tuple[BreakpointKind, ...], tuple(namespace.__dict__.get("kinds", ())))),
-        enabled=namespace.__dict__.get("enabled"),
+        number=namespace.number,
+        kinds=tuple(cast(tuple[BreakpointKind, ...], tuple(namespace.kinds or ()))),
+        enabled=namespace.enabled,
     )
 
 
 def parse_breakpoint_manage_input(namespace: argparse.Namespace) -> BreakpointManageInput:
     """Parse one breakpoint-manage namespace into a typed input object."""
 
-    namespace_fields = namespace.__dict__
-    breakpoint_kind = cast(BreakpointKind | None, namespace.__dict__.get("breakpoint_kind"))
-    temporary_explicit = "temporary" in namespace_fields
+    breakpoint_kind = cast(BreakpointKind | None, namespace.breakpoint_kind)
+    temporary_explicit = namespace.temporary is not None
     has_breakpoint_fields = (
         breakpoint_kind is not None
-        or namespace_fields.get("location") is not None
-        or namespace_fields.get("expression") is not None
-        or namespace_fields.get("access") is not None
-        or namespace_fields.get("event") is not None
-        or namespace_fields.get("argument") is not None
+        or namespace.location is not None
+        or namespace.expression is not None
+        or namespace.access is not None
+        or namespace.event is not None
+        or namespace.argument is not None
         or temporary_explicit
     )
     breakpoint = (
         BreakpointCreateInput(
             kind=breakpoint_kind or "code",
-            location=namespace_fields.get("location"),
-            expression=namespace_fields.get("expression"),
-            access=cast(BreakpointAccess | None, namespace_fields.get("access")),
-            event=cast(BreakpointEvent | None, namespace_fields.get("event")),
-            argument=namespace_fields.get("argument"),
-            condition=namespace_fields.get("condition"),
-            temporary=bool(namespace_fields.get("temporary", False)),
+            location=namespace.location,
+            expression=namespace.expression,
+            access=cast(BreakpointAccess | None, namespace.access),
+            event=cast(BreakpointEvent | None, namespace.event),
+            argument=namespace.argument,
+            condition=namespace.condition,
+            temporary=bool(namespace.temporary),
             kind_explicit=breakpoint_kind is not None,
             temporary_explicit=temporary_explicit,
         )
@@ -345,41 +336,55 @@ def parse_breakpoint_manage_input(namespace: argparse.Namespace) -> BreakpointMa
         action=cast(BreakpointManageAction, namespace.action),
         session_id=namespace.session_id,
         breakpoint=breakpoint,
-        number=namespace_fields.get("number"),
-        condition=namespace_fields.get("condition"),
-        clear_condition=namespace_fields.get("clear_condition"),
+        number=namespace.number,
+        condition=namespace.condition,
+        clear_condition=namespace.clear_condition,
     )
 
 
 def parse_inspect_query_input(namespace: argparse.Namespace) -> InspectQueryInput:
     """Parse one inspect-query namespace into a typed input object."""
 
-    namespace_fields = namespace.__dict__
     action = cast(InspectQueryAction, namespace.action)
     location_fields = tuple(
         field_name
-        for field_name in _LOCATION_FIELD_NAMES
-        if field_name in namespace_fields and not (field_name == "address" and action == "memory")
+        for field_name, value in (
+            ("location_kind", namespace.location_kind),
+            ("function", namespace.function),
+            ("address", namespace.address),
+            ("start_address", namespace.start_address),
+            ("end_address", namespace.end_address),
+            ("file", namespace.file),
+            ("line", namespace.line),
+            ("start_line", namespace.start_line),
+            ("end_line", namespace.end_line),
+        )
+        if value is not None and not (field_name == "address" and action == "memory")
     )
+    location = _parse_location_input(namespace)
+    if location is None and action in ("source", "disassembly") and not location_fields:
+        # Bare `list`/`disasm` operate on the current location rather than
+        # forcing callers to spell out `--location-kind current`.
+        location = LocationInput(kind="current")
     return InspectQueryInput(
         action=action,
         session_id=namespace.session_id,
-        thread_id=namespace_fields.get("thread_id"),
-        frame=namespace_fields.get("frame"),
-        expression=namespace_fields.get("expression"),
-        register_numbers=tuple(namespace_fields.get("register_numbers", ())),
-        register_names=tuple(namespace_fields.get("register_names", ())),
-        include_vector_registers=namespace_fields.get("include_vector_registers"),
-        max_registers=namespace_fields.get("max_registers"),
-        value_format=cast(RegisterValueFormat | None, namespace_fields.get("value_format")),
-        memory_address=namespace_fields.get("address") if action == "memory" else None,
-        count=namespace_fields.get("count"),
-        offset=namespace_fields.get("offset"),
-        location=_parse_location_input(namespace),
-        instruction_count=namespace_fields.get("instruction_count"),
-        mode=cast(DisassemblyMode | None, namespace_fields.get("mode")),
-        context_before=namespace_fields.get("context_before"),
-        context_after=namespace_fields.get("context_after"),
+        thread_id=namespace.thread_id,
+        frame=namespace.frame,
+        expression=namespace.expression,
+        register_numbers=tuple(namespace.register_numbers or ()),
+        register_names=tuple(namespace.register_names or ()),
+        include_vector_registers=namespace.include_vector_registers,
+        max_registers=namespace.max_registers,
+        value_format=cast(RegisterValueFormat | None, namespace.value_format),
+        memory_address=namespace.address if action == "memory" else None,
+        count=namespace.count,
+        offset=namespace.offset,
+        location=location,
+        instruction_count=namespace.instruction_count,
+        mode=cast(DisassemblyMode | None, namespace.mode),
+        context_before=namespace.context_before,
+        context_after=namespace.context_after,
         location_fields=location_fields,
     )
 
@@ -388,7 +393,7 @@ def parse_workflow_batch_input(namespace: argparse.Namespace) -> WorkflowBatchIn
     """Parse one workflow-batch namespace into a typed input object."""
 
     steps = parse_step_inputs(
-        namespace.__dict__.get("step_events"),
+        namespace.step_events,
         required=True,
         step_flag="--step",
     )
@@ -396,61 +401,60 @@ def parse_workflow_batch_input(namespace: argparse.Namespace) -> WorkflowBatchIn
     return WorkflowBatchInput(
         session_id=namespace.session_id,
         steps=steps,
-        fail_fast=namespace.__dict__.get("fail_fast"),
-        capture_stop_events=namespace.__dict__.get("capture_stop_events"),
+        fail_fast=namespace.fail_fast,
+        capture_stop_events=namespace.capture_stop_events,
     )
 
 
 def parse_run_until_failure_input(namespace: argparse.Namespace) -> RunUntilFailureInput:
     """Parse one run-until-failure namespace into a typed input object."""
 
-    namespace_fields = namespace.__dict__
     return RunUntilFailureInput(
-        startup_program=namespace_fields.get("startup_program"),
+        startup_program=namespace.startup_program,
         startup_args=tuple(namespace.startup_args),
         startup_init_commands=tuple(namespace.startup_init_commands),
         startup_env=collapse_key_value_entries(namespace.startup_env),
-        startup_gdb_path=namespace_fields.get("startup_gdb_path"),
-        startup_working_dir=namespace_fields.get("startup_working_dir"),
-        startup_core=namespace_fields.get("startup_core"),
+        startup_gdb_path=namespace.startup_gdb_path,
+        startup_working_dir=namespace.startup_working_dir,
+        startup_core=namespace.startup_core,
         setup_steps=parse_step_inputs(
-            namespace_fields.get("setup_step_events"),
+            namespace.setup_step_events,
             required=False,
             step_flag="--setup-step",
         ),
         run_args=tuple(namespace.run_args),
-        run_timeout_sec=namespace_fields.get("run_timeout_sec"),
-        max_iterations=namespace_fields.get("max_iterations"),
-        failure_on_error=namespace_fields.get("failure_on_error"),
-        failure_on_timeout=namespace_fields.get("failure_on_timeout"),
+        run_timeout_sec=namespace.run_timeout_sec,
+        max_iterations=namespace.max_iterations,
+        failure_on_error=namespace.failure_on_error,
+        failure_on_timeout=namespace.failure_on_timeout,
         failure_stop_reasons=(
-            tuple(cast(tuple[str, ...], namespace_fields.get("failure_stop_reasons", ())))
-            if "failure_stop_reasons" in namespace_fields
+            tuple(namespace.failure_stop_reasons)
+            if namespace.failure_stop_reasons is not None
             else None
         ),
         failure_execution_states=(
-            tuple(cast(tuple[str, ...], namespace_fields.get("failure_execution_states", ())))
-            if "failure_execution_states" in namespace_fields
+            tuple(namespace.failure_execution_states)
+            if namespace.failure_execution_states is not None
             else None
         ),
         failure_exit_codes=(
-            tuple(cast(tuple[int, ...], namespace_fields.get("failure_exit_codes", ())))
-            if "failure_exit_codes" in namespace_fields
+            tuple(namespace.failure_exit_codes)
+            if namespace.failure_exit_codes is not None
             else None
         ),
-        failure_result_text_regex=namespace_fields.get("failure_result_text_regex"),
-        capture_enabled=namespace_fields.get("capture_enabled"),
-        capture_output_dir=namespace_fields.get("capture_output_dir"),
-        capture_bundle_name_prefix=namespace_fields.get("capture_bundle_name_prefix"),
-        capture_bundle_name=namespace_fields.get("capture_bundle_name"),
+        failure_result_text_regex=namespace.failure_result_text_regex,
+        capture_enabled=namespace.capture_enabled,
+        capture_output_dir=namespace.capture_output_dir,
+        capture_bundle_name_prefix=namespace.capture_bundle_name_prefix,
+        capture_bundle_name=namespace.capture_bundle_name,
         capture_expressions=tuple(namespace.capture_expressions),
         capture_memory_ranges=tuple(namespace.capture_memory_ranges),
-        capture_max_frames=namespace_fields.get("capture_max_frames"),
-        capture_include_threads=namespace_fields.get("capture_include_threads"),
-        capture_include_backtraces=namespace_fields.get("capture_include_backtraces"),
-        capture_include_frame=namespace_fields.get("capture_include_frame"),
-        capture_include_variables=namespace_fields.get("capture_include_variables"),
-        capture_include_registers=namespace_fields.get("capture_include_registers"),
-        capture_include_transcript=namespace_fields.get("capture_include_transcript"),
-        capture_include_stop_history=namespace_fields.get("capture_include_stop_history"),
+        capture_max_frames=namespace.capture_max_frames,
+        capture_include_threads=namespace.capture_include_threads,
+        capture_include_backtraces=namespace.capture_include_backtraces,
+        capture_include_frame=namespace.capture_include_frame,
+        capture_include_variables=namespace.capture_include_variables,
+        capture_include_registers=namespace.capture_include_registers,
+        capture_include_transcript=namespace.capture_include_transcript,
+        capture_include_stop_history=namespace.capture_include_stop_history,
     )

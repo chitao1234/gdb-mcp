@@ -6,9 +6,10 @@ import asyncio
 import json
 import logging
 import os
+import socket
 import sys
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,6 +20,7 @@ from mcp.server import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.types import CallToolResult, Tool
 from starlette.applications import Starlette
+from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Route
 from starlette.types import Receive, Scope, Send
@@ -143,7 +145,7 @@ def create_streamable_http_app(
         activity=activity,
     )
 
-    async def shutdown_endpoint(request) -> JSONResponse | PlainTextResponse:
+    async def shutdown_endpoint(request: Request) -> JSONResponse | PlainTextResponse:
         if not _authorized(request.scope, auth_token):
             return PlainTextResponse("Unauthorized", status_code=401)
         force = request.query_params.get("force") in {"1", "true"}
@@ -160,7 +162,7 @@ def create_streamable_http_app(
         return JSONResponse({"status": "success"})
 
     @asynccontextmanager
-    async def lifespan(_: Starlette):
+    async def lifespan(_: Starlette) -> AsyncIterator[None]:
         watchdog: asyncio.Task[None] | None = None
         if idle_timeout_sec > 0 and request_shutdown is not None:
             watchdog = asyncio.create_task(
@@ -198,7 +200,7 @@ class _ReadyReportingServer(uvicorn.Server):
         self._ready_file = ready_file
         self._path = path
 
-    async def startup(self, sockets=None) -> None:
+    async def startup(self, sockets: list[socket.socket] | None = None) -> None:
         await super().startup(sockets)
         if self._ready_file is None:
             return

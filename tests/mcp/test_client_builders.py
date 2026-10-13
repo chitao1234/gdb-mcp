@@ -90,8 +90,8 @@ def test_parse_session_query_input_from_namespace() -> None:
     )
 
 
-def test_parse_session_query_input_without_session_id_attribute() -> None:
-    namespace = argparse.Namespace(action="list")
+def test_parse_session_query_input_without_session_id_argument() -> None:
+    namespace = argparse.Namespace(action="list", session_id=None)
 
     assert parse_session_query_input(namespace) == SessionQueryInput(
         action="list",

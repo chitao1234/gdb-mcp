@@ -26,7 +26,7 @@ from ..parsers import (
 
 
 def _configure_capture_bundle(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--session-id", type=int, default=None)
+    parser.add_argument("--session-id", type=int, default=argparse.SUPPRESS)
     parser.add_argument("--output-dir")
     parser.add_argument("--bundle-name")
     parser.add_argument("--expression", dest="expressions", action="append", default=[])
@@ -83,8 +83,8 @@ def _build_capture_bundle(namespace: argparse.Namespace) -> dict[str, object]:
 
 
 def _configure_workflow_batch(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--session-id", type=int, default=None)
-    parser.add_argument("--step", dest="step_events", action=AppendTaggedValue)
+    parser.add_argument("--session-id", type=int, default=argparse.SUPPRESS)
+    parser.add_argument("--step", dest="step_events", action=AppendTaggedValue, default=[])
     parser.add_argument("--step-label", dest="step_events", action=AppendTaggedValue)
     parser.add_argument(
         "--step-arg",
@@ -96,13 +96,13 @@ def _configure_workflow_batch(parser: argparse.ArgumentParser) -> None:
         parser,
         "fail_fast",
         help_text="Stop executing later steps after the first error",
-        suppress_default=True,
+        optional=True,
     )
     add_boolean_flag(
         parser,
         "capture_stop_events",
         help_text="Include new stop events produced by batch steps",
-        suppress_default=True,
+        optional=True,
     )
 
 
@@ -112,7 +112,7 @@ def _build_workflow_batch(typed_input: WorkflowBatchInput) -> dict[str, object]:
 
 
 def _configure_run_until_failure(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--startup-program", default=argparse.SUPPRESS)
+    parser.add_argument("--startup-program", default=None)
     parser.add_argument("--startup-arg", dest="startup_args", action="append", default=[])
     parser.add_argument(
         "--startup-init-command",
@@ -127,10 +127,12 @@ def _configure_run_until_failure(parser: argparse.ArgumentParser) -> None:
         type=key_value_entry,
         default=[],
     )
-    parser.add_argument("--startup-gdb-path", default=argparse.SUPPRESS)
-    parser.add_argument("--startup-working-dir", default=argparse.SUPPRESS)
-    parser.add_argument("--startup-core", default=argparse.SUPPRESS)
-    parser.add_argument("--setup-step", dest="setup_step_events", action=AppendTaggedValue)
+    parser.add_argument("--startup-gdb-path", default=None)
+    parser.add_argument("--startup-working-dir", default=None)
+    parser.add_argument("--startup-core", default=None)
+    parser.add_argument(
+        "--setup-step", dest="setup_step_events", action=AppendTaggedValue, default=[]
+    )
     parser.add_argument("--setup-step-label", dest="setup_step_events", action=AppendTaggedValue)
     parser.add_argument(
         "--setup-step-arg",
@@ -139,49 +141,49 @@ def _configure_run_until_failure(parser: argparse.ArgumentParser) -> None:
         type=dotted_assignment,
     )
     parser.add_argument("--run-arg", dest="run_args", action="append", default=[])
-    parser.add_argument("--run-timeout-sec", type=int, default=argparse.SUPPRESS)
-    parser.add_argument("--max-iterations", type=int, default=argparse.SUPPRESS)
+    parser.add_argument("--run-timeout-sec", type=int, default=None)
+    parser.add_argument("--max-iterations", type=int, default=None)
     add_boolean_flag(
         parser,
         "failure_on_error",
         help_text="Treat startup or run errors as matching failures",
-        suppress_default=True,
+        optional=True,
     )
     add_boolean_flag(
         parser,
         "failure_on_timeout",
         help_text="Treat run timeouts as matching failures",
-        suppress_default=True,
+        optional=True,
     )
     parser.add_argument(
         "--failure-stop-reason",
         dest="failure_stop_reasons",
         action="append",
-        default=argparse.SUPPRESS,
+        default=None,
     )
     parser.add_argument(
         "--failure-execution-state",
         dest="failure_execution_states",
         action="append",
-        default=argparse.SUPPRESS,
+        default=None,
     )
     parser.add_argument(
         "--failure-exit-code",
         dest="failure_exit_codes",
         action="append",
         type=int,
-        default=argparse.SUPPRESS,
+        default=None,
     )
-    parser.add_argument("--failure-result-text-regex", default=argparse.SUPPRESS)
+    parser.add_argument("--failure-result-text-regex", default=None)
     add_boolean_flag(
         parser,
         "capture_enabled",
         help_text="Write a capture bundle when a failure matches",
-        suppress_default=True,
+        optional=True,
     )
-    parser.add_argument("--capture-output-dir", default=argparse.SUPPRESS)
-    parser.add_argument("--capture-bundle-name-prefix", default=argparse.SUPPRESS)
-    parser.add_argument("--capture-bundle-name", default=argparse.SUPPRESS)
+    parser.add_argument("--capture-output-dir", default=None)
+    parser.add_argument("--capture-bundle-name-prefix", default=None)
+    parser.add_argument("--capture-bundle-name", default=None)
     parser.add_argument(
         "--capture-expression",
         dest="capture_expressions",
@@ -194,48 +196,48 @@ def _configure_run_until_failure(parser: argparse.ArgumentParser) -> None:
         action="append",
         default=[],
     )
-    parser.add_argument("--capture-max-frames", type=int, default=argparse.SUPPRESS)
+    parser.add_argument("--capture-max-frames", type=int, default=None)
     add_boolean_flag(
         parser,
         "capture_include_threads",
         help_text="Capture thread inventory",
-        suppress_default=True,
+        optional=True,
     )
     add_boolean_flag(
         parser,
         "capture_include_backtraces",
         help_text="Capture thread backtraces",
-        suppress_default=True,
+        optional=True,
     )
     add_boolean_flag(
         parser,
         "capture_include_frame",
         help_text="Capture the selected frame",
-        suppress_default=True,
+        optional=True,
     )
     add_boolean_flag(
         parser,
         "capture_include_variables",
         help_text="Capture variables for the selected context",
-        suppress_default=True,
+        optional=True,
     )
     add_boolean_flag(
         parser,
         "capture_include_registers",
         help_text="Capture registers for the selected context",
-        suppress_default=True,
+        optional=True,
     )
     add_boolean_flag(
         parser,
         "capture_include_transcript",
         help_text="Capture the bounded command transcript",
-        suppress_default=True,
+        optional=True,
     )
     add_boolean_flag(
         parser,
         "capture_include_stop_history",
         help_text="Capture the bounded stop-event history",
-        suppress_default=True,
+        optional=True,
     )
 
 

@@ -4,21 +4,22 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import builtins
 from contextlib import redirect_stderr
 import json
 import os
 import sys
 from collections.abc import Sequence
-from typing import TextIO
+from typing import Protocol, TextIO, runtime_checkable
 
 import httpx
 from pydantic import ValidationError
 
+from gdb_mcp import __version__
 from gdb_mcp.contracts import (
     ACTION_LIST,
     ACTION_STATUS,
     ACTION_STOP,
+    TOOL_ATTACH_PROCESS,
     TOOL_SESSION_MANAGE,
     TOOL_SESSION_QUERY,
     TOOL_SESSION_START,
@@ -49,26 +50,31 @@ from .specs import (
 _GLOBAL_FLAGS = {"--server-url", "--json", "--payload-json"}
 _SERVER_URL_ENV = "GDB_MCP_SERVER_URL"
 
-_BASE_EXCEPTION_GROUP_TYPE = getattr(builtins, "BaseExceptionGroup", None)
+
+@runtime_checkable
+class _ExceptionGroupLike(Protocol):
+    """Structural type for Python 3.11+ exception groups."""
+
+    exceptions: tuple[BaseException, ...]
 
 
 def _is_exception_group(exc: BaseException) -> bool:
-    """Return whether the runtime exception is a Python 3.11+ exception group."""
+    """Return whether the runtime exception carries grouped exceptions."""
 
-    return _BASE_EXCEPTION_GROUP_TYPE is not None and isinstance(exc, _BASE_EXCEPTION_GROUP_TYPE)
+    return isinstance(exc, _ExceptionGroupLike)
 
 
 def _format_runtime_error(exc: BaseException) -> str:
     """Render one runtime failure for CLI stderr output."""
 
-    if _is_exception_group(exc):
-        exceptions = getattr(exc, "exceptions", ())
+    if isinstance(exc, _ExceptionGroupLike):
+        exceptions = exc.exceptions
         if not exceptions:
-            return str(exc) or exc.__class__.__name__
+            return str(exc) or type(exc).__name__
         return _format_runtime_error(exceptions[0])
 
     message = str(exc).strip()
-    return message or exc.__class__.__name__
+    return message or type(exc).__name__
 
 
 def _add_invocation_flags(
@@ -93,6 +99,26 @@ def _add_invocation_flags(
             "validated against the published tool schema."
         ),
     )
+
+
+def _add_version_flag(parser: argparse.ArgumentParser) -> None:
+    """Add the `--version` action using the packaged client version."""
+
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
+
+
+def _add_global_session_id(parser: argparse.ArgumentParser) -> None:
+    """Add `--session-id` before the subcommand, mirrored by every tool spec.
+
+    The top-level default is ``None``; tool specs use ``SUPPRESS`` so a value
+    placed before the subcommand is not clobbered by the subparser default.
+    """
+
+    parser.add_argument("--session-id", type=int, default=None)
 
 
 def _tool_epilog(tool_name: str) -> str | None:
@@ -218,7 +244,9 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the top-level CLI parser."""
 
     parser = argparse.ArgumentParser(prog="gdb-mcp-client")
+    _add_version_flag(parser)
     _add_invocation_flags(parser)
+    _add_global_session_id(parser)
     parser.set_defaults(facade_command=None)
 
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -269,7 +297,9 @@ def build_payload_parser() -> argparse.ArgumentParser:
     """
 
     parser = argparse.ArgumentParser(prog="gdb-mcp-client")
+    _add_version_flag(parser)
     _add_invocation_flags(parser)
+    _add_global_session_id(parser)
     parser.add_argument("tool_name", metavar="tool_name")
     return parser
 
@@ -305,22 +335,95 @@ def parse_client_args(
     return args
 
 
+def _duplicate_facade_field(flag: str) -> CliUsageError:
+    """Build the error raised when a flag and its shorthand are both provided."""
+
+    return CliUsageError(f"pass either {flag} or the positional argument, not both")
+
+
+def _merge_facade_positional(
+    args: argparse.Namespace,
+    argument: str,
+    flag: str,
+) -> None:
+    """Fold one facade positional into its flag field, rejecting duplicates."""
+
+    if argument == "program":
+        if args._program is None:
+            return
+        if args.program is not None:
+            raise _duplicate_facade_field(flag)
+        args.program = args._program
+    elif argument == "pid":
+        if args._pid is None:
+            return
+        if args.pid is not None:
+            raise _duplicate_facade_field(flag)
+        args.pid = args._pid
+    elif argument == "frame":
+        if args._frame is None:
+            return
+        if args.frame is not None:
+            raise _duplicate_facade_field(flag)
+        args.frame = args._frame
+    elif argument == "address":
+        if args._address is None:
+            return
+        if args.address is not None:
+            raise _duplicate_facade_field(flag)
+        args.address = args._address
+    elif argument == "location":
+        if args._location is None:
+            return
+        if args.location is not None:
+            raise _duplicate_facade_field(flag)
+        args.location = args._location
+    elif argument == "number":
+        if args._number is None:
+            return
+        if args.number is not None:
+            raise _duplicate_facade_field(flag)
+        args.number = args._number
+    elif argument == "expression":
+        if args._expression is None:
+            return
+        if args.expression is not None:
+            raise _duplicate_facade_field(flag)
+        args.expression = args._expression
+    elif argument == "event":
+        if args._event is None:
+            return
+        if args.event is not None:
+            raise _duplicate_facade_field(flag)
+        args.event = args._event
+    elif argument == "function_call":
+        if args._function_call is None:
+            return
+        if args.function_call is not None:
+            raise _duplicate_facade_field(flag)
+        args.function_call = args._function_call
+    elif argument == "command":
+        if args._command is None:
+            return
+        if args.command is not None:
+            raise _duplicate_facade_field(flag)
+        args.command = args._command
+    else:
+        raise CliUsageError(f"unsupported facade positional: {argument}")
+
+
 def _apply_facade_metadata(args: argparse.Namespace, command: FacadeCommand) -> None:
     """Fold a facade command's positionals and implied fields into the namespace."""
 
     for argument, flag in command.positionals:
-        value = getattr(args, f"_{argument}", None)
-        if value is None:
-            continue
-        dest = flag.lstrip("-").replace("-", "_")
-        if getattr(args, dest, None) is not None:
-            raise CliUsageError(f"pass either {flag} or the positional argument, not both")
-        setattr(args, dest, value)
-    if command.action is not None:
+        _merge_facade_positional(args, argument, flag)
+    if command.action is not None and args.action is None:
         args.action = command.action
     for field_name, value in command.fixed.items():
-        if getattr(args, field_name, None) is None:
-            setattr(args, field_name, value)
+        if field_name == "breakpoint_kind" and args.breakpoint_kind is None:
+            args.breakpoint_kind = value
+        elif field_name != "breakpoint_kind":
+            raise CliUsageError(f"unsupported facade fixed field: {field_name}")
 
 
 def _session_id_error(exc: ValidationError) -> bool:
@@ -362,6 +465,45 @@ def _session_id_from_payload(payload: dict[str, object]) -> int | None:
     if isinstance(result, dict):
         candidates.append(result.get("session_id"))
     return next((value for value in candidates if isinstance(value, int)), None)
+
+
+async def _ensure_attach_session(
+    args: argparse.Namespace,
+    resolved: ResolvedServer,
+    http_client: httpx.AsyncClient | None,
+) -> None:
+    """Give `attach` a session, starting a fresh one when none is recorded.
+
+    Attaching conceptually creates a debug session, so when the caller has not
+    supplied ``--session-id`` and the project has no remembered session we
+    start an empty GDB session and attach into it.
+    """
+
+    if args.session_id is not None:
+        return
+    if resolved.managed:
+        remembered = remembered_session_id()
+        if remembered is not None:
+            args.session_id = remembered
+            return
+
+    response = await invoke_tool(
+        resolved.url,
+        TOOL_SESSION_START,
+        {},
+        http_client=http_client,
+        auth_token=resolved.token,
+    )
+    if response.is_error:
+        raise CliUsageError(
+            response.payload.get("message", "could not start a session to attach to")
+        )
+    session_id = _session_id_from_payload(response.payload)
+    if session_id is None:
+        raise CliUsageError("could not start a session to attach to")
+    if resolved.managed:
+        remember_session_id(session_id)
+    args.session_id = session_id
 
 
 def _default_session_annotation(
@@ -470,10 +612,11 @@ async def main(
                     + ", ".join(sorted(set(conflicting)))
                 )
         args = parse_client_args(effective_argv, parser=parser)
-        if getattr(args, "command", None) == "daemon":
-            return await _run_daemon_command(args, output)
-        if getattr(args, "command", None) == "session":
-            return await _run_session_command(args, output, error_output)
+        if not payload_mode:
+            if args.command == "daemon":
+                return await _run_daemon_command(args, output)
+            if args.command == "session":
+                return await _run_session_command(args, output, error_output)
         canonical = _normalize_tool_name(args.tool_name)
         if canonical is None:
             parser.error(f"unknown tool: {args.tool_name}")
@@ -485,11 +628,19 @@ async def main(
         return 1
     spec = CLIENT_TOOL_SPECS[args.tool_name]
     with redirect_stderr(error_output):
-        if getattr(args, "facade_command", None) is not None:
+        if not payload_mode and args.facade_command is not None:
             try:
                 _apply_facade_metadata(args, args.facade_command)
             except CliUsageError as exc:
                 parser.error(str(exc))
+        if not payload_mode and args.tool_name == TOOL_ATTACH_PROCESS:
+            try:
+                await _ensure_attach_session(args, resolved, http_client)
+            except CliUsageError as exc:
+                parser.error(str(exc))
+            except Exception as exc:
+                error_output.write(f"gdb-mcp-client: error: {_format_runtime_error(exc)}\n")
+                return 1
         if payload_mode:
             payload = _payload_from_json(args.tool_name, args.payload_json, parser)
         else:
@@ -525,7 +676,7 @@ async def main(
         and not response.is_error
         and args.tool_name == TOOL_SESSION_MANAGE
         and response.payload.get("action") == ACTION_STOP
-        and getattr(args, "session_id", None) == remembered_session_id()
+        and args.session_id == remembered_session_id()
     ):
         forget_session_id()
 

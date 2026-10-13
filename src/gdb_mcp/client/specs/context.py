@@ -68,9 +68,9 @@ def _validate_context_manage_input(typed_input: ContextManageInput) -> None:
 def _configure_context_query(parser: argparse.ArgumentParser) -> None:
     _add_session_id(parser)
     _add_action(parser, choices=CONTEXT_QUERY_ACTIONS)
-    parser.add_argument("--thread-id", type=int, default=argparse.SUPPRESS)
-    parser.add_argument("--frame", type=int, default=argparse.SUPPRESS)
-    parser.add_argument("--max-frames", type=int, default=argparse.SUPPRESS)
+    parser.add_argument("--thread-id", type=int, default=None)
+    parser.add_argument("--frame", type=int, default=None)
+    parser.add_argument("--max-frames", type=int, default=None)
 
 
 def _build_context_query(typed_input: ContextQueryInput) -> dict[str, object]:
@@ -82,8 +82,8 @@ def _build_context_query(typed_input: ContextQueryInput) -> dict[str, object]:
 def _configure_context_manage(parser: argparse.ArgumentParser) -> None:
     _add_session_id(parser)
     _add_action(parser, choices=CONTEXT_MANAGE_ACTIONS)
-    parser.add_argument("--thread-id", type=int, default=argparse.SUPPRESS)
-    parser.add_argument("--frame", type=int, default=argparse.SUPPRESS)
+    parser.add_argument("--thread-id", type=int, default=None)
+    parser.add_argument("--frame", type=int, default=None)
 
 
 def _build_context_manage(typed_input: ContextManageInput) -> dict[str, object]:

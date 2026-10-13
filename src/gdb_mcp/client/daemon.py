@@ -235,8 +235,9 @@ async def _spawn(paths: DaemonPaths) -> ResolvedServer:
     if os.name == "nt":  # pragma: no cover - Windows only
         # Detach from the console so the daemon survives terminal close and
         # does not receive the console's Ctrl-C.
-        creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(
-            subprocess, "DETACHED_PROCESS", 0
+        creationflags = (
+            subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+            | subprocess.DETACHED_PROCESS  # type: ignore[attr-defined]
         )
     with open(paths.log, "ab") as log_handle:
         process = subprocess.Popen(

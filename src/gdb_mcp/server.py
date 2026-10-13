@@ -147,8 +147,16 @@ def configure_logging() -> None:
     """Configure process logging for the standalone server entrypoint."""
 
     log_level = os.environ.get("GDB_MCP_LOG_LEVEL", "INFO").upper()
+    levels: dict[str, int] = {
+        "CRITICAL": logging.CRITICAL,
+        "ERROR": logging.ERROR,
+        "WARNING": logging.WARNING,
+        "INFO": logging.INFO,
+        "DEBUG": logging.DEBUG,
+        "NOTSET": logging.NOTSET,
+    }
     logging.basicConfig(
-        level=getattr(logging, log_level, logging.INFO),
+        level=levels.get(log_level, logging.INFO),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 

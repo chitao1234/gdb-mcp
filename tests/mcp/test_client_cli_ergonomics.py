@@ -178,3 +178,44 @@ def test_subcommand_help_lists_validated_payload_examples(capsys) -> None:
     output = capsys.readouterr().out
     assert "--payload-json" in output
     assert '"kind": "code"' in output
+
+
+def test_version_flag_prints_the_client_version(capsys) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        build_parser().parse_args(["--version"])
+
+    assert exc_info.value.code == 0
+    assert "gdb-mcp-client" in capsys.readouterr().out
+
+
+@patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
+def test_session_id_is_accepted_before_the_subcommand(mock_invoke_tool, monkeypatch) -> None:
+    monkeypatch.setenv("GDB_MCP_SERVER_URL", SERVER_URL)
+    mock_invoke_tool.return_value = ClientToolResponse(
+        payload={"status": "success"}, is_error=False
+    )
+
+    exit_code = asyncio.run(
+        main(
+            ["--session-id", "4", "exec", "run"],
+            stdout=StringIO(),
+        )
+    )
+
+    assert exit_code == 0
+    mock_invoke_tool.assert_awaited_once_with(
+        SERVER_URL,
+        "gdb_execute_command",
+        {"session_id": 4, "command": "run", "timeout_sec": 30},
+        http_client=None,
+        auth_token=None,
+    )
+
+
+def test_session_id_before_the_subcommand_is_parsed() -> None:
+    args = parse_client_args(
+        ["--session-id", "4", "exec", "run"],
+        parser=build_parser(),
+    )
+
+    assert args.session_id == 4
