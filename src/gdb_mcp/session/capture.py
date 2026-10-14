@@ -19,7 +19,7 @@ from ..domain import (
     payload_to_mapping,
     result_to_mapping,
 )
-from ..domain.parsing import as_execution_state
+from ..domain.parsing import as_execution_state, as_text
 from .inspection import SessionInspectionService
 from .lifecycle import SessionLifecycleService
 from .runtime import SessionRuntime
@@ -153,11 +153,10 @@ class SessionCaptureService:
             if threads_capture.artifact.status == "error":
                 failed_sections.append("threads")
             elif isinstance(threads_result, OperationSuccess):
-                thread_ids = [
-                    int(thread["id"])
-                    for thread in threads_result.value.threads
-                    if isinstance(thread.get("id"), str) and str(thread["id"]).isdigit()
-                ]
+                for thread in threads_result.value.threads:
+                    raw_id = as_text(thread.get("id"))
+                    if raw_id is not None and raw_id.isdigit():
+                        thread_ids.append(int(raw_id))
 
         if request.include_backtraces:
             backtrace_payloads: list[StructuredPayload] = []

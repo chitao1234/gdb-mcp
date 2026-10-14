@@ -9,6 +9,7 @@ from ...domain import (
     OperationSuccess,
     memory_block_records,
 )
+from ...domain.parsing import as_text
 from ...transport import (
     build_evaluate_expression_command,
     build_read_memory_command,
@@ -84,7 +85,7 @@ class InspectionMemoryMixin(InspectionBase):
 
         payload = extract_mi_result_payload(command_result_payload(result))
         blocks = memory_block_records(payload)
-        captured_bytes = sum(len(block.get("contents", "")) // 2 for block in blocks)
+        captured_bytes = sum(len(as_text(block.get("contents")) or "") // 2 for block in blocks)
         return OperationSuccess(
             MemoryReadInfo(
                 address=address,

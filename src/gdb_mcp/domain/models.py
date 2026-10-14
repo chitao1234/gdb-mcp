@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Literal, TypedDict, TypeAlias
 
@@ -27,54 +28,16 @@ CatchpointType: TypeAlias = Literal[
 ]
 
 
-class FrameRecord(TypedDict, total=False):
-    """Structured stack-frame payload returned by GDB."""
-
-    level: str
-    addr: str
-    func: str
-    file: str
-    fullname: str
-    line: str
-    arch: str
-
-
-class ThreadRecord(TypedDict, total=False):
-    """Structured thread payload returned by GDB."""
-
-    id: str
-    target_id: str
-    name: str
-    state: str
-    core: str
-    frame: FrameRecord
-
-
-class BreakpointRecord(TypedDict, total=False):
-    """Structured breakpoint payload returned by GDB."""
-
-    number: str
-    type: str
-    disp: str
-    enabled: str
-    addr: str
-    func: str
-    file: str
-    fullname: str
-    line: str
-    times: str
-    exp: str
-    what: str
-    original_location: str
-
-
-class VariableRecord(TypedDict, total=False):
-    """Structured local-variable payload returned by GDB."""
-
-    name: str
-    value: str
-    type: str
-    arg: str
+# Pass-through GDB/MI records are modeled as open mappings. GDB may add fields
+# (and uses hyphenated keys such as ``target-id``, ``exit-code``) that a closed
+# ``TypedDict`` cannot express, so these preserve whatever the target emits.
+# Reading a specific field goes through the typed accessors in ``domain.parsing``.
+FrameRecord: TypeAlias = Mapping[str, object]
+ThreadRecord: TypeAlias = Mapping[str, object]
+BreakpointRecord: TypeAlias = Mapping[str, object]
+VariableRecord: TypeAlias = Mapping[str, object]
+RegisterRecord: TypeAlias = Mapping[str, object]
+MemoryBlockRecord: TypeAlias = Mapping[str, object]
 
 
 class DisassemblyInstructionRecord(TypedDict, total=False):
@@ -97,22 +60,6 @@ class SourceLineRecord(TypedDict, total=False):
     line_number: int
     text: str
     is_current: bool
-
-
-class RegisterRecord(TypedDict, total=False):
-    """Structured register payload returned by GDB."""
-
-    number: str
-    value: str
-
-
-class MemoryBlockRecord(TypedDict, total=False):
-    """Structured memory block payload returned by GDB."""
-
-    begin: str
-    end: str
-    offset: str
-    contents: str
 
 
 class InferiorRecord(TypedDict, total=False):

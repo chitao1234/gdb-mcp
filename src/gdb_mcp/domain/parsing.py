@@ -29,6 +29,18 @@ def as_payload(value: object) -> StructuredPayload:
     return cast(StructuredPayload, value) if isinstance(value, Mapping) else {}
 
 
+def as_mapping(value: object) -> Mapping[str, object]:
+    """Narrow untrusted data into a mapping, or an empty mapping otherwise."""
+
+    return value if isinstance(value, Mapping) else {}
+
+
+def as_record_list(value: object) -> list[Mapping[str, object]]:
+    """Return the list payload entries that are themselves mappings."""
+
+    return [item for item in as_list(value) if isinstance(item, Mapping)]
+
+
 def as_optional_payload(value: object) -> StructuredPayload | None:
     """Narrow untrusted data into a JSON object payload, or ``None``."""
 
@@ -38,7 +50,7 @@ def as_optional_payload(value: object) -> StructuredPayload | None:
 def as_frame_record(value: object) -> FrameRecord | None:
     """Narrow an MI frame payload into the structured frame record type."""
 
-    return cast(FrameRecord, value) if isinstance(value, Mapping) else None
+    return value if isinstance(value, Mapping) else None
 
 
 def as_list(value: object) -> list[object]:
