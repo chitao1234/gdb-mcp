@@ -30,6 +30,7 @@ from gdb_mcp.contracts import (
 from gdb_mcp.mcp.handlers import SESSION_TOOL_SPECS
 from gdb_mcp.mcp.schemas import (
     BATCH_STEP_TOOL_MODELS,
+    TOOL_MODELS,
     BreakpointCodeCreateArgs,
     BreakpointCatchCreateArgs,
     BreakpointListQueryArgs,
@@ -188,6 +189,12 @@ def test_batch_step_tool_names_match_workflow_allowlists() -> None:
     assert set(BATCH_STEP_TOOL_MODELS) == expected_tools
     for tool_name in expected_tools:
         assert BATCH_STEP_TOOL_MODELS[tool_name] is SESSION_TOOL_SPECS[tool_name].model
+
+
+def test_session_tool_specs_share_the_public_request_models() -> None:
+    assert set(SESSION_TOOL_SPECS) <= set(TOOL_MODELS)
+    for tool_name, spec in SESSION_TOOL_SPECS.items():
+        assert spec.model is TOOL_MODELS[tool_name]
 
 
 def test_batch_step_tool_alias_and_client_field_match_shared_contract() -> None:

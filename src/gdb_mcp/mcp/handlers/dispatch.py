@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import cast
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from mcp.types import CallToolResult
 
 from ...contracts import (
@@ -42,6 +42,15 @@ from .session import (
 )
 from .workflow import _handle_run_until_failure
 from .registry import SESSION_TOOL_SPECS
+
+
+def _validation_model(name: str) -> type[BaseModel] | None:
+    """Resolve one tool's request model from the authoritative registry."""
+
+    spec = SESSION_TOOL_SPECS.get(name)
+    if spec is not None:
+        return spec.model
+    return TOOL_MODELS.get(name)
 
 
 def _dispatch_session_tool(
@@ -118,7 +127,7 @@ async def dispatch_tool_call(
 
     except ValidationError as exc:
         return serialize_result(
-            build_validation_error(exc, tool_name=name, model=TOOL_MODELS.get(name))
+            build_validation_error(exc, tool_name=name, model=_validation_model(name))
         )
     except Exception as exc:
         logger.error("Error executing tool %s: %s", name, exc, exc_info=True)
