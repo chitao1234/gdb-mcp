@@ -397,7 +397,8 @@ def parse_workflow_batch_input(namespace: argparse.Namespace) -> WorkflowBatchIn
         required=True,
         step_flag="--step",
     )
-    assert steps is not None
+    if steps is None:  # pragma: no cover - required=True raises before this
+        raise CliUsageError("At least one --step is required")
     return WorkflowBatchInput(
         session_id=namespace.session_id,
         steps=steps,

@@ -56,11 +56,13 @@ class _WorkingDirGdbController(GdbController):
             cwd=self._cwd,
         )
 
-        assert self.gdb_process.stdin is not None
-        assert self.gdb_process.stdout is not None
+        stdin = self.gdb_process.stdin
+        stdout = self.gdb_process.stdout
+        if stdin is None or stdout is None:  # pragma: no cover - PIPE guarantees both
+            raise RuntimeError("GDB subprocess did not expose stdin/stdout pipes")
         self.io_manager = IoManager(
-            self.gdb_process.stdin,
-            self.gdb_process.stdout,
+            stdin,
+            stdout,
             self.gdb_process.stderr,
             self.time_to_check_for_additional_output_sec,
         )

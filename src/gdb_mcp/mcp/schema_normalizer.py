@@ -23,6 +23,7 @@ Pydantic request models, so request semantics remain fully enforced.
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Sequence
 from typing import Any
 
@@ -33,9 +34,7 @@ Schema = dict[str, Any]
 _MISSING = object()
 
 
-_SCHEMA_CACHE: dict[type[BaseModel], Schema] = {}
-
-
+@functools.lru_cache(maxsize=None)
 def _cached_input_schema(model: type[BaseModel]) -> Schema:
     """Return the normalized schema for a model, computed once per process.
 
@@ -43,11 +42,7 @@ def _cached_input_schema(model: type[BaseModel]) -> Schema:
     deterministic; callers must treat the returned dict as read-only.
     """
 
-    cached = _SCHEMA_CACHE.get(model)
-    if cached is None:
-        cached = normalize_input_schema(model.model_json_schema())
-        _SCHEMA_CACHE[model] = cached
-    return cached
+    return normalize_input_schema(model.model_json_schema())
 
 
 def public_input_schema(
