@@ -12,9 +12,11 @@ session, and transport layers, and gives one well-tested place to audit.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import cast
+from typing import cast, get_args
 
-from .models import FrameRecord, StructuredPayload
+from .models import ExecutionState, FrameRecord, StructuredPayload
+
+_EXECUTION_STATES: frozenset[str] = frozenset(get_args(ExecutionState))
 
 
 def as_payload(value: object) -> StructuredPayload:
@@ -72,4 +74,13 @@ def as_int(value: object) -> int | None:
         return value
     if isinstance(value, str) and value.isdigit():
         return int(value)
+    return None
+
+
+def as_execution_state(value: object) -> ExecutionState | None:
+    """Parse a session execution-state string, or ``None`` when unrecognized."""
+
+    text = as_text(value)
+    if text is not None and text in _EXECUTION_STATES:
+        return cast(ExecutionState, text)
     return None

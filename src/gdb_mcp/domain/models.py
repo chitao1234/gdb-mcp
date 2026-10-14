@@ -12,6 +12,7 @@ JsonValue: TypeAlias = JsonScalar | JsonObject | JsonArray
 StructuredPayload: TypeAlias = JsonObject
 FollowForkMode: TypeAlias = Literal["parent", "child"]
 WatchpointAccessType: TypeAlias = Literal["write", "read", "access"]
+ExecutionState: TypeAlias = Literal["unknown", "not_started", "running", "paused", "exited"]
 CatchpointType: TypeAlias = Literal[
     "throw",
     "rethrow",
@@ -133,7 +134,7 @@ class InferiorStateRecord(TypedDict, total=False):
 
     inferior_id: int
     is_current: bool
-    execution_state: str
+    execution_state: ExecutionState
     stop_reason: str | None
     exit_code: int | None
 
@@ -145,7 +146,7 @@ class SessionStatusSnapshot:
     is_running: bool
     target_loaded: bool
     has_controller: bool
-    execution_state: str = "unknown"
+    execution_state: ExecutionState = "unknown"
     stop_reason: str | None = None
     exit_code: int | None = None
     current_inferior_id: int | None = None
@@ -161,7 +162,7 @@ class SessionSummary:
 
     session_id: int
     lifecycle_state: str
-    execution_state: str
+    execution_state: ExecutionState
     target_loaded: bool
     has_controller: bool
     program: str | None = None
@@ -196,7 +197,7 @@ class SessionStartInfo:
     program: str | None = None
     core: str | None = None
     target_loaded: bool = False
-    execution_state: str = "unknown"
+    execution_state: ExecutionState = "unknown"
     stop_reason: str | None = None
     exit_code: int | None = None
     startup_output: str | None = None
@@ -209,7 +210,7 @@ class SessionStartInfo:
 class StopEvent:
     """Structured description of one inferior stop or exit event."""
 
-    execution_state: str
+    execution_state: ExecutionState
     reason: str | None = None
     command: str | None = None
     inferior_id: int | None = None
@@ -234,7 +235,7 @@ class CommandTranscriptEntry:
     timed_out: bool = False
     fatal: bool = False
     error: str | None = None
-    execution_state: str | None = None
+    execution_state: ExecutionState | None = None
     stop_reason: str | None = None
     timestamp: float | None = None
 
@@ -263,7 +264,7 @@ class BatchExecutionInfo:
     error_count: int
     stopped_early: bool = False
     failure_step_index: int | None = None
-    final_execution_state: str | None = None
+    final_execution_state: ExecutionState | None = None
     final_stop_reason: str | None = None
     last_stop_event: StopEvent | None = None
 
@@ -289,7 +290,7 @@ class CaptureBundleInfo:
     artifacts: list[CaptureArtifactInfo]
     artifact_count: int
     failed_sections: list[str] | None = None
-    execution_state: str | None = None
+    execution_state: ExecutionState | None = None
     stop_reason: str | None = None
     last_stop_event: StopEvent | None = None
 
@@ -300,7 +301,7 @@ class RunUntilFailureIterationInfo:
 
     iteration: int
     status: str
-    execution_state: str | None = None
+    execution_state: ExecutionState | None = None
     stop_reason: str | None = None
     exit_code: int | None = None
     matched_failure: bool = False
@@ -318,7 +319,7 @@ class RunUntilFailureInfo:
     iterations_completed: int
     failure_iteration: int | None = None
     trigger: str | None = None
-    execution_state: str | None = None
+    execution_state: ExecutionState | None = None
     stop_reason: str | None = None
     exit_code: int | None = None
     capture_bundle: CaptureBundleInfo | None = None
@@ -410,7 +411,7 @@ class WaitForStopInfo:
     matched: bool
     timed_out: bool = False
     source: str = "waited"
-    execution_state: str | None = None
+    execution_state: ExecutionState | None = None
     stop_reason: str | None = None
     reason_filter: list[str] | None = None
     last_stop_event: StopEvent | None = None
@@ -424,7 +425,7 @@ class FinishInfo:
     return_value: str | None = None
     gdb_result_var: str | None = None
     frame: FrameRecord | None = None
-    execution_state: str | None = None
+    execution_state: ExecutionState | None = None
     stop_reason: str | None = None
     last_stop_event: StopEvent | None = None
 

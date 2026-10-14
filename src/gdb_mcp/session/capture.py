@@ -10,6 +10,7 @@ import tempfile
 from ..domain import (
     CaptureArtifactInfo,
     CaptureBundleInfo,
+    ExecutionState,
     MemoryCaptureRange,
     OperationError,
     OperationResult,
@@ -18,6 +19,7 @@ from ..domain import (
     payload_to_mapping,
     result_to_mapping,
 )
+from ..domain.parsing import as_execution_state
 from .inspection import SessionInspectionService
 from .lifecycle import SessionLifecycleService
 from .runtime import SessionRuntime
@@ -109,7 +111,7 @@ class SessionCaptureService:
         artifacts.append(status_payload.artifact)
         if status_payload.artifact.status == "error":
             failed_sections.append("session-status")
-        status_execution_state = self._status_field(
+        status_execution_state = self._execution_state_field(
             status_payload.payload,
             "execution_state",
             self._runtime.execution_state,
@@ -426,6 +428,17 @@ class SessionCaptureService:
 
         value = payload.get(key)
         return value if isinstance(value, str) else default
+
+    @staticmethod
+    def _execution_state_field(
+        payload: StructuredPayload,
+        key: str,
+        default: ExecutionState,
+    ) -> ExecutionState:
+        """Extract one execution-state field, falling back to the runtime value."""
+
+        parsed = as_execution_state(payload.get(key))
+        return parsed if parsed is not None else default
 
 
 @dataclass(slots=True, frozen=True)

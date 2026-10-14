@@ -8,6 +8,7 @@ from typing import TypeVar
 
 from ..domain import (
     CommandTranscriptEntry,
+    ExecutionState,
     FollowForkMode,
     InferiorStateRecord,
     StopEvent,
@@ -26,7 +27,7 @@ HistoryItemT = TypeVar("HistoryItemT")
 class InferiorRuntimeState:
     """Mutable runtime execution state for one inferior."""
 
-    execution_state: str = "unknown"
+    execution_state: ExecutionState = "unknown"
     stop_reason: str | None = None
     exit_code: int | None = None
 
@@ -45,7 +46,7 @@ class SessionRuntime:
     is_running: bool = False
     target_loaded: bool = False
     attached_pid: int | None = None
-    execution_state: str = "unknown"
+    execution_state: ExecutionState = "unknown"
     stop_reason: str | None = None
     exit_code: int | None = None
     last_failure_message: str | None = None
@@ -359,7 +360,7 @@ class SessionRuntime:
         self,
         *,
         inferior_id: int | None,
-        execution_state: str,
+        execution_state: ExecutionState,
         stop_reason: str | None,
         exit_code: int | None,
     ) -> None:

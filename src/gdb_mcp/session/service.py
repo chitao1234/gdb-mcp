@@ -16,6 +16,7 @@ from ..domain import (
     CommandExecutionInfo,
     DetachOnForkInfo,
     DisassemblyInfo,
+    ExecutionState,
     ExpressionValueInfo,
     FinishInfo,
     FrameInfo,
@@ -130,7 +131,7 @@ class SessionService:
         return self.runtime.target_loaded
 
     @property
-    def execution_state(self) -> str:
+    def execution_state(self) -> ExecutionState:
         """Expose the current inferior execution state."""
 
         return self.runtime.execution_state

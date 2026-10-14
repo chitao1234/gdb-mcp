@@ -9,6 +9,7 @@ from typing import cast
 from ..domain import (
     CommandExecutionInfo,
     CommandTranscriptEntry,
+    ExecutionState,
     FollowForkMode,
     OperationError,
     OperationSuccess,
@@ -510,7 +511,7 @@ class SessionCommandRunner:
         signal_name = as_text_or_number(payload_mapping.get("signal-name"))
         signal_meaning = as_text_or_number(payload_mapping.get("signal-meaning"))
         breakpoint_number = self._extract_breakpoint_number(payload_mapping)
-        execution_state = (
+        execution_state: ExecutionState = (
             "exited"
             if stopped_reason in {"exited", "exited-normally", "exited-signalled"}
             else "paused"
