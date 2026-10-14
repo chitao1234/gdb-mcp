@@ -26,11 +26,11 @@ class _WorkingDirGdbController(GdbController):
 
     def __init__(
         self,
-        command=None,
-        time_to_check_for_additional_output_sec=0.2,
+        command: list[str] | None = None,
+        time_to_check_for_additional_output_sec: float = 0.2,
         *,
         cwd: str | None = None,
-    ):
+    ) -> None:
         self._cwd = cwd
         super().__init__(
             command=command,

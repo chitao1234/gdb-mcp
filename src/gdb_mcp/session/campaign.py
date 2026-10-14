@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 import json
 import re
@@ -78,7 +79,7 @@ class RunUntilFailureRequest:
 class RunUntilFailureService:
     """Run repeated fresh-session attempts until a failure predicate matches."""
 
-    def __init__(self, session_factory):
+    def __init__(self, session_factory: Callable[[], SessionService]) -> None:
         self._session_factory = session_factory
 
     def run_until_failure(
