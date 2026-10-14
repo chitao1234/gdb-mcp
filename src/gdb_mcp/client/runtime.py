@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import cast
 
 import httpx
 from mcp.client.session import ClientSession
@@ -34,7 +33,7 @@ def _parse_tool_payload(result: CallToolResult) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise ValueError("Expected tool payload JSON object")
 
-    return cast(dict[str, object], payload)
+    return payload
 
 
 async def invoke_tool(

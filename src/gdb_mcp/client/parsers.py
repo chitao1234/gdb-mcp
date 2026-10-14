@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 from copy import deepcopy
 from collections.abc import Iterable
-from typing import cast
 
 from pydantic import BaseModel, ValidationError
 
@@ -132,7 +131,7 @@ def validate_model_payload(model: type[BaseModel], payload: dict[str, object]) -
 
     validated = model.model_validate(payload)
     dumped = validated.model_dump(mode="python", exclude_unset=True, exclude_none=True)
-    return cast(dict[str, object], dumped)
+    return dumped
 
 
 def _coerce_single_item_list_path(
@@ -178,7 +177,7 @@ def validate_model_payload_with_list_coercion(
 ) -> dict[str, object]:
     """Validate one payload, retrying by widening scalars into single-item lists when needed."""
 
-    candidate = cast(dict[str, object], deepcopy(payload))
+    candidate = deepcopy(payload)
 
     while True:
         try:
@@ -192,7 +191,7 @@ def validate_model_payload_with_list_coercion(
             action: str | None = action_value if isinstance(action_value, str) else None
             changed = False
             for error in errors:
-                location = cast(tuple[object, ...], tuple(error.get("loc", ())))
+                location = tuple(error.get("loc", ()))
                 changed = (
                     _coerce_single_item_list_path(candidate, location, action=action) or changed
                 )
