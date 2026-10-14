@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import cast
 
 from pydantic import BaseModel, ValidationError
 
-from ..domain import OperationError
+from ..domain import OperationError, StructuredPayload
 from .schema_normalizer import public_input_schema
 
 _TAG_PROPERTY_NAMES = ("action", "kind")
@@ -27,7 +27,7 @@ def build_validation_error(
     property paths such as ``breakpoint.location``.
     """
 
-    schema: Any = public_input_schema(model) if model is not None else {}
+    schema: object = public_input_schema(model) if model is not None else {}
     field_errors: list[dict[str, str]] = []
     action: str | None = None
 
@@ -43,15 +43,19 @@ def build_validation_error(
     else:
         message = f"{field_errors[0]['message']} (+{len(field_errors) - 1} more validation errors)"
 
-    details: dict[str, Any] = {"tool": tool_name, "field_errors": field_errors}
+    details: dict[str, object] = {"tool": tool_name, "field_errors": field_errors}
     if action is not None:
         details["action"] = action
-    return OperationError(message=message, code="validation_error", details=details)
+    return OperationError(
+        message=message,
+        code="validation_error",
+        details=cast(StructuredPayload, details),
+    )
 
 
 def _clean_location(
-    schema: Any,
-    loc: tuple[Any, ...],
+    schema: object,
+    loc: tuple[object, ...],
 ) -> tuple[list[str], list[tuple[tuple[str, ...], str, str]]]:
     """Return the public property path plus union tags dropped on the way."""
 
@@ -82,7 +86,7 @@ def _clean_location(
     return path, tags
 
 
-def _matching_tag_property(node: Any, segment: str) -> str | None:
+def _matching_tag_property(node: object, segment: str) -> str | None:
     """Return the discriminator property whose enum contains this loc segment."""
 
     if not isinstance(node, dict):
@@ -100,14 +104,15 @@ def _matching_tag_property(node: Any, segment: str) -> str | None:
 
 
 def _describe(
-    error: Mapping[str, Any],
+    error: Mapping[str, object],
     path: list[str],
     tags: list[tuple[tuple[str, ...], str, str]],
 ) -> tuple[str, str, str]:
     """Return the public field, issue kind, and message for one error entry."""
 
     error_type = str(error.get("type", ""))
-    context = error.get("ctx") or {}
+    raw_context = error.get("ctx")
+    context: Mapping[str, object] = raw_context if isinstance(raw_context, Mapping) else {}
     field = ".".join(path)
 
     if error_type == "missing":
@@ -166,7 +171,7 @@ def _tag_suffix(path: list[str], tags: list[tuple[tuple[str, ...], str, str]]) -
     return f" for {best[1]}={best[2]}"
 
 
-def _context_text(context: dict[str, Any], key: str) -> str | None:
+def _context_text(context: Mapping[str, object], key: str) -> str | None:
     value = context.get(key)
     if isinstance(value, str):
         return value.strip("'")

@@ -25,11 +25,11 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Sequence
-from typing import Any
+from typing import cast
 
 from pydantic import BaseModel
 
-Schema = dict[str, Any]
+Schema = dict[str, object]
 
 _MISSING = object()
 
@@ -62,10 +62,10 @@ def normalize_input_schema(schema: Schema) -> Schema:
     """Flatten Pydantic JSON Schema combinators into plain nested schemas."""
 
     defs_value = schema.get("$defs")
-    defs: dict[str, Any] = defs_value if isinstance(defs_value, dict) else {}
+    defs: dict[str, object] = defs_value if isinstance(defs_value, dict) else {}
     root: Schema = {key: value for key, value in schema.items() if key != "$defs"}
 
-    normalized: Schema = _normalize_node(root, defs, ())
+    normalized = cast(Schema, _normalize_node(root, defs, ()))
 
     pending_refs = _collect_ref_names(normalized)
     if pending_refs:
@@ -77,7 +77,7 @@ def normalize_input_schema(schema: Schema) -> Schema:
     return normalized
 
 
-def _normalize_node(node: Any, defs: dict[str, Any], stack: tuple[str, ...]) -> Any:
+def _normalize_node(node: object, defs: dict[str, object], stack: tuple[str, ...]) -> object:
     """Recursively normalize one schema node, inlining ``$ref`` targets."""
 
     if not isinstance(node, dict):
@@ -111,7 +111,7 @@ def _normalize_node(node: Any, defs: dict[str, Any], stack: tuple[str, ...]) -> 
     return normalized
 
 
-def _resolve_ref(node: Schema, ref: str, defs: dict[str, Any], stack: tuple[str, ...]) -> Any:
+def _resolve_ref(node: Schema, ref: str, defs: dict[str, object], stack: tuple[str, ...]) -> object:
     """Inline one ``$ref`` target, falling back to the reference on cycles."""
 
     name = ref.rsplit("/", 1)[-1]
@@ -126,7 +126,7 @@ def _resolve_ref(node: Schema, ref: str, defs: dict[str, Any], stack: tuple[str,
     return resolved
 
 
-def _normalize_union(node: Schema, defs: dict[str, Any], stack: tuple[str, ...]) -> Schema:
+def _normalize_union(node: Schema, defs: dict[str, object], stack: tuple[str, ...]) -> Schema:
     """Flatten one union into a single schema without combinators."""
 
     raw_variants = node.get("oneOf", node.get("anyOf"))
@@ -186,7 +186,7 @@ def _merge_object_variants(variants: list[Schema]) -> Schema:
     """Merge alternative object shapes into one object schema."""
 
     merged: Schema = {"type": "object"}
-    properties: dict[str, Any] = {}
+    properties: dict[str, object] = {}
     required_order: list[str] = []
     required_sets: list[set[str]] = []
 
@@ -224,7 +224,7 @@ def _merge_object_variants(variants: list[Schema]) -> Schema:
     return merged
 
 
-def _merge_property_schemas(left: Any, right: Any) -> Any:
+def _merge_property_schemas(left: object, right: object) -> object:
     """Merge one property that appears in several alternative object shapes.
 
     The result must accept every instance either alternative accepts, so
@@ -279,15 +279,15 @@ def _merge_property_schemas(left: Any, right: Any) -> Any:
     return merged
 
 
-def _dedupe(values: list[Any]) -> list[Any]:
-    deduped: list[Any] = []
+def _dedupe(values: list[object]) -> list[object]:
+    deduped: list[object] = []
     for value in values:
         if value not in deduped:
             deduped.append(value)
     return deduped
 
 
-def _merge_text(left: Any, right: Any) -> Any:
+def _merge_text(left: object, right: object) -> object:
     """Join alternative labels or descriptions, skipping repeated text."""
 
     if not isinstance(right, str) or not right:
@@ -299,7 +299,7 @@ def _merge_text(left: Any, right: Any) -> Any:
     return f"{left} | {right}"
 
 
-def _conditional_requirements_note(discriminator: Any, variants: list[Schema]) -> str | None:
+def _conditional_requirements_note(discriminator: object, variants: list[Schema]) -> str | None:
     """Summarize per-variant required paths that a flat schema cannot express."""
 
     if not isinstance(discriminator, dict):
@@ -353,7 +353,7 @@ def _required_paths(schema: Schema, prefix: str = "", depth: int = 2) -> list[st
     return paths
 
 
-def _discriminator_values(property_schema: Any) -> list[str]:
+def _discriminator_values(property_schema: object) -> list[str]:
     if not isinstance(property_schema, dict):
         return []
     enum = property_schema.get("enum")
@@ -374,7 +374,7 @@ def _discriminator_scope(property_name: str, values: list[str]) -> str:
     return f"{property_name} in [{rendered}]"
 
 
-def _collect_ref_names(node: Any) -> set[str]:
+def _collect_ref_names(node: object) -> set[str]:
     """Collect every ``$ref`` target name reachable in one schema node."""
 
     if isinstance(node, dict):
@@ -393,7 +393,7 @@ def _collect_ref_names(node: Any) -> set[str]:
     return set()
 
 
-def _prune_defs(defs: dict[str, Any], initial_refs: set[str]) -> dict[str, Any]:
+def _prune_defs(defs: dict[str, object], initial_refs: set[str]) -> dict[str, object]:
     """Keep only definitions transitively reachable from remaining references."""
 
     kept: set[str] = set()
