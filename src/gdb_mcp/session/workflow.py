@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from ..domain import (
     BatchExecutionInfo,
@@ -15,6 +15,7 @@ from ..domain import (
     StopEvent,
     result_to_mapping,
 )
+from ..domain.parsing import as_text
 from .runtime import SessionRuntime
 
 if TYPE_CHECKING:
@@ -79,8 +80,8 @@ class SessionWorkflowService:
                     tool=step.tool,
                     label=step.label,
                     status=step_status,
-                    action=cast(str | None, serialized_result.get("action")),
-                    code=cast(str | None, serialized_result.get("code")),
+                    action=as_text(serialized_result.get("action")),
+                    code=as_text(serialized_result.get("code")),
                     result=serialized_result,
                     stop_event=stop_event,
                 )
