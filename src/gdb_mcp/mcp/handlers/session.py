@@ -28,6 +28,7 @@ from .common import (
     ToolArguments,
     ToolResult,
     _normalize_run_args,
+    _unsupported_action,
     _unwrap_action_args,
 )
 
@@ -70,20 +71,16 @@ def _handle_session_query(
 
     action_args = _unwrap_action_args(args)
 
-    if isinstance(action_args, SessionQueryListAction):
-        return session_manager.list_sessions()
-
-    if isinstance(action_args, SessionQueryStatusAction):
-        session = session_manager.resolve_session(action_args.session_id)
-        if isinstance(session, OperationError):
-            return session
-        with session_workflow_context(session):
-            return session.get_status()
-
-    return OperationError(
-        message=f"Unsupported session query action: {type(action_args).__name__}",
-        code="validation_error",
-    )
+    match action_args:
+        case SessionQueryListAction():
+            return session_manager.list_sessions()
+        case SessionQueryStatusAction():
+            session = session_manager.resolve_session(action_args.session_id)
+            if isinstance(session, OperationError):
+                return session
+            with session_workflow_context(session):
+                return session.get_status()
+    return _unsupported_action("session query action", action_args)
 
 
 def _handle_session_manage(
@@ -94,13 +91,10 @@ def _handle_session_manage(
 
     action_args = _unwrap_action_args(args)
 
-    if isinstance(action_args, SessionManageStopAction):
-        return session_manager.close_session(action_args.session_id)
-
-    return OperationError(
-        message=f"Unsupported session manage action: {type(action_args).__name__}",
-        code="validation_error",
-    )
+    match action_args:
+        case SessionManageStopAction():
+            return session_manager.close_session(action_args.session_id)
+    return _unsupported_action("session manage action", action_args)
 
 
 def _handle_session_query_for_session(

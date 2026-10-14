@@ -133,6 +133,15 @@ def _unwrap_action_args(args: BaseModel) -> BaseModel:
     return args
 
 
+def _unsupported_action(scope: str, action_args: object) -> OperationError:
+    """Build the standard validation error for an unhandled action payload."""
+
+    return OperationError(
+        message=f"Unsupported {scope}: {type(action_args).__name__}",
+        code="validation_error",
+    )
+
+
 def _wrap_action_result(action: str, result: ToolResult) -> ToolResult:
     """Wrap a tool result in the v2 action envelope."""
 

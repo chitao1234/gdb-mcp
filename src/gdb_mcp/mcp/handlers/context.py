@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 
-from ...domain import (
-    OperationError,
-)
 from ...session.service import SessionService
 from ..schemas import (
     ContextManageArgs,
@@ -18,6 +15,7 @@ from ..schemas import (
 )
 from .common import (
     ToolResult,
+    _unsupported_action,
     _unwrap_action_args,
 )
 
@@ -26,40 +24,29 @@ def _handle_context_query(session: SessionService, args: ContextQueryArgs) -> To
     """Route v2 context query actions to the inspection service."""
 
     action_args = _unwrap_action_args(args)
-    if isinstance(action_args, ContextQueryThreadsAction):
-        return session.get_threads()
-
-    if isinstance(action_args, ContextQueryBacktraceAction):
-        backtrace_query = action_args.query
-        return session.get_backtrace(
-            thread_id=backtrace_query.thread_id,
-            max_frames=backtrace_query.max_frames,
-        )
-
-    if isinstance(action_args, ContextQueryFrameAction):
-        frame_query = action_args.query
-        return session.get_frame_info(
-            thread_id=frame_query.thread_id,
-            frame=frame_query.frame,
-        )
-
-    return OperationError(
-        message=f"Unsupported context query action: {type(action_args).__name__}",
-        code="validation_error",
-    )
+    match action_args:
+        case ContextQueryThreadsAction():
+            return session.get_threads()
+        case ContextQueryBacktraceAction():
+            return session.get_backtrace(
+                thread_id=action_args.query.thread_id,
+                max_frames=action_args.query.max_frames,
+            )
+        case ContextQueryFrameAction():
+            return session.get_frame_info(
+                thread_id=action_args.query.thread_id,
+                frame=action_args.query.frame,
+            )
+    return _unsupported_action("context query action", action_args)
 
 
 def _handle_context_manage(session: SessionService, args: ContextManageArgs) -> ToolResult:
     """Route v2 context mutation actions to the inspection service."""
 
     action_args = _unwrap_action_args(args)
-    if isinstance(action_args, ContextManageSelectThreadAction):
-        return session.select_thread(thread_id=action_args.context.thread_id)
-
-    if isinstance(action_args, ContextManageSelectFrameAction):
-        return session.select_frame(frame_number=action_args.context.frame)
-
-    return OperationError(
-        message=f"Unsupported context manage action: {type(action_args).__name__}",
-        code="validation_error",
-    )
+    match action_args:
+        case ContextManageSelectThreadAction():
+            return session.select_thread(thread_id=action_args.context.thread_id)
+        case ContextManageSelectFrameAction():
+            return session.select_frame(frame_number=action_args.context.frame)
+    return _unsupported_action("context manage action", action_args)
