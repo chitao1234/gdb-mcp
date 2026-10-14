@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from ...domain import (
     ExpressionValueInfo,
     MemoryReadInfo,
@@ -29,8 +27,8 @@ class InspectionMemoryMixin(InspectionBase):
     def evaluate_expression(
         self,
         expression: str,
-        thread_id: Optional[int] = None,
-        frame: Optional[int] = None,
+        thread_id: int | None = None,
+        frame: int | None = None,
     ) -> OperationSuccess[ExpressionValueInfo] | OperationError:
         """Evaluate an expression in the current context."""
         selection = (

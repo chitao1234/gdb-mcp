@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from pydantic import (
     Field,
 )
@@ -16,8 +14,8 @@ from .common import (
 
 
 class StartSessionArgs(StrictArgsModel):
-    program: Optional[str] = Field(None, description="Path to executable to debug")
-    args: Optional[list[str] | str] = Field(
+    program: str | None = Field(None, description="Path to executable to debug")
+    args: list[str] | str | None = Field(
         None,
         description=(
             "Command-line arguments for the program. "
@@ -25,25 +23,25 @@ class StartSessionArgs(StrictArgsModel):
             "Cannot be combined with core."
         ),
     )
-    init_commands: Optional[list[str]] = Field(
+    init_commands: list[str] | None = Field(
         None,
         description=(
             "GDB commands to run on startup after environment variables have been applied "
             "(e.g., 'core-file /path/to/core', 'set sysroot /path')"
         ),
     )
-    env: Optional[dict[str, str]] = Field(
+    env: dict[str, str] | None = Field(
         None,
         description=(
             "Environment variables to set for the debugged program before init_commands run "
             "(e.g., {'LD_LIBRARY_PATH': '/custom/libs'})"
         ),
     )
-    gdb_path: Optional[str] = Field(
+    gdb_path: str | None = Field(
         None,
         description="Path to GDB executable (default: from GDB_PATH env var or 'gdb')",
     )
-    working_dir: Optional[str] = Field(
+    working_dir: str | None = Field(
         None,
         description=(
             "Working directory to use when starting GDB. "
@@ -53,7 +51,7 @@ class StartSessionArgs(StrictArgsModel):
             "Example: If debugging a server that loads config from './config.json', set working_dir to the server's directory."
         ),
     )
-    core: Optional[str] = Field(
+    core: str | None = Field(
         None,
         description=(
             "Path to core dump file for post-mortem debugging. "

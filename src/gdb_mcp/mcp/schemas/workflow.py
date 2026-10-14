@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional, TypeAlias
+from typing import TypeAlias
 
 from pydantic import (
     Field,
@@ -29,7 +29,7 @@ class BatchStepArgs(StrictArgsModel):
         default_factory=dict,
         description="Tool-specific arguments excluding session_id, which comes from the batch",
     )
-    label: Optional[str] = Field(
+    label: str | None = Field(
         None,
         description="Optional human-readable label to make batch results easier to scan",
     )
@@ -65,11 +65,11 @@ class BatchArgs(StrictArgsModel):
 class CaptureOptionsArgs(StrictArgsModel):
     """Shared capture artifact options for bundle and campaign requests."""
 
-    output_dir: Optional[str] = Field(
+    output_dir: str | None = Field(
         None,
         description="Directory in which to create the capture bundle. Defaults to artifact_root or the system temp directory.",
     )
-    bundle_name: Optional[str] = Field(
+    bundle_name: str | None = Field(
         None,
         description="Optional deterministic subdirectory name for the bundle.",
     )
@@ -135,7 +135,7 @@ class RunUntilFailureFailureArgs(StrictArgsModel):
         default_factory=list,
         description="Exit codes that should count as a matching failure.",
     )
-    result_text_regex: Optional[str] = Field(
+    result_text_regex: str | None = Field(
         None,
         description="Regular expression applied to the serialized run result payload.",
     )
@@ -145,15 +145,15 @@ class RunUntilFailureCaptureArgs(CaptureOptionsArgs):
     """Capture settings used when a run-until-failure campaign matches."""
 
     enabled: bool = Field(True, description="Capture a forensic bundle when a failure matches.")
-    bundle_name_prefix: Optional[str] = Field(
+    bundle_name_prefix: str | None = Field(
         None,
         description="Deterministic bundle name prefix. The iteration number is appended automatically.",
     )
-    output_dir: Optional[str] = Field(
+    output_dir: str | None = Field(
         None,
         description="Directory in which to place the capture bundle for the matching iteration.",
     )
-    bundle_name: Optional[str] = Field(
+    bundle_name: str | None = Field(
         None,
         description=(
             "Optional exact bundle name to use for the matching iteration. "
@@ -183,7 +183,7 @@ class RunUntilFailureArgs(StrictArgsModel):
         default_factory=list,
         description="Optional structured setup steps run after startup and before gdb_run.",
     )
-    run_args: Optional[list[str] | str] = Field(
+    run_args: list[str] | str | None = Field(
         None,
         description=(
             "Arguments passed to gdb_run for each iteration. "

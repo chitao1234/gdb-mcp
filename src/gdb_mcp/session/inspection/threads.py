@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from ...domain import (
     BacktraceInfo,
     FrameInfo,
@@ -79,7 +77,7 @@ class InspectionThreadsMixin(InspectionBase):
         )
 
     def get_backtrace(
-        self, thread_id: Optional[int] = None, max_frames: int = DEFAULT_MAX_BACKTRACE_FRAMES
+        self, thread_id: int | None = None, max_frames: int = DEFAULT_MAX_BACKTRACE_FRAMES
     ) -> OperationSuccess[BacktraceInfo] | OperationError:
         """Get the stack backtrace for a specific thread or the current thread."""
         selection = self._capture_selection() if thread_id is not None else None

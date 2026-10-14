@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional, TypeAlias, cast
+from typing import TypeAlias, cast
 
 from ..domain import (
     OperationError,
@@ -35,13 +35,13 @@ class SessionLifecycleService:
 
     def start(
         self,
-        program: Optional[str] = None,
-        args: Optional[list[str]] = None,
-        init_commands: Optional[list[str]] = None,
-        env: Optional[dict[str, str]] = None,
-        gdb_path: Optional[str] = None,
-        working_dir: Optional[str] = None,
-        core: Optional[str] = None,
+        program: str | None = None,
+        args: list[str] | None = None,
+        init_commands: list[str] | None = None,
+        env: dict[str, str] | None = None,
+        gdb_path: str | None = None,
+        working_dir: str | None = None,
+        core: str | None = None,
     ) -> OperationSuccess[SessionStartInfo] | OperationError:
         """Start a new GDB session."""
         with self._runtime.lifecycle_lock:

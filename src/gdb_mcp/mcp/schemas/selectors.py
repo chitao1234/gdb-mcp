@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from pydantic import (
     Field,
 )
@@ -18,7 +16,7 @@ class CaptureMemoryRangeArgs(StrictArgsModel):
     address: str = Field(..., description="Address expression to read from")
     count: int = Field(..., gt=0, description="Number of bytes to capture for this range")
     offset: int = Field(0, ge=0, description="Optional offset relative to address")
-    name: Optional[str] = Field(
+    name: str | None = Field(
         None,
         description="Optional stable label used in reports and failed-sections output",
     )

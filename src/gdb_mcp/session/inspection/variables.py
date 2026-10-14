@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal
 
 from ...domain import (
     OperationError,
@@ -29,7 +29,7 @@ class InspectionVariablesMixin(InspectionBase):
     """Variable and register inspection methods."""
 
     def get_variables(
-        self, thread_id: Optional[int] = None, frame: int = 0
+        self, thread_id: int | None = None, frame: int = 0
     ) -> OperationSuccess[VariablesInfo] | OperationError:
         """Get local variables for a specific frame."""
         selection = self._capture_selection()
@@ -68,8 +68,8 @@ class InspectionVariablesMixin(InspectionBase):
 
     def get_registers(
         self,
-        thread_id: Optional[int] = None,
-        frame: Optional[int] = None,
+        thread_id: int | None = None,
+        frame: int | None = None,
         register_numbers: list[int] | None = None,
         register_names: list[str] | None = None,
         include_vector_registers: bool = True,

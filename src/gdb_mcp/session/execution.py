@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import signal
-from typing import Optional, cast
+from typing import cast
 
 from ..domain import (
     CommandTranscriptEntry,
@@ -67,7 +67,7 @@ class SessionExecutionService:
 
     def run(
         self,
-        args: Optional[list[str]] = None,
+        args: list[str] | None = None,
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
         *,
         wait_for_stop: bool = True,

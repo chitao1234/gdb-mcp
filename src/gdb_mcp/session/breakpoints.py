@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Optional
 
 from ..domain import (
     BreakpointInfo,
@@ -40,7 +39,7 @@ class SessionBreakpointService:
         self._command_runner = command_runner
 
     def set_breakpoint(
-        self, location: str, condition: Optional[str] = None, temporary: bool = False
+        self, location: str, condition: str | None = None, temporary: bool = False
     ) -> OperationSuccess[BreakpointInfo] | OperationError:
         """Set a breakpoint at the specified location."""
         cmd_parts = ["-break-insert"]
