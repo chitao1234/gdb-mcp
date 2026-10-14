@@ -18,6 +18,7 @@ from ...domain import (
     thread_list_info_from_payload,
     thread_selection_info_from_payload,
 )
+from ...domain.parsing import as_int
 from ...transport import (
     extract_mi_result_payload,
 )
@@ -67,7 +68,7 @@ class InspectionThreadsMixin(InspectionBase):
         if isinstance(raw_payload, dict):
             frame_payload = raw_payload.get("frame")
             if isinstance(frame_payload, dict):
-                self._runtime.mark_frame_selected(self._int_or_none(frame_payload.get("level")))
+                self._runtime.mark_frame_selected(as_int(frame_payload.get("level")))
         self._runtime.mark_thread_selected(thread_id)
 
         return OperationSuccess(
@@ -151,7 +152,7 @@ class InspectionThreadsMixin(InspectionBase):
             extract_mi_result_payload(command_result_payload(result))
         )
         level = frame_info.frame.get("level")
-        self._runtime.mark_frame_selected(self._int_or_none(level))
+        self._runtime.mark_frame_selected(as_int(level))
 
         if selection is not None:
             restore_error = self._restore_selection_if_changed(selection, selection_changed)

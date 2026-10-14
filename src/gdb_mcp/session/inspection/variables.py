@@ -13,6 +13,7 @@ from ...domain import (
     registers_info_from_payload,
     variables_info_from_payload,
 )
+from ...domain.parsing import as_int
 from ...transport import (
     extract_mi_result_payload,
 )
@@ -222,7 +223,7 @@ class InspectionVariablesMixin(InspectionBase):
         numbers: list[int] = []
         for register in registers:
             raw_number = register.get("number")
-            number = self._int_or_none(raw_number)
+            number = as_int(raw_number)
             if number is None:
                 continue
             numbers.append(number)
@@ -267,7 +268,7 @@ class InspectionVariablesMixin(InspectionBase):
         filtered: list[RegisterRecord] = []
         for register in registers:
             raw_number = register.get("number")
-            number = self._int_or_none(raw_number)
+            number = as_int(raw_number)
             name = name_map.get(number, "") if number is not None else ""
             if name and _VECTOR_REGISTER_NAME_RE.match(name):
                 continue

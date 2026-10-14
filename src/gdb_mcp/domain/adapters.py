@@ -8,92 +8,76 @@ from .models import (
     BacktraceInfo,
     BreakpointListInfo,
     BreakpointRecord,
-    FrameRecord,
     FrameInfo,
+    FrameRecord,
     FrameSelectionInfo,
     MemoryBlockRecord,
     RegisterRecord,
     RegistersInfo,
-    StructuredPayload,
     ThreadListInfo,
     ThreadRecord,
     ThreadSelectionInfo,
     VariableRecord,
     VariablesInfo,
 )
-
-
-def payload_mapping(payload: object) -> StructuredPayload:
-    """Return a mapping payload or an empty mapping for malformed inputs."""
-
-    return cast(StructuredPayload, payload) if isinstance(payload, dict) else {}
+from .parsing import as_list, as_payload, as_text
 
 
 def string_field(payload: object, key: str) -> str | None:
     """Return a string field from a raw payload mapping when available."""
 
-    value = payload_mapping(payload).get(key)
-    return value if isinstance(value, str) else None
+    return as_text(as_payload(payload).get(key))
 
 
 def frame_record(payload: object) -> FrameRecord:
     """Normalize a raw frame payload."""
 
-    return cast(FrameRecord, payload_mapping(payload))
+    return cast(FrameRecord, as_payload(payload))
 
 
 def thread_records(payload: object, key: str = "threads") -> list[ThreadRecord]:
     """Normalize a thread-record list from a raw payload mapping."""
 
-    value = payload_mapping(payload).get(key, [])
-    return cast(list[ThreadRecord], value) if isinstance(value, list) else []
+    return cast(list[ThreadRecord], as_list(as_payload(payload).get(key)))
 
 
 def frame_records(payload: object, key: str = "stack") -> list[FrameRecord]:
     """Normalize a frame-record list from a raw payload mapping."""
 
-    value = payload_mapping(payload).get(key, [])
-    return cast(list[FrameRecord], value) if isinstance(value, list) else []
+    return cast(list[FrameRecord], as_list(as_payload(payload).get(key)))
 
 
 def breakpoint_record(payload: object) -> BreakpointRecord:
     """Normalize a single breakpoint payload."""
 
-    raw_mapping = payload_mapping(payload)
+    raw_mapping = as_payload(payload)
     raw_breakpoint = raw_mapping.get("bkpt", raw_mapping)
-    return cast(BreakpointRecord, raw_breakpoint) if isinstance(raw_breakpoint, dict) else {}
+    return cast(BreakpointRecord, as_payload(raw_breakpoint))
 
 
 def breakpoint_records(payload: object) -> list[BreakpointRecord]:
     """Normalize a list of breakpoint payloads."""
 
-    breakpoint_table = payload_mapping(payload).get("BreakpointTable", {})
-    if not isinstance(breakpoint_table, dict):
-        return []
-
-    body = breakpoint_table.get("body", [])
-    return cast(list[BreakpointRecord], body) if isinstance(body, list) else []
+    breakpoint_table = as_payload(as_payload(payload).get("BreakpointTable"))
+    return cast(list[BreakpointRecord], as_list(breakpoint_table.get("body")))
 
 
 def variable_records(payload: object) -> list[VariableRecord]:
     """Normalize a list of variable payloads."""
 
-    value = payload_mapping(payload).get("variables", [])
-    return cast(list[VariableRecord], value) if isinstance(value, list) else []
+    return cast(list[VariableRecord], as_list(as_payload(payload).get("variables")))
 
 
 def register_records(payload: object) -> list[RegisterRecord]:
     """Normalize a list of register payloads."""
 
-    value = payload_mapping(payload).get("register-values", [])
-    return cast(list[RegisterRecord], value) if isinstance(value, list) else []
+    return cast(list[RegisterRecord], as_list(as_payload(payload).get("register-values")))
 
 
 def memory_block_records(payload: object) -> list[MemoryBlockRecord]:
     """Normalize a list of memory blocks."""
 
-    value = payload_mapping(payload).get("memory", [])
-    return cast(list[MemoryBlockRecord], value) if isinstance(value, list) else []
+    return cast(list[MemoryBlockRecord], as_list(as_payload(payload).get("memory")))
 
 
 def thread_list_info_from_payload(payload: object) -> ThreadListInfo:
@@ -113,7 +97,7 @@ def thread_selection_info_from_payload(thread_id: int, payload: object) -> Threa
     return ThreadSelectionInfo(
         thread_id=thread_id,
         new_thread_id=string_field(payload, "new-thread-id"),
-        frame=frame_record(payload_mapping(payload).get("frame")),
+        frame=frame_record(as_payload(payload).get("frame")),
     )
 
 
@@ -127,7 +111,7 @@ def backtrace_info_from_payload(thread_id: int | None, payload: object) -> Backt
 def frame_info_from_payload(payload: object) -> FrameInfo:
     """Build a typed current-frame payload from raw MI data."""
 
-    return FrameInfo(frame=frame_record(payload_mapping(payload).get("frame")))
+    return FrameInfo(frame=frame_record(as_payload(payload).get("frame")))
 
 
 def frame_selection_info_from_payload(frame_number: int, payload: object) -> FrameSelectionInfo:
@@ -135,7 +119,7 @@ def frame_selection_info_from_payload(frame_number: int, payload: object) -> Fra
 
     return FrameSelectionInfo(
         frame_number=frame_number,
-        frame=frame_record(payload_mapping(payload).get("frame")),
+        frame=frame_record(as_payload(payload).get("frame")),
     )
 
 

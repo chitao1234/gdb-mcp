@@ -10,13 +10,13 @@ from ..domain import (
     CommandExecutionInfo,
     CommandTranscriptEntry,
     FollowForkMode,
-    FrameRecord,
     OperationError,
     OperationSuccess,
     StopEvent,
     StructuredPayload,
     payload_to_mapping,
 )
+from ..domain.parsing import as_frame_record, as_int, as_text_or_number
 from ..transport import ParsedMiResponse, is_cli_command, parse_mi_responses, wrap_cli_command
 from .constants import DEFAULT_TIMEOUT_SEC
 from .inferiors import inferior_ids, parse_inferiors_output
@@ -258,7 +258,7 @@ class SessionCommandRunner:
                 inferior_id = self._parse_inferior_id_from_thread_group(payload_dict.get("id"))
                 group_exit_code = self._parse_exit_code(payload_dict.get("exit-code"))
                 group_reason = (
-                    self._str_or_none(payload_dict.get("reason")) or "thread-group-exited"
+                    as_text_or_number(payload_dict.get("reason")) or "thread-group-exited"
                 )
                 self._runtime.mark_inferior_exited(
                     group_reason,
@@ -292,8 +292,8 @@ class SessionCommandRunner:
                 )
                 frame_payload = payload.get("frame")
                 if isinstance(frame_payload, dict):
-                    stopped_frame_level = self._int_or_none(frame_payload.get("level"))
-                stopped_thread_id = self._int_or_none(payload.get("thread-id"))
+                    stopped_frame_level = as_int(frame_payload.get("level"))
+                stopped_thread_id = as_int(payload.get("thread-id"))
 
         if saw_stopped and saw_inferior_topology_change:
             self._refresh_inferior_inventory_from_gdb()
@@ -415,16 +415,6 @@ class SessionCommandRunner:
         return command.startswith("file ") or command.startswith("core-file ")
 
     @staticmethod
-    def _int_or_none(value: object) -> int | None:
-        """Parse a string or int field into an integer when possible."""
-
-        if isinstance(value, int):
-            return value
-        if isinstance(value, str) and value.isdigit():
-            return int(value)
-        return None
-
-    @staticmethod
     def _parse_exit_code(value: object) -> int | None:
         """Parse a GDB exit-code field."""
 
@@ -515,10 +505,10 @@ class SessionCommandRunner:
         if isinstance(payload, dict):
             payload_mapping = cast(StructuredPayload, payload_to_mapping(payload))
 
-        thread_id = self._int_or_none(payload_mapping.get("thread-id"))
-        frame = self._frame_record(payload_mapping.get("frame"))
-        signal_name = self._str_or_none(payload_mapping.get("signal-name"))
-        signal_meaning = self._str_or_none(payload_mapping.get("signal-meaning"))
+        thread_id = as_int(payload_mapping.get("thread-id"))
+        frame = as_frame_record(payload_mapping.get("frame"))
+        signal_name = as_text_or_number(payload_mapping.get("signal-name"))
+        signal_meaning = as_text_or_number(payload_mapping.get("signal-meaning"))
         breakpoint_number = self._extract_breakpoint_number(payload_mapping)
         execution_state = (
             "exited"
@@ -569,37 +559,21 @@ class SessionCommandRunner:
             )
         )
 
-    @staticmethod
-    def _frame_record(value: object) -> FrameRecord | None:
-        """Normalize an MI frame mapping into the structured frame record type."""
-
-        return cast(FrameRecord, value) if isinstance(value, dict) else None
-
     @classmethod
     def _extract_breakpoint_number(cls, payload: StructuredPayload) -> str | None:
         """Extract a breakpoint or watchpoint number from one stop payload."""
 
-        breakpoint_number = cls._str_or_none(payload.get("bkptno"))
+        breakpoint_number = as_text_or_number(payload.get("bkptno"))
         if breakpoint_number is not None:
             return breakpoint_number
 
         for key in ("wpt", "awpt", "hw-awpt"):
             nested = payload.get(key)
             if isinstance(nested, dict):
-                nested_number = cls._str_or_none(nested.get("number"))
+                nested_number = as_text_or_number(nested.get("number"))
                 if nested_number is not None:
                     return nested_number
 
-        return None
-
-    @staticmethod
-    def _str_or_none(value: object) -> str | None:
-        """Return a string-compatible scalar as text when possible."""
-
-        if isinstance(value, str):
-            return value
-        if isinstance(value, int):
-            return str(value)
         return None
 
     @classmethod
@@ -612,7 +586,7 @@ class SessionCommandRunner:
     def _parse_inferior_id_from_thread_group(cls, value: object) -> int | None:
         """Parse a thread-group token such as 'i1' into an inferior ID."""
 
-        text = cls._str_or_none(value)
+        text = as_text_or_number(value)
         if text is None:
             return None
         normalized = text.strip()

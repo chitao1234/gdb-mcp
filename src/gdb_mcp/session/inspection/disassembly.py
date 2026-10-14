@@ -10,6 +10,7 @@ from ...domain import (
     OperationError,
     OperationSuccess,
 )
+from ...domain.parsing import as_int, as_text_or_number
 from ...transport import (
     extract_mi_result_payload,
     quote_mi_string,
@@ -184,18 +185,16 @@ class InspectionDisassemblyMixin(InspectionBase):
             if thread_id is not None
             else selection.thread_id if selection is not None else self._runtime.current_thread_id
         )
-        resolved_frame = (
-            frame if frame is not None else self._int_or_none(frame_payload.get("level"))
-        )
+        resolved_frame = frame if frame is not None else as_int(frame_payload.get("level"))
         return _ResolvedCodeLocation(
             scope="current_context",
             thread_id=resolved_thread_id,
             frame=resolved_frame,
-            function=self._str_or_none(frame_payload.get("func")),
-            address=self._str_or_none(frame_payload.get("addr")),
-            file=self._str_or_none(frame_payload.get("file")),
-            fullname=self._str_or_none(frame_payload.get("fullname")),
-            line=self._int_or_none(frame_payload.get("line")),
+            function=as_text_or_number(frame_payload.get("func")),
+            address=as_text_or_number(frame_payload.get("addr")),
+            file=as_text_or_number(frame_payload.get("file")),
+            fullname=as_text_or_number(frame_payload.get("fullname")),
+            line=as_int(frame_payload.get("line")),
         )
 
     def _build_disassemble_command(
@@ -260,9 +259,9 @@ class InspectionDisassemblyMixin(InspectionBase):
 
             nested = entry.get("line_asm_insn")
             if isinstance(nested, list):
-                line = self._int_or_none(entry.get("line"))
-                file = self._str_or_none(entry.get("file"))
-                fullname = self._str_or_none(entry.get("fullname"))
+                line = as_int(entry.get("line"))
+                file = as_text_or_number(entry.get("file"))
+                fullname = as_text_or_number(entry.get("fullname"))
                 for raw_instruction in nested:
                     record = self._normalize_disassembly_instruction(
                         raw_instruction,
@@ -301,8 +300,8 @@ class InspectionDisassemblyMixin(InspectionBase):
         if not isinstance(payload, dict):
             return None
 
-        address = self._str_or_none(payload.get("address"))
-        instruction = self._str_or_none(payload.get("inst"))
+        address = as_text_or_number(payload.get("address"))
+        instruction = as_text_or_number(payload.get("inst"))
         if address is None or instruction is None:
             return None
 
@@ -310,15 +309,15 @@ class InspectionDisassemblyMixin(InspectionBase):
             "address": address,
             "instruction": instruction,
         }
-        function = self._str_or_none(payload.get("func-name")) or self._str_or_none(
+        function = as_text_or_number(payload.get("func-name")) or as_text_or_number(
             payload.get("func")
         )
         if function is not None:
             record["function"] = function
-        offset = self._int_or_none(payload.get("offset"))
+        offset = as_int(payload.get("offset"))
         if offset is not None:
             record["offset"] = offset
-        opcodes = self._str_or_none(payload.get("opcodes"))
+        opcodes = as_text_or_number(payload.get("opcodes"))
         if opcodes is not None:
             record["opcodes"] = opcodes
         if file is not None:

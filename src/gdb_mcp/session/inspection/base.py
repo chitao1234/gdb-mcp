@@ -10,6 +10,7 @@ from ...domain import (
     OperationError,
     SourceLineRecord,
 )
+from ...domain.parsing import as_int
 from ...transport import (
     extract_mi_result_payload,
 )
@@ -87,7 +88,7 @@ class InspectionBase:
         thread_payload = extract_mi_result_payload(command_result_payload(thread_result))
         current_thread = None
         if isinstance(thread_payload, dict):
-            current_thread = self._int_or_none(thread_payload.get("current-thread-id"))
+            current_thread = as_int(thread_payload.get("current-thread-id"))
 
         frame_result = self._command_runner.execute_command_result(
             "-stack-info-frame", timeout_sec=DEFAULT_TIMEOUT_SEC
@@ -100,7 +101,7 @@ class InspectionBase:
         if isinstance(frame_payload, dict):
             current_frame_payload = frame_payload.get("frame")
             if isinstance(current_frame_payload, dict):
-                current_frame = self._int_or_none(current_frame_payload.get("level"))
+                current_frame = as_int(current_frame_payload.get("level"))
 
         self._runtime.mark_thread_selected(current_thread)
         self._runtime.mark_frame_selected(current_frame)
@@ -204,23 +205,3 @@ class InspectionBase:
                 f"{restore_error.message}"
             )
         )
-
-    @staticmethod
-    def _str_or_none(value: object) -> str | None:
-        """Return a string-compatible scalar as text when possible."""
-
-        if isinstance(value, str):
-            return value
-        if isinstance(value, int):
-            return str(value)
-        return None
-
-    @staticmethod
-    def _int_or_none(value: object) -> int | None:
-        """Parse a GDB string/integer field into an integer when possible."""
-
-        if isinstance(value, int):
-            return value
-        if isinstance(value, str) and value.isdigit():
-            return int(value)
-        return None
