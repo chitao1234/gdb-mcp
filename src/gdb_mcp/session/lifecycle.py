@@ -110,8 +110,8 @@ class SessionLifecycleService:
                     if self._runtime.has_controller:
                         try:
                             self._runtime.transport.exit()
-                        except Exception:
-                            pass
+                        except Exception as exc:  # pragma: no cover - best effort
+                            logger.debug("Ignoring failure while aborting GDB: %s", exc)
                     message = f"GDB failed to initialize: {error_msg}"
                     self._runtime.mark_failed(message)
                     return OperationError(
@@ -304,8 +304,8 @@ class SessionLifecycleService:
         if self._runtime.has_controller:
             try:
                 self._runtime.transport.exit()
-            except Exception:
-                pass
+            except Exception as exc:  # pragma: no cover - best effort
+                logger.debug("Ignoring failure while cleaning up a failed start: %s", exc)
         self._runtime.mark_failed(message)
 
     @staticmethod

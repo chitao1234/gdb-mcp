@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 import json
+import logging
 import re
 from typing import Pattern
 
@@ -23,6 +24,8 @@ from ..domain import (
 from .locking import session_workflow_context
 from .service import SessionService
 from .workflow import BatchStepTemplate
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True, frozen=True)
@@ -387,7 +390,8 @@ class RunUntilFailureService:
         with session_workflow_context(session):
             try:
                 session.stop()
-            except Exception:
+            except Exception as exc:  # pragma: no cover - best effort
+                logger.debug("Ignoring failure while cleaning up a temporary session: %s", exc)
                 return
 
 

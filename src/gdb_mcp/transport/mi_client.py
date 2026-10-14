@@ -380,7 +380,8 @@ class MiClient:
         try:
             poll_result = gdb_process.poll()
             return poll_result if isinstance(poll_result, int) else None
-        except Exception:
+        except Exception as exc:  # pragma: no cover - defensive around pygdbmi
+            logger.debug("Ignoring failure while polling the GDB child exit code: %s", exc)
             return None
 
     def _wait_for_stopped_notification(
