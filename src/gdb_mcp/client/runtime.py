@@ -10,6 +10,8 @@ from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from mcp.types import CallToolResult, TextContent
 
+from .results import ToolEnvelope
+
 
 @dataclass(frozen=True)
 class ClientToolResponse:
@@ -17,6 +19,11 @@ class ClientToolResponse:
 
     payload: dict[str, object]
     is_error: bool
+
+    def envelope(self) -> ToolEnvelope:
+        """Return a typed view over this response's payload."""
+
+        return ToolEnvelope.from_payload(self.payload)
 
 
 def _parse_tool_payload(result: CallToolResult) -> dict[str, object]:

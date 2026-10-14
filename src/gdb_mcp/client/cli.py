@@ -16,7 +16,6 @@ from pydantic import ValidationError
 
 from gdb_mcp import __version__
 from gdb_mcp.contracts import (
-    ACTION_LIST,
     ACTION_STATUS,
     ACTION_STOP,
     TOOL_ATTACH_PROCESS,
@@ -24,6 +23,7 @@ from gdb_mcp.contracts import (
     TOOL_SESSION_QUERY,
     TOOL_SESSION_START,
 )
+from gdb_mcp.domain.parsing import as_int
 from gdb_mcp.mcp.schemas import TOOL_MODELS
 from gdb_mcp.mcp.tool_examples import TOOL_EXAMPLES
 
@@ -39,6 +39,7 @@ from .daemon import (
 )
 from .facade import FACADE_COMMANDS, FACADE_GROUPS, FacadeCommand
 from .parsers import CliUsageError, format_validation_error, validate_model_payload
+from .results import ToolEnvelope
 from .runtime import invoke_tool
 from .specs import (
     CLIENT_TOOL_SPECS,
@@ -166,8 +167,8 @@ def _payload_from_json(
 def _payload_reports_step_failures(payload: dict[str, object]) -> bool:
     """Batch envelopes keep status=success while individual steps fail."""
 
-    error_count = payload.get("error_count")
-    return isinstance(error_count, int) and error_count > 0
+    error_count = ToolEnvelope.from_payload(payload).error_count
+    return error_count is not None and error_count > 0
 
 
 def _normalize_tool_name(tool_name: str) -> str | None:
@@ -460,11 +461,12 @@ def _build_payload(
 def _session_id_from_payload(payload: dict[str, object]) -> int | None:
     """Return the session id reported by a session-creating response."""
 
-    result = payload.get("result")
-    candidates: list[object] = [payload.get("session_id")]
-    if isinstance(result, dict):
-        candidates.append(result.get("session_id"))
-    return next((value for value in candidates if isinstance(value, int)), None)
+    envelope = ToolEnvelope.from_payload(payload)
+    if envelope.session_id is not None:
+        return envelope.session_id
+    if envelope.result is not None:
+        return as_int(envelope.result.get("session_id"))
+    return None
 
 
 async def _ensure_attach_session(
@@ -495,9 +497,7 @@ async def _ensure_attach_session(
         auth_token=resolved.token,
     )
     if response.is_error:
-        raise CliUsageError(
-            response.payload.get("message", "could not start a session to attach to")
-        )
+        raise CliUsageError(response.envelope().message or "could not start a session to attach to")
     session_id = _session_id_from_payload(response.payload)
     if session_id is None:
         raise CliUsageError("could not start a session to attach to")
@@ -515,13 +515,14 @@ def _default_session_annotation(
 
     if not resolved.managed or args.tool_name != TOOL_SESSION_QUERY:
         return ""
-    if payload.get("action") != ACTION_LIST:
+    envelope = ToolEnvelope.from_payload(payload)
+    if not envelope.is_list_action():
         return ""
     session_id = remembered_session_id()
     if session_id is None:
         return ""
-    result = payload.get("result")
-    sessions = result.get("sessions") if isinstance(result, dict) else None
+    result = envelope.result
+    sessions = result.get("sessions") if result is not None else None
     running = isinstance(sessions, list) and any(
         isinstance(item, dict) and item.get("session_id") == session_id for item in sessions
     )
@@ -571,7 +572,7 @@ async def _run_session_command(
             return 1
         raise
     if response.is_error:
-        message = response.payload.get("message", "request failed")
+        message = response.envelope().message or "request failed"
         error_output.write(f"gdb-mcp-client: error: {message}\n")
         return 1
     remember_session_id(args.session_id)
@@ -675,7 +676,7 @@ async def main(
         resolved.managed
         and not response.is_error
         and args.tool_name == TOOL_SESSION_MANAGE
-        and response.payload.get("action") == ACTION_STOP
+        and response.envelope().action == ACTION_STOP
         and args.session_id == remembered_session_id()
     ):
         forget_session_id()

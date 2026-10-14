@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .results import ToolEnvelope
+
 
 def _render_sequence_lines(values: list[object], *, indent: int = 0) -> list[str]:
     prefix = "  " * indent
@@ -95,11 +97,12 @@ def render_action_payload(payload: dict[str, object]) -> str:
 def render_session_start(payload: dict[str, object]) -> str:
     """Render the key fields from a session-start response."""
 
-    summary = {
-        "status": payload.get("status"),
-        "session_id": payload.get("session_id"),
-        "target_loaded": payload.get("target_loaded"),
-        "execution_state": payload.get("execution_state"),
-        "message": payload.get("message"),
+    envelope = ToolEnvelope.from_payload(payload)
+    summary: dict[str, object] = {
+        "status": envelope.status,
+        "session_id": envelope.session_id,
+        "target_loaded": envelope.target_loaded,
+        "execution_state": envelope.execution_state,
+        "message": envelope.message,
     }
     return render_mapping(summary)
