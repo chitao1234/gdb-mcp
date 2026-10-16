@@ -29,7 +29,9 @@ class MiClient:
         self._controller: GdbControllerProtocol | None = None
         self._command_token = initial_command_token
         self._poll_timeout_sec = poll_timeout_sec
-        # One lock guards serialized MI access and controller teardown.
+        # One lock guards serialized MI access and controller teardown. It is
+        # deliberately non-reentrant so interrupt/wait can detect an in-flight
+        # command; the wait loop uses _is_alive_unlocked while holding it.
         self._command_lock = threading.Lock()
 
     @property
@@ -54,17 +56,19 @@ class MiClient:
         """Start a new GDB controller process."""
 
         if cwd is None:
-            self._controller = self._controller_factory(
+            controller = self._controller_factory(
                 command=command,
                 time_to_check_for_additional_output_sec=time_to_check_for_additional_output_sec,
             )
         else:
-            self._controller = self._controller_factory(
+            controller = self._controller_factory(
                 command=command,
                 time_to_check_for_additional_output_sec=time_to_check_for_additional_output_sec,
                 cwd=cwd,
             )
-        return self._controller
+        with self._command_lock:
+            self._controller = controller
+        return controller
 
     def adopt_controller(self, controller: GdbControllerProtocol) -> None:
         """Attach a controller created outside the factory, without spawning GDB."""
@@ -136,6 +140,12 @@ class MiClient:
     def is_alive(self) -> bool:
         """Check whether the underlying GDB process is still alive."""
 
+        with self._command_lock:
+            return self._is_alive_unlocked()
+
+    def _is_alive_unlocked(self) -> bool:
+        """Check liveness while the command lock is already held."""
+
         if not self._controller:
             return False
 
@@ -194,7 +204,7 @@ class MiClient:
             while time.monotonic() - start_time < timeout_sec:
                 elapsed = time.monotonic() - start_time
                 if elapsed - last_alive_check >= _LIVENESS_CHECK_INTERVAL_SEC:
-                    if not self.is_alive():
+                    if not self._is_alive_unlocked():
                         exit_code = self._extract_exit_code()
                         error_details = f"GDB process exited unexpectedly after {elapsed:.1f}s"
                         if exit_code is not None:

@@ -140,6 +140,25 @@ class TestMiClient:
             cwd="/tmp/work",
         )
 
+    def test_is_alive_serializes_with_the_command_lock(self):
+        """Liveness checks should take the command lock instead of racing teardown."""
+
+        controller = _FakeController([])
+        client = self._make_client(controller)
+        finished = threading.Event()
+
+        def check() -> None:
+            client.is_alive()
+            finished.set()
+
+        with client._command_lock:
+            worker = threading.Thread(target=check)
+            worker.start()
+            assert not finished.wait(timeout=0.2)
+
+        worker.join(timeout=1.0)
+        assert finished.is_set()
+
     def test_read_initial_output_drains_startup_records(self):
         """Startup output emitted before the first command should be retrievable."""
 
@@ -290,7 +309,7 @@ class TestMiClient:
         client = self._make_client(controller)
 
         with patch("gdb_mcp.transport.mi_client._LIVENESS_CHECK_INTERVAL_SEC", 0.0):
-            with patch.object(client, "is_alive", return_value=False):
+            with patch.object(client, "_is_alive_unlocked", return_value=False):
                 with patch.object(client, "_extract_exit_code", return_value=-9):
                     result = client.send_command_and_wait_for_prompt(
                         "-gdb-version", timeout_sec=0.1
