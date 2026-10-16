@@ -11,6 +11,7 @@ from gdb_mcp.domain import (
     SessionStartInfo,
     SessionStatusSnapshot,
 )
+from gdb_mcp.session import registry as registry_module
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.registry import SessionRegistry
 from gdb_mcp.session.service import SessionService
@@ -26,6 +27,7 @@ def _session_double() -> Mock:
     workflow_lock.__exit__.return_value = None
     session.runtime = Mock(
         workflow_lock=workflow_lock,
+        lifecycle_lock=MagicMock(),
         attached_pid=None,
         current_thread_id=None,
         current_frame=None,
@@ -189,6 +191,7 @@ class TestSessionRegistry:
         session.config = Mock(program="/tmp/a.out", core=None, working_dir="/tmp")
         session.runtime = Mock(
             workflow_lock=session.runtime.workflow_lock,
+            lifecycle_lock=session.runtime.lifecycle_lock,
             attached_pid=None,
             current_thread_id=2,
             current_frame=1,
@@ -378,3 +381,26 @@ class TestSessionRegistry:
         session = create_default_session_service()
 
         assert isinstance(session, SessionService)
+
+    def test_shutdown_all_times_out_on_hung_session(self, monkeypatch):
+        """A session whose stop hangs must not block shutdown forever."""
+
+        monkeypatch.setattr(registry_module, "_SHUTDOWN_TIMEOUT_SEC", 0.1)
+        session = _session_double()
+        manager = SessionRegistry(session_factory=lambda: session)
+        session_id = _publish_session(manager, session)
+        session.controller = object()
+        release = threading.Event()
+
+        def hang():
+            release.wait(timeout=5)
+            return OperationSuccess(SessionMessage(message="stopped"))
+
+        session.stop.side_effect = hang
+        try:
+            results = manager.shutdown_all()
+        finally:
+            release.set()
+
+        assert isinstance(results[session_id], OperationError)
+        assert "Timed out" in results[session_id].message

@@ -17,6 +17,8 @@ from .factory import create_default_session_service
 from .locking import session_workflow_context
 from .service import SessionService
 
+_SHUTDOWN_TIMEOUT_SEC = 10.0
+
 
 class SessionRegistry:
     """
@@ -131,39 +133,52 @@ class SessionRegistry:
 
         summaries: list[SessionSummary] = []
         for session_id, session in sorted(sessions, key=lambda item: item[0]):
-            status_result = session.get_status()
-            status = status_result.value
-            config = session.config
-            lifecycle_state = session.state.value
-            if session_id in closing_sessions:
-                lifecycle_state = "closing"
-
             summaries.append(
-                SessionSummary(
-                    session_id=session_id,
-                    lifecycle_state=lifecycle_state,
-                    execution_state=status.execution_state,
-                    target_loaded=status.target_loaded,
-                    has_controller=status.has_controller,
-                    program=config.program if config is not None else None,
-                    core=config.core if config is not None else None,
-                    working_dir=config.working_dir if config is not None else None,
-                    attached_pid=session.runtime.attached_pid,
-                    current_thread_id=session.runtime.current_thread_id,
-                    current_frame=session.runtime.current_frame,
-                    stop_reason=status.stop_reason,
-                    exit_code=status.exit_code,
-                    current_inferior_id=session.runtime.current_inferior_id,
-                    inferior_count=session.runtime.inferior_count,
-                    inferior_states=session.runtime.inferiors_state_summary() or None,
-                    follow_fork_mode=session.runtime.follow_fork_mode,
-                    detach_on_fork=session.runtime.detach_on_fork,
-                    last_failure_message=session.runtime.last_failure_message,
-                    endpoint=config.endpoint if config is not None else None,
-                )
+                self._summarize_session(session_id, session, closing=session_id in closing_sessions)
             )
 
         return OperationSuccess(SessionListInfo(sessions=summaries, count=len(summaries)))
+
+    def _summarize_session(
+        self, session_id: int, session: SessionService, *, closing: bool
+    ) -> SessionSummary:
+        """Build one coherent summary while the session's own locks are held.
+
+        ``list_sessions`` is only entered while holding no session workflow
+        lock, so acquiring one here cannot invert the workflow/lifecycle order
+        used by ``close_session``.
+        """
+
+        with session_workflow_context(session), session.runtime.lifecycle_lock:
+            status = session.get_status().value
+            config = session.config
+            runtime = session.runtime
+            lifecycle_state = session.state.value
+            if closing:
+                lifecycle_state = "closing"
+
+            return SessionSummary(
+                session_id=session_id,
+                lifecycle_state=lifecycle_state,
+                execution_state=status.execution_state,
+                target_loaded=status.target_loaded,
+                has_controller=status.has_controller,
+                program=config.program if config is not None else None,
+                core=config.core if config is not None else None,
+                working_dir=config.working_dir if config is not None else None,
+                attached_pid=runtime.attached_pid,
+                current_thread_id=runtime.current_thread_id,
+                current_frame=runtime.current_frame,
+                stop_reason=status.stop_reason,
+                exit_code=status.exit_code,
+                current_inferior_id=runtime.current_inferior_id,
+                inferior_count=runtime.inferior_count,
+                inferior_states=runtime.inferiors_state_summary() or None,
+                follow_fork_mode=runtime.follow_fork_mode,
+                detach_on_fork=runtime.detach_on_fork,
+                last_failure_message=runtime.last_failure_message,
+                endpoint=config.endpoint if config is not None else None,
+            )
 
     def close_session(self, session_id: int) -> OperationSuccess[SessionMessage] | OperationError:
         """Stop and remove a session in one explicit lifecycle operation."""
@@ -226,16 +241,41 @@ class SessionRegistry:
 
         results: dict[int, OperationSuccess[SessionMessage] | OperationError] = {}
         for session_id, session in sessions.items():
-            if session.controller is None:
-                results[session_id] = OperationSuccess(SessionMessage(message="Session removed"))
-                continue
-            try:
-                with session_workflow_context(session):
-                    results[session_id] = session.stop()
-            except Exception as exc:
-                results[session_id] = OperationError(message=str(exc))
+            results[session_id] = self._stop_session_for_shutdown(session)
 
         with self._lock:
             self._closing_sessions.clear()
 
         return results
+
+    def _stop_session_for_shutdown(
+        self, session: SessionService
+    ) -> OperationSuccess[SessionMessage] | OperationError:
+        """Stop one session with a timeout so a hung GDB cannot block shutdown."""
+
+        if session.controller is None:
+            return OperationSuccess(SessionMessage(message="Session removed"))
+
+        outcome: list[OperationSuccess[SessionMessage] | OperationError] = []
+
+        def stop() -> None:
+            try:
+                with session_workflow_context(session):
+                    outcome.append(session.stop())
+            except Exception as exc:  # pragma: no cover - defensive during teardown
+                outcome.append(OperationError(message=str(exc)))
+
+        worker = threading.Thread(target=stop, name="session-shutdown", daemon=True)
+        worker.start()
+        worker.join(timeout=_SHUTDOWN_TIMEOUT_SEC)
+
+        if worker.is_alive():
+            return OperationError(
+                message=(
+                    "Timed out stopping a debugger session during shutdown; "
+                    "the GDB process may need to be killed"
+                )
+            )
+        if not outcome:
+            return OperationError(message="Session stop produced no result")
+        return outcome[0]
