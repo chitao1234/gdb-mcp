@@ -1,6 +1,16 @@
 """Unit tests for typed domain result helpers."""
 
-from gdb_mcp.domain import OperationError, OperationSuccess, SessionMessage, result_to_mapping
+import types
+
+import pytest
+
+from gdb_mcp.domain import (
+    OperationError,
+    OperationSuccess,
+    SessionMessage,
+    payload_to_mapping,
+    result_to_mapping,
+)
 
 
 class TestDomainResults:
@@ -71,3 +81,16 @@ class TestDomainResults:
             "tool": "x",
             "details": {"command": "-thread-info"},
         }
+
+    def test_payload_to_mapping_copies_non_dict_mappings(self):
+        """Read-only mappings should still serialize into plain JSON objects."""
+
+        proxy = types.MappingProxyType({"key": [1, 2]})
+
+        assert payload_to_mapping(proxy) == {"key": [1, 2]}
+
+    def test_payload_to_mapping_rejects_non_json_values(self):
+        """Unserializable values should fail at conversion, not at json.dumps."""
+
+        with pytest.raises(TypeError):
+            payload_to_mapping({"bad": {1, 2}})
