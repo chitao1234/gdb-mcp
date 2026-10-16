@@ -24,7 +24,8 @@ Pydantic request models, so request semantics remain fully enforced.
 from __future__ import annotations
 
 import functools
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from types import MappingProxyType
 from typing import cast
 
 from pydantic import BaseModel
@@ -34,15 +35,31 @@ Schema = dict[str, object]
 _MISSING = object()
 
 
+def _freeze(value: object) -> object:
+    """Return a deeply immutable copy so the cached schema cannot be mutated."""
+
+    if isinstance(value, Mapping):
+        return MappingProxyType({str(key): _freeze(item) for key, item in value.items()})
+    if isinstance(value, list | tuple):
+        return tuple(_freeze(item) for item in value)
+    return value
+
+
+def _thaw(value: object) -> object:
+    """Return a mutable, JSON-serializable copy of a frozen schema."""
+
+    if isinstance(value, Mapping):
+        return {str(key): _thaw(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw(item) for item in value]
+    return value
+
+
 @functools.lru_cache(maxsize=None)
-def _cached_input_schema(model: type[BaseModel]) -> Schema:
-    """Return the normalized schema for a model, computed once per process.
+def _cached_input_schema(model: type[BaseModel]) -> object:
+    """Return the immutable normalized schema for a model, computed once per process."""
 
-    Model definitions are fixed at import time, so the normalized result is
-    deterministic; callers must treat the returned dict as read-only.
-    """
-
-    return normalize_input_schema(model.model_json_schema())
+    return _freeze(normalize_input_schema(model.model_json_schema()))
 
 
 def public_input_schema(
@@ -50,11 +67,15 @@ def public_input_schema(
     *,
     examples: Sequence[dict[str, object]] | None = None,
 ) -> Schema:
-    """Return a client-friendly JSON Schema for one MCP tool input model."""
+    """Return a fresh, client-friendly JSON Schema for one MCP tool input model.
 
-    schema = _cached_input_schema(model)
+    The cached schema is immutable and shared, so each call returns an
+    independent copy that callers may freely mutate.
+    """
+
+    schema = cast(Schema, _thaw(_cached_input_schema(model)))
     if examples:
-        return {**schema, "examples": [dict(example) for example in examples]}
+        schema["examples"] = [dict(example) for example in examples]
     return schema
 
 

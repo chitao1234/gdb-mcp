@@ -52,10 +52,15 @@ def test_normalization_only_affects_the_published_copy() -> None:
     assert _find_unsupported_keys(public_input_schema(StartSessionArgs)) == []
 
 
-def test_public_input_schema_is_cached_per_model() -> None:
+def test_public_input_schema_returns_independent_copies() -> None:
     first = public_input_schema(StartSessionArgs)
+    second = public_input_schema(StartSessionArgs)
 
-    assert public_input_schema(StartSessionArgs) is first
+    assert first == second
+    assert first is not second
+
+    first["properties"]["program"]["type"] = "number"
+    assert public_input_schema(StartSessionArgs)["properties"]["program"]["type"] == "string"
 
 
 def test_public_input_schema_examples_do_not_pollute_the_cache() -> None:
