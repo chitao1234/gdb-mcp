@@ -34,6 +34,20 @@ from .common import (
 )
 
 
+def _publish_session_result(session_id: int | None, result: ToolResult) -> ToolResult:
+    """Inject the allocated session id into a successful session-start payload."""
+
+    if session_id is None or not isinstance(result, OperationSuccess):
+        return result
+
+    payload = payload_to_mapping(result.value)
+    if not isinstance(payload, dict):
+        return OperationError(message="Internal error: session start payload must be an object")
+    payload = dict(payload)
+    payload["session_id"] = session_id
+    return OperationSuccess(payload)
+
+
 def _handle_start_session(
     arguments: ToolArguments,
     session_manager: SessionRegistry,
@@ -54,14 +68,7 @@ def _handle_start_session(
         working_dir=args.working_dir,
         core=args.core,
     )
-    if session_id is not None and isinstance(result, OperationSuccess):
-        payload = payload_to_mapping(result.value)
-        if not isinstance(payload, dict):
-            return OperationError(message="Internal error: session start payload must be an object")
-        payload = dict(payload)
-        payload["session_id"] = session_id
-        return OperationSuccess(payload)
-    return result
+    return _publish_session_result(session_id, result)
 
 
 def _handle_connect_session(
@@ -75,14 +82,7 @@ def _handle_connect_session(
         endpoint=args.endpoint,
         init_commands=args.init_commands,
     )
-    if session_id is not None and isinstance(result, OperationSuccess):
-        payload = payload_to_mapping(result.value)
-        if not isinstance(payload, dict):
-            return OperationError(message="Internal error: session start payload must be an object")
-        payload = dict(payload)
-        payload["session_id"] = session_id
-        return OperationSuccess(payload)
-    return result
+    return _publish_session_result(session_id, result)
 
 
 def _handle_session_query(
