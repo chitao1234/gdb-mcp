@@ -34,17 +34,6 @@ def session_id(compiled_program, start_session):
     return start_session(compiled_program)
 
 
-@pytest.fixture
-def compiled_program_and_core(compile_program_with_core):
-    """Compile a crashing program and return its executable/core-dump paths."""
-
-    return compile_program_with_core(
-        CRASHING_C_PROGRAM,
-        filename="crash.c",
-        compiler="gcc",
-    )
-
-
 @pytest.mark.integration
 def test_session_lifecycle_and_status_v2(compiled_program, start_session_result, call_gdb_tool):
     """Session lifecycle queries should expose the direct v2 action envelope."""

@@ -45,6 +45,18 @@ def call_gdb_tool(integration_runtime):
 
 
 @pytest.fixture(autouse=True)
+def _disable_debuginfod(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stop GDB from blocking on network debuginfo downloads during tests.
+
+    Distros often export ``DEBUGINFOD_URLS``; when the server is unreachable,
+    ``run``/``gcore`` hang until the MI client's command timeout, which looks
+    like a product bug. An empty value disables debuginfod for spawned GDBs.
+    """
+
+    monkeypatch.setenv("DEBUGINFOD_URLS", "")
+
+
+@pytest.fixture(autouse=True)
 def _cleanup_sessions(integration_runtime):
     """Ensure sessions do not leak between tests within a module."""
 
@@ -98,7 +110,13 @@ def compile_program():
 
 @pytest.fixture
 def compile_program_with_core():
-    """Compile a program, run it with core dumps enabled, and return executable/core paths."""
+    """Compile a program, generate a core dump with GDB, and return both paths.
+
+    The core is produced by running the program under GDB and calling
+    ``generate-core-file`` rather than relying on the kernel's ``core_pattern``
+    (which on many systems writes outside the working directory or discards
+    cores entirely).
+    """
 
     temp_dirs: list[Path] = []
 
@@ -131,30 +149,37 @@ def compile_program_with_core():
         if compile_result.returncode != 0:
             pytest.fail(f"Failed to compile crashing test program: {compile_result.stderr}")
 
+        core_file = tmpdir / "core"
         run_result = subprocess.run(
             [
-                "bash",
-                "-lc",
-                'ulimit -c unlimited; cd "$1"; shift; "$@" >/dev/null 2>&1',
-                "_",
-                str(tmpdir),
-                f"./{executable_file.name}",
+                "gdb",
+                "--quiet",
+                "--batch",
+                "-ex",
+                "set pagination off",
+                "-ex",
+                "set debuginfod enabled off",
+                "-ex",
+                "run",
+                "-ex",
+                f"generate-core-file {core_file}",
+                "--args",
+                str(executable_file),
             ],
             capture_output=True,
             text=True,
+            cwd=str(tmpdir),
+            timeout=60,
             check=False,
         )
 
-        core_files = sorted(
-            tmpdir.glob("core*"), key=lambda path: path.stat().st_mtime, reverse=True
-        )
-        if not core_files:
+        if not core_file.exists():
             pytest.fail(
-                "Expected a core dump but none was produced. "
+                "Expected GDB to generate a core dump but none was produced. "
                 f"stdout={run_result.stdout!r} stderr={run_result.stderr!r}"
             )
 
-        return str(executable_file), str(core_files[0])
+        return str(executable_file), str(core_file)
 
     yield build
 

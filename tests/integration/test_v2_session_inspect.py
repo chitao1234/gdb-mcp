@@ -193,36 +193,52 @@ def test_memory_query_v2(session_id, call_gdb_tool):
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(
-    ("payload_builder", "expected_loaded"),
-    [
-        (lambda compiled, _: {"program": f"{compiled}.missing"}, False),
-        (lambda compiled, _: {"program": compiled}, True),
-        (
-            lambda compiled, compiled_and_core: {
-                "program": compiled_and_core[0],
-                "core": compiled_and_core[1],
-            },
-            True,
-        ),
-    ],
-)
-def test_startup_target_loaded_variants_v2(
-    compiled_program,
-    compiled_program_and_core,
-    payload_builder,
-    expected_loaded,
-    call_gdb_tool,
-    stop_session,
+def test_startup_missing_program_reports_target_not_loaded_v2(
+    compiled_program, call_gdb_tool, stop_session
 ):
-    """Startup should report target loading consistently across key v2 flows."""
+    """A missing program should open a session but report no loaded target."""
 
-    payload = payload_builder(compiled_program, compiled_program_and_core)
-    payload.setdefault("init_commands", [])
-
-    result = call_gdb_tool("gdb_session_start", payload)
+    result = call_gdb_tool(
+        "gdb_session_start",
+        {"program": f"{compiled_program}.missing", "init_commands": []},
+    )
     assert result["status"] == "success"
-    assert result["target_loaded"] is expected_loaded
+    assert result["target_loaded"] is False
+
+    if "session_id" in result:
+        stop_session(result["session_id"], ignore_errors=True)
+
+
+@pytest.mark.integration
+def test_startup_existing_program_reports_target_loaded_v2(
+    compiled_program, call_gdb_tool, stop_session
+):
+    """Loading an existing executable should report the target as loaded."""
+
+    result = call_gdb_tool(
+        "gdb_session_start",
+        {"program": compiled_program, "init_commands": []},
+    )
+    assert result["status"] == "success"
+    assert result["target_loaded"] is True
+
+    if "session_id" in result:
+        stop_session(result["session_id"], ignore_errors=True)
+
+
+@pytest.mark.integration
+def test_startup_program_with_core_reports_target_loaded_v2(
+    compiled_program_and_core, call_gdb_tool, stop_session
+):
+    """Loading an executable together with its core should report a target."""
+
+    program, core = compiled_program_and_core
+    result = call_gdb_tool(
+        "gdb_session_start",
+        {"program": program, "core": core, "init_commands": []},
+    )
+    assert result["status"] == "success"
+    assert result["target_loaded"] is True
 
     if "session_id" in result:
         stop_session(result["session_id"], ignore_errors=True)
