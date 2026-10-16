@@ -179,6 +179,39 @@ class TestV2ActionArgs:
                 }
             )
 
+    def test_breakpoint_catch_rejects_command_separator_argument(self):
+        """Catch arguments are passed unquoted to GDB, so separators must be rejected."""
+
+        with pytest.raises(ValidationError):
+            BreakpointManageArgs.model_validate(
+                {
+                    "session_id": 4,
+                    "action": "create",
+                    "breakpoint": {
+                        "kind": "catch",
+                        "event": "syscall",
+                        "argument": "read; shell echo pwned",
+                    },
+                }
+            )
+
+    def test_breakpoint_catch_accepts_multiple_syscall_names(self):
+        """Unless unsafe, argument text may hold several space-separated names."""
+
+        args = BreakpointManageArgs.model_validate(
+            {
+                "session_id": 4,
+                "action": "create",
+                "breakpoint": {
+                    "kind": "catch",
+                    "event": "syscall",
+                    "argument": "read write openat",
+                },
+            }
+        )
+
+        assert args.root.breakpoint.argument == "read write openat"
+
     def test_inspect_query_source_accepts_file_range_location(self):
         """Inspect source should accept a file-range location selector."""
 

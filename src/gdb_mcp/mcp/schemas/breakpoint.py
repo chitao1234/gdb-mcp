@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Annotated
 
 from pydantic import (
@@ -26,6 +27,8 @@ from .common import (
     _normalize_optional_text,
 )
 from .selectors import BreakpointSelectorArgs
+
+_CATCH_ARGUMENT_UNSAFE_RE = re.compile(r"[;\r\n\"\\]")
 
 
 class BreakpointCodeCreateArgs(StrictArgsModel):
@@ -81,7 +84,12 @@ class BreakpointCatchCreateArgs(StrictArgsModel):
     @field_validator("argument")
     @classmethod
     def validate_argument(cls, value: str | None) -> str | None:
-        return _normalize_optional_text(value, field_name="argument")
+        normalized = _normalize_optional_text(value, field_name="argument")
+        if normalized is None:
+            return None
+        if _CATCH_ARGUMENT_UNSAFE_RE.search(normalized) is not None:
+            raise ValueError("argument must not contain ';', quotes, backslashes, or newlines")
+        return normalized
 
 
 BreakpointCreateArgs = Annotated[
