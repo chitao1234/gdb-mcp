@@ -100,11 +100,11 @@ class InspectionInferiorStateMixin(InspectionBase):
     def _inferior_selection_info(record: InferiorRecord) -> InferiorSelectionInfo:
         """Convert one inferior record into a selection response."""
 
-        inferior_id = record["inferior_id"] if "inferior_id" in record else 0
-        display = record["display"] if "display" in record else None
-        description = record["description"] if "description" in record else None
-        connection = record["connection"] if "connection" in record else None
-        executable = record["executable"] if "executable" in record else None
+        inferior_id = record.get("inferior_id", 0)
+        display = record.get("display")
+        description = record.get("description")
+        connection = record.get("connection")
+        executable = record.get("executable")
 
         return InferiorSelectionInfo(
             inferior_id=inferior_id,
