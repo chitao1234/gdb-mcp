@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+
 from gdb_mcp.domain import CommandTranscriptEntry, StopEvent
 from gdb_mcp.session.config import SessionConfig
 
@@ -126,3 +128,23 @@ class TestRuntimeFoundations:
         assert [record["inferior_id"] for record in summaries] == [1, 3]
         assert runtime.inferior_count == 2
         assert runtime.current_inferior_id == 1
+
+    def test_inferior_summary_reads_are_serialized_by_the_state_lock(self, session_service):
+        """Snapshot readers must take the state lock instead of racing writers."""
+
+        runtime = session_service.runtime
+        runtime.mark_inferior_running(inferior_id=1)
+        finished = threading.Event()
+
+        def read_summary() -> None:
+            runtime.inferiors_state_summary()
+            finished.set()
+
+        with runtime._state_lock:
+            worker = threading.Thread(target=read_summary)
+            worker.start()
+            # The reader cannot complete while the lock is held by the writer.
+            assert not finished.wait(timeout=0.2)
+
+        worker.join(timeout=1.0)
+        assert finished.is_set()

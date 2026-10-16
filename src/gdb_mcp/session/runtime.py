@@ -63,6 +63,9 @@ class SessionRuntime:
     stop_history_limit: int = DEFAULT_STOP_HISTORY_LIMIT
     command_transcript: list[CommandTranscriptEntry] = field(default_factory=list)
     command_transcript_limit: int = DEFAULT_COMMAND_TRANSCRIPT_LIMIT
+    # Leaf lock guarding the container state below. No other lock is taken while
+    # it is held, so it cannot participate in a lock-order cycle.
+    _state_lock: LockProtocol = field(default_factory=threading.RLock, repr=False, compare=False)
 
     @property
     def controller(self) -> GdbControllerProtocol | None:
@@ -85,15 +88,27 @@ class SessionRuntime:
     def begin_startup(self, config: SessionConfig) -> None:
         """Record a startup attempt and reset transient state."""
 
-        self.config = config
-        self.state = SessionState.STARTING
+        with self._state_lock:
+            self.config = config
+            self.state = SessionState.STARTING
+            self.last_failure_message = None
+            self._reset_transient()
+            self.last_stop_event = None
+            self.stop_history.clear()
+            self.command_transcript.clear()
+
+    def _reset_transient(self) -> None:
+        """Clear per-run transient state shared by startup, stop, and failure.
+
+        Callers must already hold ``self._state_lock``.
+        """
+
         self.is_running = False
         self.target_loaded = False
         self.attached_pid = None
         self.execution_state = "unknown"
         self.stop_reason = None
         self.exit_code = None
-        self.last_failure_message = None
         self.current_thread_id = None
         self.current_frame = None
         self.current_inferior_id = None
@@ -101,50 +116,37 @@ class SessionRuntime:
         self.inferior_states.clear()
         self.follow_fork_mode = None
         self.detach_on_fork = None
-        self.last_stop_event = None
-        self.stop_history.clear()
-        self.command_transcript.clear()
 
     def mark_ready(self) -> None:
         """Mark the session as ready for requests."""
 
-        self.state = SessionState.READY
-        self.is_running = True
-        self.last_failure_message = None
-        if self.current_inferior_id is None:
-            self.current_inferior_id = 1
-        if self.inferior_count is None:
-            self.inferior_count = 1
-        if self.current_inferior_id not in self.inferior_states:
-            self.inferior_states[self.current_inferior_id] = InferiorRuntimeState(
-                execution_state=self.execution_state,
-                stop_reason=self.stop_reason,
-                exit_code=self.exit_code,
-            )
-        self._synchronize_selected_state()
-        if self.follow_fork_mode is None:
-            self.follow_fork_mode = "parent"
-        if self.detach_on_fork is None:
-            self.detach_on_fork = True
+        with self._state_lock:
+            self.state = SessionState.READY
+            self.is_running = True
+            self.last_failure_message = None
+            if self.current_inferior_id is None:
+                self.current_inferior_id = 1
+            if self.inferior_count is None:
+                self.inferior_count = 1
+            if self.current_inferior_id not in self.inferior_states:
+                self.inferior_states[self.current_inferior_id] = InferiorRuntimeState(
+                    execution_state=self.execution_state,
+                    stop_reason=self.stop_reason,
+                    exit_code=self.exit_code,
+                )
+            self._synchronize_selected_state()
+            if self.follow_fork_mode is None:
+                self.follow_fork_mode = "parent"
+            if self.detach_on_fork is None:
+                self.detach_on_fork = True
 
     def mark_failed(self, message: str) -> None:
         """Record a terminal failure for the current session."""
 
-        self.state = SessionState.FAILED
-        self.is_running = False
-        self.target_loaded = False
-        self.attached_pid = None
-        self.execution_state = "unknown"
-        self.stop_reason = None
-        self.exit_code = None
-        self.last_failure_message = message
-        self.current_thread_id = None
-        self.current_frame = None
-        self.current_inferior_id = None
-        self.inferior_count = None
-        self.inferior_states.clear()
-        self.follow_fork_mode = None
-        self.detach_on_fork = None
+        with self._state_lock:
+            self.state = SessionState.FAILED
+            self.last_failure_message = message
+            self._reset_transient()
 
     def mark_transport_terminated(self, message: str) -> None:
         """Record that the debugger transport has died and clear its controller."""
@@ -155,21 +157,10 @@ class SessionRuntime:
     def mark_stopped(self) -> None:
         """Record a clean stop of the current session."""
 
-        self.state = SessionState.STOPPED
-        self.is_running = False
-        self.target_loaded = False
-        self.attached_pid = None
-        self.execution_state = "unknown"
-        self.stop_reason = None
-        self.exit_code = None
-        self.last_failure_message = None
-        self.current_thread_id = None
-        self.current_frame = None
-        self.current_inferior_id = None
-        self.inferior_count = None
-        self.inferior_states.clear()
-        self.follow_fork_mode = None
-        self.detach_on_fork = None
+        with self._state_lock:
+            self.state = SessionState.STOPPED
+            self.last_failure_message = None
+            self._reset_transient()
 
     def mark_thread_selected(self, thread_id: int | None) -> None:
         """Track the currently selected thread."""
@@ -184,12 +175,13 @@ class SessionRuntime:
     def mark_inferior_selected(self, inferior_id: int | None) -> None:
         """Track the currently selected inferior and clear stale stack selection."""
 
-        self.current_inferior_id = inferior_id
-        self.current_thread_id = None
-        self.current_frame = None
-        if inferior_id is not None:
-            self.ensure_inferior(inferior_id)
-        self._synchronize_selected_state()
+        with self._state_lock:
+            self.current_inferior_id = inferior_id
+            self.current_thread_id = None
+            self.current_frame = None
+            if inferior_id is not None:
+                self.ensure_inferior(inferior_id)
+            self._synchronize_selected_state()
 
     def update_inferior_inventory(
         self,
@@ -200,48 +192,53 @@ class SessionRuntime:
     ) -> None:
         """Track the current inferior inventory snapshot."""
 
-        if inferior_ids is not None:
-            normalized_states: dict[int, InferiorRuntimeState] = {}
-            for inferior_id in inferior_ids:
-                existing = self.inferior_states.get(inferior_id)
-                normalized_states[inferior_id] = (
-                    existing if existing is not None else InferiorRuntimeState()
-                )
-            self.inferior_states = normalized_states
+        with self._state_lock:
+            if inferior_ids is not None:
+                normalized_states: dict[int, InferiorRuntimeState] = {}
+                for inferior_id in inferior_ids:
+                    existing = self.inferior_states.get(inferior_id)
+                    normalized_states[inferior_id] = (
+                        existing if existing is not None else InferiorRuntimeState()
+                    )
+                self.inferior_states = normalized_states
 
-        self.current_inferior_id = current_inferior_id
-        self.inferior_count = count
-        if self.current_inferior_id is None and self.inferior_states:
-            self.current_inferior_id = min(self.inferior_states)
-        if self.current_inferior_id is not None:
-            self.ensure_inferior(self.current_inferior_id)
-        self._synchronize_selected_state()
+            self.current_inferior_id = current_inferior_id
+            self.inferior_count = count
+            if self.current_inferior_id is None and self.inferior_states:
+                self.current_inferior_id = min(self.inferior_states)
+            if self.current_inferior_id is not None:
+                self.ensure_inferior(self.current_inferior_id)
+            self._synchronize_selected_state()
 
     def ensure_inferior(self, inferior_id: int) -> None:
         """Ensure one inferior has an allocated runtime state record."""
 
         if inferior_id <= 0:
             return
-        if inferior_id not in self.inferior_states:
-            self.inferior_states[inferior_id] = InferiorRuntimeState()
-        if self.inferior_count is None or self.inferior_count < len(self.inferior_states):
-            self.inferior_count = len(self.inferior_states)
+        with self._state_lock:
+            if inferior_id not in self.inferior_states:
+                self.inferior_states[inferior_id] = InferiorRuntimeState()
+            if self.inferior_count is None or self.inferior_count < len(self.inferior_states):
+                self.inferior_count = len(self.inferior_states)
 
     def remove_inferior(self, inferior_id: int) -> None:
         """Remove one inferior from runtime tracking after thread-group removal."""
 
-        if inferior_id not in self.inferior_states:
-            return
+        with self._state_lock:
+            if inferior_id not in self.inferior_states:
+                return
 
-        del self.inferior_states[inferior_id]
-        self.inferior_count = len(self.inferior_states)
+            del self.inferior_states[inferior_id]
+            self.inferior_count = len(self.inferior_states)
 
-        if self.current_inferior_id == inferior_id:
-            self.current_inferior_id = min(self.inferior_states) if self.inferior_states else None
-            self.current_thread_id = None
-            self.current_frame = None
+            if self.current_inferior_id == inferior_id:
+                self.current_inferior_id = (
+                    min(self.inferior_states) if self.inferior_states else None
+                )
+                self.current_thread_id = None
+                self.current_frame = None
 
-        self._synchronize_selected_state()
+            self._synchronize_selected_state()
 
     def mark_follow_fork_mode(self, mode: FollowForkMode | None) -> None:
         """Track the configured follow-fork-mode value."""
@@ -317,32 +314,35 @@ class SessionRuntime:
     def inferiors_state_summary(self) -> list[InferiorStateRecord]:
         """Return sorted runtime state summaries for all known inferiors."""
 
-        records: list[InferiorStateRecord] = []
-        for inferior_id in sorted(self.inferior_states):
-            state = self.inferior_states[inferior_id]
-            records.append(
-                InferiorStateRecord(
-                    inferior_id=inferior_id,
-                    is_current=inferior_id == self.current_inferior_id,
-                    execution_state=state.execution_state,
-                    stop_reason=state.stop_reason,
-                    exit_code=state.exit_code,
+        with self._state_lock:
+            records: list[InferiorStateRecord] = []
+            for inferior_id in sorted(self.inferior_states):
+                state = self.inferior_states[inferior_id]
+                records.append(
+                    InferiorStateRecord(
+                        inferior_id=inferior_id,
+                        is_current=inferior_id == self.current_inferior_id,
+                        execution_state=state.execution_state,
+                        stop_reason=state.stop_reason,
+                        exit_code=state.exit_code,
+                    )
                 )
-            )
-        return records
+            return records
 
     def record_stop_event(self, event: StopEvent) -> None:
         """Remember a structured stop event and keep bounded history."""
 
-        self.last_stop_event = event
-        self.stop_history.append(event)
-        self._trim_history(self.stop_history, self.stop_history_limit)
+        with self._state_lock:
+            self.last_stop_event = event
+            self.stop_history.append(event)
+            self._trim_history(self.stop_history, self.stop_history_limit)
 
     def record_command_transcript(self, entry: CommandTranscriptEntry) -> None:
         """Remember command execution metadata and keep bounded transcript history."""
 
-        self.command_transcript.append(entry)
-        self._trim_history(self.command_transcript, self.command_transcript_limit)
+        with self._state_lock:
+            self.command_transcript.append(entry)
+            self._trim_history(self.command_transcript, self.command_transcript_limit)
 
     @staticmethod
     def _trim_history(items: list[HistoryItemT], limit: int) -> None:
@@ -366,23 +366,24 @@ class SessionRuntime:
     ) -> None:
         """Update one inferior state and mirror it to selected-global fields when applicable."""
 
-        target_inferior_id = self._resolve_target_inferior_id(inferior_id)
-        state = self.inferior_states.get(target_inferior_id)
-        if state is None:
-            state = InferiorRuntimeState()
-            self.inferior_states[target_inferior_id] = state
+        with self._state_lock:
+            target_inferior_id = self._resolve_target_inferior_id(inferior_id)
+            state = self.inferior_states.get(target_inferior_id)
+            if state is None:
+                state = InferiorRuntimeState()
+                self.inferior_states[target_inferior_id] = state
 
-        state.execution_state = execution_state
-        state.stop_reason = stop_reason
-        state.exit_code = exit_code
+            state.execution_state = execution_state
+            state.stop_reason = stop_reason
+            state.exit_code = exit_code
 
-        if self.inferior_count is None or self.inferior_count < len(self.inferior_states):
-            self.inferior_count = len(self.inferior_states)
+            if self.inferior_count is None or self.inferior_count < len(self.inferior_states):
+                self.inferior_count = len(self.inferior_states)
 
-        if target_inferior_id == self.current_inferior_id:
-            self.execution_state = execution_state
-            self.stop_reason = stop_reason
-            self.exit_code = exit_code
+            if target_inferior_id == self.current_inferior_id:
+                self.execution_state = execution_state
+                self.stop_reason = stop_reason
+                self.exit_code = exit_code
 
     def _resolve_target_inferior_id(self, inferior_id: int | None) -> int:
         """Resolve the target inferior for a state update."""
@@ -397,7 +398,10 @@ class SessionRuntime:
         return self.current_inferior_id
 
     def _synchronize_selected_state(self) -> None:
-        """Mirror the selected inferior runtime state into top-level fields."""
+        """Mirror the selected inferior runtime state into top-level fields.
+
+        Callers must already hold ``self._state_lock``.
+        """
 
         if self.current_inferior_id is None:
             self.execution_state = "unknown"
