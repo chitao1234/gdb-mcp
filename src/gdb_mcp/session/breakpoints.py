@@ -373,8 +373,13 @@ class SessionBreakpointService:
                 details=details,
             )
 
+        created_label = (
+            f"breakpoint {created_number}"
+            if created_number is not None
+            else "the requested breakpoint"
+        )
         warning = (
-            f"Created breakpoint {created_number} at {location}, but existing breakpoint(s) "
+            f"Created {created_label} at {location}, but existing breakpoint(s) "
             f"{blocker_label} cannot be inserted ({reason}); delete or fix them before continuing."
         )
         return OperationSuccess(BreakpointInfo(breakpoint=created), warnings=(warning,))

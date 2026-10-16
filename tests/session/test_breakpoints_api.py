@@ -2,7 +2,46 @@
 
 from __future__ import annotations
 
-from gdb_mcp.domain import result_to_mapping
+from typing import cast
+
+from gdb_mcp.domain import (
+    BreakpointListInfo,
+    BreakpointRecord,
+    OperationError,
+    OperationSuccess,
+    result_to_mapping,
+)
+from gdb_mcp.session.breakpoints import SessionBreakpointService
+from gdb_mcp.session.command_runner import SessionCommandRunner
+
+
+class _StubBreakpointService(SessionBreakpointService):
+    """Breakpoint service that serves a fixed inventory for unit tests."""
+
+    def __init__(self, records: list[BreakpointRecord]) -> None:
+        super().__init__(command_runner=cast(SessionCommandRunner, object()))
+        self._records = records
+
+    def list_breakpoints(self) -> OperationSuccess[BreakpointListInfo]:
+        return OperationSuccess(
+            BreakpointListInfo(breakpoints=self._records, count=len(self._records))
+        )
+
+
+def test_insert_blocked_warning_omits_unknown_breakpoint_number() -> None:
+    """A blocked insert whose created record lacks a number must not print None."""
+
+    service = _StubBreakpointService([{"original-location": "start", "type": "breakpoint"}])
+    error = OperationError(
+        message="Cannot insert breakpoint 1.\nCannot access memory at address 0x0\n"
+    )
+
+    result = service._attribute_insert_failure("start", error)
+
+    assert isinstance(result, OperationSuccess)
+    assert len(result.warnings) == 1
+    assert "None" not in result.warnings[0]
+    assert "the requested breakpoint" in result.warnings[0]
 
 
 class TestBreakpointApi:
