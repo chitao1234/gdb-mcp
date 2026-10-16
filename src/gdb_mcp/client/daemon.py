@@ -189,7 +189,9 @@ def _log_tail(paths: DaemonPaths, lines: int = 20) -> str:
     return "\n".join(content[-lines:])
 
 
-def _wait_for_ready(paths: DaemonPaths, process: subprocess.Popen[bytes]) -> dict[str, object]:
+async def _wait_for_ready(
+    paths: DaemonPaths, process: subprocess.Popen[bytes]
+) -> dict[str, object]:
     deadline = time.monotonic() + _READY_TIMEOUT_SEC
     while time.monotonic() < deadline:
         if paths.ready.exists():
@@ -202,7 +204,7 @@ def _wait_for_ready(paths: DaemonPaths, process: subprocess.Popen[bytes]) -> dic
         exit_code = process.poll()
         if exit_code is not None:
             raise DaemonError(f"background server exited with code {exit_code}\n{_log_tail(paths)}")
-        time.sleep(0.05)
+        await asyncio.sleep(0.05)
     raise DaemonError(f"background server did not become ready\n{_log_tail(paths)}")
 
 
@@ -252,7 +254,7 @@ async def _spawn(paths: DaemonPaths) -> ResolvedServer:
         )
 
     try:
-        ready = _wait_for_ready(paths, process)
+        ready = await _wait_for_ready(paths, process)
     except DaemonError:
         process.kill()
         process.wait(timeout=5)

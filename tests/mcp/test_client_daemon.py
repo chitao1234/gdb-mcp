@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import subprocess
 import sys
@@ -216,6 +217,23 @@ def test_stop_daemon_waits_for_the_process_and_clears_the_cookie(
 
     assert result.stopped
     assert not paths.cookie.exists()
+
+
+def test_wait_for_ready_reads_the_ready_file(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("GDB_MCP_STATE_DIR", str(tmp_path / "state"))
+    paths = daemon_paths(tmp_path)
+    paths.ready.parent.mkdir(parents=True, exist_ok=True)
+    paths.ready.write_text(
+        json.dumps({"host": "127.0.0.1", "port": 4242, "path": "/mcp"}), encoding="utf-8"
+    )
+
+    class _LiveProcess:
+        def poll(self) -> None:
+            return None
+
+    ready = asyncio.run(daemon._wait_for_ready(paths, _LiveProcess()))
+
+    assert ready["port"] == 4242
 
 
 def test_process_alive_detects_running_and_exited_processes() -> None:
