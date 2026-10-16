@@ -19,10 +19,10 @@ import secrets
 import subprocess
 import sys
 import time
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
 from urllib.parse import urlsplit
 
 import httpx
@@ -113,6 +113,49 @@ def daemon_paths(root: Path | None = None) -> DaemonPaths:
     )
 
 
+def _lock_handle(handle: int) -> None:
+    """Take the exclusive lock, blocking until it is available."""
+
+    if os.name == "nt":  # pragma: no cover - Windows only
+        import msvcrt
+
+        msvcrt.locking(handle, msvcrt.LK_LOCK, 1)  # type: ignore[attr-defined]
+    else:
+        import fcntl
+
+        fcntl.flock(handle, fcntl.LOCK_EX)
+
+
+def _try_lock_handle(handle: int) -> bool:
+    """Attempt the exclusive lock without blocking; return whether it was taken."""
+
+    try:
+        if os.name == "nt":  # pragma: no cover - Windows only
+            import msvcrt
+
+            msvcrt.locking(handle, msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
+        else:
+            import fcntl
+
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return False
+    return True
+
+
+def _unlock_handle(handle: int) -> None:
+    """Release the exclusive lock taken by ``_lock_handle``/``_try_lock_handle``."""
+
+    if os.name == "nt":  # pragma: no cover - Windows only
+        import msvcrt
+
+        msvcrt.locking(handle, msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
+    else:
+        import fcntl
+
+        fcntl.flock(handle, fcntl.LOCK_UN)
+
+
 @contextmanager
 def _exclusive_lock(path: Path) -> Iterator[None]:
     """Hold an exclusive per-project lock across cookie maintenance."""
@@ -120,27 +163,35 @@ def _exclusive_lock(path: Path) -> Iterator[None]:
     path.parent.mkdir(parents=True, exist_ok=True)
     handle = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
     try:
-        if os.name == "nt":  # pragma: no cover - Windows only
-            import msvcrt
-
-            msvcrt.locking(handle, msvcrt.LK_LOCK, 1)  # type: ignore[attr-defined]
-        else:
-            import fcntl
-
-            fcntl.flock(handle, fcntl.LOCK_EX)
+        _lock_handle(handle)
         yield
     finally:
         try:
-            if os.name == "nt":  # pragma: no cover - Windows only
-                import msvcrt
-
-                msvcrt.locking(handle, msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
-            else:
-                import fcntl
-
-                fcntl.flock(handle, fcntl.LOCK_UN)
+            _unlock_handle(handle)
         finally:
             os.close(handle)
+
+
+@asynccontextmanager
+async def _async_exclusive_lock(path: Path) -> AsyncIterator[None]:
+    """Hold the per-project lock without blocking the event loop while waiting.
+
+    The lock must still span the (awaited) daemon spawn to serialize it, but
+    waiting for another process is done with a non-blocking acquire and an
+    async sleep instead of a blocking ``flock``.
+    """
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        while not _try_lock_handle(handle):
+            await asyncio.sleep(0.05)
+        try:
+            yield
+        finally:
+            _unlock_handle(handle)
+    finally:
+        os.close(handle)
 
 
 def _read_cookie(paths: DaemonPaths) -> dict[str, object] | None:
@@ -315,7 +366,7 @@ async def resolve_server(*, explicit_url: str | None) -> ResolvedServer:
 
     # The lock serializes read/spawn/write so two concurrent invocations cannot
     # start two daemons for the same project.
-    with _exclusive_lock(paths.lock):
+    async with _async_exclusive_lock(paths.lock):
         cookie = _read_cookie(paths)
         if cookie is not None:
             resolved = await _resolved_from_cookie(cookie)

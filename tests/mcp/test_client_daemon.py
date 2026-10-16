@@ -236,6 +236,30 @@ def test_wait_for_ready_reads_the_ready_file(monkeypatch, tmp_path: Path) -> Non
     assert ready["port"] == 4242
 
 
+def test_async_exclusive_lock_serializes_acquisitions(monkeypatch, tmp_path: Path) -> None:
+    if os.name == "nt":  # pragma: no cover - flock semantics differ on Windows
+        return
+    monkeypatch.setenv("GDB_MCP_STATE_DIR", str(tmp_path / "state"))
+    paths = daemon_paths(tmp_path)
+    order: list[str] = []
+
+    async def worker(tag: str) -> None:
+        async with daemon._async_exclusive_lock(paths.lock):
+            order.append(f"{tag}-enter")
+            await asyncio.sleep(0.05)
+            order.append(f"{tag}-exit")
+
+    async def run() -> None:
+        await asyncio.gather(worker("a"), worker("b"))
+
+    asyncio.run(run())
+
+    assert order in (
+        ["a-enter", "a-exit", "b-enter", "b-exit"],
+        ["b-enter", "b-exit", "a-enter", "a-exit"],
+    )
+
+
 def test_process_alive_detects_running_and_exited_processes() -> None:
     process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(0.2)"])
     try:
