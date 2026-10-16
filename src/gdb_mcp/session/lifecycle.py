@@ -15,7 +15,12 @@ from ..domain import (
     payload_to_mapping,
     result_to_mapping,
 )
-from ..transport import ParsedMiResponse, parse_mi_responses
+from ..transport import (
+    EndpointError,
+    ParsedMiResponse,
+    create_external_controller,
+    parse_mi_responses,
+)
 from .command_runner import SessionCommandRunner
 from .config import SessionConfig
 from .constants import DEFAULT_TIMEOUT_SEC, FILE_LOAD_TIMEOUT_SEC, INIT_COMMAND_DELAY_SEC
@@ -42,8 +47,14 @@ class SessionLifecycleService:
         gdb_path: str | None = None,
         working_dir: str | None = None,
         core: str | None = None,
+        endpoint: str | None = None,
     ) -> OperationSuccess[SessionStartInfo] | OperationError:
-        """Start a new GDB session."""
+        """Start a new GDB session.
+
+        When ``endpoint`` is given the session connects to a GDB/MI stream that
+        another process started (``tcp://``, ``unix://`` or ``pty://``) instead
+        of spawning its own ``gdb``.
+        """
         with self._runtime.lifecycle_lock:
             if self._runtime.has_controller:
                 return OperationError(message="Session already running. Stop it first.")
@@ -59,10 +70,19 @@ class SessionLifecycleService:
                 gdb_path=gdb_path,
                 working_dir=working_dir,
                 core=core,
+                endpoint=endpoint,
             )
             self._runtime.begin_startup(config)
 
             try:
+                if endpoint and (program or args or core):
+                    message = (
+                        "An external endpoint already owns the target; do not also pass "
+                        "program, args, or core when connecting."
+                    )
+                    self._runtime.mark_failed(message)
+                    return OperationError(message=message)
+
                 if args and core:
                     self._runtime.mark_failed(
                         "Cannot combine program arguments with core dump analysis in one startup request."
@@ -80,20 +100,28 @@ class SessionLifecycleService:
                         message=f"Working directory does not exist: {working_dir}"
                     )
 
-                gdb_command = self._build_start_command(
-                    gdb_path=gdb_path,
-                    program=program,
-                    args=args,
-                    core=core,
-                )
                 if core:
                     logger.info("Loading core dump: %s", core)
 
-                self._runtime.transport.start(
-                    command=gdb_command,
-                    time_to_check_for_additional_output_sec=1.0,
-                    cwd=working_dir,
-                )
+                if endpoint:
+                    logger.info("Connecting to external GDB/MI endpoint: %s", endpoint)
+                    external_controller = create_external_controller(
+                        endpoint,
+                        time_to_check_for_additional_output_sec=1.0,
+                    )
+                    self._runtime.transport.adopt_controller(external_controller)
+                else:
+                    gdb_command = self._build_start_command(
+                        gdb_path=gdb_path,
+                        program=program,
+                        args=args,
+                        core=core,
+                    )
+                    self._runtime.transport.start(
+                        command=gdb_command,
+                        time_to_check_for_additional_output_sec=1.0,
+                        cwd=working_dir,
+                    )
 
                 initial_startup_responses = self._runtime.transport.read_initial_output(
                     timeout_sec=1.0
@@ -251,8 +279,14 @@ class SessionLifecycleService:
                         warnings=warnings or None,
                         env_output=env_output or None,
                         init_output=init_output or None,
+                        endpoint=endpoint,
                     )
                 )
+
+            except EndpointError as exc:
+                logger.error("Failed to connect to GDB/MI endpoint: %s", exc)
+                self._cleanup_failed_start(str(exc))
+                return OperationError(message=str(exc))
 
             except Exception as exc:
                 logger.error("Failed to start GDB session: %s", exc)

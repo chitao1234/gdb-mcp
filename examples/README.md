@@ -77,6 +77,23 @@ Once you have the GDB MCP server configured in Claude Desktop (or another MCP cl
 "What are the parameters of the worker_thread function?"
 ```
 
+**Scenario D: Connect to a gdb you already started**
+
+Start gdb yourself and expose its MI over TCP, then let gdb-mcp attach to it:
+
+```bash
+socat TCP-LISTEN:4399,reuseaddr \
+  EXEC:'gdb --quiet --interpreter=mi2 ./sample_program',pty,stderr
+```
+
+```
+"Connect to the gdb endpoint tcp://127.0.0.1:4399"
+"Set a breakpoint at worker_thread and continue"
+```
+
+The `connect` session behaves like a started one; stopping it only detaches from
+the external gdb. See [USAGE_GUIDE.md](USAGE_GUIDE.md) for the full workflow.
+
 ## Example AI Prompts
 
 Here are some prompts you can use with an AI that has access to the GDB MCP server:

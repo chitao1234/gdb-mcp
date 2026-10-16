@@ -388,7 +388,58 @@ Background run payload:
 }
 ```
 
-## Advanced Techniques
+## Example Workflow 7: Connect to an Externally Started GDB
+
+### Goal
+
+Drive a gdb process that **another process already started**, without letting
+gdb-mcp spawn its own gdb.
+
+### Setup
+
+Expose the external gdb's MI stream over TCP (using `socat`):
+
+```bash
+socat TCP-LISTEN:4399,reuseaddr \
+  EXEC:'gdb --quiet --interpreter=mi2 ./my_program',pty,stderr
+```
+
+### Step 1: Connect
+
+```json
+{ "endpoint": "tcp://127.0.0.1:4399" }
+```
+
+The response looks like `gdb_session_start` and additionally carries `endpoint`.
+`target_loaded` is probed from the connected gdb.
+
+CLI equivalent (also records the project default session):
+
+```bash
+gdb-mcp-client connect tcp://127.0.0.1:4399
+```
+
+### Step 2: Debug normally
+
+Every session-scoped tool works the same:
+
+```json
+{ "session_id": 1, "action": "create", "breakpoint": { "kind": "code", "location": "main" } }
+```
+
+```json
+{ "session_id": 1, "action": "run" }
+```
+
+### Step 3: Detach
+
+```json
+{ "session_id": 1, "action": "stop", "session": {} }
+```
+
+Stopping only detaches gdb-mcp; the external gdb keeps running.
+
+
 
 ### Examining Memory
 

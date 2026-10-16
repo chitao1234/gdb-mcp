@@ -12,6 +12,7 @@ Boolean flags come in `--flag` / `--no-flag` pairs (for example `--fail-fast` / 
 | Command | Tool call | Notes |
 | --- | --- | --- |
 | `start PROGRAM` | `gdb_session_start` | Also: `--arg A` (repeatable), `--init-command CMD`, `--env K=V`, `--working-dir DIR`, `--gdb-path PATH`, `--core FILE`. Records the new session as the project default. |
+| `connect ENDPOINT` | `gdb_session_connect` | Attaches to an externally started gdb via `tcp://host:port`, `unix:///path`, or `pty:///dev/pts/N`. Also: `--init-command CMD` (repeatable). Records the new session as the project default; `stop` only detaches. |
 | `status` | `gdb_session_query` action=list | Lists sessions; appends `default session: N` (or `(not running)`). Rejects `--session-id`. |
 | `stop` | `gdb_session_manage` action=stop | Stops the default session (or `--session-id N`) and clears it when it was the default. |
 | `session use ID` | validates via `gdb_session_query` action=status | Makes `ID` the default for this project. Requires the background server, not `--server-url`. |

@@ -17,6 +17,7 @@ from ...session.locking import session_workflow_context
 from ...session.registry import SessionRegistry
 from ...session.service import SessionService
 from ..schemas import (
+    ConnectSessionArgs,
     SessionManageArgs,
     SessionManageStopAction,
     SessionQueryArgs,
@@ -52,6 +53,27 @@ def _handle_start_session(
         gdb_path=args.gdb_path,
         working_dir=args.working_dir,
         core=args.core,
+    )
+    if session_id is not None and isinstance(result, OperationSuccess):
+        payload = payload_to_mapping(result.value)
+        if not isinstance(payload, dict):
+            return OperationError(message="Internal error: session start payload must be an object")
+        payload = dict(payload)
+        payload["session_id"] = session_id
+        return OperationSuccess(payload)
+    return result
+
+
+def _handle_connect_session(
+    arguments: ToolArguments,
+    session_manager: SessionRegistry,
+) -> ToolResult:
+    """Connect to an externally started GDB/MI endpoint and publish a session."""
+
+    args = ConnectSessionArgs.model_validate(arguments)
+    session_id, result = session_manager.start_session(
+        endpoint=args.endpoint,
+        init_commands=args.init_commands,
     )
     if session_id is not None and isinstance(result, OperationSuccess):
         payload = payload_to_mapping(result.value)

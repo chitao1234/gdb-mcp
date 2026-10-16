@@ -14,11 +14,16 @@ from ..contracts import (
     TOOL_INFERIOR_MANAGE,
     TOOL_INSPECT_QUERY,
     TOOL_RUN_UNTIL_FAILURE,
+    TOOL_SESSION_CONNECT,
     TOOL_SESSION_QUERY,
     TOOL_WORKFLOW_BATCH,
 )
 
 TOOL_EXAMPLES: dict[str, tuple[dict[str, object], ...]] = {
+    TOOL_SESSION_CONNECT: (
+        {"endpoint": "tcp://127.0.0.1:4399"},
+        {"endpoint": "pty:///dev/pts/3", "init_commands": ["set pagination off"]},
+    ),
     TOOL_SESSION_QUERY: (
         {"action": "list"},
         {"session_id": 7, "action": "status"},

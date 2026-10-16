@@ -89,6 +89,7 @@ Debugging commands read like a normal debugger, and `--session-id` defaults to t
 ```bash
 gdb-mcp-client status                  # list sessions
 gdb-mcp-client start ./build/app       # start one and remember it
+gdb-mcp-client connect tcp://127.0.0.1:4399   # attach to an externally started gdb
 gdb-mcp-client break add main
 gdb-mcp-client run
 gdb-mcp-client bt
@@ -107,7 +108,7 @@ gdb-mcp-client session use 2     # make session 2 the default
 
 Stopping the default session clears it.
 
-Run `gdb-mcp-client --help` for the full list (`run`, `step`, `next`, `finish`, `interrupt`, `attach`, `threads`, `frame`, `regs`, `memory`, `disasm`, `list`, `break add|list|rm|enable|disable`, `watch`, `catch`, `call`, `capture`, `batch`, `campaign`). Every command takes the same flags as the underlying tool, and extra flags can be passed with `--payload-json`.
+Run `gdb-mcp-client --help` for the full list (`start`, `connect`, `run`, `step`, `next`, `finish`, `interrupt`, `attach`, `threads`, `frame`, `regs`, `memory`, `disasm`, `list`, `break add|list|rm|enable|disable`, `watch`, `catch`, `call`, `capture`, `batch`, `campaign`). Every command takes the same flags as the underlying tool, and extra flags can be passed with `--payload-json`.
 
 Background servers bind `127.0.0.1` on an ephemeral port and require a bearer token that is stored only in the cookie. They exit after 15 minutes without requests or active debug sessions. Manage them with:
 
@@ -187,9 +188,10 @@ Changes how long a background server started by `gdb-mcp-client` waits without r
 
 ## Tool Surface
 
-The current public interface exposes 17 tools:
+The current public interface exposes 18 tools:
 
 - `gdb_session_start`
+- `gdb_session_connect`
 - `gdb_session_query`
 - `gdb_session_manage`
 - `gdb_inferior_query`
@@ -223,7 +225,7 @@ Examples:
 - `gdb_context_query(action="backtrace")`
 - `gdb_inspect_query(action="registers")`
 
-`gdb_session_start` remains separate because startup has a unique request shape. `gdb_execute_command`, `gdb_attach_process`, and `gdb_call_function` also remain separate so escape-hatch and privileged operations are easy to permission independently.
+`gdb_session_start` remains separate because startup has a unique request shape, and `gdb_session_connect` covers the externally started gdb case (via `tcp://`, `unix://`, or `pty://` endpoints). `gdb_execute_command`, `gdb_attach_process`, and `gdb_call_function` also remain separate so escape-hatch and privileged operations are easy to permission independently.
 
 Detailed request and response documentation lives in [TOOLS.md](TOOLS.md).
 Representative end-to-end prompts and workflows live in [examples/USAGE_GUIDE.md](examples/USAGE_GUIDE.md), [skills/debug-with-gdb-mcp/SKILL.md](skills/debug-with-gdb-mcp/SKILL.md) for the MCP tools, and [skills/gdb-mcp-cli/SKILL.md](skills/gdb-mcp-cli/SKILL.md) for the command line.

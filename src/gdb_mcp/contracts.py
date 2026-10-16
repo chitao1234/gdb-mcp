@@ -9,6 +9,7 @@ from typing import Literal, TypeAlias, get_args
 TOOL_SESSION_START = "gdb_session_start"
 TOOL_SESSION_QUERY = "gdb_session_query"
 TOOL_SESSION_MANAGE = "gdb_session_manage"
+TOOL_SESSION_CONNECT = "gdb_session_connect"
 TOOL_INFERIOR_QUERY = "gdb_inferior_query"
 TOOL_INFERIOR_MANAGE = "gdb_inferior_manage"
 TOOL_EXECUTION_MANAGE = "gdb_execution_manage"
@@ -111,6 +112,7 @@ LocationKindFileRangeName: TypeAlias = Literal["file_range"]
 
 PUBLIC_TOOL_NAMES = (
     TOOL_SESSION_START,
+    TOOL_SESSION_CONNECT,
     TOOL_SESSION_QUERY,
     TOOL_SESSION_MANAGE,
     TOOL_INFERIOR_QUERY,

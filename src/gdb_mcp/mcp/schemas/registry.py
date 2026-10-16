@@ -22,15 +22,16 @@ from ...contracts import (
     TOOL_INFERIOR_QUERY,
     TOOL_INSPECT_QUERY,
     TOOL_RUN_UNTIL_FAILURE,
+    TOOL_SESSION_CONNECT,
     TOOL_SESSION_MANAGE,
     TOOL_SESSION_QUERY,
     TOOL_SESSION_START,
     TOOL_WORKFLOW_BATCH,
 )
-
 from .dedicated import (
     AttachProcessArgs,
     CallFunctionArgs,
+    ConnectSessionArgs,
     ExecuteCommandArgs,
     StartSessionArgs,
 )
@@ -60,6 +61,7 @@ from .inspect import InspectQueryArgs
 
 TOOL_MODELS: dict[str, type[BaseModel]] = {
     TOOL_SESSION_START: StartSessionArgs,
+    TOOL_SESSION_CONNECT: ConnectSessionArgs,
     TOOL_SESSION_QUERY: SessionQueryArgs,
     TOOL_SESSION_MANAGE: SessionManageArgs,
     TOOL_INFERIOR_QUERY: InferiorQueryArgs,

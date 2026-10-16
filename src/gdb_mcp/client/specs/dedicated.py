@@ -8,6 +8,7 @@ import argparse
 from gdb_mcp.mcp.schemas import (
     AttachProcessArgs,
     CallFunctionArgs,
+    ConnectSessionArgs,
     ExecuteCommandArgs,
 )
 
@@ -15,6 +16,25 @@ from ..parsers import (
     validate_model_payload,
 )
 from .common import _configure_session_id_and_timeout
+
+
+def _configure_session_connect(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--endpoint",
+        required=True,
+        help="External GDB/MI endpoint: tcp://host:port, unix:///path, or pty:///dev/pts/N",
+    )
+    parser.add_argument("--init-command", dest="init_commands", action="append", default=[])
+
+
+def _build_session_connect(namespace: argparse.Namespace) -> dict[str, object]:
+    return validate_model_payload(
+        ConnectSessionArgs,
+        {
+            "endpoint": namespace.endpoint,
+            "init_commands": list(namespace.init_commands) or None,
+        },
+    )
 
 
 def _configure_execute_command(parser: argparse.ArgumentParser) -> None:

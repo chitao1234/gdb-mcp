@@ -163,6 +163,7 @@ class SessionService:
         gdb_path: str | None = None,
         working_dir: str | None = None,
         core: str | None = None,
+        endpoint: str | None = None,
     ) -> OperationSuccess[SessionStartInfo] | OperationError:
         """Delegate session startup to the lifecycle service."""
 
@@ -174,6 +175,7 @@ class SessionService:
             gdb_path=gdb_path,
             working_dir=working_dir,
             core=core,
+            endpoint=endpoint,
         )
 
     def stop(self) -> OperationSuccess[SessionMessage] | OperationError:

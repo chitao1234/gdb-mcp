@@ -19,6 +19,7 @@ from ...contracts import (
     TOOL_INFERIOR_QUERY,
     TOOL_INSPECT_QUERY,
     TOOL_RUN_UNTIL_FAILURE,
+    TOOL_SESSION_CONNECT,
     TOOL_SESSION_MANAGE,
     TOOL_SESSION_QUERY,
     TOOL_SESSION_START,
@@ -31,6 +32,7 @@ from ..tool_examples import TOOL_EXAMPLES
 from .dedicated import (
     AttachProcessArgs,
     CallFunctionArgs,
+    ConnectSessionArgs,
     ExecuteCommandArgs,
     StartSessionArgs,
 )
@@ -85,6 +87,20 @@ def build_tool_definitions() -> list[Tool]:
                 "Returns a session_id integer that must be passed to all other GDB tools."
             ),
             inputSchema=public_input_schema(StartSessionArgs),
+        ),
+        Tool(
+            name=TOOL_SESSION_CONNECT,
+            description=(
+                "Connect to a GDB/MI stream that another process already started, instead of "
+                "letting gdb-mcp spawn its own gdb. Supported endpoints: 'tcp://host:port', "
+                "'unix:///path/to/socket', and 'pty:///dev/pts/N'. The external process owns "
+                "the target and the gdb process; stopping the session only detaches from it. "
+                "Returns a session_id integer that must be passed to all other GDB tools."
+            ),
+            inputSchema=public_input_schema(
+                ConnectSessionArgs,
+                examples=TOOL_EXAMPLES[TOOL_SESSION_CONNECT],
+            ),
         ),
         Tool(
             name=TOOL_SESSION_QUERY,

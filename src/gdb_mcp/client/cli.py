@@ -19,6 +19,7 @@ from gdb_mcp.contracts import (
     ACTION_STATUS,
     ACTION_STOP,
     TOOL_ATTACH_PROCESS,
+    TOOL_SESSION_CONNECT,
     TOOL_SESSION_MANAGE,
     TOOL_SESSION_QUERY,
     TOOL_SESSION_START,
@@ -355,6 +356,12 @@ def _merge_facade_positional(
         if args.program is not None:
             raise _duplicate_facade_field(flag)
         args.program = args._program
+    elif argument == "endpoint":
+        if args._endpoint is None:
+            return
+        if args.endpoint is not None:
+            raise _duplicate_facade_field(flag)
+        args.endpoint = args._endpoint
     elif argument == "pid":
         if args._pid is None:
             return
@@ -668,7 +675,11 @@ async def main(
             return 1
         raise
 
-    if resolved.managed and not response.is_error and args.tool_name == TOOL_SESSION_START:
+    if (
+        resolved.managed
+        and not response.is_error
+        and args.tool_name in {TOOL_SESSION_START, TOOL_SESSION_CONNECT}
+    ):
         session_id = _session_id_from_payload(response.payload)
         if session_id is not None:
             remember_session_id(session_id)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import (
     Field,
+    field_validator,
 )
 
 
@@ -61,6 +62,28 @@ class StartSessionArgs(StrictArgsModel):
             "(either via this parameter or core-file command) for symbols to resolve correctly."
         ),
     )
+
+
+class ConnectSessionArgs(StrictArgsModel):
+    endpoint: str = Field(
+        ...,
+        description=(
+            "GDB/MI endpoint of an externally started GDB. Supported forms: "
+            "'tcp://host:port', 'unix:///path/to/socket', 'pty:///dev/pts/N'."
+        ),
+    )
+    init_commands: list[str] | None = Field(
+        None,
+        description="GDB commands to run immediately after connecting",
+    )
+
+    @field_validator("endpoint")
+    @classmethod
+    def validate_endpoint(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("endpoint is required")
+        return normalized
 
 
 class ExecuteCommandArgs(StrictArgsModel):

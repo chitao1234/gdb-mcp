@@ -10,6 +10,7 @@ from mcp.types import CallToolResult
 
 from ...contracts import (
     TOOL_RUN_UNTIL_FAILURE,
+    TOOL_SESSION_CONNECT,
     TOOL_SESSION_MANAGE,
     TOOL_SESSION_QUERY,
     TOOL_SESSION_START,
@@ -36,6 +37,7 @@ from .common import (
     _wrap_action_result_for,
 )
 from .session import (
+    _handle_connect_session,
     _handle_session_manage,
     _handle_session_query,
     _handle_start_session,
@@ -98,6 +100,8 @@ async def dispatch_tool_call(
     try:
         if name == TOOL_SESSION_START:
             return serialize_result(_handle_start_session(normalized_args, session_manager))
+        if name == TOOL_SESSION_CONNECT:
+            return serialize_result(_handle_connect_session(normalized_args, session_manager))
         if name == TOOL_SESSION_QUERY:
             validated_query_args = SessionQueryArgs.model_validate(normalized_args)
             return serialize_result(

@@ -17,6 +17,7 @@ from gdb_mcp.contracts import (
     TOOL_INFERIOR_QUERY,
     TOOL_INSPECT_QUERY,
     TOOL_RUN_UNTIL_FAILURE,
+    TOOL_SESSION_CONNECT,
     TOOL_SESSION_MANAGE,
     TOOL_SESSION_QUERY,
     TOOL_SESSION_START,
@@ -90,9 +91,11 @@ from .dedicated import (
     _build_attach_process,
     _build_call_function,
     _build_execute_command,
+    _build_session_connect,
     _configure_attach_process,
     _configure_call_function,
     _configure_execute_command,
+    _configure_session_connect,
 )
 
 CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
@@ -102,6 +105,15 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
             configure_parser=_configure_session_start,
             parse_input=parse_session_start_input,
             build_arguments=_build_session_start,
+            render_human=render_session_start,
+        )
+    ),
+    TOOL_SESSION_CONNECT: _register_tool_spec(
+        ToolCliSpec(
+            name=TOOL_SESSION_CONNECT,
+            configure_parser=_configure_session_connect,
+            parse_input=_parse_namespace,
+            build_arguments=_build_session_connect,
             render_human=render_session_start,
         )
     ),

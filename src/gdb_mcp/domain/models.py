@@ -126,6 +126,7 @@ class SessionSummary:
     follow_fork_mode: FollowForkMode | None = None
     detach_on_fork: bool | None = None
     last_failure_message: str | None = None
+    endpoint: str | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -151,6 +152,7 @@ class SessionStartInfo:
     warnings: list[str] | None = None
     env_output: list[StructuredPayload] | None = None
     init_output: list[StructuredPayload] | None = None
+    endpoint: str | None = None
 
 
 @dataclass(slots=True, frozen=True)

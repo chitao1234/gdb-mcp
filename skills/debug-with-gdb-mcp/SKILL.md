@@ -27,6 +27,7 @@ Use a different approach when the task is not GDB-based or when some other debug
 | Need | Tool |
 | --- | --- |
 | Start a session | `gdb_session_start` |
+| Connect to an externally started gdb | `gdb_session_connect` |
 | Check session inventory or status | `gdb_session_query` |
 | Stop a session | `gdb_session_manage` |
 | Manage inferiors and fork policy | `gdb_inferior_query`, `gdb_inferior_manage` |
@@ -64,6 +65,7 @@ When referring to an action-based tool below, use the full form such as `gdb_exe
 | Fresh live launch | `gdb_session_start` with `program` and optional `args`, `env`, `working_dir`, `init_commands` | Use when GDB should launch the program |
 | Attach to existing process | `gdb_session_start` first, then `gdb_attach_process` | Start empty if you only need to attach |
 | Core dump analysis | `gdb_session_start` with `core`, preferably also `program` | Expect startup to leave the target `paused` |
+| gdb already running elsewhere | `gdb_session_connect` with an `endpoint` | gdb-mcp never spawns gdb; stop only detaches |
 
 ### Configure Startup Fields Deliberately
 
@@ -116,9 +118,90 @@ When referring to an action-based tool below, use the full form such as `gdb_exe
 }
 ```
 
+### Connect to an Externally Started gdb
+
+Use `gdb_session_connect` when another process already owns the gdb process and
+the target, and you only want gdb-mcp to drive that same MI session. gdb-mcp
+does **not** spawn gdb in this mode, and `gdb_session_manage(action="stop")`
+**detaches** instead of killing gdb.
+
+Endpoint forms:
+
+| Endpoint | Meaning |
+| --- | --- |
+| `tcp://host:port` | GDB/MI exposed over TCP |
+| `unix:///path/to/socket` | GDB/MI exposed over a Unix domain socket |
+| `pty:///dev/pts/N` | GDB/MI carried by a pty/tty device |
+
+**Recipe A - give gdb its own TCP endpoint (recommended):**
+
+```bash
+# One external process owns gdb and exposes MI on 127.0.0.1:4399.
+socat TCP-LISTEN:4399,reuseaddr \
+  EXEC:'gdb --quiet --interpreter=mi2 /path/to/app',pty,stderr
+```
+
+```json
+{ "endpoint": "tcp://127.0.0.1:4399" }
+```
+
+**Recipe B - unix socket:**
+
+```bash
+socat UNIX-LISTEN:/tmp/gdbmi.sock,fork \
+  EXEC:'gdb --quiet --interpreter=mi2 /path/to/app',pty,stderr
+```
+
+```json
+{ "endpoint": "unix:///tmp/gdbmi.sock" }
+```
+
+**Recipe C - attach to a gdb you already have open (gdb >= 9, `new-ui`):**
+
+```bash
+# Bridge TCP <-> a pty whose slave path you then hand to new-ui.
+socat TCP-LISTEN:4399,reuseaddr PTY,link=/tmp/gdbmi,raw,echo=0
+```
+
+In the already-running gdb, type:
+
+```
+new-ui mi2 /tmp/gdbmi
+```
+
+Then connect gdb-mcp to the TCP side:
+
+```json
+{ "endpoint": "tcp://127.0.0.1:4399" }
+```
+
+The external gdb keeps its own CLI, and both UIs share one debug state.
+
+**Recipe D - direct pty:**
+
+When an external harness owns a pty master and exposes the tty path that carries
+MI, connect straight to it:
+
+```json
+{ "endpoint": "pty:///dev/pts/7" }
+```
+
+Rules and expectations:
+
+- Never pass `program`, `args`, or `core` with `endpoint`; the external gdb owns
+  the target. gdb-mcp rejects the combination.
+- `target_loaded` is probed from the connected gdb via `info files`, so it
+  reflects the external target even though gdb-mcp did not load it.
+- `gdb_session_manage(action="stop")` detaches gdb-mcp; the external gdb keeps
+  running. Stop the external process yourself when you are done.
+- Prefer `gdb_session_start` + `gdb_attach_process` when gdb-mcp should own the
+  gdb process.
+- Everything after connecting (`gdb_breakpoint_manage`, `gdb_execution_manage`,
+  `gdb_context_query`, ...) behaves exactly as for a started session.
+
 ## Startup Validation
 
-Run these checks immediately after `gdb_session_start` or `gdb_attach_process`:
+Run these checks immediately after `gdb_session_start`, `gdb_session_connect`, or `gdb_attach_process`:
 
 - `target_loaded`: must be `true` before trusting later inspection
 - `warnings`: treat missing symbols, bad executables, or load failures as real blockers

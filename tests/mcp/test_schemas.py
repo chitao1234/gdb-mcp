@@ -107,6 +107,7 @@ class TestV2ToolDefinitions:
 
         assert tool_names == {
             "gdb_session_start",
+            "gdb_session_connect",
             "gdb_session_query",
             "gdb_session_manage",
             "gdb_inferior_query",

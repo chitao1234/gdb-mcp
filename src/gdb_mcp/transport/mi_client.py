@@ -66,6 +66,12 @@ class MiClient:
             )
         return self._controller
 
+    def adopt_controller(self, controller: GdbControllerProtocol) -> None:
+        """Attach a controller created outside the factory, without spawning GDB."""
+
+        with self._command_lock:
+            self._controller = controller
+
     def read_initial_output(self, *, timeout_sec: float) -> list[MiRecord]:
         """Drain startup records emitted before the first explicit command."""
 

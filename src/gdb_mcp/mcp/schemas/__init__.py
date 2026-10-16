@@ -14,6 +14,7 @@ from .selectors import (
 )
 from .dedicated import (
     StartSessionArgs,
+    ConnectSessionArgs,
     ExecuteCommandArgs,
     AttachProcessArgs,
     CallFunctionArgs,
@@ -145,6 +146,7 @@ __all__ = [
     "CallFunctionArgs",
     "CaptureBundleArgs",
     "CaptureMemoryRangeArgs",
+    "ConnectSessionArgs",
     "CaptureOptionsArgs",
     "ContextBacktraceQueryArgs",
     "ContextFrameQueryArgs",

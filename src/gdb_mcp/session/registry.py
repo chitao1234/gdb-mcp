@@ -65,6 +65,7 @@ class SessionRegistry:
         gdb_path: str | None = None,
         working_dir: str | None = None,
         core: str | None = None,
+        endpoint: str | None = None,
     ) -> tuple[int | None, OperationSuccess[SessionStartInfo] | OperationError]:
         """
         Start a session and only publish it if startup succeeds.
@@ -83,6 +84,7 @@ class SessionRegistry:
             gdb_path=gdb_path,
             working_dir=working_dir,
             core=core,
+            endpoint=endpoint,
         )
 
         if isinstance(result, OperationError):
@@ -157,6 +159,7 @@ class SessionRegistry:
                     follow_fork_mode=session.runtime.follow_fork_mode,
                     detach_on_fork=session.runtime.detach_on_fork,
                     last_failure_message=session.runtime.last_failure_message,
+                    endpoint=config.endpoint if config is not None else None,
                 )
             )
 

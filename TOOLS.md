@@ -197,7 +197,8 @@ In practice, string shorthand is most useful for dedicated tools with empty or d
 
 | Tool | Role |
 | --- | --- |
-| `gdb_session_start` | Start a new GDB session |
+| `gdb_session_start` | Start a new GDB session (gdb-mcp spawns gdb) |
+| `gdb_session_connect` | Connect to an externally started GDB/MI endpoint |
 | `gdb_session_query` | Query session inventory or one live session |
 | `gdb_session_manage` | Mutate session lifecycle |
 | `gdb_inferior_query` | Query inferior inventory or current inferior |
@@ -259,10 +260,54 @@ Dedicated startup tool. This is not action-based.
 }
 ```
 
+## `gdb_session_connect`
+
+Dedicated tool for attaching to a GDB/MI stream that **another process already
+started**. gdb-mcp does not spawn gdb in this mode, and stopping the session
+only detaches: it never terminates the external gdb.
+
+### Endpoint Forms
+
+| Form | Meaning |
+| --- | --- |
+| `tcp://host:port` | GDB/MI exposed over TCP (for example via `socat`) |
+| `unix:///path/to/socket` | GDB/MI exposed over a Unix domain socket |
+| `pty:///dev/pts/N` | GDB/MI carried by a pty/tty device |
+
+### Request Fields
+
+- `endpoint` (required): one of the endpoint forms above
+- `init_commands`: optional GDB commands to run right after connecting
+
+`program`, `args`, and `core` are rejected: the external process already owns
+the target.
+
+### Success Fields
+
+Same shape as `gdb_session_start`, plus `endpoint`. `target_loaded` is probed
+from the connected gdb (via `info files`), so it reflects the external target.
+
+### Example
+
+```json
+{
+  "endpoint": "tcp://127.0.0.1:4399"
+}
+```
+
+Typical setup (external gdb exposed over TCP with `socat`):
+
+```bash
+socat TCP-LISTEN:4399,reuseaddr \
+  EXEC:'gdb --quiet --interpreter=mi2 ./app',pty,stderr
+# then: gdb_session_connect {"endpoint": "tcp://127.0.0.1:4399"}
+```
+
+See the `gdb-mcp-cli` and `debug-with-gdb-mcp` skills for full runbooks.
+
 ## `gdb_session_query`
 
 Query session inventory or inspect one live session.
-
 ### Actions
 
 | Action | Request Shape | Success `result` |

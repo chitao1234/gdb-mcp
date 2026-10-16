@@ -10,6 +10,7 @@ from gdb_mcp.mcp.schemas import (
     BatchArgs,
     BreakpointManageArgs,
     CaptureBundleArgs,
+    ConnectSessionArgs,
     ExecutionManageArgs,
     InferiorManageArgs,
     InspectQueryArgs,
@@ -20,6 +21,7 @@ from gdb_mcp.mcp.schemas import (
 from gdb_mcp.mcp.tool_examples import TOOL_EXAMPLES
 
 _MODELS: dict[str, type[BaseModel]] = {
+    "gdb_session_connect": ConnectSessionArgs,
     "gdb_session_query": SessionQueryArgs,
     "gdb_inferior_manage": InferiorManageArgs,
     "gdb_execution_manage": ExecutionManageArgs,

@@ -1,6 +1,6 @@
 ---
 name: gdb-mcp-cli
-description: "Use when driving gdb-mcp from a shell through the `gdb-mcp-client` command: starting or attaching debug sessions, running and stepping, breakpoints and watchpoints, inspecting threads/frames/locals/memory/disassembly, batch and failure campaigns, forensic captures, and managing the per-project background server. Covers the short commands (`start`, `run`, `bt`, `break add`, …), default-session handling, and the `tool` escape hatch."
+description: "Use when driving gdb-mcp from a shell through the `gdb-mcp-client` command: starting, connecting to, or attaching debug sessions, running and stepping, breakpoints and watchpoints, inspecting threads/frames/locals/memory/disassembly, batch and failure campaigns, forensic captures, and managing the per-project background server. Covers the short commands (`start`, `connect`, `run`, `bt`, `break add`, …), default-session handling, and the `tool` escape hatch."
 argument-hint: "[task, e.g. 'debug the crash in ./build/app']"
 ---
 
@@ -12,6 +12,7 @@ argument-hint: "[task, e.g. 'debug the crash in ./build/app']"
 
 ```bash
 gdb-mcp-client start ./build/app   # start a session
+gdb-mcp-client connect tcp://127.0.0.1:4399   # attach to an externally started gdb
 gdb-mcp-client break add parse_token
 gdb-mcp-client run
 gdb-mcp-client bt
@@ -32,7 +33,7 @@ Prefer the structured MCP tools directly when the environment does not grant she
 ## Core Rules
 
 1. **`--help` is authoritative.** Every command lists its exact flags and, for `tool` subcommands, validated payload examples. Use `references/commands.md` to pick the command, then `--help` for flag details.
-2. **Sessions are remembered.** `start` records the new session for the project; later commands use it when `--session-id` is omitted. `stop` clears it. Switch with `session use ID`, inspect with `session current`, and `status` marks the current default (adding "(not running)" when it is gone).
+2. **Sessions are remembered.** `start` and `connect` record the new session for the project; later commands use it when `--session-id` is omitted. `stop` clears it. Switch with `session use ID`, inspect with `session current`, and `status` marks the current default (adding "(not running)" when it is gone).
 3. **One project, one background server.** The cookie is keyed by the nearest VCS root, defaults to the platform cache dir, and holds the endpoint plus bearer token. Manually started servers never idle-exit; background ones exit after 15 minutes without requests or live sessions.
 4. **Check exit codes.** `0` success, `1` tool or daemon failure, `2` usage errors. A program that stops on a breakpoint is a success, not an error.
 5. **Errors are structured.** With `--json`, failures carry `status: "error"`, `code`, `message`, and `details` (validation failures use `code: "validation_error"` with `field_errors`).
@@ -42,6 +43,7 @@ Prefer the structured MCP tools directly when the environment does not grant she
 | Task | Command |
 | --- | --- |
 | Start / list / stop sessions | `start`, `status`, `stop` |
+| Connect to an externally started gdb | `connect ENDPOINT` |
 | Default session | `session use ID`, `session current` |
 | Run control | `run`, `continue`, `interrupt`, `step`, `next`, `finish`, `wait-stop` |
 | Attach to a PID | `attach PID` |
@@ -68,6 +70,76 @@ gdb-mcp-client tool inspect_query --action evaluate --expression "cfg->retries"
 ```
 
 Use it for actions with no short command (inferior management, thread/frame selection, breakpoint updates, expression evaluation) and whenever you want the raw tool surface. `--payload-json '<json>'` sends a payload verbatim, validated against the published tool schema; `tool <name> --help` prints ready-to-use examples.
+
+## Connect to an Externally Started gdb
+
+Use `connect` when another process already owns gdb and the target. It calls
+`gdb_session_connect`, so gdb-mcp does **not** spawn gdb, and `stop` only
+**detaches** from the external gdb instead of killing it.
+
+```bash
+gdb-mcp-client connect tcp://127.0.0.1:4399
+```
+
+Like `start`, a successful `connect` becomes the project's **default session**,
+so follow-up commands need no `--session-id`:
+
+```bash
+gdb-mcp-client connect unix:///tmp/gdbmi.sock
+gdb-mcp-client session current     # prints the connected session id
+gdb-mcp-client status              # session list shows endpoint: ... and "default session: N"
+gdb-mcp-client break add main
+gdb-mcp-client run
+gdb-mcp-client bt
+gdb-mcp-client stop                # detaches; the external gdb keeps running
+```
+
+Endpoint forms:
+
+| Endpoint | Meaning |
+| --- | --- |
+| `tcp://host:port` | GDB/MI exposed over TCP |
+| `unix:///path/to/socket` | GDB/MI exposed over a Unix domain socket |
+| `pty:///dev/pts/N` | GDB/MI carried by a pty/tty device |
+
+**Recipe A - give gdb its own TCP endpoint (recommended):**
+
+```bash
+socat TCP-LISTEN:4399,reuseaddr \
+  EXEC:'gdb --quiet --interpreter=mi2 ./build/app',pty,stderr
+gdb-mcp-client connect tcp://127.0.0.1:4399
+```
+
+**Recipe B - unix socket:**
+
+```bash
+socat UNIX-LISTEN:/tmp/gdbmi.sock,fork \
+  EXEC:'gdb --quiet --interpreter=mi2 ./build/app',pty,stderr
+gdb-mcp-client connect unix:///tmp/gdbmi.sock
+```
+
+**Recipe C - attach to a gdb you already have open (gdb >= 9, `new-ui`):**
+
+```bash
+socat TCP-LISTEN:4399,reuseaddr PTY,link=/tmp/gdbmi,raw,echo=0
+# in the running gdb, type:  new-ui mi2 /tmp/gdbmi
+gdb-mcp-client connect tcp://127.0.0.1:4399
+```
+
+**Recipe D - direct pty** when an external harness owns the pty master and
+exposes the tty path that carries MI:
+
+```bash
+gdb-mcp-client connect pty:///dev/pts/7
+```
+
+Notes:
+
+- Do not pass `program`/`args`/`core` on connect; the external gdb owns the
+  target (`--payload-json` with those fields is rejected).
+- `target_loaded` is probed from the connected gdb, so the envelope reflects the
+  external target.
+- `--json` and exit codes behave exactly like `start`.
 
 ## Worked Loop
 

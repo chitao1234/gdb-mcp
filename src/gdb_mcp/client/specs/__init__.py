@@ -85,6 +85,8 @@ from .dedicated import (
     _build_attach_process,
     _configure_call_function,
     _build_call_function,
+    _configure_session_connect,
+    _build_session_connect,
 )
 from .registry import (
     CLIENT_TOOL_SPECS,
@@ -111,6 +113,7 @@ __all__ = [
     "_build_inferior_query",
     "_build_inspect_query",
     "_build_run_until_failure",
+    "_build_session_connect",
     "_build_session_manage",
     "_build_session_query",
     "_build_session_start",
@@ -128,6 +131,7 @@ __all__ = [
     "_configure_inferior_query",
     "_configure_inspect_query",
     "_configure_run_until_failure",
+    "_configure_session_connect",
     "_configure_session_id_and_timeout",
     "_configure_session_manage",
     "_configure_session_query",

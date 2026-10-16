@@ -118,6 +118,46 @@ class TestClientCli:
         assert "target_loaded: True" in rendered
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
+    def test_main_connects_to_external_endpoint(self, mock_invoke_tool):
+        mock_invoke_tool.return_value = ClientToolResponse(
+            payload={
+                "status": "success",
+                "session_id": 3,
+                "message": "GDB session started",
+                "target_loaded": False,
+                "execution_state": "not_started",
+            },
+            is_error=False,
+        )
+
+        stdout = StringIO()
+        exit_code = asyncio.run(
+            main(
+                [
+                    "--server-url",
+                    "http://127.0.0.1:8000/mcp",
+                    "connect",
+                    "tcp://127.0.0.1:4399",
+                    "--init-command",
+                    "set pagination off",
+                ],
+                stdout=stdout,
+            )
+        )
+
+        assert exit_code == 0
+        mock_invoke_tool.assert_awaited_once_with(
+            "http://127.0.0.1:8000/mcp",
+            "gdb_session_connect",
+            {
+                "endpoint": "tcp://127.0.0.1:4399",
+                "init_commands": ["set pagination off"],
+            },
+            http_client=None,
+            auth_token=None,
+        )
+
+    @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_json_mode_prints_raw_payload(self, mock_invoke_tool):
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "message": "attached"},
@@ -2348,6 +2388,7 @@ class TestClientCli:
 
         assert tuple(CLIENT_TOOL_SPECS) == (
             "gdb_session_start",
+            "gdb_session_connect",
             "gdb_session_query",
             "gdb_session_manage",
             "gdb_inferior_query",

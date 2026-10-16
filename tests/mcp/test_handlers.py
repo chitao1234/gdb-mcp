@@ -116,6 +116,46 @@ class TestHandlerDispatch:
         assert result_data["status"] == "error"
         assert "session_id" not in result_data
 
+    def test_connect_session_passes_endpoint_to_registry(self):
+        """Connecting should forward the endpoint and publish the session ID."""
+
+        manager = Mock()
+        manager.start_session.return_value = (
+            11,
+            OperationSuccess(SessionMessage(message="GDB session started")),
+        )
+
+        result_data = dispatch(
+            "gdb_session_connect",
+            {"endpoint": "tcp://127.0.0.1:4399", "init_commands": ["set pagination off"]},
+            manager,
+        )
+
+        manager.start_session.assert_called_once_with(
+            endpoint="tcp://127.0.0.1:4399",
+            init_commands=["set pagination off"],
+        )
+        assert result_data["status"] == "success"
+        assert result_data["session_id"] == 11
+
+    def test_connect_session_failure_does_not_expose_session_id(self):
+        """A failed endpoint connection should not expose a session ID."""
+
+        manager = Mock()
+        manager.start_session.return_value = (
+            None,
+            OperationError(message="Could not reach MI endpoint"),
+        )
+
+        result_data = dispatch(
+            "gdb_session_connect",
+            {"endpoint": "unix:///tmp/nope.sock"},
+            manager,
+        )
+
+        assert result_data["status"] == "error"
+        assert "session_id" not in result_data
+
     def test_session_query_list_routes_to_registry(self):
         """Global session inventory requests should route through gdb_session_query."""
 
@@ -1740,6 +1780,7 @@ class TestHandlerDispatch:
         exported_tools = {tool.name for tool in build_tool_definitions()}
         dispatched_tools = set(SESSION_TOOL_SPECS) | {
             "gdb_session_start",
+            "gdb_session_connect",
             "gdb_session_query",
             "gdb_session_manage",
             "gdb_run_until_failure",
