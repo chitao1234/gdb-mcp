@@ -154,8 +154,11 @@ def _read_cookie(paths: DaemonPaths) -> dict[str, object] | None:
 def _write_cookie(paths: DaemonPaths, data: dict[str, object]) -> None:
     paths.cookie.parent.mkdir(parents=True, exist_ok=True)
     temporary = paths.cookie.with_suffix(paths.cookie.suffix + ".tmp")
-    temporary.write_text(json.dumps(data), encoding="utf-8")
-    os.chmod(temporary, 0o600)
+    payload = json.dumps(data)
+    # Create the file already private so the token is never briefly world-readable.
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(payload)
     os.replace(temporary, paths.cookie)
 
 
@@ -282,6 +285,19 @@ async def _spawn(paths: DaemonPaths) -> ResolvedServer:
     return ResolvedServer(url, token, True, True)
 
 
+async def _resolved_from_cookie(cookie: dict[str, object]) -> ResolvedServer | None:
+    """Return a live managed server for a cookie, or None when it is stale."""
+
+    url = cookie.get("url")
+    if not isinstance(url, str):
+        return None
+    token = cookie.get("token")
+    token_value = token if isinstance(token, str) else None
+    if not await _server_reachable(url, token_value):
+        return None
+    return ResolvedServer(url, token_value, False, True)
+
+
 async def resolve_server(*, explicit_url: str | None) -> ResolvedServer:
     """Resolve the server for one invocation, starting a daemon when needed."""
 
@@ -289,15 +305,22 @@ async def resolve_server(*, explicit_url: str | None) -> ResolvedServer:
         return ResolvedServer(explicit_url, os.environ.get(_AUTH_TOKEN_ENV), False, False)
 
     paths = daemon_paths()
+    # Probe an existing cookie before taking the cross-process lock so a live
+    # server is returned without blocking on the lock at all.
+    cookie = _read_cookie(paths)
+    if cookie is not None:
+        resolved = await _resolved_from_cookie(cookie)
+        if resolved is not None:
+            return resolved
+
+    # The lock serializes read/spawn/write so two concurrent invocations cannot
+    # start two daemons for the same project.
     with _exclusive_lock(paths.lock):
         cookie = _read_cookie(paths)
         if cookie is not None:
-            url = cookie.get("url")
-            token = cookie.get("token")
-            if isinstance(url, str) and await _server_reachable(
-                url, token if isinstance(token, str) else None
-            ):
-                return ResolvedServer(url, token if isinstance(token, str) else None, False, True)
+            resolved = await _resolved_from_cookie(cookie)
+            if resolved is not None:
+                return resolved
             _remove_cookie(paths)
         return await _spawn(paths)
 
