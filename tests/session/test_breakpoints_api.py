@@ -322,3 +322,163 @@ class TestBreakpointApi:
         assert written[0].endswith("-break-list\n")
         assert written[1].endswith('-interpreter-exec console "catch fork"\n')
         assert written[2].endswith("-break-list\n")
+
+    def test_set_breakpoint_reports_blocking_existing_breakpoint(
+        self, scripted_running_session, mi_result
+    ):
+        """A stale uninsertable breakpoint should be named, not blamed on the new location."""
+
+        session, controller = scripted_running_session(
+            [
+                mi_result(
+                    {
+                        "msg": (
+                            "Warning:\nCannot insert breakpoint 1.\n"
+                            "Cannot access memory at address 0x114d"
+                        )
+                    },
+                    message="error",
+                )
+            ],
+            [
+                mi_result(
+                    {
+                        "BreakpointTable": {
+                            "body": [
+                                {
+                                    "number": "1",
+                                    "type": "breakpoint",
+                                    "addr": "0x000000000000114d",
+                                    "original-location": "*0x114d",
+                                }
+                            ]
+                        }
+                    }
+                )
+            ],
+        )
+
+        result = result_to_mapping(session.set_breakpoint("t.c:3"))
+
+        assert result["status"] == "error"
+        assert result["code"] == "breakpoint_insert_blocked"
+        assert "existing breakpoint(s) 1 cannot be inserted" in result["message"]
+        assert "Cannot access memory at address 0x114d" in result["message"]
+        details = result["details"]
+        assert details["requested_location"] == "t.c:3"
+        assert details["blocked_breakpoint_numbers"] == [1]
+        assert details["blocked_breakpoints"][0]["number"] == "1"
+        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert written[0].endswith('-break-insert "t.c:3"\n')
+        assert written[1].endswith("-break-list\n")
+
+    def test_set_breakpoint_confirms_when_blocker_preempts_the_result(
+        self, scripted_running_session, mi_result
+    ):
+        """When GDB created the new breakpoint anyway, report success and warn about the blocker."""
+
+        session, _controller = scripted_running_session(
+            [
+                mi_result(
+                    {
+                        "msg": (
+                            "Cannot insert breakpoint 1.\n" "Cannot access memory at address 0x114d"
+                        )
+                    },
+                    message="error",
+                )
+            ],
+            [
+                mi_result(
+                    {
+                        "BreakpointTable": {
+                            "body": [
+                                {
+                                    "number": "1",
+                                    "type": "breakpoint",
+                                    "addr": "0x000000000000114d",
+                                    "original-location": "*0x114d",
+                                },
+                                {
+                                    "number": "2",
+                                    "type": "breakpoint",
+                                    "func": "main",
+                                    "file": "t.c",
+                                    "line": "3",
+                                    "original-location": "t.c:3",
+                                },
+                            ]
+                        }
+                    }
+                )
+            ],
+        )
+
+        result = result_to_mapping(session.set_breakpoint("t.c:3"))
+
+        assert result["status"] == "success"
+        assert result["breakpoint"]["number"] == "2"
+        assert result["warnings"]
+        assert "existing breakpoint(s) 1 cannot be inserted" in result["warnings"][0]
+
+    def test_set_breakpoint_reports_when_requested_breakpoint_cannot_be_inserted(
+        self, scripted_running_session, mi_result
+    ):
+        """When the requested breakpoint itself is the blocker, attribute the failure to it."""
+
+        session, _controller = scripted_running_session(
+            [
+                mi_result(
+                    {
+                        "msg": (
+                            "Warning:\nCannot insert breakpoint 1.\n"
+                            "Cannot access memory at address 0x114d"
+                        )
+                    },
+                    message="error",
+                )
+            ],
+            [
+                mi_result(
+                    {
+                        "BreakpointTable": {
+                            "body": [
+                                {
+                                    "number": "1",
+                                    "type": "breakpoint",
+                                    "addr": "0x000000000000114d",
+                                    "original-location": "*0x114d",
+                                }
+                            ]
+                        }
+                    }
+                )
+            ],
+        )
+
+        result = result_to_mapping(session.set_breakpoint("*0x114d"))
+
+        assert result["status"] == "error"
+        assert result["code"] == "breakpoint_insert_blocked"
+        assert result["message"] == (
+            "Breakpoint 1 at *0x114d cannot be inserted " "(Cannot access memory at address 0x114d)"
+        )
+        assert result["details"]["created_breakpoint"]["number"] == "1"
+
+    def test_set_breakpoint_leaves_unrelated_errors_untouched(
+        self, scripted_running_session, mi_result
+    ):
+        """Errors that are not insert-blocked warnings must pass through unchanged."""
+
+        session, controller = scripted_running_session(
+            [mi_result({"msg": 'No symbol "nope" in current context.'}, message="error")]
+        )
+
+        result = result_to_mapping(session.set_breakpoint("nope"))
+
+        assert result["status"] == "error"
+        assert result["code"] == "error"
+        assert result["message"] == 'No symbol "nope" in current context.'
+        assert "blocked_breakpoint_numbers" not in result["details"]
+        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert len(written) == 1

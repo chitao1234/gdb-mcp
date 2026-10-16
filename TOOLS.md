@@ -395,6 +395,17 @@ Code breakpoint:
 }
 ```
 
+`location` may be a function, `file:line`, or `*address`. Absolute-address
+breakpoints are resolved against the current target, so on a PIE that has not
+been loaded yet they can be accepted by GDB but never inserted. When GDB
+reports `Cannot insert breakpoint N` for a *pre-existing* breakpoint while
+creating a new one, `create` no longer blames the requested location: it
+re-reads the inventory and, if the new breakpoint was created, returns success
+with a `warnings` entry naming the blocker; otherwise it returns
+`code="breakpoint_insert_blocked"` with `blocked_breakpoint_numbers`,
+`blocked_breakpoints`, and (when present) `created_breakpoint` in `details`.
+Delete or fix the blocking breakpoint before running.
+
 Watchpoint:
 
 ```json

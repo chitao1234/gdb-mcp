@@ -30,6 +30,40 @@ _CATCHPOINT_NUMBER_RE = re.compile(
     r"(?:Temporary\s+)?catchpoint\s+(?P<number>\d+)",
     re.IGNORECASE,
 )
+_INSERT_BLOCKED_RE = re.compile(
+    r"Cannot insert breakpoint\s+(?P<number>\d+)",
+    re.IGNORECASE,
+)
+
+
+def _blocked_breakpoint_numbers(message: str) -> list[int]:
+    """Return the breakpoint numbers GDB reported it cannot insert, in order."""
+
+    numbers: list[int] = []
+    for match in _INSERT_BLOCKED_RE.finditer(message):
+        number = int(match.group("number"))
+        if number not in numbers:
+            numbers.append(number)
+    return numbers
+
+
+def _format_breakpoint_numbers(numbers: list[int]) -> str:
+    """Render breakpoint numbers for a human-readable message."""
+
+    return ", ".join(str(number) for number in numbers)
+
+
+def _insert_blocked_reason(message: str) -> str:
+    """Extract the concrete reason from a GDB insert-blocked warning."""
+
+    for line in message.splitlines():
+        text = line.strip()
+        if not text or text.lower().startswith("warning"):
+            continue
+        if _INSERT_BLOCKED_RE.match(text):
+            continue
+        return text
+    return "GDB could not insert the breakpoint"
 
 
 class SessionBreakpointService:
@@ -57,7 +91,7 @@ class SessionBreakpointService:
         )
 
         if isinstance(result, OperationError):
-            return result
+            return self._attribute_insert_failure(location, result)
 
         payload = extract_mi_result_payload(command_result_payload(result))
         logger.debug("Breakpoint MI result: %s", payload)
@@ -268,6 +302,83 @@ class SessionBreakpointService:
             create_details={"updated_breakpoint_number": number},
         )
 
+    def _attribute_insert_failure(
+        self, location: str, error: OperationError
+    ) -> OperationSuccess[BreakpointInfo] | OperationError:
+        """Rewrite a ``-break-insert`` failure so it names the real blocker.
+
+        GDB retries every existing breakpoint whenever a new one is inserted.
+        An earlier breakpoint that cannot be inserted (for example an absolute
+        address that is not relocatable in a PIE) therefore turns unrelated
+        ``-break-insert`` calls into errors whose message is about the stale
+        breakpoint. Re-read the inventory and either confirm the requested
+        breakpoint with a warning, or fail while pointing at the blocker.
+        """
+
+        blocked_numbers = _blocked_breakpoint_numbers(error.message)
+        if not blocked_numbers:
+            return error
+
+        blocker_label = _format_breakpoint_numbers(blocked_numbers)
+        reason = _insert_blocked_reason(error.message)
+        list_result = self.list_breakpoints()
+        if isinstance(list_result, OperationError):
+            return OperationError(
+                message=(
+                    f"Could not insert a breakpoint at {location}: existing breakpoint(s) "
+                    f"{blocker_label} cannot be inserted ({reason}); the breakpoint "
+                    "inventory could not be refreshed to confirm the result"
+                ),
+                code="breakpoint_insert_blocked",
+                details={
+                    "requested_location": location,
+                    "blocked_breakpoint_numbers": payload_to_mapping(blocked_numbers),
+                    "raw_error": error.message,
+                    "refresh_error": result_to_mapping(list_result),
+                },
+            )
+
+        records = list_result.value.breakpoints
+        blocked_records = [
+            blocked_record
+            for number in blocked_numbers
+            if (blocked_record := self._find_breakpoint_record(records, number)) is not None
+        ]
+        created = self._find_breakpoint_for_location(records, location)
+        created_number = self._extract_breakpoint_number(created) if created else None
+
+        details: StructuredPayload = {
+            "requested_location": location,
+            "blocked_breakpoint_numbers": payload_to_mapping(blocked_numbers),
+            "blocked_breakpoints": payload_to_mapping(blocked_records),
+            "raw_error": error.message,
+        }
+
+        if created is None:
+            return OperationError(
+                message=(
+                    f"Could not insert a breakpoint at {location}: existing breakpoint(s) "
+                    f"{blocker_label} cannot be inserted ({reason}). "
+                    "Delete or fix them before retrying."
+                ),
+                code="breakpoint_insert_blocked",
+                details=details,
+            )
+
+        details["created_breakpoint"] = payload_to_mapping(created)
+        if created_number is not None and created_number in blocked_numbers:
+            return OperationError(
+                message=f"Breakpoint {created_number} at {location} cannot be inserted ({reason})",
+                code="breakpoint_insert_blocked",
+                details=details,
+            )
+
+        warning = (
+            f"Created breakpoint {created_number} at {location}, but existing breakpoint(s) "
+            f"{blocker_label} cannot be inserted ({reason}); delete or fix them before continuing."
+        )
+        return OperationSuccess(BreakpointInfo(breakpoint=created), warnings=(warning,))
+
     def _breakpoint_info_for_number(
         self,
         number: int,
@@ -345,6 +456,18 @@ class SessionBreakpointService:
 
         for breakpoint_info in breakpoints:
             if SessionBreakpointService._extract_breakpoint_number(breakpoint_info) == number:
+                return breakpoint_info
+        return None
+
+    @staticmethod
+    def _find_breakpoint_for_location(
+        breakpoints: list[BreakpointRecord],
+        location: str,
+    ) -> BreakpointRecord | None:
+        """Find one breakpoint record by the ``original-location`` GDB stored for it."""
+
+        for breakpoint_info in breakpoints:
+            if breakpoint_info.get("original-location") == location:
                 return breakpoint_info
         return None
 
