@@ -1,8 +1,7 @@
 """Typed result containers for internal operations."""
 
 from collections.abc import Mapping
-from dataclasses import asdict, is_dataclass
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass
 from typing import Generic, TypeVar, cast
 
 from .models import JsonObject, JsonValue, StructuredPayload
@@ -42,7 +41,7 @@ def payload_to_mapping(value: object) -> JsonValue:
     """
 
     if is_dataclass(value) and not isinstance(value, type):
-        return payload_to_mapping(asdict(value))
+        return {info.name: payload_to_mapping(getattr(value, info.name)) for info in fields(value)}
     if isinstance(value, Mapping):
         payload: JsonObject = {}
         for key, item in value.items():

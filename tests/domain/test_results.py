@@ -5,6 +5,7 @@ import types
 import pytest
 
 from gdb_mcp.domain import (
+    MessageResult,
     OperationError,
     OperationSuccess,
     SessionMessage,
@@ -94,3 +95,19 @@ class TestDomainResults:
 
         with pytest.raises(TypeError):
             payload_to_mapping({"bad": {1, 2}})
+
+    def test_payload_to_mapping_copies_dataclass_container_fields(self):
+        """Dataclass fields are rebuilt, not aliased, without a deep copy."""
+
+        inner = {"nested": [1, 2]}
+
+        payload = payload_to_mapping(MessageResult(message="m", result=inner))
+
+        assert payload["result"] == {"nested": [1, 2]}
+        assert payload["result"] is not inner
+
+    def test_payload_to_mapping_rejects_non_serializable_dataclass_field(self):
+        """A dataclass holding a non-JSON field should fail during conversion."""
+
+        with pytest.raises(TypeError):
+            payload_to_mapping(MessageResult(message="m", result={"bad": {1, 2}}))
