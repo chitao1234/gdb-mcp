@@ -53,14 +53,38 @@ def _format_breakpoint_numbers(numbers: list[int]) -> str:
     return ", ".join(str(number) for number in numbers)
 
 
-def _insert_blocked_reason(message: str) -> str:
-    """Extract the concrete reason from a GDB insert-blocked warning."""
+def _normalize_location(location: str) -> str:
+    """Normalize a breakpoint location so comparisons tolerate GDB's formatting.
 
-    for line in message.splitlines():
-        text = line.strip()
+    GDB echoes ``original-location`` in whatever form it accepted, sometimes with
+    surrounding quotes or extra whitespace; strip those before comparing.
+    """
+
+    text = location.strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {'"', "'"}:
+        text = text[1:-1].strip()
+    return text
+
+
+def _insert_blocked_reason(message: str) -> str:
+    """Extract the concrete reason from a GDB insert-blocked warning.
+
+    GDB prints ``Cannot insert breakpoint N.`` followed by the real cause on the
+    next line, so prefer that line over whatever output happened to precede it.
+    """
+
+    lines = [line.strip() for line in message.splitlines()]
+    for index, text in enumerate(lines):
+        if _INSERT_BLOCKED_RE.search(text):
+            for following in lines[index + 1 :]:
+                if following:
+                    return following
+            break
+
+    for text in lines:
         if not text or text.lower().startswith("warning"):
             continue
-        if _INSERT_BLOCKED_RE.match(text):
+        if _INSERT_BLOCKED_RE.search(text):
             continue
         return text
     return "GDB could not insert the breakpoint"
@@ -471,8 +495,10 @@ class SessionBreakpointService:
     ) -> BreakpointRecord | None:
         """Find one breakpoint record by the ``original-location`` GDB stored for it."""
 
+        wanted = _normalize_location(location)
         for breakpoint_info in breakpoints:
-            if breakpoint_info.get("original-location") == location:
+            stored = breakpoint_info.get("original-location")
+            if isinstance(stored, str) and _normalize_location(stored) == wanted:
                 return breakpoint_info
         return None
 

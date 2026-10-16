@@ -11,7 +11,7 @@ from gdb_mcp.domain import (
     OperationSuccess,
     result_to_mapping,
 )
-from gdb_mcp.session.breakpoints import SessionBreakpointService
+from gdb_mcp.session.breakpoints import SessionBreakpointService, _insert_blocked_reason
 from gdb_mcp.session.command_runner import SessionCommandRunner
 
 
@@ -42,6 +42,18 @@ def test_insert_blocked_warning_omits_unknown_breakpoint_number() -> None:
     assert len(result.warnings) == 1
     assert "None" not in result.warnings[0]
     assert "the requested breakpoint" in result.warnings[0]
+
+
+def test_insert_blocked_reason_prefers_the_line_after_the_warning() -> None:
+    """The reason is the line following the 'Cannot insert' warning, not earlier output."""
+
+    message = (
+        "Breakpoint 2 at 0x5555\n"
+        "Cannot insert breakpoint 1.\n"
+        "Cannot access memory at address 0x0\n"
+    )
+
+    assert _insert_blocked_reason(message) == "Cannot access memory at address 0x0"
 
 
 class TestBreakpointApi:
@@ -459,6 +471,51 @@ class TestBreakpointApi:
         assert result["breakpoint"]["number"] == "2"
         assert result["warnings"]
         assert "existing breakpoint(s) 1 cannot be inserted" in result["warnings"][0]
+
+    def test_set_breakpoint_matches_normalized_original_location(
+        self, scripted_running_session, mi_result
+    ):
+        """A created breakpoint is found even if GDB stores a quoted location."""
+
+        session, _controller = scripted_running_session(
+            [
+                mi_result(
+                    {
+                        "msg": (
+                            "Cannot insert breakpoint 1.\n" "Cannot access memory at address 0x114d"
+                        )
+                    },
+                    message="error",
+                )
+            ],
+            [
+                mi_result(
+                    {
+                        "BreakpointTable": {
+                            "body": [
+                                {
+                                    "number": "1",
+                                    "type": "breakpoint",
+                                    "addr": "0x000000000000114d",
+                                    "original-location": "*0x114d",
+                                },
+                                {
+                                    "number": "2",
+                                    "type": "breakpoint",
+                                    "func": "main",
+                                    "original-location": '"t.c:3"',
+                                },
+                            ]
+                        }
+                    }
+                )
+            ],
+        )
+
+        result = result_to_mapping(session.set_breakpoint("t.c:3"))
+
+        assert result["status"] == "success"
+        assert result["breakpoint"]["number"] == "2"
 
     def test_set_breakpoint_reports_when_requested_breakpoint_cannot_be_inserted(
         self, scripted_running_session, mi_result
