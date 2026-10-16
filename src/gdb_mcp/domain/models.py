@@ -40,6 +40,9 @@ RegisterRecord: TypeAlias = Mapping[str, object]
 MemoryBlockRecord: TypeAlias = Mapping[str, object]
 
 
+# Constructed payloads that gdb-mcp builds itself keep closed ``TypedDict``
+# shapes so their field types stay checked; only the pass-through records above
+# are open mappings.
 class DisassemblyInstructionRecord(TypedDict, total=False):
     """Structured disassembly record returned by GDB/MI."""
 
