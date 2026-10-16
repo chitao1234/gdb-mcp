@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import TypeAlias, cast
 
 from ..domain import (
@@ -29,6 +30,27 @@ from .runtime import SessionRuntime
 logger = logging.getLogger(__name__)
 
 SerializedResultMapping: TypeAlias = StructuredPayload
+
+_ENV_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_ENV_VALUE_CONTROL_RE = re.compile(r"[\r\n]")
+
+
+def _environment_validation_error(var_name: str, var_value: str) -> str | None:
+    """Return a message when one environment variable cannot be set safely.
+
+    Values are passed to ``set environment`` verbatim, so a newline in either
+    field would let a caller append an extra GDB command. Names must also be a
+    plain identifier because GDB splits the line on the first whitespace.
+    """
+
+    if _ENV_NAME_RE.fullmatch(var_name) is None:
+        return (
+            f"Invalid environment variable name {var_name!r}: "
+            "names must match [A-Za-z_][A-Za-z0-9_]*"
+        )
+    if _ENV_VALUE_CONTROL_RE.search(var_value) is not None:
+        return f"Environment variable {var_name} value must not contain newlines"
+    return None
 
 
 class SessionLifecycleService:
@@ -379,8 +401,12 @@ class SessionLifecycleService:
             return env_output
 
         for var_name, var_value in env.items():
-            escaped_value = var_value.replace("\\", "\\\\").replace('"', '\\"')
-            env_cmd = f"set environment {var_name} {escaped_value}"
+            validation_error = _environment_validation_error(var_name, var_value)
+            if validation_error is not None:
+                self._cleanup_failed_start(validation_error)
+                return OperationError(message=validation_error)
+
+            env_cmd = f"set environment {var_name} {var_value}"
             result = self._command_runner.execute_command_result(
                 env_cmd, timeout_sec=DEFAULT_TIMEOUT_SEC
             )

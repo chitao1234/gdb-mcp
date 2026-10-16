@@ -303,6 +303,83 @@ class TestLifecycleApi:
         ]
 
     @patch("gdb_mcp.session.factory.GdbController")
+    def test_start_session_passes_environment_values_verbatim(
+        self,
+        mock_controller_class,
+        session_service,
+        prompt_response,
+        command_result,
+    ):
+        """Environment values must reach GDB unchanged, with no extra escape layer."""
+
+        del mock_controller_class
+        executed_commands: list[str] = []
+
+        def mock_execute(command, **kwargs):
+            del kwargs
+            executed_commands.append(command)
+            return command_result(command, output="")
+
+        with patch.object(
+            session_service._command_runner,
+            "send_command_and_wait_for_prompt",
+            return_value=prompt_response(
+                command_responses=[{"type": "result", "message": "done", "token": 1000}]
+            ),
+        ):
+            with patch.object(
+                session_service._command_runner, "execute_command_result", side_effect=mock_execute
+            ):
+                with patch.object(
+                    session_service._lifecycle, "_probe_target_loaded", return_value=True
+                ):
+                    result = result_to_mapping(
+                        session_service.start(program="/bin/ls", env={"MSG": 'a\\b"c'})
+                    )
+
+        assert result["status"] == "success"
+        assert 'set environment MSG a\\b"c' in executed_commands
+
+    @patch("gdb_mcp.session.factory.GdbController")
+    def test_start_session_rejects_environment_value_with_newline(
+        self,
+        mock_controller_class,
+        session_service,
+        prompt_response,
+        command_result,
+    ):
+        """A newline in an environment value would inject a command, so reject it."""
+
+        del mock_controller_class
+        executed_commands: list[str] = []
+
+        def mock_execute(command, **kwargs):
+            del kwargs
+            executed_commands.append(command)
+            return command_result(command, output="")
+
+        with patch.object(
+            session_service._command_runner,
+            "send_command_and_wait_for_prompt",
+            return_value=prompt_response(
+                command_responses=[{"type": "result", "message": "done", "token": 1000}]
+            ),
+        ):
+            with patch.object(
+                session_service._command_runner, "execute_command_result", side_effect=mock_execute
+            ):
+                with patch.object(
+                    session_service._lifecycle, "_probe_target_loaded", return_value=True
+                ):
+                    result = result_to_mapping(
+                        session_service.start(program="/bin/ls", env={"MSG": "line1\nline2"})
+                    )
+
+        assert result["status"] == "error"
+        assert "must not contain newlines" in result["message"]
+        assert not any(command.startswith("set environment") for command in executed_commands)
+
+    @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_fails_when_env_setup_fails(
         self,
         mock_controller_class,
