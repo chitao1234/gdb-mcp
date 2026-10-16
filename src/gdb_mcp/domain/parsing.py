@@ -11,10 +11,13 @@ session, and transport layers, and gives one well-tested place to audit.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from typing import cast, get_args
 
 from .models import ExecutionState, FrameRecord, StructuredPayload
+
+logger = logging.getLogger(__name__)
 
 _EXECUTION_STATES: frozenset[str] = frozenset(get_args(ExecutionState))
 
@@ -36,9 +39,28 @@ def as_mapping(value: object) -> Mapping[str, object]:
 
 
 def as_record_list(value: object) -> list[Mapping[str, object]]:
-    """Return the list payload entries that are themselves mappings."""
+    """Return the list payload entries that are themselves mappings.
 
-    return [item for item in as_list(value) if isinstance(item, Mapping)]
+    Non-mapping entries are dropped so callers get a clean record list, but a
+    non-list value or a dropped entry is logged: GDB returning anything other
+    than a list of records here usually means malformed output worth knowing
+    about. A missing (``None``) value is expected and not logged.
+    """
+
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        logger.warning("Expected a list of MI records, got %s", type(value).__name__)
+        return []
+
+    records = [item for item in value if isinstance(item, Mapping)]
+    if len(records) != len(value):
+        logger.warning(
+            "Dropped %d non-mapping MI record(s) from a list of %d",
+            len(value) - len(records),
+            len(value),
+        )
+    return records
 
 
 def as_optional_payload(value: object) -> StructuredPayload | None:
@@ -51,12 +73,6 @@ def as_frame_record(value: object) -> FrameRecord | None:
     """Narrow an MI frame payload into the structured frame record type."""
 
     return value if isinstance(value, Mapping) else None
-
-
-def as_list(value: object) -> list[object]:
-    """Return a shallow copy of a list payload, or an empty list otherwise."""
-
-    return list(value) if isinstance(value, list) else []
 
 
 def as_text(value: object) -> str | None:
