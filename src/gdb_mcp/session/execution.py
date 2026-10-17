@@ -7,8 +7,8 @@ import signal
 from typing import cast
 
 from ..domain import (
-    CommandTranscriptEntry,
     CommandExecutionInfo,
+    CommandTranscriptEntry,
     DetachOnForkInfo,
     FinishInfo,
     FollowForkMode,

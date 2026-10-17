@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass, field
 import json
 import logging
 import re
-from typing import Pattern
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from re import Pattern
 
 from ..domain import (
     CaptureBundleInfo,

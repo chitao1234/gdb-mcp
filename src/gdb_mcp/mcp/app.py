@@ -63,7 +63,7 @@ class ServerActivity:
     last_request: float
 
     @classmethod
-    def now(cls) -> "ServerActivity":
+    def now(cls) -> ServerActivity:
         return cls(last_request=time.monotonic())
 
     def touch(self) -> None:
@@ -216,7 +216,7 @@ class _ReadyReportingServer(uvicorn.Server):
         os.replace(temporary, self._ready_file)
 
 
-def _daemon_stdin_lines() -> "AsyncFile[str] | None":
+def _daemon_stdin_lines() -> AsyncFile[str] | None:
     """Return the daemon-backed stdin reader, or None when stdin is not a real fd.
 
     The SDK's default reader is used as a fallback so environments with a

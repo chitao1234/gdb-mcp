@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Generic, TypeVar, cast
-
+from typing import Generic, TypeVar, cast
 
 from gdb_mcp.mcp.schemas import (
     build_tool_definitions,

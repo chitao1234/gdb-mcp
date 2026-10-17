@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 
-
 from gdb_mcp.contracts import (
     CONTEXT_MANAGE_ACTIONS,
     CONTEXT_QUERY_ACTIONS,

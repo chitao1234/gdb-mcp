@@ -308,12 +308,12 @@ class TestMiClient:
         controller = _FakeController([[]])
         client = self._make_client(controller)
 
-        with patch("gdb_mcp.transport.mi_client._LIVENESS_CHECK_INTERVAL_SEC", 0.0):
-            with patch.object(client, "_is_alive_unlocked", return_value=False):
-                with patch.object(client, "_extract_exit_code", return_value=-9):
-                    result = client.send_command_and_wait_for_prompt(
-                        "-gdb-version", timeout_sec=0.1
-                    )
+        with (
+            patch("gdb_mcp.transport.mi_client._LIVENESS_CHECK_INTERVAL_SEC", 0.0),
+            patch.object(client, "_is_alive_unlocked", return_value=False),
+            patch.object(client, "_extract_exit_code", return_value=-9),
+        ):
+            result = client.send_command_and_wait_for_prompt("-gdb-version", timeout_sec=0.1)
 
         assert result.fatal is True
         assert "exited unexpectedly" in result.error

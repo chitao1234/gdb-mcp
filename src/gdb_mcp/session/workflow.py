@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from ..domain import (
@@ -38,7 +38,7 @@ class BatchStepTemplate:
     """Reusable validated batch step that can be bound to any session instance."""
 
     tool: str
-    execute: Callable[["SessionService"], WorkflowResult]
+    execute: Callable[[SessionService], WorkflowResult]
     label: str | None = None
 
 
@@ -110,7 +110,7 @@ class SessionWorkflowService:
 
     def execute_batch_templates(
         self,
-        session: "SessionService",
+        session: SessionService,
         steps: Sequence[BatchStepTemplate],
         *,
         fail_fast: bool = True,

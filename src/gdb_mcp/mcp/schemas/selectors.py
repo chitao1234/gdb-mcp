@@ -6,7 +6,6 @@ from pydantic import (
     Field,
 )
 
-
 from .common import StrictArgsModel
 
 

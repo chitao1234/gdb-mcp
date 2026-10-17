@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 
-
 from gdb_mcp.mcp.schemas import (
     AttachProcessArgs,
     CallFunctionArgs,

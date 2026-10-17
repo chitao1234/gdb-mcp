@@ -13,8 +13,8 @@ from gdb_mcp.contracts import (
     LOCATION_KINDS,
     SESSION_QUERY_ACTIONS,
 )
-from gdb_mcp.mcp.schemas import StartSessionArgs, build_tool_definitions
 from gdb_mcp.mcp.schema_normalizer import public_input_schema
+from gdb_mcp.mcp.schemas import StartSessionArgs, build_tool_definitions
 
 _UNSUPPORTED_KEYS = ("oneOf", "anyOf", "allOf", "$ref", "$defs", "discriminator")
 

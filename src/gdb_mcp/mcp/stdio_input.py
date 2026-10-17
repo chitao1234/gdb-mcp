@@ -25,7 +25,7 @@ class DaemonStdinLines:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
 
-    def __aiter__(self) -> "DaemonStdinLines":
+    def __aiter__(self) -> DaemonStdinLines:
         return self
 
     async def __anext__(self) -> str:

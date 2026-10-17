@@ -20,8 +20,8 @@ from ...transport import (
 from ..constants import DEFAULT_TIMEOUT_SEC
 from ..result_utils import command_result_payload
 from .base import (
-    InspectionContext,
     _VECTOR_REGISTER_NAME_RE,
+    InspectionContext,
 )
 
 

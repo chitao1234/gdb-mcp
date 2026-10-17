@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Literal, TypedDict, TypeAlias
+from typing import Literal, TypeAlias, TypedDict
 
 JsonScalar: TypeAlias = str | int | float | bool | None
 JsonObject: TypeAlias = dict[str, "JsonValue"]

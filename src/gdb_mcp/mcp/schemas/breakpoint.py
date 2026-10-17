@@ -20,7 +20,6 @@ from ...contracts import (
     BreakpointKind,
     BreakpointManageNumberActionName,
 )
-
 from .common import (
     SessionId,
     StrictArgsModel,
@@ -108,7 +107,7 @@ class BreakpointUpdateChangesArgs(StrictArgsModel):
         return _normalize_optional_text(value, field_name="condition")
 
     @model_validator(mode="after")
-    def validate_requested_change(self) -> "BreakpointUpdateChangesArgs":
+    def validate_requested_change(self) -> BreakpointUpdateChangesArgs:
         if self.condition is None and self.clear_condition is False:
             raise ValueError("At least one breakpoint change is required")
         if self.condition is not None and self.clear_condition:
@@ -280,7 +279,7 @@ class LocationFileRangeArgs(StrictArgsModel):
         return normalized
 
     @model_validator(mode="after")
-    def validate_range(self) -> "LocationFileRangeArgs":
+    def validate_range(self) -> LocationFileRangeArgs:
         if self.start_line > self.end_line:
             raise ValueError("start_line must be <= end_line")
         return self

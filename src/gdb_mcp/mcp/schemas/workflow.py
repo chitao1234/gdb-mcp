@@ -12,13 +12,12 @@ from pydantic import (
 from ...contracts import (
     BatchStepToolName,
 )
-
 from .common import (
     SessionId,
     StrictArgsModel,
 )
-from .selectors import CaptureMemoryRangeArgs
 from .dedicated import StartSessionArgs
+from .selectors import CaptureMemoryRangeArgs
 
 
 class BatchStepArgs(StrictArgsModel):
@@ -162,7 +161,7 @@ class RunUntilFailureCaptureArgs(CaptureOptionsArgs):
     )
 
     @model_validator(mode="after")
-    def validate_bundle_naming(self) -> "RunUntilFailureCaptureArgs":
+    def validate_bundle_naming(self) -> RunUntilFailureCaptureArgs:
         """Reject ambiguous capture naming configuration."""
 
         if self.bundle_name is not None and self.bundle_name_prefix is not None:

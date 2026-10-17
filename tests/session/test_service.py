@@ -41,17 +41,19 @@ class TestSessionService:
             time_module=MagicMock(),
         )
 
-        with patch.object(
-            service._command_runner,
-            "send_command_and_wait_for_prompt",
-            return_value={
-                "command_responses": [{"type": "result", "message": "done", "token": 1000}],
-                "async_notifications": [],
-                "timed_out": False,
-            },
+        with (
+            patch.object(
+                service._command_runner,
+                "send_command_and_wait_for_prompt",
+                return_value={
+                    "command_responses": [{"type": "result", "message": "done", "token": 1000}],
+                    "async_notifications": [],
+                    "timed_out": False,
+                },
+            ),
+            patch.object(service._lifecycle, "_probe_target_loaded", return_value=True),
         ):
-            with patch.object(service._lifecycle, "_probe_target_loaded", return_value=True):
-                result = service.start(program="/bin/ls")
+            result = service.start(program="/bin/ls")
 
         assert isinstance(result, OperationSuccess)
         assert isinstance(result.value, SessionStartInfo)
@@ -78,17 +80,19 @@ class TestSessionService:
             time_module=MagicMock(),
         )
 
-        with patch.object(
-            service._command_runner,
-            "send_command_and_wait_for_prompt",
-            return_value={
-                "command_responses": [{"type": "result", "message": "done", "token": 1000}],
-                "async_notifications": [],
-                "timed_out": False,
-            },
+        with (
+            patch.object(
+                service._command_runner,
+                "send_command_and_wait_for_prompt",
+                return_value={
+                    "command_responses": [{"type": "result", "message": "done", "token": 1000}],
+                    "async_notifications": [],
+                    "timed_out": False,
+                },
+            ),
+            patch.object(service._lifecycle, "_probe_target_loaded", return_value=True),
         ):
-            with patch.object(service._lifecycle, "_probe_target_loaded", return_value=True):
-                result = service.start(program="/bin/ls", working_dir="/tmp/work")
+            result = service.start(program="/bin/ls", working_dir="/tmp/work")
 
         assert isinstance(result, OperationSuccess)
         assert result.value.program == "/bin/ls"

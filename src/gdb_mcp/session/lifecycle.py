@@ -253,9 +253,7 @@ class SessionLifecycleService:
                                 )
 
                         except Exception as exc:
-                            logger.error(
-                                "Exception during init command '%s': %s", cmd, exc, exc_info=True
-                            )
+                            logger.exception("Exception during init command '%s'", cmd)
                             init_output.append(
                                 {"status": "error", "command": cmd, "message": str(exc)}
                             )
@@ -263,10 +261,10 @@ class SessionLifecycleService:
                             if not self._command_runner.is_gdb_alive():
                                 logger.error("GDB process died during init command execution")
                             self._cleanup_failed_start(
-                                f"Init command '{cmd}' raised an exception: {str(exc)}"
+                                f"Init command '{cmd}' raised an exception: {exc!s}"
                             )
                             return OperationError(
-                                message=f"Init command '{cmd}' raised an exception: {str(exc)}",
+                                message=f"Init command '{cmd}' raised an exception: {exc!s}",
                                 details={"init_output": payload_to_mapping(init_output)},
                             )
 
@@ -312,8 +310,8 @@ class SessionLifecycleService:
 
             except Exception as exc:
                 logger.error("Failed to start GDB session: %s", exc)
-                self._cleanup_failed_start(f"Failed to start GDB: {str(exc)}")
-                return OperationError(message=f"Failed to start GDB: {str(exc)}")
+                self._cleanup_failed_start(f"Failed to start GDB: {exc!s}")
+                return OperationError(message=f"Failed to start GDB: {exc!s}")
 
     def stop(self) -> OperationSuccess[SessionMessage] | OperationError:
         """Stop the GDB session."""
@@ -428,7 +426,7 @@ class SessionLifecycleService:
     def _loads_target(command: str) -> bool:
         """Return whether a startup command explicitly loads an executable or core."""
 
-        return command.startswith("file ") or command.startswith("core-file ")
+        return command.startswith(("file ", "core-file "))
 
     @staticmethod
     def _startup_output_text(startup_result: ParsedMiResponse) -> str:
@@ -477,7 +475,4 @@ class SessionLifecycleService:
             return False
 
         output_lower = output.lower()
-        if "no executable file now" in output_lower:
-            return False
-
-        return True
+        return "no executable file now" not in output_lower

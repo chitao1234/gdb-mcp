@@ -88,7 +88,8 @@ def _parse_tool_payload(result: CallToolResult) -> dict[str, object]:
         raise ValueError("Expected valid JSON tool payload") from exc
 
     if not isinstance(payload, dict):
-        raise ValueError("Expected tool payload JSON object")
+        # The JSON decoded, but not into an object: a shape error, not a type error.
+        raise ValueError("Expected tool payload JSON object")  # noqa: TRY004
 
     return payload
 
@@ -111,18 +112,20 @@ async def invoke_tool(
             timeout=_CLIENT_TIMEOUT,
         )
     try:
-        async with streamable_http_client(server_url, http_client=client) as (
-            read_stream,
-            write_stream,
-            _get_session_id,
-        ):
-            async with ClientSession(
+        async with (
+            streamable_http_client(server_url, http_client=client) as (
+                read_stream,
+                write_stream,
+                _get_session_id,
+            ),
+            ClientSession(
                 read_stream,
                 write_stream,
                 read_timeout_seconds=_session_read_timeout(),
-            ) as session:
-                await session.initialize()
-                result = await session.call_tool(tool_name, arguments)
+            ) as session,
+        ):
+            await session.initialize()
+            result = await session.call_tool(tool_name, arguments)
     finally:
         if owns_client and client is not None:
             await client.aclose()

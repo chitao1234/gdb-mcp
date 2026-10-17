@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from mcp.types import Tool
 
 from ...contracts import (
@@ -25,31 +24,8 @@ from ...contracts import (
     TOOL_SESSION_START,
     TOOL_WORKFLOW_BATCH,
 )
-
 from ..schema_normalizer import public_input_schema
 from ..tool_examples import TOOL_EXAMPLES
-
-from .dedicated import (
-    AttachProcessArgs,
-    CallFunctionArgs,
-    ConnectSessionArgs,
-    ExecuteCommandArgs,
-    StartSessionArgs,
-)
-from .workflow import (
-    BatchArgs,
-    CaptureBundleArgs,
-    RunUntilFailureArgs,
-)
-from .session import (
-    SessionManageArgs,
-    SessionQueryArgs,
-)
-from .inferior import (
-    InferiorManageArgs,
-    InferiorQueryArgs,
-)
-from .execution import ExecutionManageArgs
 from .breakpoint import (
     BreakpointManageArgs,
     BreakpointQueryArgs,
@@ -58,7 +34,28 @@ from .context import (
     ContextManageArgs,
     ContextQueryArgs,
 )
+from .dedicated import (
+    AttachProcessArgs,
+    CallFunctionArgs,
+    ConnectSessionArgs,
+    ExecuteCommandArgs,
+    StartSessionArgs,
+)
+from .execution import ExecutionManageArgs
+from .inferior import (
+    InferiorManageArgs,
+    InferiorQueryArgs,
+)
 from .inspect import InspectQueryArgs
+from .session import (
+    SessionManageArgs,
+    SessionQueryArgs,
+)
+from .workflow import (
+    BatchArgs,
+    CaptureBundleArgs,
+    RunUntilFailureArgs,
+)
 
 
 def build_tool_definitions() -> list[Tool]:

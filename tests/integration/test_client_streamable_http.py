@@ -25,21 +25,23 @@ def test_cli_calls_real_streamable_http_app(integration_runtime):
     stdout = StringIO()
 
     async def exercise() -> tuple[int, dict[str, object]]:
-        async with app.router.lifespan_context(app):
-            async with httpx.AsyncClient(
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app),
                 base_url="http://testserver",
-            ) as http_client:
-                exit_code = await main(
-                    [
-                        "--server-url",
-                        "http://testserver/mcp",
-                        "--json",
-                        "status",
-                    ],
-                    stdout=stdout,
-                    http_client=http_client,
-                )
+            ) as http_client,
+        ):
+            exit_code = await main(
+                [
+                    "--server-url",
+                    "http://testserver/mcp",
+                    "--json",
+                    "status",
+                ],
+                stdout=stdout,
+                http_client=http_client,
+            )
 
         return exit_code, json.loads(stdout.getvalue())
 
@@ -70,27 +72,29 @@ def test_cli_calls_real_streamable_http_workflow_batch(
     stdout = StringIO()
 
     async def exercise() -> tuple[int, dict[str, object]]:
-        async with app.router.lifespan_context(app):
-            async with httpx.AsyncClient(
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app),
                 base_url="http://testserver",
-            ) as http_client:
-                exit_code = await main(
-                    [
-                        "--server-url",
-                        "http://testserver/mcp",
-                        "--json",
-                        "batch",
-                        "--session-id",
-                        str(session_id),
-                        "--step",
-                        "gdb_session_query",
-                        "--step-arg",
-                        "action=status",
-                    ],
-                    stdout=stdout,
-                    http_client=http_client,
-                )
+            ) as http_client,
+        ):
+            exit_code = await main(
+                [
+                    "--server-url",
+                    "http://testserver/mcp",
+                    "--json",
+                    "batch",
+                    "--session-id",
+                    str(session_id),
+                    "--step",
+                    "gdb_session_query",
+                    "--step-arg",
+                    "action=status",
+                ],
+                stdout=stdout,
+                http_client=http_client,
+            )
 
         return exit_code, json.loads(stdout.getvalue())
 
@@ -123,49 +127,51 @@ def test_cli_calls_real_streamable_http_workflow_batch_with_nested_step_args(
     stdout = StringIO()
 
     async def exercise() -> tuple[int, dict[str, object]]:
-        async with app.router.lifespan_context(app):
-            async with httpx.AsyncClient(
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app),
                 base_url="http://testserver",
-            ) as http_client:
-                exit_code = await main(
-                    [
-                        "--server-url",
-                        "http://testserver/mcp",
-                        "--json",
-                        "batch",
-                        "--session-id",
-                        str(session_id),
-                        "--step",
-                        "gdb_breakpoint_manage",
-                        "--step-label",
-                        "break-main",
-                        "--step-arg",
-                        "action=create",
-                        "--step-arg",
-                        "breakpoint.kind=code",
-                        "--step-arg",
-                        "breakpoint.location=main",
-                        "--step",
-                        "gdb_execution_manage",
-                        "--step-label",
-                        "run",
-                        "--step-arg",
-                        "action=run",
-                        "--step-arg",
-                        "execution.wait_until=stop",
-                        "--step",
-                        "gdb_context_query",
-                        "--step-label",
-                        "stack",
-                        "--step-arg",
-                        "action=backtrace",
-                        "--step-arg",
-                        "query.max_frames=1",
-                    ],
-                    stdout=stdout,
-                    http_client=http_client,
-                )
+            ) as http_client,
+        ):
+            exit_code = await main(
+                [
+                    "--server-url",
+                    "http://testserver/mcp",
+                    "--json",
+                    "batch",
+                    "--session-id",
+                    str(session_id),
+                    "--step",
+                    "gdb_breakpoint_manage",
+                    "--step-label",
+                    "break-main",
+                    "--step-arg",
+                    "action=create",
+                    "--step-arg",
+                    "breakpoint.kind=code",
+                    "--step-arg",
+                    "breakpoint.location=main",
+                    "--step",
+                    "gdb_execution_manage",
+                    "--step-label",
+                    "run",
+                    "--step-arg",
+                    "action=run",
+                    "--step-arg",
+                    "execution.wait_until=stop",
+                    "--step",
+                    "gdb_context_query",
+                    "--step-label",
+                    "stack",
+                    "--step-arg",
+                    "action=backtrace",
+                    "--step-arg",
+                    "query.max_frames=1",
+                ],
+                stdout=stdout,
+                http_client=http_client,
+            )
 
         return exit_code, json.loads(stdout.getvalue())
 
@@ -202,29 +208,31 @@ def test_cli_calls_real_streamable_http_workflow_batch_with_single_list_step_arg
     stdout = StringIO()
 
     async def exercise() -> tuple[int, dict[str, object]]:
-        async with app.router.lifespan_context(app):
-            async with httpx.AsyncClient(
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app),
                 base_url="http://testserver",
-            ) as http_client:
-                exit_code = await main(
-                    [
-                        "--server-url",
-                        "http://testserver/mcp",
-                        "--json",
-                        "batch",
-                        "--session-id",
-                        str(session_id),
-                        "--step",
-                        "gdb_breakpoint_query",
-                        "--step-arg",
-                        "action=list",
-                        "--step-arg",
-                        "query.kinds=code",
-                    ],
-                    stdout=stdout,
-                    http_client=http_client,
-                )
+            ) as http_client,
+        ):
+            exit_code = await main(
+                [
+                    "--server-url",
+                    "http://testserver/mcp",
+                    "--json",
+                    "batch",
+                    "--session-id",
+                    str(session_id),
+                    "--step",
+                    "gdb_breakpoint_query",
+                    "--step-arg",
+                    "action=list",
+                    "--step-arg",
+                    "query.kinds=code",
+                ],
+                stdout=stdout,
+                http_client=http_client,
+            )
 
         return exit_code, json.loads(stdout.getvalue())
 
@@ -256,35 +264,37 @@ def test_cli_calls_real_streamable_http_run_until_failure(
     stdout = StringIO()
 
     async def exercise() -> tuple[int, dict[str, object]]:
-        async with app.router.lifespan_context(app):
-            async with httpx.AsyncClient(
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app),
                 base_url="http://testserver",
-            ) as http_client:
-                exit_code = await main(
-                    [
-                        "--server-url",
-                        "http://testserver/mcp",
-                        "--json",
-                        "campaign",
-                        "--startup-program",
-                        crashing,
-                        "--startup-init-command",
-                        "set disable-randomization on",
-                        "--startup-init-command",
-                        "set startup-with-shell off",
-                        "--max-iterations",
-                        "1",
-                        "--failure-stop-reason",
-                        "signal-received",
-                        "--capture-output-dir",
-                        str(tmp_path),
-                        "--capture-bundle-name",
-                        "cli-failure",
-                    ],
-                    stdout=stdout,
-                    http_client=http_client,
-                )
+            ) as http_client,
+        ):
+            exit_code = await main(
+                [
+                    "--server-url",
+                    "http://testserver/mcp",
+                    "--json",
+                    "campaign",
+                    "--startup-program",
+                    crashing,
+                    "--startup-init-command",
+                    "set disable-randomization on",
+                    "--startup-init-command",
+                    "set startup-with-shell off",
+                    "--max-iterations",
+                    "1",
+                    "--failure-stop-reason",
+                    "signal-received",
+                    "--capture-output-dir",
+                    str(tmp_path),
+                    "--capture-bundle-name",
+                    "cli-failure",
+                ],
+                stdout=stdout,
+                http_client=http_client,
+            )
 
         return exit_code, json.loads(stdout.getvalue())
 
@@ -316,45 +326,47 @@ def test_cli_calls_real_streamable_http_run_until_failure_with_setup_steps(
     stdout = StringIO()
 
     async def exercise() -> tuple[int, dict[str, object]]:
-        async with app.router.lifespan_context(app):
-            async with httpx.AsyncClient(
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app),
                 base_url="http://testserver",
-            ) as http_client:
-                exit_code = await main(
-                    [
-                        "--server-url",
-                        "http://testserver/mcp",
-                        "--json",
-                        "campaign",
-                        "--startup-program",
-                        program,
-                        "--startup-init-command",
-                        "set disable-randomization on",
-                        "--startup-init-command",
-                        "set startup-with-shell off",
-                        "--setup-step",
-                        "gdb_breakpoint_manage",
-                        "--setup-step-label",
-                        "break-main",
-                        "--setup-step-arg",
-                        "action=create",
-                        "--setup-step-arg",
-                        "breakpoint.kind=code",
-                        "--setup-step-arg",
-                        "breakpoint.location=main",
-                        "--max-iterations",
-                        "1",
-                        "--failure-stop-reason",
-                        "breakpoint-hit",
-                        "--capture-output-dir",
-                        str(tmp_path),
-                        "--capture-bundle-name",
-                        "cli-break-main",
-                    ],
-                    stdout=stdout,
-                    http_client=http_client,
-                )
+            ) as http_client,
+        ):
+            exit_code = await main(
+                [
+                    "--server-url",
+                    "http://testserver/mcp",
+                    "--json",
+                    "campaign",
+                    "--startup-program",
+                    program,
+                    "--startup-init-command",
+                    "set disable-randomization on",
+                    "--startup-init-command",
+                    "set startup-with-shell off",
+                    "--setup-step",
+                    "gdb_breakpoint_manage",
+                    "--setup-step-label",
+                    "break-main",
+                    "--setup-step-arg",
+                    "action=create",
+                    "--setup-step-arg",
+                    "breakpoint.kind=code",
+                    "--setup-step-arg",
+                    "breakpoint.location=main",
+                    "--max-iterations",
+                    "1",
+                    "--failure-stop-reason",
+                    "breakpoint-hit",
+                    "--capture-output-dir",
+                    str(tmp_path),
+                    "--capture-bundle-name",
+                    "cli-break-main",
+                ],
+                stdout=stdout,
+                http_client=http_client,
+            )
 
         return exit_code, json.loads(stdout.getvalue())
 

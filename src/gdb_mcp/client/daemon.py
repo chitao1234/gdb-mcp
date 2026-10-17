@@ -295,17 +295,23 @@ async def _spawn(paths: DaemonPaths) -> ResolvedServer:
             subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
             | subprocess.DETACHED_PROCESS  # type: ignore[attr-defined]
         )
-    with open(paths.log, "ab") as log_handle:
-        process = subprocess.Popen(
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=log_handle,
-            stderr=log_handle,
-            start_new_session=os.name != "nt",
-            creationflags=creationflags,
-            close_fds=True,
-            env=child_env,
-        )
+
+    def spawn_daemon() -> subprocess.Popen[bytes]:
+        # One-time process creation: keep the fork and the log-file open off the
+        # event loop so a slow filesystem never stalls concurrent requests.
+        with open(paths.log, "ab") as log_handle:
+            return subprocess.Popen(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=log_handle,
+                stderr=log_handle,
+                start_new_session=os.name != "nt",
+                creationflags=creationflags,
+                close_fds=True,
+                env=child_env,
+            )
+
+    process = await asyncio.to_thread(spawn_daemon)
 
     try:
         ready = await _wait_for_ready(paths, process)
@@ -438,7 +444,7 @@ async def stop_daemon(*, force: bool = False) -> StopResult:
         _remove_cookie(paths)
         return StopResult(True, f"removed invalid cookie for {paths.root}")
 
-    scheme, base = _split_base(url)
+    _scheme, base = _split_base(url)
     headers = {"Authorization": f"Bearer {token}"} if isinstance(token, str) else {}
     request_error: httpx.HTTPError | None = None
     async with httpx.AsyncClient() as client:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from gdb_mcp.contracts import (
     TOOL_ATTACH_PROCESS,
     TOOL_BREAKPOINT_MANAGE,
@@ -39,53 +38,23 @@ from ..input_parsers import (
     parse_workflow_batch_input,
 )
 from ..renderers import render_action_payload, render_mapping, render_session_start
-from .common import (
-    RegisteredToolCliSpec,
-    ToolCliSpec,
-    _parse_namespace,
-    _register_tool_spec,
-)
-from .session import (
-    _build_session_manage,
-    _build_session_query,
-    _build_session_start,
-    _configure_session_manage,
-    _configure_session_query,
-    _configure_session_start,
-)
-from .inferior import (
-    _build_inferior_manage,
-    _build_inferior_query,
-    _configure_inferior_manage,
-    _configure_inferior_query,
-)
-from .execution import (
-    _build_execution_manage,
-    _configure_execution_manage,
-)
-from .context import (
-    _build_context_manage,
-    _build_context_query,
-    _configure_context_manage,
-    _configure_context_query,
-)
 from .breakpoint import (
     _build_breakpoint_manage,
     _build_breakpoint_query,
     _configure_breakpoint_manage,
     _configure_breakpoint_query,
 )
-from .inspect import (
-    _build_inspect_query,
-    _configure_inspect_query,
+from .common import (
+    RegisteredToolCliSpec,
+    ToolCliSpec,
+    _parse_namespace,
+    _register_tool_spec,
 )
-from .workflow import (
-    _build_capture_bundle,
-    _build_run_until_failure,
-    _build_workflow_batch,
-    _configure_capture_bundle,
-    _configure_run_until_failure,
-    _configure_workflow_batch,
+from .context import (
+    _build_context_manage,
+    _build_context_query,
+    _configure_context_manage,
+    _configure_context_query,
 )
 from .dedicated import (
     _build_attach_process,
@@ -96,6 +65,36 @@ from .dedicated import (
     _configure_call_function,
     _configure_execute_command,
     _configure_session_connect,
+)
+from .execution import (
+    _build_execution_manage,
+    _configure_execution_manage,
+)
+from .inferior import (
+    _build_inferior_manage,
+    _build_inferior_query,
+    _configure_inferior_manage,
+    _configure_inferior_query,
+)
+from .inspect import (
+    _build_inspect_query,
+    _configure_inspect_query,
+)
+from .session import (
+    _build_session_manage,
+    _build_session_query,
+    _build_session_start,
+    _configure_session_manage,
+    _configure_session_query,
+    _configure_session_start,
+)
+from .workflow import (
+    _build_capture_bundle,
+    _build_run_until_failure,
+    _build_workflow_batch,
+    _configure_capture_bundle,
+    _configure_run_until_failure,
+    _configure_workflow_batch,
 )
 
 CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {

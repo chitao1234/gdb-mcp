@@ -51,7 +51,9 @@ def _coerce_int_like(
         else:
             raise ValueError(f"{field_name} must be an integer")
     else:
-        raise ValueError(f"{field_name} must be an integer")
+        # ValueError is what pydantic turns into a validation error; TypeError
+        # would escape as an internal failure instead.
+        raise ValueError(f"{field_name} must be an integer")  # noqa: TRY004
 
     if parsed < minimum:
         if minimum == 1:

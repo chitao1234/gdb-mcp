@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 
-
 from gdb_mcp.contracts import (
     CLI_LOCATION_KIND_CHOICES,
     DISASSEMBLY_MODES,
@@ -21,8 +20,8 @@ from ..inputs import (
     LocationInput,
 )
 from ..parsers import (
-    add_boolean_flag,
     CliUsageError,
+    add_boolean_flag,
     format_cli_flag,
     validate_model_payload,
 )

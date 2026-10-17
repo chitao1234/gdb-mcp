@@ -21,7 +21,7 @@ def parse_inferiors_output(output: str, *, current_inferior_id: int | None) -> I
         stripped = line.strip()
         if not stripped:
             continue
-        if stripped.startswith("Num ") or stripped.startswith("Num\t"):
+        if stripped.startswith(("Num ", "Num\t")):
             continue
 
         match = _INFERIOR_ROW_RE.match(line)

@@ -2,21 +2,22 @@
 
 import pytest
 from pydantic import ValidationError
+
 from gdb_mcp.mcp.schemas import (
     AttachProcessArgs,
     BatchArgs,
     BatchStepArgs,
     BreakpointManageArgs,
     CallFunctionArgs,
-    CaptureMemoryRangeArgs,
     CaptureBundleArgs,
-    ExecutionManageArgs,
+    CaptureMemoryRangeArgs,
     ExecuteCommandArgs,
-    InspectQueryArgs,
+    ExecutionManageArgs,
     InferiorManageArgs,
-    SessionQueryArgs,
+    InspectQueryArgs,
     RunUntilFailureArgs,
     RunUntilFailureCaptureArgs,
+    SessionQueryArgs,
     StartSessionArgs,
     build_tool_definitions,
 )

@@ -122,7 +122,7 @@ class TestServerEntrypoint:
     def test_import_does_not_configure_logging(self):
         """Importing the compatibility module should not mutate host logging setup."""
 
-        import gdb_mcp.server as server
+        from gdb_mcp import server
 
         with patch.object(logging, "basicConfig") as mock_basic_config:
             importlib.reload(server)
@@ -163,7 +163,7 @@ class TestServerEntrypoint:
     ):
         """CLI startup should flag potentially stale build/lib shadow imports."""
 
-        import gdb_mcp.server as server
+        from gdb_mcp import server
 
         mock_main.return_value = "main-coroutine"
 

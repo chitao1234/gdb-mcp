@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import cast
 
-from pydantic import BaseModel, ValidationError
 from mcp.types import CallToolResult
+from pydantic import BaseModel, ValidationError
 
 from ...domain import (
     OperationError,
@@ -101,5 +101,5 @@ async def dispatch_tool_call(
             build_validation_error(exc, tool_name=name, model=_validation_model(name))
         )
     except Exception as exc:
-        logger.error("Error executing tool %s: %s", name, exc, exc_info=True)
+        logger.exception("Error executing tool %s", name)
         return serialize_exception(name, exc)

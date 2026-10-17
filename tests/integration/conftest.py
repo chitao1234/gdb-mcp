@@ -95,6 +95,7 @@ def compile_program():
             ],
             capture_output=True,
             text=True,
+            check=False,
         )
 
         if compile_result.returncode != 0:
@@ -144,6 +145,7 @@ def compile_program_with_core():
             ],
             capture_output=True,
             text=True,
+            check=False,
         )
 
         if compile_result.returncode != 0:

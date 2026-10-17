@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 
-
 from gdb_mcp.contracts import (
     INFERIOR_FOLLOW_FORK_MODES,
     INFERIOR_MANAGE_ACTIONS,
@@ -21,8 +20,8 @@ from ..inputs import (
     InferiorQueryInput,
 )
 from ..parsers import (
-    add_boolean_flag,
     CliUsageError,
+    add_boolean_flag,
     validate_model_payload,
 )
 from .common import (

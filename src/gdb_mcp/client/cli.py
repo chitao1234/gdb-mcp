@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from contextlib import redirect_stderr
 import json
 import os
 import sys
 from collections.abc import Sequence
+from contextlib import redirect_stderr
 from typing import Protocol, TextIO, runtime_checkable
 
 import httpx
@@ -33,8 +33,8 @@ from .daemon import (
     ResolvedServer,
     daemon_status,
     forget_session_id,
-    remembered_session_id,
     remember_session_id,
+    remembered_session_id,
     resolve_server,
     stop_daemon,
 )

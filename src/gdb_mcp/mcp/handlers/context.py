@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from ...session.service import SessionService
 from ..schemas import (
     ContextManageArgs,

@@ -67,8 +67,10 @@ class InspectionInferiorState:
                     message=f"Inferior {inferior_id} selected",
                 ),
                 warnings=(
-                    "Inferior selection succeeded, but refreshing inferior inventory failed: "
-                    f"{inventory_result.message}",
+                    (
+                        "Inferior selection succeeded, but refreshing inferior inventory failed: "
+                        f"{inventory_result.message}"
+                    ),
                 ),
             )
 

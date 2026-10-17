@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from .service import SessionService
 
 
-def session_workflow_context(session: "SessionService") -> LockProtocol:
+def session_workflow_context(session: SessionService) -> LockProtocol:
     """Return the required workflow lock for one live session."""
 
     return session.runtime.workflow_lock

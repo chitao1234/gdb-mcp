@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from pydantic import (
     BaseModel,
 )
@@ -28,27 +27,6 @@ from ...contracts import (
     TOOL_SESSION_START,
     TOOL_WORKFLOW_BATCH,
 )
-from .dedicated import (
-    AttachProcessArgs,
-    CallFunctionArgs,
-    ConnectSessionArgs,
-    ExecuteCommandArgs,
-    StartSessionArgs,
-)
-from .workflow import (
-    BatchArgs,
-    CaptureBundleArgs,
-    RunUntilFailureArgs,
-)
-from .session import (
-    SessionManageArgs,
-    SessionQueryArgs,
-)
-from .inferior import (
-    InferiorManageArgs,
-    InferiorQueryArgs,
-)
-from .execution import ExecutionManageArgs
 from .breakpoint import (
     BreakpointManageArgs,
     BreakpointQueryArgs,
@@ -57,7 +35,28 @@ from .context import (
     ContextManageArgs,
     ContextQueryArgs,
 )
+from .dedicated import (
+    AttachProcessArgs,
+    CallFunctionArgs,
+    ConnectSessionArgs,
+    ExecuteCommandArgs,
+    StartSessionArgs,
+)
+from .execution import ExecutionManageArgs
+from .inferior import (
+    InferiorManageArgs,
+    InferiorQueryArgs,
+)
 from .inspect import InspectQueryArgs
+from .session import (
+    SessionManageArgs,
+    SessionQueryArgs,
+)
+from .workflow import (
+    BatchArgs,
+    CaptureBundleArgs,
+    RunUntilFailureArgs,
+)
 
 TOOL_MODELS: dict[str, type[BaseModel]] = {
     TOOL_SESSION_START: StartSessionArgs,

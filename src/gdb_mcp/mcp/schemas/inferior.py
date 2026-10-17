@@ -14,7 +14,6 @@ from ... import contracts as shared_contracts
 from ...contracts import (
     InferiorFollowForkMode,
 )
-
 from .common import (
     SessionId,
     StrictArgsModel,

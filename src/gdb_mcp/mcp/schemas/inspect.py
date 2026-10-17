@@ -15,7 +15,7 @@ from ...contracts import (
     DisassemblyMode,
     RegisterValueFormat,
 )
-
+from .breakpoint import LocationSelectorArgs
 from .common import (
     SessionId,
     StrictArgsModel,
@@ -23,7 +23,6 @@ from .common import (
     _normalize_optional_text,
 )
 from .selectors import ThreadFrameContextArgs
-from .breakpoint import LocationSelectorArgs
 
 
 class InspectEvaluateQueryArgs(StrictArgsModel):

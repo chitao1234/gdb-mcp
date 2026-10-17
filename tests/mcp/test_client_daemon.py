@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+from typing_extensions import Self
+
 from gdb_mcp.client import daemon
 from gdb_mcp.client.daemon import (
     ResolvedServer,
@@ -171,7 +173,7 @@ class _FakeClient:
     def __init__(self, response: _FakeResponse) -> None:
         self._response = response
 
-    async def __aenter__(self) -> "_FakeClient":
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *args: object) -> bool:

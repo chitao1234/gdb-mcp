@@ -3,8 +3,8 @@
 from unittest.mock import MagicMock, patch
 
 from gdb_mcp.domain import result_to_mapping
-from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.config import SessionConfig
+from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.state import SessionState
 
 

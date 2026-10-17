@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import argparse
-from copy import deepcopy
 from collections.abc import Iterable
+from copy import deepcopy
 
 from pydantic import BaseModel, ValidationError
 

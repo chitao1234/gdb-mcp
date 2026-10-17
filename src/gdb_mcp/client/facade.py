@@ -7,8 +7,8 @@ defined once by the tool specs, so the two surfaces cannot drift apart.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Mapping
 
 from gdb_mcp.contracts import (
     ACTION_LIST,

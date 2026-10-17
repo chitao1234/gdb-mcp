@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 
-
 from gdb_mcp.contracts import (
     EXECUTION_MANAGE_ACTIONS,
     EXECUTION_WAIT_UNTIL_VALUES,

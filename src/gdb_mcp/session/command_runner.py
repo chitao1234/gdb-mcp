@@ -171,8 +171,10 @@ class SessionCommandRunner:
                         result=cast(StructuredPayload, parsed.to_dict()),
                     ),
                     warnings=(
-                        "Command acknowledged and inferior is still running. "
-                        "Use gdb_wait_for_stop or gdb_interrupt to observe a stop event.",
+                        (
+                            "Command acknowledged and inferior is still running. "
+                            "Use gdb_wait_for_stop or gdb_interrupt to observe a stop event."
+                        ),
                     ),
                 )
             self._record_command_transcript(
@@ -413,7 +415,7 @@ class SessionCommandRunner:
     def _loads_target(command: str) -> bool:
         """Return whether a successful command loads an executable or core."""
 
-        return command.startswith("file ") or command.startswith("core-file ")
+        return command.startswith(("file ", "core-file "))
 
     @staticmethod
     def _parse_exit_code(value: object) -> int | None:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from ... import contracts as shared_contracts
 from ...domain import (
     OperationError,
@@ -11,11 +10,11 @@ from ...domain import (
 from ...session.service import SessionService
 from ..schemas import (
     BreakpointCatchCreateArgs,
+    BreakpointCodeCreateArgs,
     BreakpointManageArgs,
     BreakpointManageCreateAction,
     BreakpointManageNumberAction,
     BreakpointManageUpdateAction,
-    BreakpointCodeCreateArgs,
     BreakpointQueryArgs,
     BreakpointQueryGetAction,
     BreakpointQueryListAction,
@@ -57,7 +56,7 @@ def _handle_breakpoint_query(session: SessionService, args: BreakpointQueryArgs)
                     continue
 
                 enabled_value = breakpoint_info.get("enabled")
-                is_enabled = enabled_value in {True, "y", "Y", "1", 1}
+                is_enabled = enabled_value in {True, "y", "Y", "1"}
                 if enabled_filter is not None and is_enabled != enabled_filter:
                     continue
 

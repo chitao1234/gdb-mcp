@@ -5,15 +5,14 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import asynccontextmanager
+from typing import ClassVar
 from unittest.mock import ANY, AsyncMock, Mock, patch
 
 import uvicorn
-
-from starlette.responses import PlainTextResponse
-from starlette.applications import Starlette
-from starlette.testclient import TestClient
-
 from mcp.types import TextContent, Tool
+from starlette.applications import Starlette
+from starlette.responses import PlainTextResponse
+from starlette.testclient import TestClient
 
 from gdb_mcp.mcp.app import (
     _ReadyReportingServer,
@@ -244,7 +243,7 @@ class TestStreamableHttpApp:
                 return ("127.0.0.1", 42631)
 
         class FakeBoundServer:
-            sockets = [FakeSocket()]
+            sockets: ClassVar[list[FakeSocket]] = [FakeSocket()]
 
         server.servers = [FakeBoundServer()]
 

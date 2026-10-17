@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 
-
 from gdb_mcp.contracts import (
     BREAKPOINT_ACCESS_VALUES,
     BREAKPOINT_EVENTS,
@@ -24,8 +23,8 @@ from ..inputs import (
     BreakpointQueryInput,
 )
 from ..parsers import (
-    add_boolean_flag,
     CliUsageError,
+    add_boolean_flag,
     validate_model_payload,
 )
 from .common import (
@@ -151,9 +150,8 @@ def _validate_breakpoint_manage_input(typed_input: BreakpointManageInput) -> Non
         if typed_input.condition is None and typed_input.clear_condition is not True:
             raise CliUsageError("--condition or --clear-condition required with --action update")
 
-    if typed_input.action in {"delete", "enable", "disable"}:
-        if typed_input.number is None:
-            raise CliUsageError(f"--number required with --action {typed_input.action}")
+    if typed_input.action in {"delete", "enable", "disable"} and typed_input.number is None:
+        raise CliUsageError(f"--number required with --action {typed_input.action}")
 
 
 def _configure_breakpoint_query(parser: argparse.ArgumentParser) -> None:

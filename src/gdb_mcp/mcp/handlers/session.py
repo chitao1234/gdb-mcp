@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from ...contracts import (
     TOOL_SESSION_QUERY,
 )

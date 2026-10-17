@@ -160,9 +160,12 @@ def _tag_suffix(path: list[str], tags: list[tuple[tuple[str, ...], str, str]]) -
     best: tuple[tuple[str, ...], str, str] | None = None
     for entry in tags:
         parent = entry[0]
-        if len(parent) < len(path) and tuple(path[: len(parent)]) == parent:
-            if best is None or len(parent) > len(best[0]):
-                best = entry
+        if (
+            len(parent) < len(path)
+            and tuple(path[: len(parent)]) == parent
+            and (best is None or len(parent) > len(best[0]))
+        ):
+            best = entry
     if best is None:
         return ""
     return f" for {best[1]}={best[2]}"

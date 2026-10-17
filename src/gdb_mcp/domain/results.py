@@ -6,14 +6,14 @@ from typing import Generic, TypeVar, cast
 
 from .models import JsonObject, JsonValue, StructuredPayload
 
-PayloadT = TypeVar("PayloadT", covariant=True)
+PayloadT_co = TypeVar("PayloadT_co", covariant=True)
 
 
 @dataclass(slots=True, frozen=True)
-class OperationSuccess(Generic[PayloadT]):
+class OperationSuccess(Generic[PayloadT_co]):
     """Successful internal operation result."""
 
-    value: PayloadT
+    value: PayloadT_co
     warnings: tuple[str, ...] = ()
 
 
@@ -27,7 +27,7 @@ class OperationError:
     details: StructuredPayload = field(default_factory=dict)
 
 
-OperationResult = OperationSuccess[PayloadT] | OperationError
+OperationResult = OperationSuccess[PayloadT_co] | OperationError
 _RESERVED_ERROR_KEYS = {"status", "code", "message", "fatal"}
 _ERROR_TOP_LEVEL_DETAIL_KEYS = {"action", "tool"}
 

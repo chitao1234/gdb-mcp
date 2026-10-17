@@ -1,22 +1,22 @@
 """Factories for constructing the default session service implementation."""
 
-from collections.abc import Callable
 import logging
 import os
 import subprocess
 import time
+from collections.abc import Callable
 from typing import cast
 
-from pygdbmi.IoManager import IoManager
 from pygdbmi.gdbcontroller import GdbController
+from pygdbmi.IoManager import IoManager
 
+from ..transport.protocols import GdbControllerFactoryProtocol, GdbControllerProtocol
 from .constants import (
     INITIAL_COMMAND_TOKEN,
     POLL_TIMEOUT_SEC,
 )
 from .protocols import OsModuleProtocol, TimeModuleProtocol
 from .service import SessionService
-from ..transport.protocols import GdbControllerFactoryProtocol, GdbControllerProtocol
 
 logger = logging.getLogger(__name__)
 

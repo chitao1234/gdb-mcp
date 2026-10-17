@@ -10,7 +10,6 @@ from pydantic import (
 )
 
 from ... import contracts as shared_contracts
-
 from .common import (
     SessionId,
     StrictArgsModel,

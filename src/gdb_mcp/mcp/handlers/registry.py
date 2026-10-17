@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from ...contracts import (
     BATCH_STEP_TOOL_NAMES,
     TOOL_ATTACH_PROCESS,
@@ -34,8 +33,8 @@ from ..schemas import (
     ConnectSessionArgs,
     ContextManageArgs,
     ContextQueryArgs,
-    ExecutionManageArgs,
     ExecuteCommandArgs,
+    ExecutionManageArgs,
     InferiorManageArgs,
     InferiorQueryArgs,
     InspectQueryArgs,
@@ -44,11 +43,19 @@ from ..schemas import (
     SessionQueryArgs,
     StartSessionArgs,
 )
+from .breakpoint import (
+    _handle_breakpoint_manage,
+    _handle_breakpoint_query,
+)
 from .common import (
     ToolSpec,
     context_tool_spec,
     registry_tool_spec,
     session_tool_spec,
+)
+from .context import (
+    _handle_context_manage,
+    _handle_context_query,
 )
 from .dedicated import (
     _handle_attach_process,
@@ -59,14 +66,6 @@ from .execution import _handle_execution_manage
 from .inferior import (
     _handle_inferior_manage,
     _handle_inferior_query,
-)
-from .breakpoint import (
-    _handle_breakpoint_manage,
-    _handle_breakpoint_query,
-)
-from .context import (
-    _handle_context_manage,
-    _handle_context_query,
 )
 from .inspect import _handle_inspect_query
 from .session import (

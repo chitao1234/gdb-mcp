@@ -60,7 +60,7 @@ def _thaw(value: object) -> object:
     return value
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _cached_input_schema(model: type[BaseModel]) -> object:
     """Return the immutable normalized schema for a model, computed once per process."""
 
