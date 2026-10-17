@@ -50,6 +50,27 @@ class TestValidationErrorEnvelope:
             }
         ]
 
+    def test_multiple_failures_are_all_reported(self):
+        """Every failure should be visible; truncation is the caller's decision."""
+
+        payload = _dispatch(
+            "gdb_breakpoint_manage",
+            {
+                "session_id": 1,
+                "action": "create",
+                "breakpoint": {"kind": "code", "bogus": 1},
+            },
+            Mock(),
+        )
+
+        assert payload["message"] == (
+            "breakpoint.location is required for kind=code; " "breakpoint.bogus is not allowed"
+        )
+        assert [entry["field"] for entry in payload["details"]["field_errors"]] == [
+            "breakpoint.location",
+            "breakpoint.bogus",
+        ]
+
     def test_missing_discriminator_is_reported_as_missing_field(self):
         """A missing kind should point at the discriminator property itself."""
 

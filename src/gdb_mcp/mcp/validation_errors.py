@@ -38,10 +38,7 @@ def build_validation_error(
         field, issue, message = _describe(error, path, tags)
         field_errors.append({"field": field, "issue": issue, "message": message})
 
-    if len(field_errors) == 1:
-        message = field_errors[0]["message"]
-    else:
-        message = f"{field_errors[0]['message']} (+{len(field_errors) - 1} more validation errors)"
+    message = "; ".join(entry["message"] for entry in field_errors)
 
     details: dict[str, object] = {"tool": tool_name, "field_errors": field_errors}
     if action is not None:

@@ -99,7 +99,7 @@ Errors are uniform across all tools and are returned as MCP tool results with `i
 }
 ```
 
-Validation failures use `code="validation_error"` and populate `details.field_errors`; the top-level `message` summarizes the first error, including the selecting union tag when one applies.
+Validation failures use `code="validation_error"` and populate `details.field_errors`; the top-level `message` lists every failure, including the selecting union tag when one applies, and is not truncated.
 
 Session-scoped failures also carry the session's state in `details` (`session_id`, `execution_state`, `stop_reason`, `exit_code`), so a failure whose message is only `No registers.` still tells the caller that the inferior exited.
 
