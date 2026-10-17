@@ -76,6 +76,9 @@ class ClientToolResponse:
 def _parse_tool_payload(result: CallToolResult) -> dict[str, object]:
     """Extract the JSON object payload from one MCP tool result."""
 
+    if isinstance(result.structuredContent, dict):
+        return dict(result.structuredContent)
+
     if len(result.content) != 1 or not isinstance(result.content[0], TextContent):
         raise ValueError("Expected exactly one text content item from MCP tool result")
 

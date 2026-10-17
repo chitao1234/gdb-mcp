@@ -167,6 +167,55 @@ class TestMcpSerializer:
 
         assert contents.isError is False
 
+    def test_serialize_result_exposes_structured_content(self):
+        """Structured tool output should mirror the JSON text payload."""
+
+        contents = serialize_result(
+            OperationSuccess(
+                SessionMessage(message="ok"),
+                warnings=("symbols missing",),
+            )
+        )
+
+        assert contents.structuredContent == {
+            "status": "success",
+            "message": "ok",
+            "warnings": ["symbols missing"],
+        }
+        assert json.loads(contents.content[0].text) == contents.structuredContent
+
+    def test_serialize_error_exposes_structured_content(self):
+        """Errors should be readable as structured output, not only as text."""
+
+        contents = serialize_result(
+            OperationError(
+                message="No registers.",
+                code="no_registers",
+                details={"execution_state": "exited"},
+            )
+        )
+
+        assert contents.isError is True
+        assert contents.structuredContent == {
+            "status": "error",
+            "code": "no_registers",
+            "message": "No registers.",
+            "details": {"execution_state": "exited"},
+        }
+        assert json.loads(contents.content[0].text) == contents.structuredContent
+
+    def test_serialize_exception_exposes_structured_content(self):
+        """Unexpected exceptions should carry structured output too."""
+
+        contents = serialize_exception("gdb_get_status", RuntimeError("bad"))
+
+        assert contents.structuredContent == {
+            "status": "error",
+            "code": "internal_error",
+            "message": "bad",
+            "tool": "gdb_get_status",
+        }
+
     def test_result_to_payload_normalizes_nested_typed_payloads(self):
         """Nested typed payload objects should be converted into JSON-ready structures."""
 

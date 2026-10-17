@@ -205,6 +205,42 @@ class TestClientRuntime:
 
     @patch("gdb_mcp.client.runtime.ClientSession")
     @patch("gdb_mcp.client.runtime.streamable_http_client")
+    def test_invoke_tool_prefers_structured_content(
+        self,
+        mock_streamable_http_client,
+        mock_client_session_cls,
+    ):
+        """Structured output should be used directly instead of re-parsing text."""
+
+        read_stream = Mock()
+        write_stream = Mock()
+        mock_streamable_http_client.return_value = _AsyncContextManager(
+            (read_stream, write_stream, lambda: "session-1")
+        )
+
+        session = AsyncMock()
+        session.initialize = AsyncMock(return_value=Mock())
+        session.call_tool = AsyncMock(
+            return_value=CallToolResult(
+                content=[],
+                structuredContent={"status": "success", "value": 42},
+            )
+        )
+        mock_client_session_cls.return_value = _AsyncContextManager(session)
+
+        result = asyncio.run(
+            invoke_tool(
+                "http://127.0.0.1:8000/mcp",
+                "gdb_session_query",
+                {"action": "list", "query": {}},
+            )
+        )
+
+        assert result.payload == {"status": "success", "value": 42}
+        assert result.is_error is False
+
+    @patch("gdb_mcp.client.runtime.ClientSession")
+    @patch("gdb_mcp.client.runtime.streamable_http_client")
     def test_invoke_tool_rejects_non_object_json_payload(
         self,
         mock_streamable_http_client,

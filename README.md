@@ -468,7 +468,7 @@ This server currently exposes MCP context through:
 - `list_tools`
 - `call_tool`
 
-Every `call_tool` response is returned as one JSON payload encoded in MCP `TextContent`.
+Every `call_tool` response carries one JSON payload as both MCP `structuredContent` and serialized text in `content[0].text`.
 
 Clients should expect:
 
@@ -477,6 +477,7 @@ Clients should expect:
 - direct structured success payloads on dedicated tools without `action`
 - `code` plus `message` on every error payload
 - MCP `isError: true` on failure results
+- the envelope under `structuredContent`, with `content[0].text` kept for clients that only read text
 
 The server does not currently publish MCP `outputSchema`, resources, prompts, or event streams. Clients should treat tool responses as authoritative runtime state and manage `session_id` explicitly.
 

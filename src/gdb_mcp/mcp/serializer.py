@@ -20,11 +20,17 @@ def result_to_payload(
 def serialize_result(
     result: OperationResult[object],
 ) -> CallToolResult:
-    """Serialize a typed tool result with a truthful MCP ``isError`` flag."""
+    """Serialize a typed tool result with a truthful MCP ``isError`` flag.
+
+    The same payload is returned twice: as ``structuredContent`` for clients that
+    read structured tool output, and as serialized JSON text for clients that
+    only read ``content``.
+    """
 
     payload = result_to_payload(result)
     return CallToolResult(
         content=[TextContent(type="text", text=json.dumps(payload, indent=2))],
+        structuredContent=payload,
         isError=isinstance(result, OperationError),
     )
 

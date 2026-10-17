@@ -35,6 +35,8 @@ Set `GDB_MCP_SERVER_URL` to avoid repeating `--server-url`. `--payload-json '<js
 
 ## Response Conventions
 
+Every tool result carries the same payload twice: as `structuredContent` (structured tool output) and as serialized JSON in `content[0].text` (for clients that only read text). Both are always the envelope described below.
+
 ### Direct Success Payloads
 
 Tools without an `action` field return direct structured success payloads:
