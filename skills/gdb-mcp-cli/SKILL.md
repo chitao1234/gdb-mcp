@@ -199,6 +199,7 @@ Each of these has many flags; read `gdb-mcp-client campaign --help` before compo
 | `GDB_MCP_AUTH_TOKEN` | Bearer token used by both the client and a server started with it |
 | `GDB_MCP_STATE_DIR` | Where cookies, locks, and daemon logs live (defaults to the platform cache dir) |
 | `GDB_MCP_DAEMON_IDLE_SEC` | Idle timeout for client-spawned servers (default 900, `0` disables) |
+| `GDB_MCP_CLIENT_READ_TIMEOUT_SEC` | Per-call response timeout (default 1800; a safety net so a dropped response errors instead of hanging) |
 | `GDB_PATH` / `gdb_session_start.gdb_path` | GDB binary selection |
 
 ## Troubleshooting

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from mcp.types import CallToolResult, TextContent
 
-from gdb_mcp.client.runtime import invoke_tool
+from gdb_mcp.client.runtime import _session_read_timeout, invoke_tool
 
 
 class _AsyncContextManager:
@@ -62,7 +63,11 @@ class TestClientRuntime:
             "http://127.0.0.1:8000/mcp",
             http_client=None,
         )
-        mock_client_session_cls.assert_called_once_with(read_stream, write_stream)
+        mock_client_session_cls.assert_called_once_with(
+            read_stream,
+            write_stream,
+            read_timeout_seconds=timedelta(seconds=1800.0),
+        )
         session.initialize.assert_awaited_once_with()
         session.call_tool.assert_awaited_once_with("gdb_session_start", {"program": "/bin/true"})
         assert result.is_error is False
@@ -146,6 +151,58 @@ class TestClientRuntime:
             http_client=http_client,
         )
 
+    @patch("gdb_mcp.client.runtime.httpx.AsyncClient")
+    @patch("gdb_mcp.client.runtime.ClientSession")
+    @patch("gdb_mcp.client.runtime.streamable_http_client")
+    def test_owned_http_client_uses_mcp_sse_timeouts(
+        self,
+        mock_streamable_http_client,
+        mock_client_session_cls,
+        mock_async_client_cls,
+    ):
+        """A CLI-owned client must survive tool calls that outlive httpx defaults.
+
+        httpx's built-in 5s read timeout tears down the streamed tool response for
+        any call that runs longer than 5 seconds, so the client has to use the MCP
+        SSE read timeout instead.
+        """
+
+        read_stream = Mock()
+        write_stream = Mock()
+        mock_streamable_http_client.return_value = _AsyncContextManager(
+            (read_stream, write_stream, lambda: "session-1")
+        )
+
+        session = AsyncMock()
+        session.initialize = AsyncMock(return_value=Mock())
+        session.call_tool = AsyncMock(
+            return_value=CallToolResult(
+                content=[TextContent(type="text", text='{"status":"success"}')]
+            )
+        )
+        mock_client_session_cls.return_value = _AsyncContextManager(session)
+        owned_client = AsyncMock()
+        mock_async_client_cls.return_value = owned_client
+
+        asyncio.run(
+            invoke_tool(
+                "http://127.0.0.1:8000/mcp",
+                "gdb_session_query",
+                {"action": "list", "query": {}},
+                auth_token="secret",
+            )
+        )
+
+        _, kwargs = mock_async_client_cls.call_args
+        timeout = kwargs["timeout"]
+        assert timeout.read is not None
+        assert timeout.read > 5.0
+        assert kwargs["headers"] == {"Authorization": "Bearer secret"}
+        mock_streamable_http_client.assert_called_once_with(
+            "http://127.0.0.1:8000/mcp",
+            http_client=owned_client,
+        )
+
     @patch("gdb_mcp.client.runtime.ClientSession")
     @patch("gdb_mcp.client.runtime.streamable_http_client")
     def test_invoke_tool_rejects_non_object_json_payload(
@@ -205,3 +262,23 @@ class TestClientRuntime:
                     {"action": "list", "query": {}},
                 )
             )
+
+
+class TestSessionReadTimeout:
+    """The per-call read timeout bounds silent hangs without capping normal work."""
+
+    def test_defaults_to_thirty_minutes(self, monkeypatch):
+        monkeypatch.delenv("GDB_MCP_CLIENT_READ_TIMEOUT_SEC", raising=False)
+
+        assert _session_read_timeout() == timedelta(seconds=1800.0)
+
+    def test_env_override_is_honoured(self, monkeypatch):
+        monkeypatch.setenv("GDB_MCP_CLIENT_READ_TIMEOUT_SEC", "45.5")
+
+        assert _session_read_timeout() == timedelta(seconds=45.5)
+
+    @pytest.mark.parametrize("value", ["", "abc", "0", "-5"])
+    def test_invalid_env_falls_back_to_default(self, monkeypatch, value):
+        monkeypatch.setenv("GDB_MCP_CLIENT_READ_TIMEOUT_SEC", value)
+
+        assert _session_read_timeout() == timedelta(seconds=1800.0)

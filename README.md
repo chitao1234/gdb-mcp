@@ -186,6 +186,10 @@ Overrides where `gdb-mcp-client` keeps background-server cookies and logs. Defau
 
 Changes how long a background server started by `gdb-mcp-client` waits without requests before exiting. Defaults to 900 seconds; `0` disables idle exit.
 
+### `GDB_MCP_CLIENT_READ_TIMEOUT_SEC`
+
+Bounds how long `gdb-mcp-client` waits for a single tool response. Defaults to 1800 seconds (30 minutes). This is a safety net: if the HTTP transport drops a response, the underlying MCP session would otherwise wait forever without reporting an error. Raise it when a single call legitimately runs longer, such as a long `gdb_run_until_failure` campaign.
+
 ## Tool Surface
 
 The current public interface exposes 18 tools:
