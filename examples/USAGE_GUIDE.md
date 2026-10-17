@@ -400,9 +400,12 @@ gdb-mcp spawn its own gdb.
 Expose the external gdb's MI stream over TCP (using `socat`):
 
 ```bash
-socat TCP-LISTEN:4399,reuseaddr \
-  EXEC:'gdb --quiet --interpreter=mi2 ./my_program',pty,stderr
+socat TCP-LISTEN:4399,reuseaddr,fork \
+  EXEC:'gdb --quiet --interpreter=mi2 ./my_program',pty,raw,echo=0,stderr
 ```
+
+Keep `raw,echo=0` on the socat `pty`; a cooked tty rewrites gdb's line endings as
+CRLF, which breaks MI result records and makes the handshake time out.
 
 ### Step 1: Connect
 

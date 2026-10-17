@@ -82,8 +82,8 @@ Once you have the GDB MCP server configured in Claude Desktop (or another MCP cl
 Start gdb yourself and expose its MI over TCP, then let gdb-mcp attach to it:
 
 ```bash
-socat TCP-LISTEN:4399,reuseaddr \
-  EXEC:'gdb --quiet --interpreter=mi2 ./sample_program',pty,stderr
+socat TCP-LISTEN:4399,reuseaddr,fork \
+  EXEC:'gdb --quiet --interpreter=mi2 ./sample_program',pty,raw,echo=0,stderr
 ```
 
 ```

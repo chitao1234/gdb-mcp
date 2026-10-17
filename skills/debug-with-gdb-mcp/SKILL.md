@@ -137,8 +137,8 @@ Endpoint forms:
 
 ```bash
 # One external process owns gdb and exposes MI on 127.0.0.1:4399.
-socat TCP-LISTEN:4399,reuseaddr \
-  EXEC:'gdb --quiet --interpreter=mi2 /path/to/app',pty,stderr
+socat TCP-LISTEN:4399,reuseaddr,fork \
+  EXEC:'gdb --quiet --interpreter=mi2 /path/to/app',pty,raw,echo=0,stderr
 ```
 
 ```json
@@ -149,12 +149,18 @@ socat TCP-LISTEN:4399,reuseaddr \
 
 ```bash
 socat UNIX-LISTEN:/tmp/gdbmi.sock,fork \
-  EXEC:'gdb --quiet --interpreter=mi2 /path/to/app',pty,stderr
+  EXEC:'gdb --quiet --interpreter=mi2 /path/to/app',pty,raw,echo=0,stderr
 ```
 
 ```json
 { "endpoint": "unix:///tmp/gdbmi.sock" }
 ```
+
+Always pass `raw,echo=0` on the socat `pty`. Without it the tty stays in cooked
+mode and rewrites gdb's line endings as CRLF, which corrupts MI result records
+(`^done` becomes an unparsable line) and makes the connect handshake time out
+with `Timeout waiting for GDB to initialize`. Add `fork` so the listener survives
+more than one connection.
 
 **Recipe C - attach to a gdb you already have open (gdb >= 9, `new-ui`):**
 

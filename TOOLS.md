@@ -298,10 +298,13 @@ from the connected gdb (via `info files`), so it reflects the external target.
 Typical setup (external gdb exposed over TCP with `socat`):
 
 ```bash
-socat TCP-LISTEN:4399,reuseaddr \
-  EXEC:'gdb --quiet --interpreter=mi2 ./app',pty,stderr
+socat TCP-LISTEN:4399,reuseaddr,fork \
+  EXEC:'gdb --quiet --interpreter=mi2 ./app',pty,raw,echo=0,stderr
 # then: gdb_session_connect {"endpoint": "tcp://127.0.0.1:4399"}
 ```
+
+Keep `raw,echo=0` on the socat `pty`; a cooked tty rewrites gdb's line endings as
+CRLF, which breaks MI result records and makes the handshake time out.
 
 See the `gdb-mcp-cli` and `debug-with-gdb-mcp` skills for full runbooks.
 

@@ -105,8 +105,8 @@ Endpoint forms:
 **Recipe A - give gdb its own TCP endpoint (recommended):**
 
 ```bash
-socat TCP-LISTEN:4399,reuseaddr \
-  EXEC:'gdb --quiet --interpreter=mi2 ./build/app',pty,stderr
+socat TCP-LISTEN:4399,reuseaddr,fork \
+  EXEC:'gdb --quiet --interpreter=mi2 ./build/app',pty,raw,echo=0,stderr
 gdb-mcp-client connect tcp://127.0.0.1:4399
 ```
 
@@ -114,9 +114,15 @@ gdb-mcp-client connect tcp://127.0.0.1:4399
 
 ```bash
 socat UNIX-LISTEN:/tmp/gdbmi.sock,fork \
-  EXEC:'gdb --quiet --interpreter=mi2 ./build/app',pty,stderr
+  EXEC:'gdb --quiet --interpreter=mi2 ./build/app',pty,raw,echo=0,stderr
 gdb-mcp-client connect unix:///tmp/gdbmi.sock
 ```
+
+Always pass `raw,echo=0` on the socat `pty`. Without it the tty stays in cooked
+mode and rewrites gdb's line endings as CRLF, which corrupts MI result records
+(`^done` becomes an unparsable line) and makes the connect handshake time out
+with `Timeout waiting for GDB to initialize`. Add `fork` so the listener survives
+more than one connection.
 
 **Recipe C - attach to a gdb you already have open (gdb >= 9, `new-ui`):**
 
