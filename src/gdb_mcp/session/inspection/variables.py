@@ -20,36 +20,41 @@ from ...transport import (
 from ..constants import DEFAULT_TIMEOUT_SEC
 from ..result_utils import command_result_payload
 from .base import (
-    InspectionBase,
+    InspectionContext,
     _VECTOR_REGISTER_NAME_RE,
 )
 
 
-class InspectionVariablesMixin(InspectionBase):
+class InspectionVariables:
     """Variable and register inspection methods."""
+
+    def __init__(self, context: InspectionContext):
+        self._context = context
+        self._runtime = context.runtime
+        self._command_runner = context.command_runner
 
     def get_variables(
         self, thread_id: int | None = None, frame: int = 0
     ) -> OperationSuccess[VariablesInfo] | OperationError:
         """Get local variables for a specific frame."""
-        selection = self._capture_selection()
+        selection = self._context.capture_selection()
         if isinstance(selection, OperationError):
             return selection
 
-        selection_changed, selection_error = self._select_for_inspection(
+        selection_changed, selection_error = self._context.select_for_inspection(
             selection,
             thread_id=thread_id,
             frame=frame,
         )
         if selection_error is not None:
-            return self._selection_error_with_restore(selection, selection_error)
+            return self._context.selection_error_with_restore(selection, selection_error)
 
         result = self._command_runner.execute_command_result(
             "-stack-list-variables --simple-values", timeout_sec=DEFAULT_TIMEOUT_SEC
         )
 
         if isinstance(result, OperationError):
-            restore_error = self._restore_selection_if_changed(selection, selection_changed)
+            restore_error = self._context.restore_selection_if_changed(selection, selection_changed)
             if restore_error is not None:
                 return restore_error
             return result
@@ -60,7 +65,7 @@ class InspectionVariablesMixin(InspectionBase):
             frame,
             extract_mi_result_payload(command_result_payload(result)),
         )
-        restore_error = self._restore_selection_if_changed(selection, selection_changed)
+        restore_error = self._context.restore_selection_if_changed(selection, selection_changed)
         if restore_error is not None:
             return restore_error
 
@@ -78,18 +83,20 @@ class InspectionVariablesMixin(InspectionBase):
     ) -> OperationSuccess[RegistersInfo] | OperationError:
         """Get register values for current frame."""
         selection = (
-            self._capture_selection() if thread_id is not None or frame is not None else None
+            self._context.capture_selection()
+            if thread_id is not None or frame is not None
+            else None
         )
         if isinstance(selection, OperationError):
             return selection
 
-        selection_changed, selection_error = self._select_for_inspection(
+        selection_changed, selection_error = self._context.select_for_inspection(
             selection,
             thread_id=thread_id,
             frame=frame,
         )
         if selection_error is not None:
-            return self._selection_error_with_restore(selection, selection_error)
+            return self._context.selection_error_with_restore(selection, selection_error)
 
         resolved_numbers = self._resolve_register_number_filters(
             register_numbers=register_numbers or [],
@@ -97,7 +104,9 @@ class InspectionVariablesMixin(InspectionBase):
         )
         if isinstance(resolved_numbers, OperationError):
             if selection is not None:
-                restore_error = self._restore_selection_if_changed(selection, selection_changed)
+                restore_error = self._context.restore_selection_if_changed(
+                    selection, selection_changed
+                )
                 if restore_error is not None:
                     return restore_error
             return resolved_numbers
@@ -111,7 +120,9 @@ class InspectionVariablesMixin(InspectionBase):
 
         if isinstance(result, OperationError):
             if selection is not None:
-                restore_error = self._restore_selection_if_changed(selection, selection_changed)
+                restore_error = self._context.restore_selection_if_changed(
+                    selection, selection_changed
+                )
                 if restore_error is not None:
                     return restore_error
             return result
@@ -125,7 +136,9 @@ class InspectionVariablesMixin(InspectionBase):
             name_map_result = self._load_register_name_map(filtered_registers)
             if isinstance(name_map_result, OperationError):
                 if selection is not None:
-                    restore_error = self._restore_selection_if_changed(selection, selection_changed)
+                    restore_error = self._context.restore_selection_if_changed(
+                        selection, selection_changed
+                    )
                     if restore_error is not None:
                         return restore_error
                 return name_map_result
@@ -139,7 +152,7 @@ class InspectionVariablesMixin(InspectionBase):
 
         payload = RegistersInfo(registers=filtered_registers)
         if selection is not None:
-            restore_error = self._restore_selection_if_changed(selection, selection_changed)
+            restore_error = self._context.restore_selection_if_changed(selection, selection_changed)
             if restore_error is not None:
                 return restore_error
 

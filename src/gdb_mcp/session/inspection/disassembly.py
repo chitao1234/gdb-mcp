@@ -18,15 +18,19 @@ from ...transport import (
 from ..constants import DEFAULT_TIMEOUT_SEC
 from ..result_utils import command_result_payload
 from .base import (
-    InspectionBase,
-    _INFO_LINE_RE,
+    InspectionContext,
     _ResolvedCodeLocation,
     _SelectionSnapshot,
 )
 
 
-class InspectionDisassemblyMixin(InspectionBase):
+class InspectionDisassembly:
     """Disassembly resolution and normalization methods."""
+
+    def __init__(self, context: InspectionContext):
+        self._context = context
+        self._runtime = context.runtime
+        self._command_runner = context.command_runner
 
     def disassemble(
         self,
@@ -51,18 +55,18 @@ class InspectionDisassemblyMixin(InspectionBase):
             value is None for value in (function, address, start_address, end_address, file, line)
         ):
             if thread_id is not None or frame is not None:
-                captured_selection = self._capture_selection()
+                captured_selection = self._context.capture_selection()
                 if isinstance(captured_selection, OperationError):
                     return captured_selection
                 selection = captured_selection
 
-            selection_changed, selection_error = self._select_for_inspection(
+            selection_changed, selection_error = self._context.select_for_inspection(
                 selection,
                 thread_id=thread_id,
                 frame=frame,
             )
             if selection_error is not None:
-                return self._selection_error_with_restore(selection, selection_error)
+                return self._context.selection_error_with_restore(selection, selection_error)
 
             location_result = _ResolvedCodeLocation(
                 scope="current_context",
@@ -106,7 +110,7 @@ class InspectionDisassemblyMixin(InspectionBase):
         if isinstance(location_result, OperationError):
             if selection is None:
                 return location_result
-            return self._selection_error_with_restore(selection, location_result)
+            return self._context.selection_error_with_restore(selection, location_result)
 
         command = self._build_disassemble_command(
             location_result,
@@ -116,7 +120,7 @@ class InspectionDisassemblyMixin(InspectionBase):
         if isinstance(command, OperationError):
             if selection is None:
                 return command
-            return self._selection_error_with_restore(selection, command)
+            return self._context.selection_error_with_restore(selection, command)
 
         result = self._command_runner.execute_command_result(
             command, timeout_sec=DEFAULT_TIMEOUT_SEC
@@ -124,7 +128,7 @@ class InspectionDisassemblyMixin(InspectionBase):
         if isinstance(result, OperationError):
             if selection is None:
                 return result
-            return self._selection_error_with_restore(selection, result)
+            return self._context.selection_error_with_restore(selection, result)
 
         raw_payload = extract_mi_result_payload(command_result_payload(result))
         instructions = self._normalize_disassembly_payload(
@@ -150,52 +154,11 @@ class InspectionDisassemblyMixin(InspectionBase):
         )
 
         if selection is not None:
-            restore_error = self._restore_selection_if_changed(selection, selection_changed)
+            restore_error = self._context.restore_selection_if_changed(selection, selection_changed)
             if restore_error is not None:
                 return restore_error
 
         return OperationSuccess(info)
-
-    def _current_frame_location(
-        self,
-        *,
-        thread_id: int | None,
-        frame: int | None,
-        selection: _SelectionSnapshot | None,
-    ) -> _ResolvedCodeLocation | OperationError:
-        """Resolve the current frame into a normalized code location."""
-
-        result = self._command_runner.execute_command_result(
-            "-stack-info-frame",
-            timeout_sec=DEFAULT_TIMEOUT_SEC,
-        )
-        if isinstance(result, OperationError):
-            return result
-
-        raw_payload = extract_mi_result_payload(command_result_payload(result))
-        if not isinstance(raw_payload, dict):
-            return OperationError(message="GDB returned malformed frame data")
-
-        frame_payload = raw_payload.get("frame")
-        if not isinstance(frame_payload, dict):
-            return OperationError(message="GDB did not return frame data")
-
-        resolved_thread_id = (
-            thread_id
-            if thread_id is not None
-            else selection.thread_id if selection is not None else self._runtime.current_thread_id
-        )
-        resolved_frame = frame if frame is not None else as_int(frame_payload.get("level"))
-        return _ResolvedCodeLocation(
-            scope="current_context",
-            thread_id=resolved_thread_id,
-            frame=resolved_frame,
-            function=as_text_or_number(frame_payload.get("func")),
-            address=as_text_or_number(frame_payload.get("addr")),
-            file=as_text_or_number(frame_payload.get("file")),
-            fullname=as_text_or_number(frame_payload.get("fullname")),
-            line=as_int(frame_payload.get("line")),
-        )
 
     def _build_disassemble_command(
         self,
@@ -329,41 +292,6 @@ class InspectionDisassemblyMixin(InspectionBase):
         if current_address is not None and self._addresses_equal(address, current_address):
             record["is_current"] = True
         return record
-
-    def _resolve_info_line_location(
-        self,
-        *,
-        command: str,
-        scope: str,
-        function: str | None,
-        address: str | None,
-    ) -> _ResolvedCodeLocation | OperationError:
-        """Resolve `info line ...` output into a normalized code location."""
-
-        result = self._command_runner.execute_command_result(
-            command,
-            timeout_sec=DEFAULT_TIMEOUT_SEC,
-        )
-        if isinstance(result, OperationError):
-            return result
-
-        output = result.value.output or ""
-        match = _INFO_LINE_RE.search(output)
-        if match is None:
-            return OperationError(message=f"GDB did not return source information for {command!r}")
-
-        line = int(match.group("line"))
-        file = match.group("file")
-        return _ResolvedCodeLocation(
-            scope=scope,
-            function=function,
-            address=address,
-            file=file,
-            fullname=file,
-            line=line,
-            start_address=match.group("start"),
-            end_address=match.group("end"),
-        )
 
     @staticmethod
     def _first_instruction_address(

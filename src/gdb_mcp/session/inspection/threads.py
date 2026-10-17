@@ -23,13 +23,18 @@ from ...transport import (
 from ..constants import DEFAULT_MAX_BACKTRACE_FRAMES, DEFAULT_TIMEOUT_SEC
 from ..result_utils import command_result_payload
 from .base import (
-    InspectionBase,
+    InspectionContext,
     logger,
 )
 
 
-class InspectionThreadsMixin(InspectionBase):
+class InspectionThreads:
     """Thread, backtrace, and frame selection methods."""
+
+    def __init__(self, context: InspectionContext):
+        self._context = context
+        self._runtime = context.runtime
+        self._command_runner = context.command_runner
 
     def get_threads(self) -> OperationSuccess[ThreadListInfo] | OperationError:
         """Get information about all threads in the debugged process."""
@@ -80,7 +85,7 @@ class InspectionThreadsMixin(InspectionBase):
         self, thread_id: int | None = None, max_frames: int = DEFAULT_MAX_BACKTRACE_FRAMES
     ) -> OperationSuccess[BacktraceInfo] | OperationError:
         """Get the stack backtrace for a specific thread or the current thread."""
-        selection = self._capture_selection() if thread_id is not None else None
+        selection = self._context.capture_selection() if thread_id is not None else None
         if isinstance(selection, OperationError):
             return selection
 
@@ -97,7 +102,7 @@ class InspectionThreadsMixin(InspectionBase):
 
         if isinstance(result, OperationError):
             if selection is not None and selection.thread_id != thread_id:
-                restore_error = self._restore_selection(selection)
+                restore_error = self._context.restore_selection(selection)
                 if restore_error is not None:
                     return restore_error
             return result
@@ -111,7 +116,7 @@ class InspectionThreadsMixin(InspectionBase):
         )
 
         if selection is not None and selection.thread_id != thread_id:
-            restore_error = self._restore_selection(selection)
+            restore_error = self._context.restore_selection(selection)
             if restore_error is not None:
                 return restore_error
 
@@ -126,25 +131,27 @@ class InspectionThreadsMixin(InspectionBase):
         """Get information about the current stack frame or an overridden context."""
 
         selection = (
-            self._capture_selection() if thread_id is not None or frame is not None else None
+            self._context.capture_selection()
+            if thread_id is not None or frame is not None
+            else None
         )
         if isinstance(selection, OperationError):
             return selection
 
-        selection_changed, selection_error = self._select_for_inspection(
+        selection_changed, selection_error = self._context.select_for_inspection(
             selection,
             thread_id=thread_id,
             frame=frame,
         )
         if selection_error is not None:
-            return self._selection_error_with_restore(selection, selection_error)
+            return self._context.selection_error_with_restore(selection, selection_error)
 
         result = self._command_runner.execute_command_result(
             "-stack-info-frame", timeout_sec=DEFAULT_TIMEOUT_SEC
         )
 
         if isinstance(result, OperationError):
-            return self._selection_error_with_restore(selection, result)
+            return self._context.selection_error_with_restore(selection, result)
 
         frame_info = frame_info_from_payload(
             extract_mi_result_payload(command_result_payload(result))
@@ -154,7 +161,7 @@ class InspectionThreadsMixin(InspectionBase):
         self._runtime.mark_frame_selected(as_int(level))
 
         if selection is not None:
-            restore_error = self._restore_selection_if_changed(selection, selection_changed)
+            restore_error = self._context.restore_selection_if_changed(selection, selection_changed)
             if restore_error is not None:
                 return restore_error
 

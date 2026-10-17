@@ -18,12 +18,17 @@ from ...transport import (
 from ..constants import DEFAULT_TIMEOUT_SEC
 from ..result_utils import command_result_payload
 from .base import (
-    InspectionBase,
+    InspectionContext,
 )
 
 
-class InspectionMemoryMixin(InspectionBase):
+class InspectionMemory:
     """Expression evaluation and memory read methods."""
+
+    def __init__(self, context: InspectionContext):
+        self._context = context
+        self._runtime = context.runtime
+        self._command_runner = context.command_runner
 
     def evaluate_expression(
         self,
@@ -33,18 +38,20 @@ class InspectionMemoryMixin(InspectionBase):
     ) -> OperationSuccess[ExpressionValueInfo] | OperationError:
         """Evaluate an expression in the current context."""
         selection = (
-            self._capture_selection() if thread_id is not None or frame is not None else None
+            self._context.capture_selection()
+            if thread_id is not None or frame is not None
+            else None
         )
         if isinstance(selection, OperationError):
             return selection
 
-        selection_changed, selection_error = self._select_for_inspection(
+        selection_changed, selection_error = self._context.select_for_inspection(
             selection,
             thread_id=thread_id,
             frame=frame,
         )
         if selection_error is not None:
-            return self._selection_error_with_restore(selection, selection_error)
+            return self._context.selection_error_with_restore(selection, selection_error)
 
         result = self._command_runner.execute_command_result(
             build_evaluate_expression_command(expression), timeout_sec=DEFAULT_TIMEOUT_SEC
@@ -52,7 +59,9 @@ class InspectionMemoryMixin(InspectionBase):
 
         if isinstance(result, OperationError):
             if selection is not None:
-                restore_error = self._restore_selection_if_changed(selection, selection_changed)
+                restore_error = self._context.restore_selection_if_changed(
+                    selection, selection_changed
+                )
                 if restore_error is not None:
                     return restore_error
             return result
@@ -60,7 +69,7 @@ class InspectionMemoryMixin(InspectionBase):
         raw_payload = extract_mi_result_payload(command_result_payload(result))
         value = raw_payload.get("value") if isinstance(raw_payload, dict) else None
         if selection is not None:
-            restore_error = self._restore_selection_if_changed(selection, selection_changed)
+            restore_error = self._context.restore_selection_if_changed(selection, selection_changed)
             if restore_error is not None:
                 return restore_error
 

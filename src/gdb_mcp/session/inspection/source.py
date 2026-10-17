@@ -11,17 +11,20 @@ from ...domain import (
     SourceLineRecord,
 )
 from .base import (
+    CodeLocationResolver,
+    InspectionContext,
     _ResolvedCodeLocation,
     _ResolvedSourceWindow,
     _SelectionSnapshot,
 )
-from .disassembly import (
-    InspectionDisassemblyMixin,
-)
 
 
-class InspectionSourceMixin(InspectionDisassemblyMixin):
+class InspectionSource:
     """Source context methods."""
+
+    def __init__(self, context: InspectionContext, resolver: CodeLocationResolver):
+        self._context = context
+        self._resolver = resolver
 
     def get_source_context(
         self,
@@ -44,33 +47,33 @@ class InspectionSourceMixin(InspectionDisassemblyMixin):
 
         if all(value is None for value in (function, address, file, line, start_line, end_line)):
             if thread_id is not None or frame is not None:
-                captured_selection = self._capture_selection()
+                captured_selection = self._context.capture_selection()
                 if isinstance(captured_selection, OperationError):
                     return captured_selection
                 selection = captured_selection
 
-            selection_changed, selection_error = self._select_for_inspection(
+            selection_changed, selection_error = self._context.select_for_inspection(
                 selection,
                 thread_id=thread_id,
                 frame=frame,
             )
             if selection_error is not None:
-                return self._selection_error_with_restore(selection, selection_error)
+                return self._context.selection_error_with_restore(selection, selection_error)
 
-            location_result = self._current_frame_location(
+            location_result = self._resolver.current_frame_location(
                 thread_id=thread_id,
                 frame=frame,
                 selection=selection,
             )
         elif function is not None:
-            location_result = self._resolve_info_line_location(
+            location_result = self._resolver.resolve_info_line_location(
                 command=f"info line {function}",
                 scope="function",
                 function=function,
                 address=None,
             )
         elif address is not None:
-            location_result = self._resolve_info_line_location(
+            location_result = self._resolver.resolve_info_line_location(
                 command=f"info line *{address}",
                 scope="address",
                 function=None,
@@ -96,7 +99,7 @@ class InspectionSourceMixin(InspectionDisassemblyMixin):
         if isinstance(location_result, OperationError):
             if selection is None:
                 return location_result
-            return self._selection_error_with_restore(selection, location_result)
+            return self._context.selection_error_with_restore(selection, location_result)
 
         read_result = self._read_source_context(
             location_result,
@@ -108,10 +111,10 @@ class InspectionSourceMixin(InspectionDisassemblyMixin):
         if isinstance(read_result, OperationError):
             if selection is None:
                 return read_result
-            return self._selection_error_with_restore(selection, read_result)
+            return self._context.selection_error_with_restore(selection, read_result)
 
         if selection is not None:
-            restore_error = self._restore_selection_if_changed(selection, selection_changed)
+            restore_error = self._context.restore_selection_if_changed(selection, selection_changed)
             if restore_error is not None:
                 return restore_error
 

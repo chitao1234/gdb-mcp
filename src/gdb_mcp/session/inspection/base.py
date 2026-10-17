@@ -1,4 +1,4 @@
-"""Base class, shared selectors, and module constants for inspection."""
+"""Shared context, collaborator, and value objects for the inspection services."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from ...domain import (
     OperationError,
     SourceLineRecord,
 )
-from ...domain.parsing import as_int
+from ...domain.parsing import as_int, as_text_or_number
 from ...transport import (
     extract_mi_result_payload,
 )
@@ -71,15 +71,17 @@ _VECTOR_REGISTER_NAME_RE = re.compile(
 logger = logging.getLogger(__name__)
 
 
-class InspectionBase:
-    def __init__(self, runtime: SessionRuntime, command_runner: SessionCommandRunner):
-        self._runtime = runtime
-        self._command_runner = command_runner
+class InspectionContext:
+    """Shared runtime state and thread/frame selection helpers for inspection."""
 
-    def _capture_selection(self) -> _SelectionSnapshot | OperationError:
+    def __init__(self, runtime: SessionRuntime, command_runner: SessionCommandRunner):
+        self.runtime = runtime
+        self.command_runner = command_runner
+
+    def capture_selection(self) -> _SelectionSnapshot | OperationError:
         """Capture the currently selected thread and frame for later restoration."""
 
-        thread_result = self._command_runner.execute_command_result(
+        thread_result = self.command_runner.execute_command_result(
             "-thread-info", timeout_sec=DEFAULT_TIMEOUT_SEC
         )
         if isinstance(thread_result, OperationError):
@@ -90,7 +92,7 @@ class InspectionBase:
         if isinstance(thread_payload, dict):
             current_thread = as_int(thread_payload.get("current-thread-id"))
 
-        frame_result = self._command_runner.execute_command_result(
+        frame_result = self.command_runner.execute_command_result(
             "-stack-info-frame", timeout_sec=DEFAULT_TIMEOUT_SEC
         )
         if isinstance(frame_result, OperationError):
@@ -103,16 +105,16 @@ class InspectionBase:
             if isinstance(current_frame_payload, dict):
                 current_frame = as_int(current_frame_payload.get("level"))
 
-        self._runtime.mark_thread_selected(current_thread)
-        self._runtime.mark_frame_selected(current_frame)
+        self.runtime.mark_thread_selected(current_thread)
+        self.runtime.mark_frame_selected(current_frame)
 
         return _SelectionSnapshot(thread_id=current_thread, frame_number=current_frame)
 
-    def _restore_selection(self, selection: _SelectionSnapshot) -> OperationError | None:
+    def restore_selection(self, selection: _SelectionSnapshot) -> OperationError | None:
         """Restore a previously captured debugger selection."""
 
         if selection.thread_id is not None:
-            thread_restore = self._command_runner.execute_command_result(
+            thread_restore = self.command_runner.execute_command_result(
                 f"-thread-select {selection.thread_id}", timeout_sec=DEFAULT_TIMEOUT_SEC
             )
             if isinstance(thread_restore, OperationError):
@@ -124,7 +126,7 @@ class InspectionBase:
                 )
 
         if selection.frame_number is not None:
-            frame_restore = self._command_runner.execute_command_result(
+            frame_restore = self.command_runner.execute_command_result(
                 f"-stack-select-frame {selection.frame_number}",
                 timeout_sec=DEFAULT_TIMEOUT_SEC,
             )
@@ -136,11 +138,11 @@ class InspectionBase:
                     )
                 )
 
-        self._runtime.mark_thread_selected(selection.thread_id)
-        self._runtime.mark_frame_selected(selection.frame_number)
+        self.runtime.mark_thread_selected(selection.thread_id)
+        self.runtime.mark_frame_selected(selection.frame_number)
         return None
 
-    def _select_for_inspection(
+    def select_for_inspection(
         self,
         selection: _SelectionSnapshot | None,
         *,
@@ -156,7 +158,7 @@ class InspectionBase:
         changed = False
 
         if selection is not None and thread_id is not None and selection.thread_id != thread_id:
-            thread_result = self._command_runner.execute_command_result(
+            thread_result = self.command_runner.execute_command_result(
                 f"-thread-select {thread_id}", timeout_sec=DEFAULT_TIMEOUT_SEC
             )
             if isinstance(thread_result, OperationError):
@@ -164,7 +166,7 @@ class InspectionBase:
             changed = True
 
         if selection is not None and frame is not None and selection.frame_number != frame:
-            frame_result = self._command_runner.execute_command_result(
+            frame_result = self.command_runner.execute_command_result(
                 f"-stack-select-frame {frame}", timeout_sec=DEFAULT_TIMEOUT_SEC
             )
             if isinstance(frame_result, OperationError):
@@ -173,7 +175,7 @@ class InspectionBase:
 
         return changed, None
 
-    def _restore_selection_if_changed(
+    def restore_selection_if_changed(
         self,
         selection: _SelectionSnapshot | None,
         changed: bool,
@@ -182,9 +184,9 @@ class InspectionBase:
 
         if not changed or selection is None:
             return None
-        return self._restore_selection(selection)
+        return self.restore_selection(selection)
 
-    def _selection_error_with_restore(
+    def selection_error_with_restore(
         self,
         selection: _SelectionSnapshot | None,
         selection_error: OperationError,
@@ -194,7 +196,7 @@ class InspectionBase:
         if selection is None:
             return selection_error
 
-        restore_error = self._restore_selection(selection)
+        restore_error = self.restore_selection(selection)
         if restore_error is None:
             return selection_error
 
@@ -204,4 +206,88 @@ class InspectionBase:
                 "Also failed to restore the original thread/frame selection: "
                 f"{restore_error.message}"
             )
+        )
+
+
+class CodeLocationResolver:
+    """Resolve `info frame`/`info line` output into normalized code locations."""
+
+    def __init__(self, runtime: SessionRuntime, command_runner: SessionCommandRunner):
+        self._runtime = runtime
+        self._command_runner = command_runner
+
+    def current_frame_location(
+        self,
+        *,
+        thread_id: int | None,
+        frame: int | None,
+        selection: _SelectionSnapshot | None,
+    ) -> _ResolvedCodeLocation | OperationError:
+        """Resolve the current frame into a normalized code location."""
+
+        result = self._command_runner.execute_command_result(
+            "-stack-info-frame",
+            timeout_sec=DEFAULT_TIMEOUT_SEC,
+        )
+        if isinstance(result, OperationError):
+            return result
+
+        raw_payload = extract_mi_result_payload(command_result_payload(result))
+        if not isinstance(raw_payload, dict):
+            return OperationError(message="GDB returned malformed frame data")
+
+        frame_payload = raw_payload.get("frame")
+        if not isinstance(frame_payload, dict):
+            return OperationError(message="GDB did not return frame data")
+
+        resolved_thread_id = (
+            thread_id
+            if thread_id is not None
+            else selection.thread_id if selection is not None else self._runtime.current_thread_id
+        )
+        resolved_frame = frame if frame is not None else as_int(frame_payload.get("level"))
+        return _ResolvedCodeLocation(
+            scope="current_context",
+            thread_id=resolved_thread_id,
+            frame=resolved_frame,
+            function=as_text_or_number(frame_payload.get("func")),
+            address=as_text_or_number(frame_payload.get("addr")),
+            file=as_text_or_number(frame_payload.get("file")),
+            fullname=as_text_or_number(frame_payload.get("fullname")),
+            line=as_int(frame_payload.get("line")),
+        )
+
+    def resolve_info_line_location(
+        self,
+        *,
+        command: str,
+        scope: str,
+        function: str | None,
+        address: str | None,
+    ) -> _ResolvedCodeLocation | OperationError:
+        """Resolve `info line ...` output into a normalized code location."""
+
+        result = self._command_runner.execute_command_result(
+            command,
+            timeout_sec=DEFAULT_TIMEOUT_SEC,
+        )
+        if isinstance(result, OperationError):
+            return result
+
+        output = result.value.output or ""
+        match = _INFO_LINE_RE.search(output)
+        if match is None:
+            return OperationError(message=f"GDB did not return source information for {command!r}")
+
+        line = int(match.group("line"))
+        file = match.group("file")
+        return _ResolvedCodeLocation(
+            scope=scope,
+            function=function,
+            address=address,
+            file=file,
+            fullname=file,
+            line=line,
+            start_address=match.group("start"),
+            end_address=match.group("end"),
         )

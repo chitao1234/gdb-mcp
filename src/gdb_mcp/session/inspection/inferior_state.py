@@ -13,11 +13,16 @@ from ...domain import (
 )
 from ..constants import DEFAULT_TIMEOUT_SEC
 from ..inferiors import inferior_ids, parse_inferiors_output
-from .base import InspectionBase
+from .base import InspectionContext
 
 
-class InspectionInferiorStateMixin(InspectionBase):
+class InspectionInferiorState:
     """Inferior listing, selection, and runtime enrichment methods."""
+
+    def __init__(self, context: InspectionContext):
+        self._context = context
+        self._runtime = context.runtime
+        self._command_runner = context.command_runner
 
     def list_inferiors(self) -> OperationSuccess[InferiorListInfo] | OperationError:
         """List the inferiors currently managed by this GDB session."""
