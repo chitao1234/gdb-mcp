@@ -101,14 +101,15 @@ Errors are uniform across all tools and are returned as MCP tool results with `i
 
 Validation failures use `code="validation_error"` and populate `details.field_errors`; the top-level `message` summarizes the first error, including the selecting union tag when one applies.
 
+Session-scoped failures also carry the session's state in `details` (`session_id`, `execution_state`, `stop_reason`, `exit_code`), so a failure whose message is only `No registers.` still tells the caller that the inferior exited.
+
 Common machine-readable codes include:
 
-- `validation_error`
-- `unsupported_combination`
-- `unknown_tool`
-- `not_found`
-- `error`
-- `internal_error`
+- `validation_error`, `unsupported_combination` — the request was rejected before any debugger work
+- `invalid_session`, `session_closing` — the session is gone or shutting down
+- `no_registers`, `inferior_not_running`, `inferior_running`, `no_stack_frame`, `memory_unavailable`, `symbol_unavailable`, `no_symbols_loaded`, `value_unavailable`, `command_timeout` — classified GDB failures
+- `unknown_tool`, `internal_error`, `not_found` — dispatch and lookup failures
+- `error` — fallback when a GDB failure matches no specific classification
 
 ## Shared Request Patterns
 
@@ -119,7 +120,7 @@ Every session-scoped tool takes a `session_id` returned by `gdb_session_start`.
 ### Published Tool Schemas
 
 Published tool input schemas are flattened for broad MCP client compatibility: they contain no `oneOf`, `anyOf`, `allOf`, `$ref`, or `$defs` constructs.
-Each action-scoped payload is advertised as one object whose discriminator (`action`, `kind`) is an `enum` of the accepted values, and requirements that only apply to some values are spelled out in the schema description under `Conditional requirements:`.
+Each action-scoped payload is advertised as one object whose discriminator (`action`, `kind`) is an `enum` of the accepted values, requirements that only apply to some values are spelled out in the schema description under `Conditional requirements:`, and a payload whose accepted fields differ per value lists them under `Accepted fields depend on <discriminator>:`.
 Requests are validated against the typed request models rather than by re-validating the published schema, so the schema stays a descriptive client contract while the models remain authoritative.
 High-complexity tools also publish request `examples` inside their `inputSchema`.
 
