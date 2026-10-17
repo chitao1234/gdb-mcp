@@ -12,6 +12,7 @@ from ..domain import (
     SessionMessage,
     SessionStartInfo,
     SessionSummary,
+    payload_to_mapping,
 )
 from .factory import create_default_session_service
 from .locking import session_workflow_context
@@ -103,6 +104,27 @@ class SessionRegistry:
         with self._lock:
             return self._sessions.get(session_id)
 
+    def _unknown_session_error(self, session_id: int) -> OperationError:
+        """Report an unknown ID together with the sessions that do exist.
+
+        Session IDs restart when the server process does, so a caller can hold an
+        ID from an earlier instance. Name the live sessions so it recovers in one
+        round trip instead of retrying blind.
+        """
+
+        with self._lock:
+            live = sorted(self._sessions)
+
+        listed = ", ".join(str(value) for value in live) if live else "none"
+        return OperationError(
+            message=(
+                f"Invalid session_id: {session_id}. Live sessions: {listed}. "
+                "Use gdb_session_start to create a new session."
+            ),
+            code="invalid_session",
+            details={"live_session_ids": payload_to_mapping(live)},
+        )
+
     def resolve_session(self, session_id: int) -> SessionService | OperationError:
         """Resolve a session for one MCP call, rejecting sessions that are closing."""
 
@@ -119,10 +141,7 @@ class SessionRegistry:
             session = self._sessions.get(session_id)
 
         if session is None:
-            return OperationError(
-                message=f"Invalid session_id: {session_id}. Use gdb_session_start to create a new session.",
-                code="invalid_session",
-            )
+            return self._unknown_session_error(session_id)
 
         return session
 
@@ -191,10 +210,7 @@ class SessionRegistry:
                 self._closing_sessions.add(session_id)
 
         if session is None:
-            return OperationError(
-                message=f"Invalid session_id: {session_id}. Use gdb_session_start to create a new session.",
-                code="invalid_session",
-            )
+            return self._unknown_session_error(session_id)
 
         if session.controller is None:
             if session.is_running:

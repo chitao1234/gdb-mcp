@@ -185,6 +185,29 @@ class TestSessionRegistry:
         assert "Invalid session_id: 404" in result.message
         assert result.code == "invalid_session"
 
+    def test_unknown_session_error_lists_the_live_sessions(self):
+        """The error should name the sessions a caller can switch to."""
+
+        session = _session_double()
+        manager = SessionRegistry(session_factory=lambda: session)
+        first = _publish_session(manager, session)
+        second = _publish_session(manager, session)
+
+        result = manager.resolve_session(404)
+
+        assert isinstance(result, OperationError)
+        assert f"Live sessions: {first}, {second}" in result.message
+        assert result.details["live_session_ids"] == [first, second]
+
+    def test_unknown_session_error_says_when_nothing_is_live(self):
+        manager = SessionRegistry(session_factory=lambda: _session_double())
+
+        result = manager.resolve_session(404)
+
+        assert isinstance(result, OperationError)
+        assert "Live sessions: none" in result.message
+        assert result.details["live_session_ids"] == []
+
     def test_list_sessions_returns_structured_summaries(self):
         """Session inventory should expose metadata useful for multi-session clients."""
 
