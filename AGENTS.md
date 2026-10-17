@@ -1,67 +1,63 @@
 # AGENTS Guide
 
-This file defines repository-specific guidance for agents and contributors working in this project.
+Applies to the whole repository; a deeper `AGENTS.md` overrides it for its subtree.
 
-## Scope
+## What This Is
 
-- Applies to the repository root and all subdirectories.
-- If a deeper `AGENTS.md` exists in a subdirectory, the deeper file overrides this one for that subtree.
+`gdb-mcp-server` exposes 18 MCP tools over GDB/MI. `gdb-mcp-client` is a CLI for
+the same tools and can keep one server per project running in the background.
 
-## Project Layout
+## Layout
 
-- Python package code: `src/gdb_mcp/`
-- MCP tool schemas and registration: `src/gdb_mcp/mcp/schemas.py`
-- MCP tool handlers: `src/gdb_mcp/mcp/handlers.py`
-- Session and GDB/MI orchestration: `src/gdb_mcp/session/`
-- Domain models: `src/gdb_mcp/domain/`
-- Transport layers: `src/gdb_mcp/transport/`
-- Test suites: `tests/`
-- API and usage docs: `README.md`, `TOOLS.md`, `examples/README.md`, `examples/USAGE_GUIDE.md`
-- Skill definitions and playbooks: `skills/`, especially `skills/debug-with-gdb-mcp/` (MCP tools) and `skills/gdb-mcp-cli/` (client command line)
+- `src/gdb_mcp/contracts.py` — tool names, action literals, shared enums.
+- `src/gdb_mcp/mcp/` — `schemas/` request models and published schemas,
+  `handlers/` dispatch and handlers (`TOOL_SPECS` is the wiring), `serializer.py`
+  response envelope, `schema_normalizer.py` schema flattening.
+- `src/gdb_mcp/session/` — `registry.py` session ids and lifecycle, `service.py`
+  facade over collaborators that share one `SessionRuntime`.
+- `src/gdb_mcp/transport/` — the GDB/MI client and externally owned streams.
+- `src/gdb_mcp/client/` — `cli.py`, per-family `specs/`, `runtime.py` transport,
+  `daemon.py` per-project background server.
+- `tests/` mirrors the packages (`integration/` needs a real `gdb`);
+  `skills/` and `examples/` hold agent-facing material.
+- Docs: `README.md` is the overview, `TOOLS.md` the per-tool contract.
 
-## Development Workflow
+## Rules
 
-- Keep changes focused and minimal per task.
-- After each completed logical unit of work, create a commit with a clear message.
-- Do not revert unrelated local changes you did not make.
-- Prefer non-interactive git commands.
+- Dispatch owns normalization, validation, session resolution, workflow locking,
+  failure annotation, and serialization. Handlers only call a service and return
+  `OperationSuccess` / `OperationError`.
+- Never duplicate a tool name or action literal; import it from `contracts.py`.
+  `tests/mcp/test_contracts.py` asserts the registries agree.
+- Published schemas are combinator-free by policy: no `oneOf`, `anyOf`, `$ref`,
+  `$defs`, or `discriminator`. Flattening must preserve semantics, so per-variant
+  requirements become `Conditional requirements:` text and per-discriminator
+  fields become `Accepted fields depend on ...:` notes.
+- Every result carries the same envelope both as `structuredContent` and as text
+  in `content[0].text`, with `isError` taken from the result type.
+- Errors keep `status`, `code`, `message`; validation errors add
+  `details.field_errors` and list every failure instead of the first one. The
+  code list lives in `TOOLS.md`.
+- Session ids are per process and restart at 1; `invalid_session` errors list the
+  live ids.
+- Python 3.10 floor, fully annotated code (mypy `disallow_untyped_defs`).
 
-## Validation Before Commit
+## Before Commit
 
-Black is the canonical formatter for this project (configuration in `pyproject.toml`, line length 100); run `black src tests` to fix style before committing.
+```bash
+.venv/bin/black --check src tests
+.venv/bin/ruff check src tests
+.venv/bin/mypy src
+.venv/bin/pytest -q     # includes tests/integration/, which needs gdb and g++
+git diff --check
+```
 
-Run these checks for code changes (and run relevant subsets for docs-only changes):
+Commit one logical change at a time. For small edits run the narrowest relevant
+tests and say what you skipped. Do not revert unrelated local changes.
 
-- `black --check src tests` or `uv run black --check src tests`
-- `ruff check src tests` or `uv run ruff check src tests`
-- `mypy src` or `uv run mypy src`
-- `pytest -q` or `uv run pytest -q`
-- `git diff --check`
+## Docs
 
-If a full run is too expensive for the change size, run the narrowest relevant tests and state what was not run.
-
-## MCP Tool Change Checklist
-
-When adding or changing MCP tools, keep schemas, runtime behavior, tests, and docs in sync in the same change set:
-
-1. Update tool input/output schemas in `src/gdb_mcp/mcp/schemas.py`.
-2. Update handler implementation in `src/gdb_mcp/mcp/handlers.py`.
-3. Update session/domain code under `src/gdb_mcp/session/` or `src/gdb_mcp/domain/` if behavior requires it.
-4. Add or update tests in `tests/mcp/`, `tests/session/`, and `tests/integration/` as needed.
-5. Update user-facing docs in `TOOLS.md` and any relevant overview text in `README.md`.
-6. Update workflow-facing docs and skills when examples or debugging playbooks change: `examples/USAGE_GUIDE.md`, `examples/README.md`, `skills/debug-with-gdb-mcp/`, and `skills/gdb-mcp-cli/`.
-
-## Coding Expectations
-
-- Prefer explicit, narrow typing over broad `Any` where practical.
-- Preserve backward compatibility unless the change explicitly documents a breaking behavior.
-- Return structured, machine-readable outputs for tool APIs whenever feasible.
-- Keep error messages actionable and deterministic for automation clients.
-
-## Documentation Expectations
-
-- Keep examples runnable against current APIs.
-- When behavior changes, document exact parameter and response shapes.
-- Use relative repository paths in documentation and internal guidance.
-- Keep public examples and skill docs on v2 tool names; reserve historical names for dedicated migration sections only.
-- When updating skill docs under `skills/`, keep them aligned with `README.md`, `TOOLS.md`, and `examples/USAGE_GUIDE.md`; the CLI skill must match `gdb-mcp-client --help`.
+Behavior changes update `TOOLS.md` (the contract) and `README.md` (the overview),
+plus `examples/` and `skills/` when a workflow changes. Skills stay
+interface-only: which tool or command to call and how failures look, not
+implementation detail. Use v2 tool names in every example and skill.
