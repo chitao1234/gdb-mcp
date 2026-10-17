@@ -84,6 +84,46 @@ class _EndpointConnection:
     close: Callable[[], None]
 
 
+class _CrLfNormalizingStream:
+    """Binary stream wrapper that hides tty carriage returns from MI output.
+
+    A tty left in cooked mode (for example ``socat ... ,pty`` without
+    ``raw,echo=0``) translates every ``\\n`` gdb writes into ``\\r\\n``. pygdbmi
+    splits records on ``\\n`` only, and its MI result-record pattern ends in
+    ``$`` with a ``\\S+?`` result class, so a trailing ``\\r`` makes the whole
+    line match no record pattern at all: ``^done\\r`` silently degrades into a
+    generic ``output`` record instead of a ``result`` record, and commands never
+    appear to complete.
+
+    GDB escapes control characters inside MI payloads, so any raw ``\\r`` byte
+    on the stream is a line terminator contributed by a tty and can be dropped.
+    """
+
+    def __init__(self, inner: BinaryIO) -> None:
+        self._inner = inner
+
+    def read(self, size: int = -1) -> bytes | None:
+        data = self._inner.read(size)
+        if data and b"\r" in data:
+            return data.replace(b"\r", b"")
+        return data
+
+    def write(self, data: bytes) -> int | None:
+        return self._inner.write(data)
+
+    def flush(self) -> None:
+        self._inner.flush()
+
+    def fileno(self) -> int:
+        return self._inner.fileno()
+
+    def close(self) -> None:
+        self._inner.close()
+
+    def isatty(self) -> bool:
+        return False
+
+
 def _open_tcp(endpoint: MiEndpoint, timeout_sec: float) -> _EndpointConnection:
     assert endpoint.host is not None and endpoint.port is not None
     sock = socket.create_connection((endpoint.host, endpoint.port), timeout=timeout_sec)
@@ -164,9 +204,10 @@ class ExternalMiController:
                 f"Could not reach MI endpoint {self.endpoint.display}: {exc}"
             ) from exc
 
+        self._stream: BinaryIO = cast(BinaryIO, _CrLfNormalizingStream(self._connection.stream))
         self._io_manager = IoManager(
-            self._connection.stream,
-            self._connection.stream,
+            self._stream,
+            self._stream,
             None,
             time_to_check_for_additional_output_sec,
         )
