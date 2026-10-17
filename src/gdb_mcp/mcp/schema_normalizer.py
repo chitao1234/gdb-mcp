@@ -9,7 +9,12 @@ flattens those constructs into plain object and scalar schemas:
 * object unions merge into one object whose discriminator property becomes an
   ``enum``; requirements that only hold for some variants are appended to the
   description as ``Conditional requirements: ...`` using dotted paths;
-* alternative titles and descriptions are joined rather than dropped;
+* an object property whose accepted fields differ per discriminator value lists
+  that set in its own description, so a field that only some variants accept is
+  distinguishable from a universal one;
+* alternative titles and descriptions are joined rather than dropped, except a
+  description contributed only by an alternative that accepts no fields, which
+  cannot describe the merged object;
 * ``null`` alternatives are dropped, leaving fields optional via ``required``;
 * heterogeneous unions keep their primary (first declared) shape, and the
   request-model descriptions already document shorthand string alternatives;
@@ -24,7 +29,7 @@ Pydantic request models, so request semantics remain fully enforced.
 from __future__ import annotations
 
 import functools
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from types import MappingProxyType
 from typing import cast
 
@@ -191,6 +196,7 @@ def _normalize_union(node: Schema, defs: dict[str, object], stack: tuple[str, ..
         if note:
             description = merged.get("description")
             merged["description"] = f"{description} {note}" if description else note
+        _document_accepted_fields(merged, variants, node.get("discriminator"))
 
     return merged
 
@@ -393,6 +399,79 @@ def _discriminator_scope(property_name: str, values: list[str]) -> str:
         return f"{property_name}='{values[0]}' or {property_name}='{values[1]}'"
     rendered = ", ".join(f"'{value}'" for value in values)
     return f"{property_name} in [{rendered}]"
+
+
+def _document_accepted_fields(
+    merged: Schema, variants: list[Schema], discriminator: object
+) -> None:
+    """Describe which fields each discriminator value accepts for one property.
+
+    Merging alternatives into a single object makes every alternative's fields
+    look equally available, so an optional field that only belongs to some
+    alternatives becomes indistinguishable from a universal one. Spell out the
+    accepted set per discriminator value instead, and let only alternatives that
+    actually contribute fields describe the merged object.
+    """
+
+    if not isinstance(discriminator, dict):
+        return
+    property_name = discriminator.get("propertyName")
+    if not isinstance(property_name, str):
+        return
+    properties = merged.get("properties")
+    if not isinstance(properties, dict):
+        return
+
+    for name, property_schema in properties.items():
+        if name == property_name or not isinstance(property_schema, dict):
+            continue
+
+        accepted: dict[tuple[str, ...], list[str]] = {}
+        descriptions: list[object] = []
+        for variant in variants:
+            variant_properties = variant.get("properties")
+            if not isinstance(variant_properties, dict):
+                continue
+            fields = _accepted_field_names(variant_properties.get(name))
+            if fields is None:
+                continue
+            values = _discriminator_values(variant_properties.get(property_name))
+            accepted.setdefault(fields, []).extend(values)
+            candidate = variant_properties.get(name)
+            if fields and isinstance(candidate, dict):
+                descriptions.append(candidate.get("description"))
+
+        if len(accepted) < 2:
+            continue
+
+        clauses = [
+            f"{_discriminator_scope(property_name, values)} accepts "
+            f"{', '.join(fields) if fields else 'no fields'}"
+            for fields, values in accepted.items()
+        ]
+        note = f"Accepted fields depend on {property_name}: " + "; ".join(clauses) + "."
+        base = _join_texts(descriptions)
+        property_schema["description"] = f"{base} {note}" if base else note
+
+
+def _accepted_field_names(schema: object) -> tuple[str, ...] | None:
+    """Return the declared property names of a fixed-field object schema."""
+
+    if not isinstance(schema, dict) or schema.get("type") != "object":
+        return None
+    if isinstance(schema.get("additionalProperties"), dict):
+        return None
+    properties = schema.get("properties")
+    return tuple(properties) if isinstance(properties, dict) else ()
+
+
+def _join_texts(texts: Iterable[object]) -> object:
+    """Join distinct non-empty texts the same way alternative labels are joined."""
+
+    joined: object = None
+    for text in texts:
+        joined = _merge_text(joined, text)
+    return joined
 
 
 def _collect_ref_names(node: object) -> set[str]:

@@ -124,6 +124,45 @@ def test_conditional_requirements_stay_documented() -> None:
     assert "Conditional requirements" not in schemas["gdb_execution_manage"]["description"]
 
 
+def test_per_action_accepted_fields_are_documented() -> None:
+    schemas = _tool_schemas()
+
+    execution = schemas["gdb_execution_manage"]["properties"]["execution"]
+    assert "action='run' accepts" in execution["description"]
+    assert "action='interrupt' accepts no fields" in execution["description"]
+
+    query = schemas["gdb_inspect_query"]["properties"]["query"]
+    assert "action='evaluate' accepts context, expression" in query["description"]
+    assert "action='registers' accepts" in query["description"]
+    assert "value_format" in query["description"]
+
+
+def test_alternatives_without_fields_do_not_describe_the_merged_object() -> None:
+    schemas = _tool_schemas()
+
+    execution = schemas["gdb_execution_manage"]["properties"]["execution"]
+    assert "Empty object payload" not in execution["description"]
+
+    context_query = schemas["gdb_context_query"]["properties"]["query"]
+    assert "Empty object payload" not in context_query["description"]
+    assert "action='threads' accepts no fields" in context_query["description"]
+
+
+def test_uniform_field_sets_need_no_per_action_note() -> None:
+    schemas = _tool_schemas()
+
+    # Every action takes an empty query, so nothing is action-dependent here.
+    description = schemas["gdb_session_query"]["properties"]["query"].get("description", "")
+    assert "Accepted fields depend on" not in description
+
+
+def test_nested_alternative_notes_survive_the_per_action_note() -> None:
+    breakpoint = _tool_schemas()["gdb_breakpoint_manage"]["properties"]["breakpoint"]
+
+    assert "kind='code' requires location" in breakpoint["description"]
+    assert "Accepted fields depend on action:" in breakpoint["description"]
+
+
 def test_nested_location_union_merges_every_selector_kind() -> None:
     query = _tool_schemas()["gdb_inspect_query"]["properties"]["query"]
     location = query["properties"]["location"]
