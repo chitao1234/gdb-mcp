@@ -188,7 +188,7 @@ def test_stop_daemon_reports_a_refusal_and_keeps_the_cookie(monkeypatch, tmp_pat
     daemon._write_cookie(paths, {"pid": 1, "url": "http://127.0.0.1:9/mcp", "token": "tok"})
     response = _FakeResponse(409, {"message": "active sessions are still attached"})
 
-    with patch.object(daemon.httpx, "AsyncClient", return_value=_FakeClient(response)):
+    with patch.object(daemon.httpx2, "AsyncClient", return_value=_FakeClient(response)):
         result = asyncio.run(stop_daemon())
 
     assert not result.stopped
@@ -209,7 +209,7 @@ def test_stop_daemon_waits_for_the_process_and_clears_the_cookie(
         )
 
         with patch.object(
-            daemon.httpx, "AsyncClient", return_value=_FakeClient(_FakeResponse(200))
+            daemon.httpx2, "AsyncClient", return_value=_FakeClient(_FakeResponse(200))
         ):
             result = asyncio.run(stop_daemon())
     finally:

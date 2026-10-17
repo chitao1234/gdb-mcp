@@ -13,12 +13,18 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import uvicorn
-from mcp.server import Server
+from mcp.server import Server, ServerRequestContext
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
-from mcp.types import CallToolResult, Tool
+from mcp.types import (
+    CallToolRequestParams,
+    CallToolResult,
+    ListToolsResult,
+    PaginatedRequestParams,
+    Tool,
+)
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse
@@ -37,23 +43,32 @@ def create_mcp_app(
     *,
     list_tools_handler: Callable[[], Awaitable[list[Tool]]],
     call_tool_handler: Callable[[str, object], Awaitable[CallToolResult]],
-) -> Server:
-    """Create an MCP app and register the provided handlers."""
+) -> Server[Any]:
+    """Create an MCP app and register the provided handlers.
 
-    app = Server("gdb-mcp-server")
+    The low-level server validates only the envelope, never a tool's
+    ``input_schema``: the typed request models stay the single source of truth,
+    while the published flattened schema is a client-facing summary that drops
+    union alternatives.
+    """
 
-    @app.list_tools()
-    async def list_tools() -> list[Tool]:
-        return await list_tools_handler()
+    async def on_list_tools(
+        context: ServerRequestContext[Any, Any],
+        params: PaginatedRequestParams | None,
+    ) -> ListToolsResult:
+        return ListToolsResult(tools=await list_tools_handler())
 
-    # The SDK's own inputSchema gate is disabled on purpose: the typed request
-    # models are the single source of truth, while the published flattened
-    # schema is a client-facing summary that drops union alternatives.
-    @app.call_tool(validate_input=False)
-    async def call_tool(name: str, arguments: object) -> CallToolResult:
-        return await call_tool_handler(name, arguments)
+    async def on_call_tool(
+        context: ServerRequestContext[Any, Any],
+        params: CallToolRequestParams,
+    ) -> CallToolResult:
+        return await call_tool_handler(params.name, params.arguments)
 
-    return app
+    return Server(
+        "gdb-mcp-server",
+        on_list_tools=on_list_tools,
+        on_call_tool=on_call_tool,
+    )
 
 
 @dataclass
@@ -126,7 +141,7 @@ async def _idle_watchdog(
 
 
 def create_streamable_http_app(
-    app: Server,
+    app: Server[Any],
     *,
     path: str,
     on_shutdown: Callable[[], None] | None = None,
@@ -232,7 +247,7 @@ def _daemon_stdin_lines() -> "AsyncFile[str] | None":
 
 
 async def run_stdio_app(
-    app: Server,
+    app: Server[Any],
     *,
     startup_message: str | None = None,
     on_shutdown: Callable[[], None] | None = None,
@@ -255,7 +270,7 @@ async def run_stdio_app(
 
 
 async def run_streamable_http_app(
-    app: Server,
+    app: Server[Any],
     *,
     host: str,
     port: int,

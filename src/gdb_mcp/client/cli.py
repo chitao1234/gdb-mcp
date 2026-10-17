@@ -11,7 +11,7 @@ import sys
 from collections.abc import Sequence
 from typing import Protocol, TextIO, runtime_checkable
 
-import httpx
+import httpx2
 from pydantic import ValidationError
 
 from gdb_mcp import __version__
@@ -479,7 +479,7 @@ def _session_id_from_payload(payload: dict[str, object]) -> int | None:
 async def _ensure_attach_session(
     args: argparse.Namespace,
     resolved: ResolvedServer,
-    http_client: httpx.AsyncClient | None,
+    http_client: httpx2.AsyncClient | None,
 ) -> None:
     """Give `attach` a session, starting a fresh one when none is recorded.
 
@@ -603,7 +603,7 @@ async def main(
     *,
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
-    http_client: httpx.AsyncClient | None = None,
+    http_client: httpx2.AsyncClient | None = None,
 ) -> int:
     """Run one CLI invocation and return its process exit code."""
 

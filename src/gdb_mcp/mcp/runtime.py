@@ -7,6 +7,7 @@ import logging
 from dataclasses import dataclass, field
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from mcp.server import Server
 from mcp.types import CallToolResult, Tool
@@ -24,7 +25,7 @@ class ServerRuntime:
     session_manager_provider: Callable[[], SessionRegistry]
     logger: logging.Logger
     startup_message: str = "GDB MCP Server starting..."
-    app: Server = field(init=False)
+    app: Server[Any] = field(init=False)
 
     def __post_init__(self) -> None:
         self.app = create_mcp_app(

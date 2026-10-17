@@ -47,14 +47,14 @@ def test_examples_validate_against_request_models(tool_name: str) -> None:
 
 @pytest.mark.parametrize("tool_name", sorted(TOOL_EXAMPLES))
 def test_examples_validate_against_published_schemas(tool_name: str) -> None:
-    schema = {tool.name: tool.inputSchema for tool in build_tool_definitions()}[tool_name]
+    schema = {tool.name: tool.input_schema for tool in build_tool_definitions()}[tool_name]
 
     for example in TOOL_EXAMPLES[tool_name]:
         jsonschema.validate(instance=example, schema=schema)
 
 
 def test_examples_are_published_in_tool_schemas() -> None:
-    schemas = {tool.name: tool.inputSchema for tool in build_tool_definitions()}
+    schemas = {tool.name: tool.input_schema for tool in build_tool_definitions()}
 
     for tool_name, examples in TOOL_EXAMPLES.items():
         assert schemas[tool_name]["examples"] == [dict(example) for example in examples]

@@ -7,7 +7,7 @@ import json
 from io import StringIO
 from pathlib import Path
 
-import httpx
+import httpx2
 import pytest
 
 from gdb_mcp.client.cli import main
@@ -26,8 +26,8 @@ def test_cli_calls_real_streamable_http_app(integration_runtime):
 
     async def exercise() -> tuple[int, dict[str, object]]:
         async with app.router.lifespan_context(app):
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=app),
+            async with httpx2.AsyncClient(
+                transport=httpx2.ASGITransport(app=app),
                 base_url="http://testserver",
             ) as http_client:
                 exit_code = await main(
@@ -71,8 +71,8 @@ def test_cli_calls_real_streamable_http_workflow_batch(
 
     async def exercise() -> tuple[int, dict[str, object]]:
         async with app.router.lifespan_context(app):
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=app),
+            async with httpx2.AsyncClient(
+                transport=httpx2.ASGITransport(app=app),
                 base_url="http://testserver",
             ) as http_client:
                 exit_code = await main(
@@ -124,8 +124,8 @@ def test_cli_calls_real_streamable_http_workflow_batch_with_nested_step_args(
 
     async def exercise() -> tuple[int, dict[str, object]]:
         async with app.router.lifespan_context(app):
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=app),
+            async with httpx2.AsyncClient(
+                transport=httpx2.ASGITransport(app=app),
                 base_url="http://testserver",
             ) as http_client:
                 exit_code = await main(
@@ -203,8 +203,8 @@ def test_cli_calls_real_streamable_http_workflow_batch_with_single_list_step_arg
 
     async def exercise() -> tuple[int, dict[str, object]]:
         async with app.router.lifespan_context(app):
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=app),
+            async with httpx2.AsyncClient(
+                transport=httpx2.ASGITransport(app=app),
                 base_url="http://testserver",
             ) as http_client:
                 exit_code = await main(
@@ -257,8 +257,8 @@ def test_cli_calls_real_streamable_http_run_until_failure(
 
     async def exercise() -> tuple[int, dict[str, object]]:
         async with app.router.lifespan_context(app):
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=app),
+            async with httpx2.AsyncClient(
+                transport=httpx2.ASGITransport(app=app),
                 base_url="http://testserver",
             ) as http_client:
                 exit_code = await main(
@@ -317,8 +317,8 @@ def test_cli_calls_real_streamable_http_run_until_failure_with_setup_steps(
 
     async def exercise() -> tuple[int, dict[str, object]]:
         async with app.router.lifespan_context(app):
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=app),
+            async with httpx2.AsyncClient(
+                transport=httpx2.ASGITransport(app=app),
                 base_url="http://testserver",
             ) as http_client:
                 exit_code = await main(

@@ -5,8 +5,8 @@ description = "MCP server for interacting with GDB debugging sessions"
 authors = [{name = "Andrew Stelter"}]
 requires-python = ">=3.10"
 dependencies = [
-    "httpx>=0.27.1",
-    "mcp>=1.24,<2",
+    "httpx2>=2.13",
+    "mcp>=2.3,<3",
     "pygdbmi>=0.11.0.0",
     "starlette>=0.27",
     "uvicorn>=0.31.1",
@@ -22,8 +22,10 @@ dev = [
     "pytest-xdist>=3.0.0",
     "black>=23.0.0",
     "mypy>=1.0.0",
-    "mcp[cli]>=1.24,<2",
+    "mcp[cli]>=2.3,<3",
     "ruff>=0.15.8",
+    # starlette's TestClient and the HTTP integration tests still use httpx.
+    "httpx>=0.27.1",
     # The runtime works on starlette 0.27, but its TestClient needs 0.36+ with
     # httpx 0.27 (older releases still use the removed httpx._types.URLTypes).
     "starlette>=0.36",

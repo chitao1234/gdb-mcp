@@ -6,9 +6,8 @@ import json
 import logging
 import os
 from dataclasses import dataclass
-from datetime import timedelta
 
-import httpx
+import httpx2
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from mcp.types import CallToolResult, TextContent
@@ -22,7 +21,14 @@ logger = logging.getLogger(__name__)
 # stream down mid-call and drops the response, leaving the client waiting
 # forever. Match the MCP defaults (30s request timeout, 300s SSE read timeout) so
 # tool calls that take longer than 5 seconds can still complete.
-_CLIENT_TIMEOUT = httpx.Timeout(30.0, read=300.0)
+_CLIENT_TIMEOUT = httpx2.Timeout(30.0, read=300.0)
+
+# The SDK rejects a single SSE event above 1 MiB. A tool result carries its
+# payload twice (serialized text plus structuredContent), so the effective limit
+# would be a ~512 KiB tool result - below what memory, disassembly, or verbose
+# command output can produce. Keep the pre-2.x capability with a bound that is
+# still far above any realistic result.
+_MAX_SSE_EVENT_BYTES = 64 * 1024 * 1024
 
 # Last-resort bound on waiting for one tool response. If a transport drops the
 # response anyway (an SSE stream torn down with no id to resume from), the MCP
@@ -34,7 +40,7 @@ _SESSION_READ_TIMEOUT_ENV = "GDB_MCP_CLIENT_READ_TIMEOUT_SEC"
 _DEFAULT_SESSION_READ_TIMEOUT_SEC = 1800.0
 
 
-def _session_read_timeout() -> timedelta:
+def _session_read_timeout() -> float:
     """Resolve the per-tool-call read timeout for one CLI invocation."""
 
     raw = os.environ.get(_SESSION_READ_TIMEOUT_ENV)
@@ -50,14 +56,14 @@ def _session_read_timeout() -> timedelta:
             )
         else:
             if seconds > 0:
-                return timedelta(seconds=seconds)
+                return seconds
             logger.warning(
                 "Ignoring non-positive %s=%r; using %ss",
                 _SESSION_READ_TIMEOUT_ENV,
                 raw,
                 _DEFAULT_SESSION_READ_TIMEOUT_SEC,
             )
-    return timedelta(seconds=_DEFAULT_SESSION_READ_TIMEOUT_SEC)
+    return _DEFAULT_SESSION_READ_TIMEOUT_SEC
 
 
 @dataclass(frozen=True)
@@ -76,8 +82,8 @@ class ClientToolResponse:
 def _parse_tool_payload(result: CallToolResult) -> dict[str, object]:
     """Extract the JSON object payload from one MCP tool result."""
 
-    if isinstance(result.structuredContent, dict):
-        return dict(result.structuredContent)
+    if isinstance(result.structured_content, dict):
+        return dict(result.structured_content)
 
     if len(result.content) != 1 or not isinstance(result.content[0], TextContent):
         raise ValueError("Expected exactly one text content item from MCP tool result")
@@ -98,7 +104,7 @@ async def invoke_tool(
     tool_name: str,
     arguments: dict[str, object],
     *,
-    http_client: httpx.AsyncClient | None = None,
+    http_client: httpx2.AsyncClient | None = None,
     auth_token: str | None = None,
 ) -> ClientToolResponse:
     """Connect to one MCP HTTP endpoint, invoke a tool, and return its parsed payload."""
@@ -106,15 +112,18 @@ async def invoke_tool(
     owns_client = http_client is None and auth_token is not None
     client = http_client
     if owns_client:
-        client = httpx.AsyncClient(
+        client = httpx2.AsyncClient(
             headers={"Authorization": f"Bearer {auth_token}"},
             timeout=_CLIENT_TIMEOUT,
         )
     try:
-        async with streamable_http_client(server_url, http_client=client) as (
+        async with streamable_http_client(
+            server_url,
+            http_client=client,
+            max_sse_event_size=_MAX_SSE_EVENT_BYTES,
+        ) as (
             read_stream,
             write_stream,
-            _get_session_id,
         ):
             async with ClientSession(
                 read_stream,
@@ -130,5 +139,5 @@ async def invoke_tool(
     payload = _parse_tool_payload(result)
     return ClientToolResponse(
         payload=payload,
-        is_error=result.isError,
+        is_error=result.is_error,
     )

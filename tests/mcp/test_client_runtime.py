@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from mcp.types import CallToolResult, TextContent
 
-from gdb_mcp.client.runtime import _session_read_timeout, invoke_tool
+from gdb_mcp.client.runtime import (
+    _MAX_SSE_EVENT_BYTES,
+    _session_read_timeout,
+    invoke_tool,
+)
 
 
 class _AsyncContextManager:
@@ -33,9 +36,7 @@ class TestClientRuntime:
     ):
         read_stream = Mock()
         write_stream = Mock()
-        mock_streamable_http_client.return_value = _AsyncContextManager(
-            (read_stream, write_stream, lambda: "session-1")
-        )
+        mock_streamable_http_client.return_value = _AsyncContextManager((read_stream, write_stream))
 
         session = AsyncMock()
         session.initialize = AsyncMock(return_value=Mock())
@@ -62,11 +63,12 @@ class TestClientRuntime:
         mock_streamable_http_client.assert_called_once_with(
             "http://127.0.0.1:8000/mcp",
             http_client=None,
+            max_sse_event_size=_MAX_SSE_EVENT_BYTES,
         )
         mock_client_session_cls.assert_called_once_with(
             read_stream,
             write_stream,
-            read_timeout_seconds=timedelta(seconds=1800.0),
+            read_timeout_seconds=1800.0,
         )
         session.initialize.assert_awaited_once_with()
         session.call_tool.assert_awaited_once_with("gdb_session_start", {"program": "/bin/true"})
@@ -83,9 +85,7 @@ class TestClientRuntime:
     ):
         read_stream = Mock()
         write_stream = Mock()
-        mock_streamable_http_client.return_value = _AsyncContextManager(
-            (read_stream, write_stream, lambda: "session-1")
-        )
+        mock_streamable_http_client.return_value = _AsyncContextManager((read_stream, write_stream))
 
         session = AsyncMock()
         session.initialize = AsyncMock(return_value=Mock())
@@ -97,7 +97,7 @@ class TestClientRuntime:
                         text='{"status":"error","code":"gdb_error","message":"boom"}',
                     )
                 ],
-                isError=True,
+                is_error=True,
             )
         )
         mock_client_session_cls.return_value = _AsyncContextManager(session)
@@ -124,9 +124,7 @@ class TestClientRuntime:
         read_stream = Mock()
         write_stream = Mock()
         http_client = Mock()
-        mock_streamable_http_client.return_value = _AsyncContextManager(
-            (read_stream, write_stream, lambda: "session-1")
-        )
+        mock_streamable_http_client.return_value = _AsyncContextManager((read_stream, write_stream))
 
         session = AsyncMock()
         session.initialize = AsyncMock(return_value=Mock())
@@ -149,9 +147,10 @@ class TestClientRuntime:
         mock_streamable_http_client.assert_called_once_with(
             "http://127.0.0.1:8000/mcp",
             http_client=http_client,
+            max_sse_event_size=_MAX_SSE_EVENT_BYTES,
         )
 
-    @patch("gdb_mcp.client.runtime.httpx.AsyncClient")
+    @patch("gdb_mcp.client.runtime.httpx2.AsyncClient")
     @patch("gdb_mcp.client.runtime.ClientSession")
     @patch("gdb_mcp.client.runtime.streamable_http_client")
     def test_owned_http_client_uses_mcp_sse_timeouts(
@@ -169,9 +168,7 @@ class TestClientRuntime:
 
         read_stream = Mock()
         write_stream = Mock()
-        mock_streamable_http_client.return_value = _AsyncContextManager(
-            (read_stream, write_stream, lambda: "session-1")
-        )
+        mock_streamable_http_client.return_value = _AsyncContextManager((read_stream, write_stream))
 
         session = AsyncMock()
         session.initialize = AsyncMock(return_value=Mock())
@@ -201,6 +198,7 @@ class TestClientRuntime:
         mock_streamable_http_client.assert_called_once_with(
             "http://127.0.0.1:8000/mcp",
             http_client=owned_client,
+            max_sse_event_size=_MAX_SSE_EVENT_BYTES,
         )
 
     @patch("gdb_mcp.client.runtime.ClientSession")
@@ -214,16 +212,14 @@ class TestClientRuntime:
 
         read_stream = Mock()
         write_stream = Mock()
-        mock_streamable_http_client.return_value = _AsyncContextManager(
-            (read_stream, write_stream, lambda: "session-1")
-        )
+        mock_streamable_http_client.return_value = _AsyncContextManager((read_stream, write_stream))
 
         session = AsyncMock()
         session.initialize = AsyncMock(return_value=Mock())
         session.call_tool = AsyncMock(
             return_value=CallToolResult(
                 content=[],
-                structuredContent={"status": "success", "value": 42},
+                structured_content={"status": "success", "value": 42},
             )
         )
         mock_client_session_cls.return_value = _AsyncContextManager(session)
@@ -248,9 +244,7 @@ class TestClientRuntime:
     ):
         read_stream = Mock()
         write_stream = Mock()
-        mock_streamable_http_client.return_value = _AsyncContextManager(
-            (read_stream, write_stream, lambda: "session-1")
-        )
+        mock_streamable_http_client.return_value = _AsyncContextManager((read_stream, write_stream))
 
         session = AsyncMock()
         session.initialize = AsyncMock(return_value=Mock())
@@ -279,9 +273,7 @@ class TestClientRuntime:
     ):
         read_stream = Mock()
         write_stream = Mock()
-        mock_streamable_http_client.return_value = _AsyncContextManager(
-            (read_stream, write_stream, lambda: "session-1")
-        )
+        mock_streamable_http_client.return_value = _AsyncContextManager((read_stream, write_stream))
 
         session = AsyncMock()
         session.initialize = AsyncMock(return_value=Mock())
@@ -306,15 +298,15 @@ class TestSessionReadTimeout:
     def test_defaults_to_thirty_minutes(self, monkeypatch):
         monkeypatch.delenv("GDB_MCP_CLIENT_READ_TIMEOUT_SEC", raising=False)
 
-        assert _session_read_timeout() == timedelta(seconds=1800.0)
+        assert _session_read_timeout() == 1800.0
 
     def test_env_override_is_honoured(self, monkeypatch):
         monkeypatch.setenv("GDB_MCP_CLIENT_READ_TIMEOUT_SEC", "45.5")
 
-        assert _session_read_timeout() == timedelta(seconds=45.5)
+        assert _session_read_timeout() == 45.5
 
     @pytest.mark.parametrize("value", ["", "abc", "0", "-5"])
     def test_invalid_env_falls_back_to_default(self, monkeypatch, value):
         monkeypatch.setenv("GDB_MCP_CLIENT_READ_TIMEOUT_SEC", value)
 
-        assert _session_read_timeout() == timedelta(seconds=1800.0)
+        assert _session_read_timeout() == 1800.0

@@ -20,7 +20,7 @@ _UNSUPPORTED_KEYS = ("oneOf", "anyOf", "allOf", "$ref", "$defs", "discriminator"
 
 
 def _tool_schemas() -> dict[str, dict[str, Any]]:
-    return {tool.name: tool.inputSchema for tool in build_tool_definitions()}
+    return {tool.name: tool.input_schema for tool in build_tool_definitions()}
 
 
 def _find_unsupported_keys(node: Any, path: str = "$") -> list[str]:
@@ -38,11 +38,11 @@ def _find_unsupported_keys(node: Any, path: str = "$") -> list[str]:
 
 def test_every_published_tool_schema_is_combinator_free() -> None:
     for tool in build_tool_definitions():
-        assert _find_unsupported_keys(tool.inputSchema) == [], tool.name
+        assert _find_unsupported_keys(tool.input_schema) == [], tool.name
 
 
 def test_every_published_tool_schema_is_json_serializable() -> None:
-    json.dumps([tool.inputSchema for tool in build_tool_definitions()])
+    json.dumps([tool.input_schema for tool in build_tool_definitions()])
 
 
 def test_normalization_only_affects_the_published_copy() -> None:

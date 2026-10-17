@@ -21,7 +21,7 @@ def _dispatch(name: str, arguments: object, manager: Mock) -> dict[str, Any]:
             logger=logging.getLogger("test-validation-errors"),
         )
     )
-    assert result.isError is True
+    assert result.is_error is True
     return json.loads(result.content[0].text)
 
 
@@ -151,7 +151,7 @@ class TestSuccessfulDispatch:
     """Successful calls should not be flagged as MCP errors."""
 
     def test_success_result_keeps_is_error_false(self):
-        """The dispatcher should only set isError for error envelopes."""
+        """The dispatcher should only set is_error for error envelopes."""
 
         manager = Mock()
         manager.close_session.return_value = OperationSuccess(
@@ -167,6 +167,6 @@ class TestSuccessfulDispatch:
             )
         )
 
-        assert result.isError is False
+        assert result.is_error is False
         payload = json.loads(result.content[0].text)
         assert payload["status"] == "success"

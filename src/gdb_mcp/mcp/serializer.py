@@ -30,8 +30,8 @@ def serialize_result(
     payload = result_to_payload(result)
     return CallToolResult(
         content=[TextContent(type="text", text=json.dumps(payload, indent=2))],
-        structuredContent=payload,
-        isError=isinstance(result, OperationError),
+        structured_content=payload,
+        is_error=isinstance(result, OperationError),
     )
 
 

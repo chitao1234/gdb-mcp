@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
-import httpx
+import httpx2
 
 from gdb_mcp.contracts import TOOL_SESSION_QUERY
 
@@ -440,8 +440,8 @@ async def stop_daemon(*, force: bool = False) -> StopResult:
 
     scheme, base = _split_base(url)
     headers = {"Authorization": f"Bearer {token}"} if isinstance(token, str) else {}
-    request_error: httpx.HTTPError | None = None
-    async with httpx.AsyncClient() as client:
+    request_error: httpx2.HTTPError | None = None
+    async with httpx2.AsyncClient() as client:
         try:
             response = await client.post(
                 f"{base}/shutdown",
@@ -449,7 +449,7 @@ async def stop_daemon(*, force: bool = False) -> StopResult:
                 headers=headers,
                 timeout=_STOP_TIMEOUT_SEC,
             )
-        except httpx.HTTPError as exc:
+        except httpx2.HTTPError as exc:
             response = None
             request_error = exc
 

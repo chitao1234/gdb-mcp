@@ -153,19 +153,19 @@ class TestMcpSerializer:
         }
 
     def test_serialize_result_marks_errors_as_mcp_errors(self):
-        """Error results should set the MCP isError flag."""
+        """Error results should set the MCP is_error flag."""
 
         contents = serialize_result(OperationError(message="boom"))
 
-        assert contents.isError is True
+        assert contents.is_error is True
         assert json.loads(contents.content[0].text)["status"] == "error"
 
     def test_serialize_result_marks_success_as_non_error(self):
-        """Success results should keep the MCP isError flag false."""
+        """Success results should keep the MCP is_error flag false."""
 
         contents = serialize_result(OperationSuccess(SessionMessage(message="ok")))
 
-        assert contents.isError is False
+        assert contents.is_error is False
 
     def test_serialize_result_exposes_structured_content(self):
         """Structured tool output should mirror the JSON text payload."""
@@ -177,12 +177,12 @@ class TestMcpSerializer:
             )
         )
 
-        assert contents.structuredContent == {
+        assert contents.structured_content == {
             "status": "success",
             "message": "ok",
             "warnings": ["symbols missing"],
         }
-        assert json.loads(contents.content[0].text) == contents.structuredContent
+        assert json.loads(contents.content[0].text) == contents.structured_content
 
     def test_serialize_error_exposes_structured_content(self):
         """Errors should be readable as structured output, not only as text."""
@@ -195,21 +195,21 @@ class TestMcpSerializer:
             )
         )
 
-        assert contents.isError is True
-        assert contents.structuredContent == {
+        assert contents.is_error is True
+        assert contents.structured_content == {
             "status": "error",
             "code": "no_registers",
             "message": "No registers.",
             "details": {"execution_state": "exited"},
         }
-        assert json.loads(contents.content[0].text) == contents.structuredContent
+        assert json.loads(contents.content[0].text) == contents.structured_content
 
     def test_serialize_exception_exposes_structured_content(self):
         """Unexpected exceptions should carry structured output too."""
 
         contents = serialize_exception("gdb_get_status", RuntimeError("bad"))
 
-        assert contents.structuredContent == {
+        assert contents.structured_content == {
             "status": "error",
             "code": "internal_error",
             "message": "bad",
