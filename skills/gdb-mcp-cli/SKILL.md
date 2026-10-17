@@ -118,11 +118,8 @@ socat UNIX-LISTEN:/tmp/gdbmi.sock,fork \
 gdb-mcp-client connect unix:///tmp/gdbmi.sock
 ```
 
-Always pass `raw,echo=0` on the socat `pty`. Without it the tty stays in cooked
-mode and rewrites gdb's line endings as CRLF, which corrupts MI result records
-(`^done` becomes an unparsable line) and makes the connect handshake time out
-with `Timeout waiting for GDB to initialize`. Add `fork` so the listener survives
-more than one connection.
+Keep `raw,echo=0` on the socat `pty` and add `fork`; a cooked tty rewrites gdb's
+line endings as CRLF and the connect handshake times out.
 
 **Recipe C - attach to a gdb you already have open (gdb >= 9, `new-ui`):**
 
@@ -199,7 +196,6 @@ Each of these has many flags; read `gdb-mcp-client campaign --help` before compo
 | `GDB_MCP_AUTH_TOKEN` | Bearer token used by both the client and a server started with it |
 | `GDB_MCP_STATE_DIR` | Where cookies, locks, and daemon logs live (defaults to the platform cache dir) |
 | `GDB_MCP_DAEMON_IDLE_SEC` | Idle timeout for client-spawned servers (default 900, `0` disables) |
-| `GDB_MCP_CLIENT_READ_TIMEOUT_SEC` | Per-call response timeout (default 1800; a safety net so a dropped response errors instead of hanging) |
 | `GDB_PATH` / `gdb_session_start.gdb_path` | GDB binary selection |
 
 ## Troubleshooting

@@ -156,11 +156,8 @@ socat UNIX-LISTEN:/tmp/gdbmi.sock,fork \
 { "endpoint": "unix:///tmp/gdbmi.sock" }
 ```
 
-Always pass `raw,echo=0` on the socat `pty`. Without it the tty stays in cooked
-mode and rewrites gdb's line endings as CRLF, which corrupts MI result records
-(`^done` becomes an unparsable line) and makes the connect handshake time out
-with `Timeout waiting for GDB to initialize`. Add `fork` so the listener survives
-more than one connection.
+Keep `raw,echo=0` on the socat `pty` and add `fork`; a cooked tty rewrites gdb's
+line endings as CRLF and the connect handshake times out.
 
 **Recipe C - attach to a gdb you already have open (gdb >= 9, `new-ui`):**
 
