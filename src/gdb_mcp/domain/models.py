@@ -448,7 +448,7 @@ class BacktraceInfo:
 class FrameInfo:
     """Current frame details."""
 
-    frame: FrameRecord
+    frame: FrameRecord | None
 
 
 @dataclass(slots=True, frozen=True)

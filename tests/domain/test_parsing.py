@@ -2,7 +2,32 @@
 
 import logging
 
-from gdb_mcp.domain.parsing import as_record_list
+from gdb_mcp.domain.adapters import frame_info_from_payload
+from gdb_mcp.domain.parsing import as_mapping, as_optional_mapping, as_record_list
+
+
+def test_as_mapping_falls_back_to_an_empty_mapping():
+    """Non-mappings become an empty mapping so callers can read without guarding."""
+
+    assert as_mapping(None) == {}
+    assert as_mapping("not a mapping") == {}
+    assert as_mapping({"a": 1}) == {"a": 1}
+
+
+def test_as_optional_mapping_preserves_absence():
+    """Absent/mistyped values stay None so callers can tell them from empty."""
+
+    assert as_optional_mapping(None) is None
+    assert as_optional_mapping("not a mapping") is None
+    assert as_optional_mapping({}) == {}
+    assert as_optional_mapping({"a": 1}) == {"a": 1}
+
+
+def test_frame_info_reports_an_absent_frame_as_none():
+    """A payload with no frame must not be indistinguishable from an empty frame."""
+
+    assert frame_info_from_payload({}).frame is None
+    assert frame_info_from_payload({"frame": {}}).frame == {}
 
 
 def test_as_record_list_keeps_only_mappings(caplog):

@@ -7,6 +7,11 @@ untrusted ``object`` data is narrowed and coerced into concrete types.
 Every other module works with those concrete types; keeping the
 ``object``/``isinstance`` logic here stops it from leaking across the domain,
 session, and transport layers, and gives one well-tested place to audit.
+
+The mapping helpers return the original mapping unchanged (no copy), so the
+records they produce are read-only *views* over the transport's parsed payload;
+callers must not mutate them. Use :func:`as_optional_mapping` when the
+difference between a missing value and an empty mapping matters.
 """
 
 from __future__ import annotations
@@ -15,27 +20,33 @@ import logging
 from collections.abc import Mapping
 from typing import cast, get_args
 
-from .models import ExecutionState, FrameRecord, StructuredPayload
+from .models import ExecutionState
 
 logger = logging.getLogger(__name__)
 
 _EXECUTION_STATES: frozenset[str] = frozenset(get_args(ExecutionState))
 
 
-def as_payload(value: object) -> StructuredPayload:
-    """Narrow untrusted data into a JSON object payload.
+def as_mapping(value: object) -> Mapping[str, object]:
+    """Narrow untrusted data into a read-only mapping, or an empty mapping.
 
     Returns the mapping unchanged when it is one, otherwise an empty mapping so
-    callers can read fields without guarding every access.
+    callers can read fields without guarding every access. The result is a view,
+    not a copy: treat it as read-only.
     """
 
-    return cast(StructuredPayload, value) if isinstance(value, Mapping) else {}
-
-
-def as_mapping(value: object) -> Mapping[str, object]:
-    """Narrow untrusted data into a mapping, or an empty mapping otherwise."""
-
     return value if isinstance(value, Mapping) else {}
+
+
+def as_optional_mapping(value: object) -> Mapping[str, object] | None:
+    """Narrow untrusted data into a mapping, or ``None`` when it is not one.
+
+    Unlike :func:`as_mapping`, a missing or mistyped value is preserved as
+    ``None`` so callers can distinguish "absent" from "empty". The result is a
+    read-only view.
+    """
+
+    return value if isinstance(value, Mapping) else None
 
 
 def as_record_list(value: object) -> list[Mapping[str, object]]:
@@ -61,18 +72,6 @@ def as_record_list(value: object) -> list[Mapping[str, object]]:
             len(value),
         )
     return records
-
-
-def as_optional_payload(value: object) -> StructuredPayload | None:
-    """Narrow untrusted data into a JSON object payload, or ``None``."""
-
-    return cast(StructuredPayload, value) if isinstance(value, Mapping) else None
-
-
-def as_frame_record(value: object) -> FrameRecord | None:
-    """Narrow an MI frame payload into the structured frame record type."""
-
-    return value if isinstance(value, Mapping) else None
 
 
 def as_text(value: object) -> str | None:

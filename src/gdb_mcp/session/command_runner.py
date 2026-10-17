@@ -17,7 +17,7 @@ from ..domain import (
     StructuredPayload,
     payload_to_mapping,
 )
-from ..domain.parsing import as_frame_record, as_int, as_text_or_number
+from ..domain.parsing import as_int, as_optional_mapping, as_text_or_number
 from ..transport import ParsedMiResponse, is_cli_command, parse_mi_responses, wrap_cli_command
 from .constants import DEFAULT_TIMEOUT_SEC
 from .inferiors import inferior_ids, parse_inferiors_output
@@ -507,7 +507,7 @@ class SessionCommandRunner:
             payload_mapping = cast(StructuredPayload, payload_to_mapping(payload))
 
         thread_id = as_int(payload_mapping.get("thread-id"))
-        frame = as_frame_record(payload_mapping.get("frame"))
+        frame = as_optional_mapping(payload_mapping.get("frame"))
         signal_name = as_text_or_number(payload_mapping.get("signal-name"))
         signal_meaning = as_text_or_number(payload_mapping.get("signal-meaning"))
         breakpoint_number = self._extract_breakpoint_number(payload_mapping)

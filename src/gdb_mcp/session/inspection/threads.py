@@ -149,7 +149,8 @@ class InspectionThreadsMixin(InspectionBase):
         frame_info = frame_info_from_payload(
             extract_mi_result_payload(command_result_payload(result))
         )
-        level = frame_info.frame.get("level")
+        frame_details = frame_info.frame
+        level = frame_details.get("level") if frame_details is not None else None
         self._runtime.mark_frame_selected(as_int(level))
 
         if selection is not None:

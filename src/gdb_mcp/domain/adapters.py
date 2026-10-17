@@ -18,19 +18,13 @@ from .models import (
     VariableRecord,
     VariablesInfo,
 )
-from .parsing import as_mapping, as_record_list, as_text
+from .parsing import as_mapping, as_optional_mapping, as_record_list, as_text
 
 
 def string_field(payload: object, key: str) -> str | None:
     """Return a string field from a raw payload mapping when available."""
 
     return as_text(as_mapping(payload).get(key))
-
-
-def frame_record(payload: object) -> FrameRecord:
-    """Normalize a raw frame payload."""
-
-    return as_mapping(payload)
 
 
 def thread_records(payload: object, key: str = "threads") -> list[ThreadRecord]:
@@ -94,7 +88,7 @@ def thread_selection_info_from_payload(thread_id: int, payload: object) -> Threa
     return ThreadSelectionInfo(
         thread_id=thread_id,
         new_thread_id=string_field(payload, "new-thread-id"),
-        frame=frame_record(as_mapping(payload).get("frame")),
+        frame=as_optional_mapping(as_mapping(payload).get("frame")),
     )
 
 
@@ -108,7 +102,7 @@ def backtrace_info_from_payload(thread_id: int | None, payload: object) -> Backt
 def frame_info_from_payload(payload: object) -> FrameInfo:
     """Build a typed current-frame payload from raw MI data."""
 
-    return FrameInfo(frame=frame_record(as_mapping(payload).get("frame")))
+    return FrameInfo(frame=as_optional_mapping(as_mapping(payload).get("frame")))
 
 
 def frame_selection_info_from_payload(frame_number: int, payload: object) -> FrameSelectionInfo:
@@ -116,7 +110,7 @@ def frame_selection_info_from_payload(frame_number: int, payload: object) -> Fra
 
     return FrameSelectionInfo(
         frame_number=frame_number,
-        frame=frame_record(as_mapping(payload).get("frame")),
+        frame=as_optional_mapping(as_mapping(payload).get("frame")),
     )
 
 
