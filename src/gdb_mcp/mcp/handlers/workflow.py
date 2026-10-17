@@ -28,9 +28,10 @@ from ..schemas import (
     RunUntilFailureArgs,
 )
 from .common import (
-    SessionToolSpec,
     ToolArguments,
+    ToolContext,
     ToolResult,
+    ToolSpec,
     _memory_capture_ranges,
     _normalize_run_args,
     _workflow_step_validation_error,
@@ -76,12 +77,11 @@ def _handle_capture_bundle(session: SessionService, args: CaptureBundleArgs) -> 
 
 
 def _handle_run_until_failure(
-    arguments: ToolArguments,
+    args: RunUntilFailureArgs,
     session_manager: SessionRegistry,
 ) -> ToolResult:
     """Run repeated fresh sessions until one failure predicate matches."""
 
-    args = RunUntilFailureArgs.model_validate(arguments)
     step_templates = _build_batch_step_templates(1, args.setup_steps)
     if isinstance(step_templates, OperationError):
         return step_templates
@@ -176,12 +176,12 @@ def _build_batch_step_templates(
 
         def execute_step(
             session: SessionService,
-            tool_spec: SessionToolSpec = resolved_tool_spec,
+            tool_spec: ToolSpec = resolved_tool_spec,
             validated_args: BaseModel = validated_args,
         ) -> ToolResult:
             return _wrap_action_result_for(
                 validated_args,
-                tool_spec.handler(session, validated_args),
+                tool_spec.handler(ToolContext(session=session), validated_args),
             )
 
         templates.append(

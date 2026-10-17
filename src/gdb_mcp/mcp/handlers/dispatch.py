@@ -8,67 +8,62 @@ from typing import cast
 from pydantic import BaseModel, ValidationError
 from mcp.types import CallToolResult
 
-from ...contracts import (
-    TOOL_RUN_UNTIL_FAILURE,
-    TOOL_SESSION_CONNECT,
-    TOOL_SESSION_MANAGE,
-    TOOL_SESSION_QUERY,
-    TOOL_SESSION_START,
-)
 from ...domain import (
     OperationError,
 )
 from ...session.locking import session_workflow_context
 from ...session.registry import SessionRegistry
 from ..schemas import (
-    SessionManageArgs,
-    SessionQueryArgs,
     TOOL_MODELS,
 )
 from ..serializer import serialize_exception, serialize_result
 from ..validation_errors import build_validation_error
 from .common import (
     SessionArgsProtocol,
-    SessionToolSpec,
     ToolArguments,
+    ToolContext,
     ToolResult,
     _normalize_arguments,
     _unwrap_action_args,
     _wrap_action_result_for,
 )
-from .session import (
-    _handle_connect_session,
-    _handle_session_manage,
-    _handle_session_query,
-    _handle_start_session,
-)
-from .workflow import _handle_run_until_failure
-from .registry import SESSION_TOOL_SPECS
+from .registry import TOOL_SPECS
 
 
 def _validation_model(name: str) -> type[BaseModel] | None:
     """Resolve one tool's request model from the authoritative registry."""
 
-    spec = SESSION_TOOL_SPECS.get(name)
+    spec = TOOL_SPECS.get(name)
     if spec is not None:
         return spec.model
     return TOOL_MODELS.get(name)
 
 
-def _dispatch_session_tool(
+def _dispatch_tool(
+    name: str,
     arguments: ToolArguments,
     session_manager: SessionRegistry,
-    tool_spec: SessionToolSpec,
 ) -> ToolResult:
-    """Validate one session-scoped request and invoke its handler."""
+    """Validate one request against its tool spec and invoke the handler."""
 
-    validated_args = tool_spec.model.model_validate(arguments)
-    session_args = cast(SessionArgsProtocol, _unwrap_action_args(validated_args))
-    session = session_manager.resolve_session(session_args.session_id)
-    if isinstance(session, OperationError):
-        return _wrap_action_result_for(validated_args, session)
-    with session_workflow_context(session):
-        result = tool_spec.handler(session, validated_args)
+    spec = TOOL_SPECS.get(name)
+    if spec is None:
+        return OperationError(message=f"Unknown tool: {name}", code="unknown_tool")
+
+    validated_args = spec.model.model_validate(arguments)
+
+    if spec.scope == "session":
+        session_args = cast(SessionArgsProtocol, _unwrap_action_args(validated_args))
+        session = session_manager.resolve_session(session_args.session_id)
+        if isinstance(session, OperationError):
+            return _wrap_action_result_for(validated_args, session)
+        with session_workflow_context(session):
+            result = spec.handler(
+                ToolContext(registry=session_manager, session=session), validated_args
+            )
+    else:
+        result = spec.handler(ToolContext(registry=session_manager), validated_args)
+
     return _wrap_action_result_for(validated_args, result)
 
 
@@ -98,37 +93,7 @@ async def dispatch_tool_call(
         )
 
     try:
-        if name == TOOL_SESSION_START:
-            return serialize_result(_handle_start_session(normalized_args, session_manager))
-        if name == TOOL_SESSION_CONNECT:
-            return serialize_result(_handle_connect_session(normalized_args, session_manager))
-        if name == TOOL_SESSION_QUERY:
-            validated_query_args = SessionQueryArgs.model_validate(normalized_args)
-            return serialize_result(
-                _wrap_action_result_for(
-                    validated_query_args,
-                    _handle_session_query(validated_query_args, session_manager),
-                )
-            )
-        if name == TOOL_SESSION_MANAGE:
-            validated_manage_args = SessionManageArgs.model_validate(normalized_args)
-            return serialize_result(
-                _wrap_action_result_for(
-                    validated_manage_args,
-                    _handle_session_manage(validated_manage_args, session_manager),
-                )
-            )
-        if name == TOOL_RUN_UNTIL_FAILURE:
-            return serialize_result(_handle_run_until_failure(normalized_args, session_manager))
-
-        tool_spec = SESSION_TOOL_SPECS.get(name)
-        if tool_spec is None:
-            return serialize_result(
-                OperationError(message=f"Unknown tool: {name}", code="unknown_tool")
-            )
-
-        return serialize_result(_dispatch_session_tool(normalized_args, session_manager, tool_spec))
-
+        return serialize_result(_dispatch_tool(name, normalized_args, session_manager))
     except ValidationError as exc:
         return serialize_result(
             build_validation_error(exc, tool_name=name, model=_validation_model(name))

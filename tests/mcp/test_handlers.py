@@ -27,7 +27,7 @@ from gdb_mcp.domain import (
     ThreadSelectionInfo,
     VariablesInfo,
 )
-from gdb_mcp.mcp.handlers import SESSION_TOOL_SPECS, dispatch_tool_call
+from gdb_mcp.mcp.handlers import TOOL_SPECS, dispatch_tool_call
 from gdb_mcp.mcp.schemas import build_tool_definitions
 from gdb_mcp.session.factory import create_default_session_service
 
@@ -1778,12 +1778,6 @@ class TestHandlerDispatch:
         """Every exported tool should have a matching dispatch path and vice versa."""
 
         exported_tools = {tool.name for tool in build_tool_definitions()}
-        dispatched_tools = set(SESSION_TOOL_SPECS) | {
-            "gdb_session_start",
-            "gdb_session_connect",
-            "gdb_session_query",
-            "gdb_session_manage",
-            "gdb_run_until_failure",
-        }
+        dispatched_tools = set(TOOL_SPECS)
 
         assert exported_tools == dispatched_tools

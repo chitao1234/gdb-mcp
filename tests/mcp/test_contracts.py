@@ -27,7 +27,7 @@ from gdb_mcp.contracts import (
     REGISTER_VALUE_FORMATS,
     TOOL_WORKFLOW_BATCH,
 )
-from gdb_mcp.mcp.handlers import SESSION_TOOL_SPECS
+from gdb_mcp.mcp.handlers import SESSION_TOOL_SPECS, TOOL_SPECS
 from gdb_mcp.mcp.schemas import (
     BATCH_STEP_TOOL_MODELS,
     TOOL_MODELS,
@@ -195,6 +195,13 @@ def test_session_tool_specs_share_the_public_request_models() -> None:
     assert set(SESSION_TOOL_SPECS) <= set(TOOL_MODELS)
     for tool_name, spec in SESSION_TOOL_SPECS.items():
         assert spec.model is TOOL_MODELS[tool_name]
+
+
+def test_every_public_tool_has_one_dispatch_spec() -> None:
+    assert set(TOOL_SPECS) == set(TOOL_MODELS)
+    for tool_name, spec in TOOL_SPECS.items():
+        assert spec.model is TOOL_MODELS[tool_name]
+        assert spec.scope in {"session", "registry"}
 
 
 def test_batch_step_tool_alias_and_client_field_match_shared_contract() -> None:

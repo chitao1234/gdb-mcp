@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 
-from ... import contracts as shared_contracts
 from ...contracts import (
     TOOL_SESSION_QUERY,
-    TOOL_WORKFLOW_BATCH,
 )
 from ...domain import (
     OperationError,
@@ -15,7 +13,6 @@ from ...domain import (
 )
 from ...session.locking import session_workflow_context
 from ...session.registry import SessionRegistry
-from ...session.service import SessionService
 from ..schemas import (
     ConnectSessionArgs,
     SessionManageArgs,
@@ -26,7 +23,7 @@ from ..schemas import (
     StartSessionArgs,
 )
 from .common import (
-    ToolArguments,
+    ToolContext,
     ToolResult,
     _normalize_run_args,
     _unsupported_action,
@@ -49,12 +46,11 @@ def _publish_session_result(session_id: int | None, result: ToolResult) -> ToolR
 
 
 def _handle_start_session(
-    arguments: ToolArguments,
+    args: StartSessionArgs,
     session_manager: SessionRegistry,
 ) -> ToolResult:
-    """Validate and start a new debugger session."""
+    """Start a new debugger session."""
 
-    args = StartSessionArgs.model_validate(arguments)
     normalized_args = _normalize_run_args(args.args)
     if isinstance(normalized_args, OperationError):
         return normalized_args
@@ -72,12 +68,11 @@ def _handle_start_session(
 
 
 def _handle_connect_session(
-    arguments: ToolArguments,
+    args: ConnectSessionArgs,
     session_manager: SessionRegistry,
 ) -> ToolResult:
     """Connect to an externally started GDB/MI endpoint and publish a session."""
 
-    args = ConnectSessionArgs.model_validate(arguments)
     session_id, result = session_manager.start_session(
         endpoint=args.endpoint,
         init_commands=args.init_commands,
@@ -85,21 +80,35 @@ def _handle_connect_session(
     return _publish_session_result(session_id, result)
 
 
-def _handle_session_query(
-    args: SessionQueryArgs,
-    session_manager: SessionRegistry,
-) -> ToolResult:
-    """Route one v2 session query action."""
+def _handle_session_query(context: ToolContext, args: SessionQueryArgs) -> ToolResult:
+    """Route one v2 session query action.
+
+    Direct calls arrive without a session and resolve it for the status action;
+    batch execution supplies the session and only permits status (the batch
+    contract rejects ``list`` before dispatch).
+    """
 
     action_args = _unwrap_action_args(args)
 
     match action_args:
         case SessionQueryListAction():
-            return session_manager.list_sessions()
+            if context.registry is None:  # pragma: no cover - batch rejects list upstream
+                return OperationError(
+                    message=(
+                        f"{TOOL_SESSION_QUERY}(action=list) is not valid inside a workflow batch"
+                    ),
+                    code="unsupported_combination",
+                )
+            return context.registry.list_sessions()
         case SessionQueryStatusAction():
-            session = session_manager.resolve_session(action_args.session_id)
-            if isinstance(session, OperationError):
-                return session
+            session = context.session
+            if session is None:
+                if context.registry is None:  # pragma: no cover - always present for direct calls
+                    return OperationError(message="No session registry available")
+                resolved = context.registry.resolve_session(action_args.session_id)
+                if isinstance(resolved, OperationError):
+                    return resolved
+                session = resolved
             with session_workflow_context(session):
                 return session.get_status()
     return _unsupported_action("session query action", action_args)
@@ -117,20 +126,3 @@ def _handle_session_manage(
         case SessionManageStopAction():
             return session_manager.close_session(action_args.session_id)
     return _unsupported_action("session manage action", action_args)
-
-
-def _handle_session_query_for_session(
-    session: SessionService, args: SessionQueryArgs
-) -> ToolResult:
-    """Route batch-safe session query actions against an already resolved session."""
-
-    action_args = _unwrap_action_args(args)
-    if isinstance(action_args, SessionQueryStatusAction):
-        return session.get_status()
-    return OperationError(
-        message=(
-            f"{TOOL_SESSION_QUERY}(action={shared_contracts.ACTION_LIST}) "
-            f"is not valid inside {TOOL_WORKFLOW_BATCH}"
-        ),
-        code="unsupported_combination",
-    )

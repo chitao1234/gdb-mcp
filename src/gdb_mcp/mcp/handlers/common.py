@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import re
 import shlex
 from collections.abc import Callable, Sequence
-from typing import Protocol, TypeAlias, TypeVar, cast, runtime_checkable
+from typing import Literal, Protocol, TypeAlias, TypeVar, cast, runtime_checkable
 
 from pydantic import BaseModel, RootModel
 
@@ -26,6 +26,7 @@ from ...domain import (
     payload_to_mapping,
 )
 from ...session.constants import DEFAULT_TIMEOUT_SEC
+from ...session.registry import SessionRegistry
 from ...session.service import SessionService
 from ..schemas import (
     LocationAddressArgs,
@@ -81,12 +82,28 @@ LocationArgs: TypeAlias = (
 _MEMORY_RANGE_SHORTHAND_RE = re.compile(r"^(?P<address>.+):(?P<count>\d+)(?:@(?P<offset>\d+))?$")
 
 
+ToolScope: TypeAlias = Literal["session", "registry"]
+
+
 @dataclass(frozen=True)
-class SessionToolSpec:
-    """Declarative definition for one session-scoped MCP tool."""
+class ToolContext:
+    """Invocation context handed to a tool handler.
+
+    Session-scoped handlers read ``session``; registry-scoped handlers read
+    ``registry``. Batch execution builds a context with ``session`` only.
+    """
+
+    registry: SessionRegistry | None = None
+    session: SessionService | None = None
+
+
+@dataclass(frozen=True)
+class ToolSpec:
+    """Declarative definition for one MCP tool."""
 
     model: type[BaseModel]
-    handler: Callable[[SessionService, BaseModel], ToolResult]
+    handler: Callable[[ToolContext, BaseModel], ToolResult]
+    scope: ToolScope
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,13 +123,37 @@ class LocationSelection:
 def session_tool_spec(
     model: type[SessionToolArgsT],
     handler: Callable[[SessionService, SessionToolArgsT], ToolResult],
-) -> SessionToolSpec:
-    """Wrap a typed handler for storage in the session tool registry."""
+) -> ToolSpec:
+    """Wrap a ``(session, args)`` handler as a session-scoped tool spec."""
 
-    def invoke(session: SessionService, args: BaseModel) -> ToolResult:
-        return handler(session, cast(SessionToolArgsT, args))
+    def invoke(context: ToolContext, args: BaseModel) -> ToolResult:
+        return handler(cast(SessionService, context.session), cast(SessionToolArgsT, args))
 
-    return SessionToolSpec(model=model, handler=invoke)
+    return ToolSpec(model=model, handler=invoke, scope="session")
+
+
+def registry_tool_spec(
+    model: type[SessionToolArgsT],
+    handler: Callable[[SessionToolArgsT, SessionRegistry], ToolResult],
+) -> ToolSpec:
+    """Wrap an ``(args, registry)`` handler as a registry-scoped tool spec."""
+
+    def invoke(context: ToolContext, args: BaseModel) -> ToolResult:
+        return handler(cast(SessionToolArgsT, args), cast(SessionRegistry, context.registry))
+
+    return ToolSpec(model=model, handler=invoke, scope="registry")
+
+
+def context_tool_spec(
+    model: type[SessionToolArgsT],
+    handler: Callable[[ToolContext, SessionToolArgsT], ToolResult],
+) -> ToolSpec:
+    """Register a handler that needs the full context (for example action-polymorphic tools)."""
+
+    def invoke(context: ToolContext, args: BaseModel) -> ToolResult:
+        return handler(context, cast(SessionToolArgsT, args))
+
+    return ToolSpec(model=model, handler=invoke, scope="registry")
 
 
 def _normalize_arguments(arguments: object) -> ToolArguments:
