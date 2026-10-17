@@ -112,14 +112,16 @@ class SessionRegistry:
                     message=(
                         f"Session {session_id} is closing and cannot accept new commands. "
                         "Wait for gdb_session_manage(action=stop) to finish or start a new session."
-                    )
+                    ),
+                    code="session_closing",
                 )
 
             session = self._sessions.get(session_id)
 
         if session is None:
             return OperationError(
-                message=f"Invalid session_id: {session_id}. Use gdb_session_start to create a new session."
+                message=f"Invalid session_id: {session_id}. Use gdb_session_start to create a new session.",
+                code="invalid_session",
             )
 
         return session
@@ -190,7 +192,8 @@ class SessionRegistry:
 
         if session is None:
             return OperationError(
-                message=f"Invalid session_id: {session_id}. Use gdb_session_start to create a new session."
+                message=f"Invalid session_id: {session_id}. Use gdb_session_start to create a new session.",
+                code="invalid_session",
             )
 
         if session.controller is None:

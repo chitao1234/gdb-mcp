@@ -217,6 +217,80 @@ def _wrap_action_result_for(validated_args: BaseModel, result: ToolResult) -> To
     return result
 
 
+# GDB reports these conditions as free-form text and this server forwards the
+# text unchanged. Classify the ones a caller can branch on, so an envelope is
+# actionable without parsing the message.
+_GDB_FAILURE_CODES: tuple[tuple[str, str], ...] = (
+    ("no registers", "no_registers"),
+    ("the program is not being run", "inferior_not_running"),
+    ("you can't do that without a process to debug", "inferior_not_running"),
+    ("while the selected thread is running", "inferior_running"),
+    ("no stack", "no_stack_frame"),
+    ("no frame selected", "no_stack_frame"),
+    ("cannot access memory at address", "memory_unavailable"),
+    ("no symbol table is loaded", "no_symbols_loaded"),
+    ("no symbol", "symbol_unavailable"),
+    ("optimized out", "value_unavailable"),
+    ("timeout", "command_timeout"),
+)
+
+
+def _failure_code(message: str) -> str | None:
+    """Return a branchable code for one free-form GDB failure message."""
+
+    lowered = message.lower()
+    for fragment, code in _GDB_FAILURE_CODES:
+        if fragment in lowered:
+            return code
+    return None
+
+
+def _session_state_details(session: SessionService) -> StructuredPayload:
+    """Return the JSON-safe execution state of one live session."""
+
+    runtime = getattr(session, "runtime", None)
+    details: StructuredPayload = {}
+    for name in ("execution_state", "stop_reason"):
+        value = getattr(runtime, name, None)
+        if isinstance(value, str):
+            details[name] = value
+    exit_code = getattr(runtime, "exit_code", None)
+    if isinstance(exit_code, int):
+        details["exit_code"] = exit_code
+    return details
+
+
+def _annotate_session_failure(
+    result: ToolResult, session: SessionService, *, session_id: int
+) -> ToolResult:
+    """Attach session state and a specific code to one session-scoped failure.
+
+    A failure whose message is only ``The program is not being run.`` leaves the
+    caller guessing at the session's state, so carry that state in the envelope
+    and classify the message into a code the caller can branch on.
+    """
+
+    if not isinstance(result, OperationError):
+        return result
+
+    details_payload = payload_to_mapping(result.details)
+    details: StructuredPayload = dict(details_payload) if isinstance(details_payload, dict) else {}
+    details.setdefault("session_id", session_id)
+    for name, value in _session_state_details(session).items():
+        details.setdefault(name, value)
+
+    code = result.code
+    if code == "error":
+        code = _failure_code(result.message) or code
+
+    return OperationError(
+        message=result.message,
+        code=code,
+        fatal=result.fatal,
+        details=details,
+    )
+
+
 def _workflow_step_validation_error(
     tool_name: str,
     issue: shared_contracts.WorkflowStepValidationIssue,

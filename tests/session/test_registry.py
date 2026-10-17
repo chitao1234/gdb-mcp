@@ -172,6 +172,18 @@ class TestSessionRegistry:
 
         assert isinstance(result, OperationError)
         assert "closing" in result.message.lower()
+        assert result.code == "session_closing"
+
+    def test_resolve_session_reports_an_unknown_id_with_its_own_code(self):
+        """An unknown id should be distinguishable from other session failures."""
+
+        manager = SessionRegistry(session_factory=lambda: _session_double())
+
+        result = manager.resolve_session(404)
+
+        assert isinstance(result, OperationError)
+        assert "Invalid session_id: 404" in result.message
+        assert result.code == "invalid_session"
 
     def test_list_sessions_returns_structured_summaries(self):
         """Session inventory should expose metadata useful for multi-session clients."""

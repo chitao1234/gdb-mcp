@@ -7,6 +7,8 @@ import json
 import logging
 from unittest.mock import MagicMock, Mock
 
+import pytest
+
 from gdb_mcp.domain import (
     BreakpointInfo,
     BreakpointListInfo,
@@ -32,14 +34,14 @@ from gdb_mcp.mcp.schemas import build_tool_definitions
 from gdb_mcp.session.factory import create_default_session_service
 
 
-def _session_double() -> Mock:
+def _session_double(**runtime_state: object) -> Mock:
     """Create a handler test double that satisfies the workflow-lock contract."""
 
     session = Mock()
     workflow_lock = MagicMock()
     workflow_lock.__enter__.return_value = None
     workflow_lock.__exit__.return_value = None
-    session.runtime = Mock(workflow_lock=workflow_lock)
+    session.runtime = Mock(workflow_lock=workflow_lock, **runtime_state)
     session.controller = None
     session.is_running = False
     return session
@@ -240,6 +242,95 @@ class TestHandlerDispatch:
 
         assert result_data["status"] == "error"
         assert "closing" in result_data["message"]
+
+
+class TestSessionFailureContext:
+    """Session-scoped failures should carry the state the caller needs to recover."""
+
+    def _dispatch_backtrace_failure(self, message: str, **runtime_state: object):
+        session = _session_double(**runtime_state)
+        session.get_backtrace.return_value = OperationError(
+            message=message, details={"command": "-stack-list-frames 0 1"}
+        )
+        manager = Mock()
+        manager.resolve_session.return_value = session
+
+        return dispatch(
+            "gdb_context_query",
+            {"session_id": 11, "action": "backtrace", "query": {}},
+            manager,
+        )
+
+    def test_failure_carries_session_state_and_specific_code(self):
+        result_data = self._dispatch_backtrace_failure(
+            "No registers.",
+            execution_state="exited",
+            stop_reason="exited",
+            exit_code=1,
+        )
+
+        assert result_data["code"] == "no_registers"
+        assert result_data["details"]["command"] == "-stack-list-frames 0 1"
+        assert result_data["details"]["session_id"] == 11
+        assert result_data["details"]["execution_state"] == "exited"
+        assert result_data["details"]["stop_reason"] == "exited"
+        assert result_data["details"]["exit_code"] == 1
+
+    def test_absent_state_is_omitted(self):
+        result_data = self._dispatch_backtrace_failure("No registers.", execution_state="paused")
+
+        assert result_data["details"]["execution_state"] == "paused"
+        assert "exit_code" not in result_data["details"]
+        assert "stop_reason" not in result_data["details"]
+
+    def test_unclassified_failure_keeps_the_generic_code(self):
+        result_data = self._dispatch_backtrace_failure(
+            "something inexplicable", execution_state="paused"
+        )
+
+        assert result_data["code"] == "error"
+        assert result_data["details"]["execution_state"] == "paused"
+
+    @pytest.mark.parametrize(
+        ("message", "expected_code"),
+        [
+            ("No registers.", "no_registers"),
+            ("The program is not being run.", "inferior_not_running"),
+            (
+                "You can't do that without a process to debug.",
+                "inferior_not_running",
+            ),
+            (
+                "Cannot execute this command while the selected thread is running.",
+                "inferior_running",
+            ),
+            ("No stack.", "no_stack_frame"),
+            ("Cannot access memory at address 0x7fffffffe000", "memory_unavailable"),
+            ('No symbol "folio" in current context.', "symbol_unavailable"),
+            ("value has been optimized out", "value_unavailable"),
+            ("Timeout waiting for command response after 30s", "command_timeout"),
+            ("GDB returned an error", "error"),
+        ],
+    )
+    def test_failure_messages_map_to_branchable_codes(self, message, expected_code):
+        result_data = self._dispatch_backtrace_failure(message)
+
+        assert result_data["code"] == expected_code
+
+    def test_successful_results_are_not_annotated(self):
+        session = _session_double(execution_state="paused")
+        session.get_backtrace.return_value = OperationSuccess({"thread_id": 1, "frames": []})
+        manager = Mock()
+        manager.resolve_session.return_value = session
+
+        result_data = dispatch(
+            "gdb_context_query",
+            {"session_id": 11, "action": "backtrace", "query": {}},
+            manager,
+        )
+
+        assert result_data["status"] == "success"
+        assert "execution_state" not in result_data
 
     def test_tool_with_missing_session_id_returns_validation_error(self):
         """Known tools should validate arguments before session lookup."""

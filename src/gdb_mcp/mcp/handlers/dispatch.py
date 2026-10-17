@@ -23,6 +23,7 @@ from .common import (
     ToolArguments,
     ToolContext,
     ToolResult,
+    _annotate_session_failure,
     _normalize_arguments,
     _unwrap_action_args,
     _wrap_action_result_for,
@@ -61,6 +62,7 @@ def _dispatch_tool(
             result = spec.handler(
                 ToolContext(registry=session_manager, session=session), validated_args
             )
+        result = _annotate_session_failure(result, session, session_id=session_args.session_id)
     else:
         result = spec.handler(ToolContext(registry=session_manager), validated_args)
 
