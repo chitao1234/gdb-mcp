@@ -24,6 +24,13 @@ _INITIALIZE_REQUEST = {
 }
 
 
+_STARTUP_TIMEOUT_SEC = 30
+# The process must exit on SIGINT, so a generous bound still proves the point:
+# a hung server never exits, it just fails later. CI runners share cores with
+# the rest of the suite, so a tight bound reports load as a hang.
+_SHUTDOWN_TIMEOUT_SEC = 60
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX signal semantics")
 def test_stdio_server_exits_on_sigint_after_startup() -> None:
     """A fully started server must exit on the first SIGINT.
@@ -45,16 +52,24 @@ def test_stdio_server_exits_on_sigint_after_startup() -> None:
         process.stdin.write(json.dumps(_INITIALIZE_REQUEST) + "\n")
         process.stdin.flush()
 
-        ready, _, _ = select.select([process.stdout], [], [], 30)
+        ready, _, _ = select.select([process.stdout], [], [], _STARTUP_TIMEOUT_SEC)
         assert ready, "server did not answer the initialize request"
         response = json.loads(process.stdout.readline())
         assert "result" in response
 
         process.send_signal(signal.SIGINT)
-        process.wait(timeout=10)
+        try:
+            process.wait(timeout=_SHUTDOWN_TIMEOUT_SEC)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            _, stderr = process.communicate(timeout=30)
+            pytest.fail(
+                f"server did not exit within {_SHUTDOWN_TIMEOUT_SEC}s of SIGINT; "
+                f"stderr:\n{stderr}"
+            )
 
         assert process.returncode == 130
     finally:
         if process.poll() is None:
             process.kill()
-            process.wait(timeout=10)
+            process.wait(timeout=30)
