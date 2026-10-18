@@ -1,50 +1,66 @@
 # GDB MCP Server
 
-An MCP (Model Context Protocol) server that gives AI assistants structured access to GDB debugging sessions. The server speaks to GDB over GDB/MI and exposes a domain-oriented MCP surface for session lifecycle, execution control, breakpoints, context navigation, inspection, and higher-level workflows.
+`gdb-mcp-server` gives AI assistants and other MCP clients structured access to
+GDB. It talks to GDB over GDB/MI and answers every call with machine-readable
+state — session status, stop reasons, breakpoints, frames, variables, registers,
+memory — instead of terminal text that a client has to screen-scrape.
 
-## Features
+`gdb-mcp-client` is the companion CLI. It drives the same tools from a shell and
+keeps one background server per project, so a debug session survives between
+commands and reads like an ordinary debugger.
 
 - Structured GDB control with machine-readable success and error payloads
-- Multi-session support with explicit `session_id` routing
-- Multi-inferior workflows, including inferior creation/selection and fork-follow controls
+- Several concurrent sessions, addressed explicitly by `session_id`
+- Multi-inferior workflows, including fork-follow controls
 - Read/write split by domain instead of one tool per operation
-- Workflow helpers for batch execution, capture bundles, and repeat-until-failure campaigns
-- Dedicated privileged tools for attach and function-call operations
-- `gdb_execute_command` escape hatch for CLI and MI commands that do not yet have a dedicated structured tool
+- Workflow helpers: locked batches, capture bundles, run-until-failure campaigns
+- Dedicated privileged tools for attaching to processes and calling functions
+- `gdb_execute_command` escape hatch for anything without a structured tool
+- Reverse execution over an [rr](https://rr-project.org/) recording
+- Language-aware debugging: the pretty-printers and helpers a toolchain ships
+  for GDB (Rust, Go, kernel scripts) are reachable, and startup says so when GDB
+  refuses to load one
 
-## Architecture
+## How It Works
 
-This server uses the GDB Machine Interface (GDB/MI), the same protocol family used by IDEs such as VS Code and CLion. The MCP layer sits on top of that transport and provides:
+GDB/MI is the protocol family IDEs such as VS Code and CLion use to drive GDB.
+This server sits on top of it and adds:
 
-- strict JSON-schema validation for tool inputs
+- strict JSON-schema validation for every tool input
 - explicit success/error envelopes for automation clients
-- stable domain-oriented tool names
-- structured session state snapshots instead of screen-scraped terminal output
+- stable, domain-oriented tool names
+- structured session snapshots instead of parsed terminal output
 
-## Installation
+## Requirements
 
-### Prerequisites
+- Python 3.10 or newer
+- GDB installed and available on `PATH` (GDB with Python support is recommended,
+  so toolchain pretty-printers can load)
+- Optional: `rr` for reverse debugging, `rust-gdb` or similar wrappers for
+  language-specific pretty-printers
 
-- Python 3.10 or higher
-- GDB installed and available on `PATH`
-
-### Quick Start
+## Install
 
 ```bash
 python3 -m pip install --user pipx
 python3 -m pipx ensurepath
 
-cd /path/to/gdb-mcp
+git clone https://github.com/chitao1234/gdb-mcp.git
+cd gdb-mcp
 pipx install .
 ```
 
-For virtual-environment and manual-install variants, see [INSTALL.md](INSTALL.md).
+That puts `gdb-mcp-server` and `gdb-mcp-client` on your `PATH`.
 
-## Configuration
+Virtual environments, editable installs, Windows notes, and MCP client
+configuration for clients other than Claude Desktop are covered in
+[INSTALL.md](INSTALL.md).
 
-### Claude Desktop
+## Quick Start
 
-Add this to your Claude Desktop configuration file:
+### Run It As An MCP Server
+
+`gdb-mcp-server` speaks MCP over stdio, which is what most clients expect:
 
 ```json
 {
@@ -56,466 +72,134 @@ Add this to your Claude Desktop configuration file:
 }
 ```
 
-Typical config file locations:
+Typical Claude Desktop configuration paths:
 
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Linux: `~/.config/Claude/claude_desktop_config.json`
-- Windows: `%APPDATA%\\Claude\\claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 
-For other MCP clients, see [INSTALL.md](INSTALL.md#step-5-configure-your-mcp-client).
+### Pick A Transport
 
-### Transport Selection
-
-`gdb-mcp-server` still defaults to stdio, which is the right choice for Claude Desktop and most local MCP client launches:
-
-```bash
-gdb-mcp-server
-```
-
-Use streamable HTTP only when the client expects an HTTP endpoint instead of spawning the server over stdio:
+stdio is the default and the right choice for local clients. Use streamable HTTP
+when a client wants an endpoint instead of a spawned process:
 
 ```bash
 gdb-mcp-server --transport streamable-http --host 127.0.0.1 --port 8000 --path /mcp
 ```
 
-That exposes the MCP endpoint at `http://127.0.0.1:8000/mcp`.
+The MCP endpoint is then `http://127.0.0.1:8000/mcp`. Keep it on loopback, or set
+a bearer token when it is reachable by anything else (see
+[Remote Access](#remote-access-and-authentication)).
 
-### CLI Client
+### Drive It From The CLI
 
-`gdb-mcp-client` calls an MCP endpoint over streamable HTTP. When you omit `--server-url` and `GDB_MCP_SERVER_URL` is unset, the client starts a background server for the current project (the nearest VCS root, else the working directory), records it in a per-user cache cookie, and reuses it for later commands.
-
-Debugging commands read like a normal debugger, and `--session-id` defaults to the session you started most recently:
+`gdb-mcp-client` connects to an MCP endpoint and gives the tools a debugger-like
+front end. When you do not pass `--server-url`, it starts a background server for
+the current project (the nearest `.git` or `.hg` root, otherwise the working
+directory), remembers it in a per-user cookie, and reuses it for later commands. Debugging
+commands use the session you started most recently unless `--session-id` says
+otherwise:
 
 ```bash
-gdb-mcp-client status                  # list sessions
-gdb-mcp-client start ./build/app       # start one and remember it
-gdb-mcp-client connect tcp://127.0.0.1:4399   # attach to an externally started gdb
+gdb-mcp-client start ./build/app     # start a session and make it the default
 gdb-mcp-client break add main
 gdb-mcp-client run
 gdb-mcp-client bt
 gdb-mcp-client locals
 gdb-mcp-client continue
-gdb-mcp-client exec "info files"
+gdb-mcp-client exec "info files"     # anything without a dedicated command
 gdb-mcp-client stop
 ```
 
-`start` records the new session as this project's default; later commands use it when `--session-id` is omitted, and `status` marks it. Switch or inspect it with:
+The command set covers sessions, execution, breakpoints and watchpoints, threads
+and frames, locals/registers/memory/disassembly, batches, campaigns, and capture
+bundles. `gdb-mcp-client --help` lists it; `--json` prints raw response
+envelopes. `gdb-mcp-client session current` prints this project's default session
+and `session use <id>` switches it; stopping that session clears the default. The
+[gdb-mcp-cli skill](skills/gdb-mcp-cli/SKILL.md) is the guided tour for scripted
+and agent-driven use.
 
-```bash
-gdb-mcp-client session current   # print the default session id (exit 1 when there is none)
-gdb-mcp-client session use 2     # make session 2 the default
-```
+## Where To Go Next
 
-Stopping the default session clears it.
+- [TOOLS.md](TOOLS.md) — the tool contract: every tool, action, request field,
+  response field, and error code
+- [skills/debug-with-gdb-mcp](skills/debug-with-gdb-mcp/SKILL.md) — how to work a
+  real debugging problem through the MCP tools (playbooks for crashes, hangs,
+  core dumps, attach, rr replay, and more)
+- [skills/gdb-mcp-cli](skills/gdb-mcp-cli/SKILL.md) — the same work through
+  `gdb-mcp-client`
+- [examples/USAGE_GUIDE.md](examples/USAGE_GUIDE.md) — end-to-end example
+  prompts against a sample program
 
-Run `gdb-mcp-client --help` for the full list (`start`, `connect`, `run`, `step`, `next`, `finish`, `interrupt`, `attach`, `threads`, `frame`, `regs`, `memory`, `disasm`, `list`, `break add|list|rm|enable|disable`, `watch`, `catch`, `call`, `capture`, `batch`, `campaign`). Every command takes the same flags as the underlying tool, and extra flags can be passed with `--payload-json`.
+## Operating Notes
 
-Background servers bind `127.0.0.1` on an ephemeral port and require a bearer token that is stored only in the cookie. They exit after 15 minutes without requests or active debug sessions. Manage them with:
+### Background Servers
+
+Servers started by `gdb-mcp-client` bind `127.0.0.1` on an ephemeral port and
+require a bearer token that only the client cookie holds. They exit after 15
+minutes without requests or active debug sessions; set
+`GDB_MCP_DAEMON_IDLE_SEC=0` to disable that. A server you start by hand never
+idle-exits.
 
 ```bash
 gdb-mcp-client daemon status
-gdb-mcp-client daemon stop
-gdb-mcp-client daemon stop --force   # stop even with active debug sessions
+gdb-mcp-client daemon stop            # refuses while debug sessions are live
+gdb-mcp-client daemon stop --force
 ```
 
-To talk to a server you started yourself, pass `--server-url` or set `GDB_MCP_SERVER_URL`:
+Sessions live in the server process, so stopping the background server ends the
+debug sessions it hosts.
+
+### Remote Access And Authentication
+
+Set a token on the server and hand the same token to the client. The client also
+passes it to background servers it spawns, so they never carry it on a command
+line:
 
 ```bash
-gdb-mcp-server --transport streamable-http --host 127.0.0.1 --port 8000 --path /mcp
-gdb-mcp-client --server-url http://127.0.0.1:8000/mcp status
-```
-
-Servers started by hand never idle-exit; only background servers created by the client do.
-
-Request raw JSON instead of human-oriented output, or reach a tool directly through the `tool` escape hatch (the `gdb_` prefix is optional):
-
-```bash
-gdb-mcp-client --json continue
-gdb-mcp-client tool session_query --action list
-gdb-mcp-client tool inferior_manage --action create --executable ./other
-```
-
-To send a raw MCP payload (for example one listed by `--help`), use `--payload-json`, which is mutually exclusive with the field flags:
-
-```bash
-gdb-mcp-client tool breakpoint_manage \
-  --payload-json '{"session_id": 7, "action": "disable", "breakpoint": {"number": 3}}'
-```
-
-`gdb_workflow_batch` exits non-zero when the response reports `error_count > 0`, so scripts can detect partial failures.
-
-## Environment Variables
-
-### `GDB_PATH`
-
-Overrides the default GDB binary. This is useful when multiple GDB versions are installed or when GDB is not on the default `PATH`.
-
-```bash
-export GDB_PATH=/usr/local/bin/gdb-13.2
-gdb-mcp-server
-```
-
-If both are present, `gdb_session_start.gdb_path` overrides `GDB_PATH`.
-
-### `RR_PATH`
-
-Overrides the `rr` binary used by `gdb_session_start(rr_replay=...)`. Defaults
-to `rr` on `PATH`.
-
-```bash
-export RR_PATH=/opt/rr/bin/rr
-gdb-mcp-client start --rr-replay ~/.local/share/rr/app-0
-```
-
-### `GDB_MCP_LOG_LEVEL`
-
-Controls server logging.
-
-```bash
-export GDB_MCP_LOG_LEVEL=DEBUG
-gdb-mcp-server
-```
-
-Valid values: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`.
-
-### `GDB_MCP_AUTH_TOKEN`
-
-Bearer token for the streamable HTTP transport. `gdb-mcp-server` uses it when `--auth-token` is not passed, and `gdb-mcp-client` sends it with every request (including `--server-url` mode). Background servers created by the client receive the token through this variable instead of the command line:
-
-```bash
-export GDB_MCP_AUTH_TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
+export GDB_MCP_AUTH_TOKEN=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
 gdb-mcp-server --transport streamable-http --port 8000
 gdb-mcp-client --server-url http://127.0.0.1:8000/mcp status
 ```
 
-### `GDB_MCP_STATE_DIR`
+`--auth-token` on the server and `--server-url` / `GDB_MCP_SERVER_URL` on the
+client cover the same ground without environment variables.
 
-Overrides where `gdb-mcp-client` keeps background-server cookies and logs. Defaults to the platform cache directory (`%LOCALAPPDATA%` on Windows, `~/Library/Caches` on macOS, `$XDG_CACHE_HOME` or `~/.cache` elsewhere) under `gdb-mcp/`.
+### Logging
 
-### `GDB_MCP_DAEMON_IDLE_SEC`
-
-Changes how long a background server started by `gdb-mcp-client` waits without requests before exiting. Defaults to 900 seconds; `0` disables idle exit.
-
-### `GDB_MCP_CLIENT_READ_TIMEOUT_SEC`
-
-Bounds how long `gdb-mcp-client` waits for a single tool response. Defaults to 1800 seconds (30 minutes). This is a safety net: if the HTTP transport drops a response, the underlying MCP session would otherwise wait forever without reporting an error. Raise it when a single call legitimately runs longer, such as a long `gdb_run_until_failure` campaign.
-
-## Tool Surface
-
-The current public interface exposes 18 tools:
-
-- `gdb_session_start`
-- `gdb_session_connect`
-- `gdb_session_query`
-- `gdb_session_manage`
-- `gdb_inferior_query`
-- `gdb_inferior_manage`
-- `gdb_execution_manage`
-- `gdb_breakpoint_query`
-- `gdb_breakpoint_manage`
-- `gdb_context_query`
-- `gdb_context_manage`
-- `gdb_inspect_query`
-- `gdb_workflow_batch`
-- `gdb_capture_bundle`
-- `gdb_run_until_failure`
-- `gdb_execute_command`
-- `gdb_attach_process`
-- `gdb_call_function`
-
-The interface follows three rules:
-
-- Domain consolidation: related operations share one tool family.
-- Read/write split: query-style actions and mutating actions are separate tools.
-- Action-scoped payloads: action-based tools take `action` plus one nested payload object such as `query`, `context`, `execution`, `inferior`, or `breakpoint`.
-
-All examples in this repository use the v2 tool surface. Historical one-tool-per-operation names appear only in the migration notes in this file and in the migration appendix in [TOOLS.md](TOOLS.md#migration-appendix).
-
-Examples:
-
-- `gdb_session_query(action="list")`
-- `gdb_execution_manage(action="continue")`
-- `gdb_breakpoint_manage(action="create")`
-- `gdb_context_query(action="backtrace")`
-- `gdb_inspect_query(action="registers")`
-
-`gdb_session_start` remains separate because startup has a unique request shape, and `gdb_session_connect` covers the externally started gdb case (via `tcp://`, `unix://`, or `pty://` endpoints). `gdb_execute_command`, `gdb_attach_process`, and `gdb_call_function` also remain separate so escape-hatch and privileged operations are easy to permission independently.
-
-Detailed request and response documentation lives in [TOOLS.md](TOOLS.md).
-Representative end-to-end prompts and workflows live in [examples/USAGE_GUIDE.md](examples/USAGE_GUIDE.md), [skills/debug-with-gdb-mcp/SKILL.md](skills/debug-with-gdb-mcp/SKILL.md) for the MCP tools, and [skills/gdb-mcp-cli/SKILL.md](skills/gdb-mcp-cli/SKILL.md) for the command line.
-
-## Response Model
-
-There are two success shapes:
-
-### Dedicated Tools Without `action`
-
-`gdb_session_start`, `gdb_workflow_batch`, `gdb_capture_bundle`, `gdb_run_until_failure`, `gdb_execute_command`, `gdb_attach_process`, and `gdb_call_function` return direct structured success payloads:
-
-```json
-{
-  "status": "success",
-  "session_id": 7,
-  "message": "GDB session started successfully",
-  "target_loaded": true,
-  "execution_state": "not_started"
-}
-```
-
-### Action-Based Tools
-
-Action-based tools return a uniform envelope:
-
-```json
-{
-  "status": "success",
-  "action": "status",
-  "result": {
-    "is_running": true,
-    "target_loaded": true,
-    "execution_state": "paused"
-  }
-}
-```
-
-Errors always use a machine-readable envelope and are returned with MCP `isError: true`:
-
-```json
-{
-  "status": "error",
-  "code": "validation_error",
-  "message": "breakpoint.location is required for kind=code",
-  "action": "create",
-  "details": {
-    "field_errors": [
-      {
-        "field": "breakpoint.location",
-        "issue": "missing",
-        "message": "breakpoint.location is required for kind=code"
-      }
-    ]
-  }
-}
-```
-
-## Usage Examples
-
-### Example 1: Core Dump Inspection
-
-Start a post-mortem session:
-
-```json
-{
-  "program": "/path/to/executable",
-  "core": "/tmp/core.12345",
-  "init_commands": [
-    "set sysroot /opt/sysroot"
-  ]
-}
-```
-
-Then inspect thread inventory:
-
-```json
-{
-  "session_id": 7,
-  "action": "threads",
-  "query": {}
-}
-```
-
-The second payload is a `gdb_context_query` call.
-
-### Example 2: Set A Conditional Breakpoint And Continue
-
-Create a code breakpoint:
-
-```json
-{
-  "session_id": 7,
-  "action": "create",
-  "breakpoint": {
-    "kind": "code",
-    "location": "process_data",
-    "condition": "count > 100",
-    "temporary": false
-  }
-}
-```
-
-Continue execution:
-
-```json
-{
-  "session_id": 7,
-  "action": "continue",
-  "execution": {
-    "wait_until": "stop",
-    "timeout_sec": 30
-  }
-}
-```
-
-The first payload is `gdb_breakpoint_manage`. The second is `gdb_execution_manage`.
-
-### Example 3: One Locked Batch
-
-Execute a breakpoint, run, and backtrace flow under one workflow lock:
-
-```json
-{
-  "session_id": 7,
-  "steps": [
-    {
-      "tool": "gdb_breakpoint_manage",
-      "label": "break main",
-      "arguments": {
-        "action": "create",
-        "breakpoint": {
-          "kind": "code",
-          "location": "main"
-        }
-      }
-    },
-    {
-      "tool": "gdb_execution_manage",
-      "label": "run",
-      "arguments": {
-        "action": "run",
-        "execution": {}
-      }
-    },
-    {
-      "tool": "gdb_context_query",
-      "label": "stack",
-      "arguments": {
-        "action": "backtrace",
-        "query": {}
-      }
-    }
-  ]
-}
-```
-
-That payload is a `gdb_workflow_batch` call. Step arguments never include `session_id`; the batch injects it automatically.
-
-## Advanced Usage
-
-### Custom Initialization Commands
-
-Use `init_commands` to configure GDB before normal debugging begins:
-
-```json
-{
-  "program": "/path/to/myprogram",
-  "init_commands": [
-    "set print pretty on",
-    "set pagination off"
-  ]
-}
-```
-
-If you provide `env`, those variables are applied before any `init_commands` run.
-
-`args` and `core` are intentionally mutually exclusive in one startup request. Use `args` for live launches and `core` for post-mortem analysis.
-
-### Working With Running Processes
-
-Attach with the dedicated privileged tool:
-
-```json
-{
-  "session_id": 7,
-  "pid": 12345,
-  "timeout_sec": 30
-}
-```
-
-That payload is a `gdb_attach_process` call.
+Server logs go to stderr, which keeps stdout clean for stdio transport.
+`GDB_MCP_LOG_LEVEL=DEBUG` adds the GDB/MI traffic, which is the fastest way to
+see what the server actually asked GDB.
 
 ## Troubleshooting
 
-### GDB Not Found
+- **`gdb` not found** — check `which gdb` and `gdb --version`, then point
+  `GDB_PATH` at the binary you want.
+- **A call times out while the program is running** — GDB is usually busy because
+  the inferior is still running. Check the session state, wait for a stop, or
+  interrupt the inferior; the
+  [debug-with-gdb-mcp skill](skills/debug-with-gdb-mcp/SKILL.md) shows the exact
+  calls.
+- **Breakpoints or locals look wrong** — read the `warnings` array returned by
+  `gdb_session_start`. Missing debug symbols mean the target was not built with
+  `-g`; a refused auto-load script means the language's GDB helpers stayed
+  inactive.
+- **The background server will not start** — the client prints the tail of the
+  daemon log; the full log is under the state directory.
+
+More installation and platform troubleshooting: [INSTALL.md](INSTALL.md).
+
+## Development
 
 ```bash
-which gdb
-gdb --version
-```
-
-### Commands Time Out While The Program Is Running
-
-GDB is usually busy because the inferior is still running.
-
-- Inspect state with `gdb_session_query(action="status")`
-- Wait for a stop with `gdb_execution_manage(action="wait_for_stop")`
-- Force a pause with `gdb_execution_manage(action="interrupt")`
-
-Common execution states:
-
-- `not_started`
-- `running`
-- `paused`
-- `exited`
-- `unknown`
-
-### Missing Debug Symbols
-
-Always inspect the `warnings` array returned by `gdb_session_start`. Build targets with `-g` if you need source-level breakpoints, locals, and meaningful backtraces.
-
-For additional troubleshooting and installation help, see [INSTALL.md](INSTALL.md#troubleshooting).
-
-## How It Works
-
-1. The server talks to GDB over GDB/MI.
-2. Session services normalize GDB behavior into structured Python domain models.
-3. The MCP layer validates input against Pydantic schemas and returns JSON payloads through `call_tool`.
-4. Clients keep track of `session_id` and use the returned state snapshots as the source of truth.
-
-## MCP Client Contract
-
-This server currently exposes MCP context through:
-
-- `list_tools`
-- `call_tool`
-
-Every `call_tool` response carries one JSON payload as both MCP `structuredContent` and serialized text in `content[0].text`.
-
-Clients should expect:
-
-- `status` on every response
-- `action` plus nested `result` on action-based tools
-- direct structured success payloads on dedicated tools without `action`
-- `code` plus `message` on every error payload
-- MCP `isError: true` on failure results
-- the envelope under `structuredContent`, with `content[0].text` kept for clients that only read text
-
-The server does not currently publish MCP `outputSchema`, resources, prompts, or event streams. Clients should treat tool responses as authoritative runtime state and manage `session_id` explicitly.
-
-Published tool input schemas avoid JSON Schema union combinators (`oneOf`/`anyOf`) for client compatibility: discriminated unions are flattened, and per-action requirements are documented in the schema description under `Conditional requirements:`.
-
-## Historical Name Mapping
-
-This interface is a clean break from the earlier one-tool-per-operation surface.
-
-- `gdb_start_session` is now `gdb_session_start`
-- `gdb_get_status` is now `gdb_session_query(action="status")`
-- `gdb_run` is now `gdb_execution_manage(action="run")`
-- `gdb_set_breakpoint` is now `gdb_breakpoint_manage(action="create", breakpoint.kind="code")`
-- `gdb_get_backtrace` is now `gdb_context_query(action="backtrace")`
-- `gdb_batch` is now `gdb_workflow_batch`
-
-The full migration appendix is in [TOOLS.md](TOOLS.md#migration-appendix).
-
-## Contributing
-
-Before opening a PR for code changes, run:
-
-```bash
-uv run ruff check src tests
-uv run mypy src
-uv run pytest -q
+.venv/bin/black --check src tests
+.venv/bin/ruff check src tests
+.venv/bin/mypy src tests
+.venv/bin/pytest -q     # includes tests/integration/, which needs gdb and g++
 git diff --check
 ```
+
+See [AGENTS.md](AGENTS.md) for repository conventions.
 
 ## License
 
@@ -524,5 +208,19 @@ MIT
 ## References
 
 - [GDB Machine Interface (MI)](https://sourceware.org/gdb/current/onlinedocs/gdb/GDB_002fMI.html)
-- [pygdbmi Documentation](https://github.com/cs01/pygdbmi)
+- [pygdbmi](https://github.com/cs01/pygdbmi)
 - [Model Context Protocol](https://modelcontextprotocol.io/)
+- [rr](https://rr-project.org/)
+
+## Environment Variables
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `GDB_PATH` | `gdb` | GDB binary to spawn. `gdb_session_start.gdb_path` overrides it per session. |
+| `RR_PATH` | `rr` | `rr` binary used by `rr_replay` sessions. |
+| `GDB_MCP_LOG_LEVEL` | `INFO` | Server log level: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. |
+| `GDB_MCP_AUTH_TOKEN` | unset | Bearer token for the streamable HTTP transport, used by the server and sent by the client. |
+| `GDB_MCP_SERVER_URL` | unset | Endpoint for `gdb-mcp-client`; same as `--server-url`. |
+| `GDB_MCP_STATE_DIR` | platform cache dir | Where the client keeps background-server cookies and logs (`%LOCALAPPDATA%`, `~/Library/Caches`, `$XDG_CACHE_HOME`, or `~/.cache`, under `gdb-mcp/`). |
+| `GDB_MCP_DAEMON_IDLE_SEC` | `900` | Idle seconds before a client-started background server exits; `0` disables idle exit. |
+| `GDB_MCP_CLIENT_READ_TIMEOUT_SEC` | `1800` | How long the client waits for one tool response. Raise it for legitimately long calls, such as a large run-until-failure campaign. |
