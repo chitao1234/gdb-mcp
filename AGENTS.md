@@ -18,8 +18,8 @@ the same tools and can keep one server per project running in the background.
 - `src/gdb_mcp/transport/` — the GDB/MI client and externally owned streams.
 - `src/gdb_mcp/client/` — `cli.py`, per-family `specs/`, `runtime.py` transport,
   `daemon.py` per-project background server.
-- `tests/` mirrors the packages (`integration/` needs a real `gdb`);
-  `skills/` and `examples/` hold agent-facing material.
+- `tests/` mirrors the packages (`integration/` needs a real `gdb`); `skills/`
+  holds agent-facing material.
 - Docs: `README.md` is the overview, `TOOLS.md` the per-tool contract.
 
 ## Rules
@@ -66,6 +66,6 @@ tests and say what you skipped. Do not revert unrelated local changes.
 ## Docs
 
 Behavior changes update `TOOLS.md` (the contract) and `README.md` (the overview),
-plus `examples/` and `skills/` when a workflow changes. Skills stay
-interface-only: which tool or command to call and how failures look, not
-implementation detail. Use v2 tool names in every example and skill.
+plus `skills/` when a workflow changes. Skills stay interface-only: which tool or
+command to call and how failures look, not implementation detail. Use v2 tool
+names in every example and skill.

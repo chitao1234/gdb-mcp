@@ -128,8 +128,6 @@ and agent-driven use.
   core dumps, attach, rr replay, and more)
 - [skills/gdb-mcp-cli](skills/gdb-mcp-cli/SKILL.md) — the same work through
   `gdb-mcp-client`
-- [examples/USAGE_GUIDE.md](examples/USAGE_GUIDE.md) — end-to-end example
-  prompts against a sample program
 
 ## Operating Notes
 

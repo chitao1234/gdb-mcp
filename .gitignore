@@ -39,11 +39,6 @@ ENV/
 .coverage
 htmlcov/
 
-# Example builds
-examples/sample_program
-examples/*.o
-examples/core.*
-
 # OS
 .DS_Store
 Thumbs.db
