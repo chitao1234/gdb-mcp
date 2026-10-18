@@ -56,6 +56,10 @@ CI runs the same checks, so what passes locally passes there. `ruff` uses
 upstream's default rule set; `[tool.ruff]` only pins line length and target
 version and documents the one deliberate ignore.
 
+`pyproject.toml` declares the dependencies and `uv.lock` pins them; change both
+in the same commit (`uv lock`). The lock is a convenience, not a requirement:
+`pip install -e ".[dev]"` and `pipx install .` stay supported, and CI uses pip.
+
 Commit one logical change at a time. For small edits run the narrowest relevant
 tests and say what you skipped. Do not revert unrelated local changes.
 
