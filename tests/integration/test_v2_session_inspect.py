@@ -6,6 +6,7 @@ import subprocess
 
 import pytest
 
+from gdb_mcp.session.inspection.disassembly import InspectionDisassembly
 from tests.support import dig, integer, mapping, mapping_list
 
 from .conftest import (
@@ -176,6 +177,44 @@ def test_source_and_disassembly_queries_v2(session_id: int, call_gdb_tool: CallG
     assert source["action"] == "source"
     assert integer(dig(source, "result", "count")) > 0
     assert any(line.get("is_current") for line in mapping_list(dig(source, "result", "lines")))
+
+
+@pytest.mark.integration
+def test_disassembly_fallback_without_a_option_v2(
+    session_id: int, call_gdb_tool: CallGdbTool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pre-8.3 disassembly fallback should work against a real GDB."""
+
+    monkeypatch.setattr(InspectionDisassembly, "_supports_disassemble_a", lambda self: False)
+
+    call_gdb_tool(
+        "gdb_breakpoint_manage",
+        {
+            "session_id": session_id,
+            "action": "create",
+            "breakpoint": {"kind": "code", "location": "add"},
+        },
+    )
+    call_gdb_tool(
+        "gdb_execution_manage",
+        {"session_id": session_id, "action": "run", "execution": {}},
+    )
+
+    disassembly = call_gdb_tool(
+        "gdb_inspect_query",
+        {
+            "session_id": session_id,
+            "action": "disassembly",
+            "query": {
+                "location": {"kind": "function", "function": "add"},
+                "instruction_count": 16,
+                "mode": "mixed",
+            },
+        },
+    )
+    assert disassembly["status"] == "success", disassembly
+    assert disassembly["action"] == "disassembly"
+    assert integer(dig(disassembly, "result", "count")) > 0
 
 
 @pytest.mark.integration

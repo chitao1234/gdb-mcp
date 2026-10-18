@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Literal
 
 from ...domain import (
@@ -22,6 +23,13 @@ from .base import (
     _ResolvedCodeLocation,
     _SelectionSnapshot,
 )
+
+# `-data-disassemble -a` (whole function by name or address) was added in GDB 8.3
+# and is advertised through `-list-features`. Older GDB resolves the same range
+# through the CLI `disassemble`, whose output prefixes every instruction with its
+# address.
+_FEATURE_DISASSEMBLE_A = "data-disassemble-a-option"
+_CLI_DISASSEMBLE_INSN_ADDRESS_RE = re.compile(r"^\s*(?:=>\s*)?(0x[0-9a-fA-F]+)\s+<", re.MULTILINE)
 
 
 class InspectionDisassembly:
@@ -178,15 +186,15 @@ class InspectionDisassembly:
                     f"-l {location.line} -n {instruction_count} -- {mode_token}"
                 )
             if location.address is not None:
-                return f"-data-disassemble -a {quote_mi_string(location.address)} -- {mode_token}"
+                return self._whole_function_command(location.address, mode_token=mode_token)
             return OperationError(
                 message="Unable to resolve a current source line or address for disassembly"
             )
 
         if location.scope == "function" and location.function is not None:
-            return f"-data-disassemble -a {quote_mi_string(location.function)} -- {mode_token}"
+            return self._whole_function_command(location.function, mode_token=mode_token)
         if location.scope == "address" and location.address is not None:
-            return f"-data-disassemble -a {quote_mi_string(location.address)} -- {mode_token}"
+            return self._whole_function_command(location.address, mode_token=mode_token)
         if (
             location.scope == "address_range"
             and location.start_address is not None
@@ -199,6 +207,64 @@ class InspectionDisassembly:
         return OperationError(
             message="Unable to build a disassembly command for the resolved selector"
         )
+
+    def _whole_function_command(self, target: str, *, mode_token: str) -> str | OperationError:
+        """Build the command that disassembles the whole function containing TARGET.
+
+        ``-data-disassemble -a`` only exists from GDB 8.3 on. Older GDB still
+        disassembles a whole function through the CLI ``disassemble``, so resolve
+        that range from its output and hand it to ``-data-disassemble -s/-e``,
+        which returns the same structured payload.
+        """
+
+        if self._supports_disassemble_a():
+            return f"-data-disassemble -a {quote_mi_string(target)} -- {mode_token}"
+
+        address_range = self._whole_function_address_range(target)
+        if isinstance(address_range, OperationError):
+            return address_range
+        start_address, end_address = address_range
+        return f"-data-disassemble -s {start_address} -e {end_address} -- {mode_token}"
+
+    def _supports_disassemble_a(self) -> bool:
+        """Return whether this GDB supports ``-data-disassemble -a`` (GDB >= 8.3)."""
+
+        cached = self._runtime.disassemble_a_supported
+        if cached is not None:
+            return cached
+
+        result = self._command_runner.execute_command_result(
+            "-list-features", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
+        supported = False
+        if isinstance(result, OperationSuccess):
+            payload = extract_mi_result_payload(command_result_payload(result))
+            if isinstance(payload, dict):
+                features = payload.get("features")
+                if isinstance(features, list):
+                    supported = _FEATURE_DISASSEMBLE_A in features
+        self._runtime.disassemble_a_supported = supported
+        return supported
+
+    def _whole_function_address_range(self, target: str) -> tuple[str, str] | OperationError:
+        """Return the ``[start, end)`` address range of the function holding TARGET."""
+
+        result = self._command_runner.execute_command_result(
+            f"disassemble {target}", timeout_sec=DEFAULT_TIMEOUT_SEC
+        )
+        if isinstance(result, OperationError):
+            return result
+
+        addresses = sorted(
+            int(address, 16)
+            for address in _CLI_DISASSEMBLE_INSN_ADDRESS_RE.findall(result.value.output or "")
+        )
+        if not addresses:
+            return OperationError(
+                message=f"GDB returned no disassembly for {target!r}",
+                code="disassembly_unavailable",
+            )
+        return (hex(addresses[0]), hex(addresses[-1] + 1))
 
     def _normalize_disassembly_payload(
         self,

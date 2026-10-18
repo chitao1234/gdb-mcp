@@ -346,6 +346,7 @@ class TestStructuredCodeInspectionApi:
         """Disassembly should flatten current-context MI output into instruction records."""
 
         session, _controller = scripted_running_session(
+            [mi_result({"features": ["data-disassemble-a-option"]})],
             [
                 mi_result(
                     {
@@ -355,7 +356,7 @@ class TestStructuredCodeInspectionApi:
                         ]
                     }
                 )
-            ]
+            ],
         )
 
         result = result_to_mapping(session.disassemble(instruction_count=2, mode="assembly"))
@@ -377,6 +378,7 @@ class TestStructuredCodeInspectionApi:
             [mi_result({"frame": {"level": "0", "func": "main"}})],
             [mi_result()],
             [mi_result()],
+            [mi_result({"features": ["data-disassemble-a-option"]})],
             [mi_result({"asm_insns": []})],
             [mi_result()],
             [mi_result()],
@@ -388,6 +390,77 @@ class TestStructuredCodeInspectionApi:
         written = [command.decode() for command in controller.io_manager.stdin.writes]
         assert written[-2].endswith("-thread-select 1\n")
         assert written[-1].endswith("-stack-select-frame 0\n")
+
+    def test_disassemble_falls_back_without_a_option(
+        self,
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_result: MiRecordBuilder,
+        mi_console: MiConsoleBuilder,
+    ) -> None:
+        """GDB that lacks `-a` should resolve the whole function through the CLI."""
+
+        session, controller = scripted_running_session(
+            [mi_result({"features": ["thread-info"]})],
+            [
+                mi_console(
+                    "Dump of assembler code for function add:\n"
+                    "   0x401000 <+0>:\tpush   %rbp\n"
+                    "   0x401002 <+2>:\tretq\n"
+                    "End of assembler dump.\n"
+                ),
+                mi_result(),
+            ],
+            [mi_result({"asm_insns": [{"address": "0x401000", "inst": "push %rbp"}]})],
+        )
+
+        result = result_to_mapping(session.disassemble(function="add", instruction_count=1))
+
+        assert result["status"] == "success"
+        assert result["count"] == 1
+        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert any(command.endswith("-list-features\n") for command in written)
+        assert any("disassemble add" in command for command in written)
+        assert any(
+            command.endswith("-data-disassemble -s 0x401000 -e 0x401003 -- 1\n")
+            for command in written
+        )
+
+    def test_disassemble_fallback_reports_missing_range(
+        self,
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_result: MiRecordBuilder,
+        mi_console: MiConsoleBuilder,
+    ) -> None:
+        """A CLI disassembly with no instructions should fail with a clear code."""
+
+        session, _controller = scripted_running_session(
+            [mi_result({"features": []})],
+            [mi_console("No function contains specified address.\n"), mi_result()],
+        )
+
+        result = result_to_mapping(session.disassemble(function="missing"))
+
+        assert result["status"] == "error"
+        assert result["code"] == "disassembly_unavailable"
+
+    def test_disassemble_capability_probe_is_cached(
+        self,
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_result: MiRecordBuilder,
+    ) -> None:
+        """The `-list-features` probe should run at most once per session."""
+
+        session, controller = scripted_running_session(
+            [mi_result({"features": ["data-disassemble-a-option"]})],
+            [mi_result({"asm_insns": [{"address": "0x401000", "inst": "nop"}]})],
+            [mi_result({"asm_insns": [{"address": "0x401000", "inst": "nop"}]})],
+        )
+
+        session.disassemble(function="add")
+        session.disassemble(function="add")
+
+        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        assert sum(1 for command in written if command.endswith("-list-features\n")) == 1
 
     def test_get_source_context_file_line_selector(
         self, tmp_path: Path, session_service: SessionService
