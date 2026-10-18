@@ -52,6 +52,10 @@ the same tools and can keep one server per project running in the background.
 git diff --check
 ```
 
+CI runs the same checks, so what passes locally passes there. `ruff` uses
+upstream's default rule set; `[tool.ruff]` only pins line length and target
+version and documents the one deliberate ignore.
+
 Commit one logical change at a time. For small edits run the narrowest relevant
 tests and say what you skipped. Do not revert unrelated local changes.
 
