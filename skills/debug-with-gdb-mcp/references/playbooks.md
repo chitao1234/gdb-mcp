@@ -50,8 +50,9 @@ rr record ./app --flag value
 }
 ```
 
-The trace owns the target, so `program`, `args`, and `core` are rejected. Breakpoints,
-`continue`, and `execution.reverse` all work against the recording.
+The trace owns the target: a `program` passed here is ignored and reported in `warnings`,
+while `args` and `core` are rejected. Breakpoints, `continue`, and `execution.reverse`
+all work against the recording.
 
 ### Later Rerun with Different Args
 

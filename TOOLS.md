@@ -234,11 +234,12 @@ Dedicated startup tool. This is not action-based.
 - `working_dir`: optional working directory for the GDB process
 - `rr_replay`: optional rr trace directory to replay instead of launching a program
 
-`args` and `core` are mutually exclusive. `rr_replay` cannot be combined with
-`program`, `args`, or `core`: the recording already owns the target, so the
-session runs `rr replay --interpreter=mi <trace>` instead of a plain `gdb`. The
-`RR_PATH` environment variable (default `rr`) selects the rr binary, and
-`gdb_path` is passed to rr as its `-d` debugger choice.
+`args` and `core` are mutually exclusive. With `rr_replay` the recording already
+owns the target, so the session runs `rr replay --interpreter=mi <trace>` instead
+of a plain `gdb`; a `program` passed alongside it is ignored and reported in
+`warnings`, while `args` and `core` are rejected. The `RR_PATH` environment
+variable (default `rr`) selects the rr binary, and `gdb_path` is passed to rr as
+its `-d` debugger choice.
 
 ### Success Fields
 

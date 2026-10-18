@@ -56,7 +56,8 @@ class StartSessionArgs(StrictArgsModel):
         description=(
             "Path to an rr trace directory (or 'latest-trace') to replay instead of "
             "launching a program. Starts 'rr replay --interpreter=mi', which brings "
-            "reverse execution. Cannot be combined with program, args, or core."
+            "reverse execution. The trace owns the target, so a 'program' here is "
+            "ignored with a warning; 'args' and 'core' are rejected."
         ),
     )
     core: str | None = Field(

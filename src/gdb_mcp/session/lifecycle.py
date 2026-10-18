@@ -87,6 +87,13 @@ class SessionLifecycleService:
             if gdb_path is None:
                 gdb_path = self._runtime.os_module.environ.get("GDB_PATH", "gdb")
 
+            startup_warnings: list[str] = []
+            if rr_replay and program:
+                startup_warnings.append(
+                    f"Program '{program}' was ignored: the rr trace already owns the target."
+                )
+                program = None
+
             config = SessionConfig.from_inputs(
                 program=program,
                 args=args,
@@ -101,10 +108,10 @@ class SessionLifecycleService:
             self._runtime.begin_startup(config)
 
             try:
-                if rr_replay and (program or args or core):
+                if rr_replay and (args or core):
                     message = (
-                        "An rr trace already owns the target; do not also pass program, "
-                        "args, or core when replaying a recording."
+                        "An rr trace already owns the target; do not also pass args or core "
+                        "when replaying a recording."
                     )
                     self._runtime.mark_failed(message)
                     return OperationError(message=message)
@@ -200,7 +207,7 @@ class SessionLifecycleService:
                 startup_result = parse_mi_responses(startup_responses)
                 startup_output_text = self._startup_output_text(startup_result)
 
-                warnings: list[str] = []
+                warnings: list[str] = list(startup_warnings)
                 startup_output_lower = startup_output_text.lower()
                 if "no debugging symbols found" in startup_output_lower:
                     warnings.append("No debugging symbols found - program was not compiled with -g")

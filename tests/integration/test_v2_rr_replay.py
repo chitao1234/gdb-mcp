@@ -11,7 +11,7 @@ import subprocess
 
 import pytest
 
-from tests.support import dig, integer, text
+from tests.support import dig, integer, sequence, text
 
 from .conftest import CallGdbTool, StopSession
 
@@ -118,16 +118,22 @@ def test_rr_replay_session_supports_reverse_execution(
         stop_session(session_id, ignore_errors=True)
 
 
-def test_rr_replay_rejects_a_program_alongside_the_trace(
+def test_rr_replay_ignores_a_program_alongside_the_trace(
     rr_trace: str,
     call_gdb_tool: CallGdbTool,
+    stop_session: StopSession,
 ) -> None:
-    """The trace owns the target, so pairing it with a program is rejected."""
+    """The trace owns the target, so a program is ignored and reported."""
 
-    result = call_gdb_tool(
+    start = call_gdb_tool(
         "gdb_session_start",
         {"rr_replay": rr_trace, "program": "/bin/ls"},
     )
 
-    assert result["status"] == "error", result
-    assert "rr trace already owns the target" in text(result["message"]).lower()
+    assert start["status"] == "success", start
+    session_id = integer(start["session_id"])
+    try:
+        assert start["program"] is None
+        assert any("ignored" in text(warning).lower() for warning in sequence(start["warnings"]))
+    finally:
+        stop_session(session_id, ignore_errors=True)

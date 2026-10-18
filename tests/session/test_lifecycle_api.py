@@ -225,14 +225,43 @@ class TestLifecycleApi:
         command = mock_controller_class.call_args[1]["command"]
         assert command[0] == "/opt/rr/bin/rr"
 
-    def test_start_session_rejects_rr_replay_with_program(
+    @patch("gdb_mcp.session.factory.GdbController")
+    def test_start_session_ignores_program_with_rr_replay(
+        self,
+        mock_controller_class: MagicMock,
+        session_service: SessionService,
+        prompt_response: PromptResponseBuilder,
+    ) -> None:
+        """An rr trace owns the target, so a program is ignored with a warning."""
+
+        mock_controller_class.return_value = MagicMock()
+
+        with (
+            patch.object(
+                session_service._command_runner,
+                "send_command_and_wait_for_prompt",
+                return_value=prompt_response(
+                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
+                ),
+            ),
+            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
+        ):
+            result = result_to_mapping(
+                session_service.start(rr_replay="/traces/app-0", program="/bin/ls")
+            )
+
+        assert result["status"] == "success"
+        assert result["program"] is None
+        assert any("ignored" in text(warning).lower() for warning in sequence(result["warnings"]))
+        assert session_service.config is not None
+        assert session_service.config.program is None
+
+    def test_start_session_rejects_rr_replay_with_args(
         self, session_service: SessionService
     ) -> None:
-        """An rr trace owns the target, so a program cannot be loaded as well."""
+        """Inferior argv cannot be replayed, so it stays a hard rejection."""
 
-        result = result_to_mapping(
-            session_service.start(rr_replay="/traces/app-0", program="/bin/ls")
-        )
+        result = result_to_mapping(session_service.start(rr_replay="/traces/app-0", args=["-l"]))
 
         assert result["status"] == "error"
         assert "rr trace already owns the target" in text(result["message"]).lower()

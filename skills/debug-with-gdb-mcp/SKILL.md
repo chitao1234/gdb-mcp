@@ -66,7 +66,7 @@ When referring to an action-based tool below, use the full form such as `gdb_exe
 | Attach to existing process | `gdb_session_start` first, then `gdb_attach_process` | Start empty if you only need to attach |
 | Core dump analysis | `gdb_session_start` with `core`, preferably also `program` | Expect startup to leave the target `paused` |
 | gdb already running elsewhere | `gdb_session_connect` with an `endpoint` | gdb-mcp never spawns gdb; stop only detaches |
-| Reverse debugging an rr recording | `gdb_session_start` with `rr_replay` | Record outside gdb-mcp (`rr record ./app`); the trace owns the target |
+| Reverse debugging an rr recording | `gdb_session_start` with `rr_replay` | Record outside gdb-mcp (`rr record ./app`); the trace owns the target, so a `program` is ignored with a warning |
 
 ### Configure Startup Fields Deliberately
 
@@ -79,7 +79,7 @@ When referring to an action-based tool below, use the full form such as `gdb_exe
 | `init_commands` | GDB settings or commands not covered by dedicated tools | Keep launch config in structured fields when possible |
 | `core` | Post-mortem debugging | Do not combine with `args` |
 | `gdb_path` | Non-default GDB binary | Use when a specific GDB version or build matters; with `rr_replay` it becomes rr's `-d` debugger |
-| `rr_replay` | Replay an rr trace instead of launching a program | Mutually exclusive with `program`, `args`, `core`; enables `execution.reverse` |
+| `rr_replay` | Replay an rr trace instead of launching a program | `program` is ignored with a warning; `args` and `core` are rejected; enables `execution.reverse` |
 
 ### Environment and Launch Setup Rules
 
