@@ -33,10 +33,12 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y gdb g++ rr
 
-    # rr records with perf events and needs an unrestricted kptr, which the
-    # runner image does not grant by default. When these cannot be set, the rr
-    # integration test skips itself instead of failing.
-    - name: Relax perf settings for rr
+    # rr records with perf events, so it needs a low perf_event_paranoid and an
+    # unrestricted kptr. These are enough on a self-hosted runner, but the
+    # GitHub-hosted VMs expose no hardware counters: even with both set,
+    # `perf_event_open` fails and rr cannot record. The rr integration test then
+    # skips itself (see `-rs` output) instead of failing.
+    - name: Prepare rr
       run: |
         sudo sysctl -w kernel.perf_event_paranoid=1
         sudo sysctl -w kernel.kptr_restrict=0
