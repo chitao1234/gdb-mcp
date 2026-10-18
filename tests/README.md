@@ -96,6 +96,7 @@ When adding new tests:
 4. Prefer testing the true ownership boundary instead of routing through `server.py`
 5. Keep integration coverage representative rather than exhaustive
 6. Mark integration tests appropriately
+7. Probe for environment capabilities instead of wrapping work in try/skip: skip when the capability is absent (for example `rr` cannot record in this sandbox), but let the operation fail once the capability is present. A real failure must never be reported as a skip.
 
 ## Continuous Integration
 

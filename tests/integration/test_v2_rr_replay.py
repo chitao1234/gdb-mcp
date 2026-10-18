@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -29,12 +31,44 @@ int main(void) {
 """
 
 
+def _rr_recording_blocker() -> str | None:
+    """Return why rr cannot record here, or None when it can.
+
+    rr needs perf counters and an unrestricted kptr, which sandboxes and some
+    cloud CPUs deny; that is an environment limitation, so the tests skip.
+    Anything else that fails once rr is known to work is a real failure.
+    """
+
+    rr = RR
+    if rr is None:
+        return "rr is not installed"
+
+    # `rr record -o DIR` creates DIR, so the probe must name a path that does
+    # not exist yet.
+    with tempfile.TemporaryDirectory(prefix="rr-capability-") as probe_root:
+        probe = subprocess.run(
+            [rr, "record", "-o", str(Path(probe_root) / "trace"), "/bin/true"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    if probe.returncode == 0:
+        return None
+
+    detail = (probe.stderr or probe.stdout).strip().splitlines()
+    return f"rr cannot record here: {detail[-1][:160] if detail else 'unknown error'}"
+
+
 @pytest.fixture(scope="module")
 def rr_trace(tmp_path_factory: pytest.TempPathFactory) -> str:
-    """Record one short program with rr, or skip when recording is unavailable."""
+    """Record one short program with rr, skipping only when rr itself cannot run."""
 
-    if RR is None:
-        pytest.skip("rr is not installed")
+    blocker = _rr_recording_blocker()
+    if blocker is not None:
+        pytest.skip(blocker)
+
+    rr = RR
+    assert rr is not None  # _rr_recording_blocker() already skipped when it is missing
 
     workdir = tmp_path_factory.mktemp("rr-replay")
     source = workdir / "rr_probe.c"
@@ -50,13 +84,13 @@ def rr_trace(tmp_path_factory: pytest.TempPathFactory) -> str:
 
     trace_dir = workdir / "trace"
     recorded = subprocess.run(
-        [RR, "record", "-o", str(trace_dir), str(binary)],
+        [rr, "record", "-o", str(trace_dir), str(binary)],
         capture_output=True,
         text=True,
         check=False,
     )
-    if recorded.returncode != 0:
-        pytest.skip(f"rr cannot record here: {recorded.stderr.strip()[:160]}")
+    # rr is known to record here, so a failure is this test's failure.
+    assert recorded.returncode == 0, recorded.stderr
 
     return str(trace_dir)
 
