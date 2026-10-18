@@ -28,10 +28,18 @@ jobs:
         python -m pip install --upgrade pip
         pip install -e ".[dev]"
 
-    - name: Install GDB and GCC
+    - name: Install GDB, GCC, and rr
       run: |
         sudo apt-get update
-        sudo apt-get install -y gdb g++
+        sudo apt-get install -y gdb g++ rr
+
+    # rr records with perf events and needs an unrestricted kptr, which the
+    # runner image does not grant by default. When these cannot be set, the rr
+    # integration test skips itself instead of failing.
+    - name: Relax perf settings for rr
+      run: |
+        sudo sysctl -w kernel.perf_event_paranoid=1
+        sudo sysctl -w kernel.kptr_restrict=0
 
     - name: Run unit tests
       run: |
