@@ -1,0 +1,1 @@
+"""Domain result mapping tests."""
