@@ -21,6 +21,8 @@ def build_session_start_payload(typed_input: SessionStartInput) -> dict[str, obj
         payload["core"] = typed_input.core
     if typed_input.gdb_path is not None:
         payload["gdb_path"] = typed_input.gdb_path
+    if typed_input.gdb_args:
+        payload["gdb_args"] = list(typed_input.gdb_args)
     if typed_input.working_dir is not None:
         payload["working_dir"] = typed_input.working_dir
     if typed_input.rr_replay is not None:

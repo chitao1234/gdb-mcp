@@ -74,6 +74,7 @@ def build_tool_definitions() -> list[Tool]:
                 "core (core dump path - uses --core flag for proper symbol resolution), "
                 "init_commands (GDB commands to run after environment setup), "
                 "env (environment variables applied before init_commands), gdb_path (GDB binary path), "
+                "gdb_args (extra GDB command-line arguments inserted before the program loads), "
                 "working_dir (directory to run program from), "
                 "rr_replay (rr trace directory to replay with 'rr replay', which brings reverse "
                 "execution). "

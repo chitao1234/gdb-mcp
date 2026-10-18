@@ -85,6 +85,7 @@ def parse_session_start_input(namespace: argparse.Namespace) -> SessionStartInpu
         env=collapse_key_value_entries(namespace.env),
         core=namespace.core,
         gdb_path=namespace.gdb_path,
+        gdb_args=tuple(namespace.gdb_args),
         working_dir=namespace.working_dir,
         rr_replay=namespace.rr_replay,
     )

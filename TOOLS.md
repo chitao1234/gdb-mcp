@@ -231,6 +231,7 @@ Dedicated startup tool. This is not action-based.
 - `init_commands`: optional list of GDB commands to run after environment setup
 - `env`: optional environment mapping applied before `init_commands`
 - `gdb_path`: optional GDB binary override
+- `gdb_args`: optional extra GDB command-line arguments, inserted before the program
 - `working_dir`: optional working directory for the GDB process
 - `rr_replay`: optional rr trace directory to replay instead of launching a program
 
@@ -239,7 +240,35 @@ owns the target, so the session runs `rr replay --interpreter=mi <trace>` instea
 of a plain `gdb`; a `program` passed alongside it is ignored and reported in
 `warnings`, while `args` and `core` are rejected. The `RR_PATH` environment
 variable (default `rr`) selects the rr binary, and `gdb_path` is passed to rr as
-its `-d` debugger choice.
+its `-d` debugger choice. With `rr_replay`, `gdb_args` are forwarded to the
+debugger rr starts, after rr's `--` separator.
+
+`gdb_args` are passed verbatim as argv elements, so an option that takes a
+separate operand needs two entries (`["-iex", "set print elements 0"]`). GDB
+loads a `program` given on its command line during its own startup, so this is
+the only channel for settings that must apply *before* the target is read:
+auto-load `safe-path` and script search directories. `init_commands` run
+afterwards and cannot enable auto-loading. Entries that would replace the MI
+interpreter (`-i`, `--interpreter`), duplicate the target wiring (`--args`,
+`core`/`--pid`/`--attach`) or sit bare without a preceding option are rejected
+with `validation_error`.
+
+Language support arrives as GDB scripts a binary embeds in `.debug_gdb_scripts`,
+and GDB refuses to run them unless their directory is trusted. When that happens
+`gdb_session_start` reports it in `warnings` and names the fix, for example
+Rust's pretty-printers (needs both the search directory and the trust entry,
+because rustc embeds a bare file name):
+
+```json
+{
+  "program": "/path/to/app",
+  "gdb_args": ["--directory=/path/to/rustlib/etc", "-iex", "add-auto-load-safe-path /path/to/rustlib/etc"]
+}
+```
+
+Go embeds an absolute path, so the trust entry alone is enough; a kernel build
+needs `add-auto-load-safe-path` for its build tree. `gdb_path` pointing at a
+wrapper such as `rust-gdb` achieves the same by injecting those options.
 
 ### Success Fields
 

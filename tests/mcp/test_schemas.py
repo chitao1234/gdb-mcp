@@ -71,6 +71,44 @@ class TestStartSessionArgs:
         assert args.rr_replay == "/traces/app-0"
         assert args.program is None
 
+    def test_gdb_args_are_accepted(self) -> None:
+        """Extra GDB command-line arguments pass through verbatim."""
+
+        args = StartSessionArgs(
+            program="/bin/ls",
+            gdb_args=["--directory=/tmp/pp", "-iex", "add-auto-load-safe-path /tmp/pp"],
+        )
+
+        assert args.gdb_args == [
+            "--directory=/tmp/pp",
+            "-iex",
+            "add-auto-load-safe-path /tmp/pp",
+        ]
+
+    def test_gdb_args_reject_replacing_the_interpreter(self) -> None:
+        """An argument that would break the MI protocol is rejected."""
+
+        with pytest.raises(ValidationError) as excinfo:
+            StartSessionArgs(gdb_args=["--interpreter=console"])
+
+        assert "MI interpreter" in str(excinfo.value)
+
+    def test_gdb_args_reject_a_second_target(self) -> None:
+        """Arguments that duplicate this server's own target wiring are rejected."""
+
+        with pytest.raises(ValidationError) as excinfo:
+            StartSessionArgs(program="/bin/ls", gdb_args=["--args", "/bin/cat"])
+
+        assert "conflicts with the 'program' and 'args' parameters" in str(excinfo.value)
+
+    def test_gdb_args_reject_bare_arguments(self) -> None:
+        """A bare word must be the operand of an option, not a stray program."""
+
+        with pytest.raises(ValidationError) as excinfo:
+            StartSessionArgs(gdb_args=["/bin/ls"])
+
+        assert "is a bare argument" in str(excinfo.value)
+
     def test_env_dict_validation(self) -> None:
         """Test that env accepts dictionary of strings."""
         args = StartSessionArgs(program="/bin/ls", env={"VAR1": "value1", "VAR2": "value2"})

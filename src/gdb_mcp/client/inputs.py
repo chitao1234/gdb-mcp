@@ -36,6 +36,7 @@ class SessionStartInput:
     env: dict[str, str] | None
     core: str | None
     gdb_path: str | None
+    gdb_args: tuple[str, ...]
     working_dir: str | None
     rr_replay: str | None
 

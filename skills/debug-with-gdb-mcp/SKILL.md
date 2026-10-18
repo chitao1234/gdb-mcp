@@ -78,12 +78,14 @@ When referring to an action-based tool below, use the full form such as `gdb_exe
 | `env` | Inferior environment variables | Applied before `init_commands`; use for `LD_LIBRARY_PATH`, feature flags, ports, and test modes |
 | `init_commands` | GDB settings or commands not covered by dedicated tools | Keep launch config in structured fields when possible |
 | `core` | Post-mortem debugging | Do not combine with `args` |
-| `gdb_path` | Non-default GDB binary | Use when a specific GDB version or build matters; with `rr_replay` it becomes rr's `-d` debugger |
+| `gdb_path` | Non-default GDB binary | Use when a specific GDB version or build matters; with `rr_replay` it becomes rr's `-d` debugger; `rust-gdb` also loads Rust's pretty-printers |
+| `gdb_args` | Extra GDB command-line arguments, applied before the program loads | The only channel for pre-load settings such as auto-load `safe-path` and script directories; each argument is one list entry |
 | `rr_replay` | Replay an rr trace instead of launching a program | `program` is ignored with a warning; `args` and `core` are rejected; enables `execution.reverse` |
 
 ### Environment and Launch Setup Rules
 
 - Put inferior environment in `env`, not inside `init_commands`.
+- Act on auto-load warnings: when `warnings` says a script was declined or could not be found, the language's GDB helpers (Rust pretty-printers, Go's goroutine commands, a kernel's `vmlinux-gdb.py`) are inactive. For Rust, restart with `gdb_path="rust-gdb"`; otherwise pass `gdb_args`. `init_commands` cannot fix it because the program is already loaded.
 - Pair `env` with `working_dir` when launch behavior depends on both environment and cwd.
 - Keep `init_commands` for GDB configuration, symbol paths, and one-off debugger commands.
 - If you need different argv on a later rerun, prefer `gdb_execution_manage(action="run", execution.args=...)` instead of recreating the whole session.

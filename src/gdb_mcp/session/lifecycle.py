@@ -34,6 +34,51 @@ SerializedResultMapping: TypeAlias = StructuredPayload
 _ENV_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _ENV_VALUE_CONTROL_RE = re.compile(r"[\r\n]")
 
+# GDB loads the program during its own startup, so a script it auto-loads from
+# that program's debug info is refused or missing before this server can send a
+# single command. Both messages therefore only ever appear in the startup text.
+_AUTO_LOAD_DECLINED_RE = re.compile(
+    r'warning: File "(?P<path>[^"]+)" auto-loading has been declined'
+    r" by your `auto-load safe-path'",
+    re.IGNORECASE,
+)
+_AUTO_LOAD_MISSING_RE = re.compile(
+    r"missing auto-load script at offset 0 in section \.debug_gdb_scripts\s+"
+    r"of file (?P<file>.+?)\.",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _auto_load_warnings(startup_output: str) -> list[str]:
+    """Return warnings for auto-load scripts GDB refused or could not find.
+
+    Language support ships as GDB scripts (Rust pretty-printers, the Go runtime
+    helpers, a kernel's ``vmlinux-gdb.py``), and GDB refuses to run them unless
+    their directory is trusted. Silently losing them turns into confusing
+    symptoms later, such as a ``Vec`` printed as raw ``RawVec`` internals, so
+    surface the refusal where the caller actually looks.
+    """
+
+    warnings: list[str] = []
+    for match in _AUTO_LOAD_DECLINED_RE.finditer(startup_output):
+        script = match.group("path")
+        warnings.append(
+            f"GDB declined to auto-load {script}: its directory is not on auto-load "
+            "safe-path. Auto-load runs while GDB loads the program, so pass the option on "
+            "the GDB command line with gdb_args (for example ['-iex', "
+            "'add-auto-load-safe-path <dir>']); init_commands run afterwards and are too "
+            "late."
+        )
+    for match in _AUTO_LOAD_MISSING_RE.finditer(startup_output):
+        warnings.append(
+            f"GDB could not find the auto-load script referenced by {match.group('file')} "
+            "(.debug_gdb_scripts), so its pretty-printers and extensions stay inactive. For "
+            "a Rust binary, start the session with gdb_path='rust-gdb' (the rustup wrapper), "
+            "which both points GDB at the script directory and trusts it; otherwise pass "
+            "gdb_args=['--directory=<dir>', '-iex', 'add-auto-load-safe-path <dir>']."
+        )
+    return warnings
+
 
 def _environment_validation_error(var_name: str, var_value: str) -> str | None:
     """Return a message when one environment variable cannot be set safely.
@@ -67,6 +112,7 @@ class SessionLifecycleService:
         init_commands: list[str] | None = None,
         env: dict[str, str] | None = None,
         gdb_path: str | None = None,
+        gdb_args: list[str] | None = None,
         working_dir: str | None = None,
         core: str | None = None,
         endpoint: str | None = None,
@@ -100,6 +146,7 @@ class SessionLifecycleService:
                 init_commands=init_commands,
                 env=env,
                 gdb_path=gdb_path,
+                gdb_args=gdb_args,
                 working_dir=working_dir,
                 core=core,
                 endpoint=endpoint,
@@ -167,6 +214,7 @@ class SessionLifecycleService:
                         core=core,
                         rr_replay=rr_replay,
                         rr_path=self._runtime.os_module.environ.get("RR_PATH", "rr"),
+                        gdb_args=gdb_args,
                     )
                     self._runtime.transport.start(
                         command=gdb_command,
@@ -215,6 +263,7 @@ class SessionLifecycleService:
                     warnings.append("File is not an executable")
                 if "no such file" in startup_output_lower:
                     warnings.append("Program file not found")
+                warnings.extend(_auto_load_warnings(startup_output_text))
 
                 # Keep CLI commands non-interactive by default for automation clients.
                 confirm_result = self._command_runner.execute_command_result(
@@ -401,15 +450,27 @@ class SessionLifecycleService:
         core: str | None,
         rr_replay: str | None = None,
         rr_path: str = "rr",
+        gdb_args: list[str] | None = None,
     ) -> list[str]:
-        """Build a GDB startup argv for the supported launch modes."""
+        """Build a GDB startup argv for the supported launch modes.
+
+        ``gdb_args`` carries caller-supplied GDB options. They are inserted before
+        the program, because GDB loads a target given on its command line during
+        startup, so anything that has to apply before that (auto-load safe-path,
+        search directories) can only arrive this way.
+        """
+
+        extra_args = list(gdb_args or ())
 
         if rr_replay:
             # rr replays the trace itself, so it owns the target and chooses the
-            # gdb that speaks MI to us.
-            return [rr_path, "replay", "--interpreter=mi", "-d", gdb_path, rr_replay]
+            # gdb that speaks MI to us. Everything after `--` goes to that gdb.
+            command = [rr_path, "replay", "--interpreter=mi", "-d", gdb_path, rr_replay]
+            if extra_args:
+                command.extend(["--", *extra_args])
+            return command
 
-        command = [gdb_path, "--quiet", "--interpreter=mi"]
+        command = [gdb_path, "--quiet", "--interpreter=mi", *extra_args]
         if core:
             if program:
                 # `--se` preserves symbol resolution for core analysis more reliably

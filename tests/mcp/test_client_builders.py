@@ -49,6 +49,7 @@ def test_parse_session_start_input_from_namespace() -> None:
         env=[("TERM", "dumb")],
         core=None,
         gdb_path=None,
+        gdb_args=["-iex", "set pagination off"],
         working_dir=None,
         rr_replay=None,
     )
@@ -60,6 +61,7 @@ def test_parse_session_start_input_from_namespace() -> None:
         env={"TERM": "dumb"},
         core=None,
         gdb_path=None,
+        gdb_args=("-iex", "set pagination off"),
         working_dir=None,
         rr_replay=None,
     )
@@ -73,6 +75,7 @@ def test_build_session_start_payload_from_typed_input() -> None:
         env={"TERM": "dumb"},
         core=None,
         gdb_path=None,
+        gdb_args=(),
         working_dir=None,
         rr_replay=None,
     )
@@ -169,6 +172,25 @@ def test_build_execution_manage_payload_includes_reverse() -> None:
     }
 
 
+def test_build_session_start_payload_includes_gdb_args() -> None:
+    typed_input = SessionStartInput(
+        program="/bin/true",
+        args=(),
+        init_commands=(),
+        env=None,
+        core=None,
+        gdb_path=None,
+        gdb_args=("-iex", "set pagination off"),
+        working_dir=None,
+        rr_replay=None,
+    )
+
+    assert build_session_start_payload(typed_input) == {
+        "program": "/bin/true",
+        "gdb_args": ["-iex", "set pagination off"],
+    }
+
+
 def test_build_session_start_payload_includes_rr_replay() -> None:
     typed_input = SessionStartInput(
         program=None,
@@ -177,6 +199,7 @@ def test_build_session_start_payload_includes_rr_replay() -> None:
         env=None,
         core=None,
         gdb_path=None,
+        gdb_args=(),
         working_dir=None,
         rr_replay="/traces/app-0",
     )

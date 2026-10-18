@@ -12,6 +12,7 @@ class SessionConfig:
     init_commands: tuple[str, ...] = ()
     env: dict[str, str] = field(default_factory=dict)
     gdb_path: str | None = None
+    gdb_args: tuple[str, ...] = ()
     working_dir: str | None = None
     core: str | None = None
     endpoint: str | None = None
@@ -26,6 +27,7 @@ class SessionConfig:
         init_commands: list[str] | None = None,
         env: dict[str, str] | None = None,
         gdb_path: str | None = None,
+        gdb_args: list[str] | None = None,
         working_dir: str | None = None,
         core: str | None = None,
         endpoint: str | None = None,
@@ -39,6 +41,7 @@ class SessionConfig:
             init_commands=tuple(init_commands or ()),
             env=dict(env or {}),
             gdb_path=gdb_path,
+            gdb_args=tuple(gdb_args or ()),
             working_dir=working_dir,
             core=core,
             endpoint=endpoint,

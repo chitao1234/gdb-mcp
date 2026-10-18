@@ -60,6 +60,7 @@ def _handle_start_session(
         init_commands=args.init_commands,
         env=args.env,
         gdb_path=args.gdb_path,
+        gdb_args=args.gdb_args,
         working_dir=args.working_dir,
         core=args.core,
         rr_replay=args.rr_replay,

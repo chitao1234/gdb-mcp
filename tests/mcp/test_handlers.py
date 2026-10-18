@@ -105,6 +105,7 @@ class TestHandlerDispatch:
             init_commands=None,
             env=None,
             gdb_path=None,
+            gdb_args=None,
             working_dir=None,
             core=None,
             rr_replay=None,

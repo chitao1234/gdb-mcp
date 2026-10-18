@@ -199,6 +199,86 @@ class TestLifecycleApi:
         assert "-d" in command
 
     @patch("gdb_mcp.session.factory.GdbController")
+    def test_start_session_passes_gdb_args_before_the_program(
+        self,
+        mock_controller_class: MagicMock,
+        session_service: SessionService,
+        prompt_response: PromptResponseBuilder,
+    ) -> None:
+        """gdb_args must reach GDB's command line ahead of the program."""
+
+        mock_controller_class.return_value = MagicMock()
+
+        with (
+            patch.object(
+                session_service._command_runner,
+                "send_command_and_wait_for_prompt",
+                return_value=prompt_response(
+                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
+                ),
+            ),
+            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
+        ):
+            result = result_to_mapping(
+                session_service.start(
+                    program="/bin/ls",
+                    gdb_args=[
+                        "--directory=/tmp/pp",
+                        "-iex",
+                        "add-auto-load-safe-path /tmp/pp",
+                    ],
+                )
+            )
+
+        command = mock_controller_class.call_args[1]["command"]
+
+        assert result["status"] == "success"
+        assert command == [
+            "gdb",
+            "--quiet",
+            "--interpreter=mi",
+            "--directory=/tmp/pp",
+            "-iex",
+            "add-auto-load-safe-path /tmp/pp",
+            "/bin/ls",
+        ]
+
+    @patch("gdb_mcp.session.factory.GdbController")
+    def test_start_session_forwards_gdb_args_to_rr_replay(
+        self,
+        mock_controller_class: MagicMock,
+        session_service: SessionService,
+        prompt_response: PromptResponseBuilder,
+    ) -> None:
+        """rr replay receives gdb_args after '--', so its gdb gets them."""
+
+        mock_controller_class.return_value = MagicMock()
+
+        with (
+            patch.object(
+                session_service._command_runner,
+                "send_command_and_wait_for_prompt",
+                return_value=prompt_response(
+                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
+                ),
+            ),
+            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
+        ):
+            result = result_to_mapping(
+                session_service.start(
+                    rr_replay="/traces/app-0",
+                    gdb_args=["-iex", "set pagination off"],
+                )
+            )
+
+        command = mock_controller_class.call_args[1]["command"]
+
+        assert result["status"] == "success"
+        assert command[:5] == ["rr", "replay", "--interpreter=mi", "-d", "gdb"]
+        assert command[5:7] == ["/traces/app-0", "--"]
+        assert command[7:] == ["-iex", "set pagination off"]
+
+    @patch("gdb_mcp.session.factory.GdbController")
     @patch.dict(os.environ, {"RR_PATH": "/opt/rr/bin/rr"})
     def test_start_session_with_rr_replay_honors_rr_path(
         self,
@@ -587,6 +667,89 @@ class TestLifecycleApi:
         assert any(
             "not compiled with -g" in text(warning) for warning in sequence(result["warnings"])
         )
+
+    @patch("gdb_mcp.session.factory.GdbController")
+    def test_start_session_warns_when_gdb_declines_auto_load(
+        self,
+        mock_controller_class: MagicMock,
+        session_service: SessionService,
+        prompt_response: PromptResponseBuilder,
+    ) -> None:
+        """A refused auto-load script must reach warnings, not just startup output."""
+
+        mock_controller_class.return_value = MagicMock()
+
+        with (
+            patch.object(
+                session_service._command_runner,
+                "send_command_and_wait_for_prompt",
+                return_value=prompt_response(
+                    command_responses=[
+                        {"type": "console", "payload": "Reading symbols from /tmp/go-app...\n"},
+                        {
+                            "type": "console",
+                            "payload": (
+                                'warning: File "/usr/share/go-1.22/src/runtime/runtime-gdb.py"'
+                                " auto-loading has been declined by your `auto-load safe-path'"
+                                ' set to "$debugdir:$datadir/auto-load".\n'
+                                "To enable execution of this file add\n"
+                                "\tadd-auto-load-safe-path"
+                                " /usr/share/go-1.22/src/runtime/runtime-gdb.py\n"
+                            ),
+                        },
+                        {"type": "result", "message": "done", "token": 1000},
+                    ]
+                ),
+            ),
+            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
+        ):
+            result = result_to_mapping(session_service.start(program="/tmp/go-app"))
+
+        warnings = [text(warning) for warning in sequence(result["warnings"])]
+
+        assert result["status"] == "success"
+        assert any("runtime-gdb.py" in warning for warning in warnings)
+        assert any("init_commands run afterwards" in warning for warning in warnings)
+
+    @patch("gdb_mcp.session.factory.GdbController")
+    def test_start_session_warns_when_auto_load_script_is_missing(
+        self,
+        mock_controller_class: MagicMock,
+        session_service: SessionService,
+        prompt_response: PromptResponseBuilder,
+    ) -> None:
+        """A script GDB cannot locate is also reported, naming the object file."""
+
+        mock_controller_class.return_value = MagicMock()
+
+        with (
+            patch.object(
+                session_service._command_runner,
+                "send_command_and_wait_for_prompt",
+                return_value=prompt_response(
+                    command_responses=[
+                        {
+                            "type": "console",
+                            "payload": (
+                                "warning: Missing auto-load script at offset 0 in section"
+                                " .debug_gdb_scripts\nof file /tmp/rust-app.\n"
+                            ),
+                        },
+                        {"type": "result", "message": "done", "token": 1000},
+                    ]
+                ),
+            ),
+            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
+        ):
+            result = result_to_mapping(session_service.start(program="/tmp/rust-app"))
+
+        warnings = [text(warning) for warning in sequence(result["warnings"])]
+
+        assert result["status"] == "success"
+        assert any(
+            "/tmp/rust-app" in warning and ".debug_gdb_scripts" in warning for warning in warnings
+        )
+        assert any("rust-gdb" in warning for warning in warnings)
 
     @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_missing_program_leaves_target_unloaded(
