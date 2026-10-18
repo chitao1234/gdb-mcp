@@ -1,543 +1,290 @@
-# Quick Installation Guide
+# Installing gdb-mcp
 
-## TL;DR - Fast Setup
+One package installs two commands:
 
-### Recommended: Using pipx (Simplest)
+- `gdb-mcp-server` — the MCP server that drives GDB
+- `gdb-mcp-client` — the CLI client that talks to a server and gives the tools a
+  debugger-like front end
 
-**1. Install pipx if not already installed:**
+Both come from the same distribution, so installing once covers both. For what
+the server and client do, see [README.md](README.md); for the tool contract, see
+[TOOLS.md](TOOLS.md).
+
+## Requirements
+
+- **Python 3.10 or newer** (`python3 --version`)
+- **GDB on `PATH`** (`gdb --version`). Install it if needed:
+
+  ```bash
+  sudo apt install gdb        # Debian/Ubuntu
+  sudo dnf install gdb        # Fedora/RHEL
+  brew install gdb            # macOS
+  ```
+
+  A GDB built with Python support is recommended, so toolchain pretty-printers
+  (Rust, Go, kernel scripts) can load.
+
+- **Optional:** `rr` for reverse debugging, and a wrapper such as `rust-gdb` if
+  you want Rust's pretty-printers.
+
+## Install With pipx (Recommended)
+
+pipx installs the commands in an isolated environment and puts them on your
+`PATH`, with no virtualenv to manage.
+
+**1. Install pipx:**
+
 ```bash
 python3 -m pip install --user pipx
-python3 -m pipx ensurepath
+python3 -m pipx ensurepath        # restart your shell afterwards
 ```
 
-**2. Install gdb-mcp-server:**
-```bash
-cd /path/to/gdb-mcp
-pipx install .
-# For developers: pipx install -e .
-```
+Or use a package manager: `sudo apt install pipx`, `brew install pipx`,
+`sudo dnf install pipx`.
 
-**3. Add to Claude Desktop config:**
-```json
-{
-  "mcpServers": {
-    "gdb": {
-      "command": "gdb-mcp-server"
-    }
-  }
-}
-```
-
-**4. Restart Claude Desktop**
-
-That's it! No paths, no virtual environment management needed.
-
-### Transport Selection
-
-The `gdb-mcp-server` command now supports two transports:
-
-- stdio, which remains the default and is the normal choice for Claude Desktop and other spawn-based MCP clients
-- streamable HTTP, which is useful when a client expects a persistent HTTP endpoint
-
-Default stdio launch:
+**2. Get the source and install:**
 
 ```bash
-gdb-mcp-server
-```
-
-Explicit streamable HTTP launch:
-
-```bash
-gdb-mcp-server --transport streamable-http --host 127.0.0.1 --port 8000 --path /mcp
-```
-
-That command serves MCP at `http://127.0.0.1:8000/mcp`.
-
----
-
-### Alternative: Using Virtual Environment
-
-**1. Create and activate virtual environment:**
-```bash
-python3 -m venv venv
-source venv/bin/activate  # Linux/macOS
-# or
-venv\Scripts\activate     # Windows
-```
-
-**2. Install the package:**
-```bash
-pip install -e ".[dev]"
-```
-
-**3. Configure Claude Desktop with the full path to your venv Python**
-
-**4. Restart Claude Desktop**
-
----
-
-## Detailed Instructions
-
-## Method 1: pipx Installation (Recommended)
-
-### Step 1: Install pipx
-
-If you don't have pipx installed:
-
-**Linux/macOS:**
-```bash
-python3 -m pip install --user pipx
-python3 -m pipx ensurepath
-# Restart your terminal or run: source ~/.bashrc (or ~/.zshrc)
-```
-
-**Windows:**
-```cmd
-py -m pip install --user pipx
-py -m pipx ensurepath
-# Restart your terminal
-```
-
-**Or use package managers:**
-```bash
-# Ubuntu/Debian
-sudo apt install pipx
-
-# macOS
-brew install pipx
-
-# Fedora
-sudo dnf install pipx
-```
-
-### Step 2: Clone/Download the Project
-
-```bash
-cd /path/to/your/projects
-git clone <repository-url> gdb-mcp
+git clone https://github.com/chitao1234/gdb-mcp.git
 cd gdb-mcp
-```
-
-### Step 3: Install with pipx
-
-**For regular users:**
-```bash
 pipx install .
 ```
 
-**For developers (editable mode):**
-```bash
-pipx install -e .
-```
+Developers who want the checkout to be the live install use `pipx install -e .`
+instead.
 
-This installs the `gdb-mcp-server` command globally, isolated from other Python packages.
+**3. Verify:** see [Verifying The Installation](#verifying-the-installation).
 
-**Important:** Wait for `pipx install` to fully complete before proceeding. You'll see output like "installed package gdb-mcp-server" or "done" when finished.
+**Update:** `cd gdb-mcp && git pull && pipx install --force .`
 
-### Step 4: Verify Installation
+**Uninstall:** `pipx uninstall gdb-mcp-server`
 
-```bash
-# Test the command works
-which gdb-mcp-server  # Linux/macOS
-# or
-where gdb-mcp-server  # Windows
+## Install With pip
 
-# Test the server starts
-gdb-mcp-server  # Press Ctrl+C to stop
-```
-
-You should see: `INFO:gdb_mcp.server:GDB MCP Server starting...`
-
-To verify the HTTP transport instead:
+Use a virtual environment so the server's dependencies stay out of your system
+Python:
 
 ```bash
-gdb-mcp-server --transport streamable-http --host 127.0.0.1 --port 8000 --path /mcp
-```
-
-Then connect an HTTP-capable MCP client to `http://127.0.0.1:8000/mcp`.
-
-**Troubleshooting:** If you get `ModuleNotFoundError: No module named 'mcp.types'` or similar import errors, the installation may not have fully completed. Wait a moment and try again, or run:
-```bash
-pipx reinstall gdb-mcp-server
-```
-
-### Step 5: Configure Your MCP Client
-
-1. Find your Claude Desktop config file location:
-   - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-   - **Linux**: `~/.config/Claude/claude_desktop_config.json`
-   - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-
-2. Edit the file (create if it doesn't exist)
-
-3. Add this simple configuration:
-
-```json
-{
-  "mcpServers": {
-    "gdb": {
-      "command": "gdb-mcp-server"
-    }
-  }
-}
-```
-
-Or with explicit type (optional):
-
-```json
-{
-  "mcpServers": {
-    "gdb": {
-      "command": "gdb-mcp-server",
-      "args": [],
-      "type": "stdio"
-    }
-  }
-}
-```
-
-That's it! No paths needed - pipx makes the command globally available.
-
-If your client uses streamable HTTP instead of stdio, start the server manually:
-
-```bash
-gdb-mcp-server --transport streamable-http --host 127.0.0.1 --port 8000 --path /mcp
-```
-
-Then point the client at `http://127.0.0.1:8000/mcp`.
-
-### Step 6: Restart Claude Desktop and Test
-
-1. Close and reopen Claude Desktop
-2. Try asking: "Do you have access to GDB debugging tools?"
-3. Claude should confirm it has access to the `gdb_*` tools
-
----
-
-## Method 2: Virtual Environment Installation
-
-### Step 1: Clone/Download the Project
-
-```bash
-cd /path/to/your/projects
-git clone <repository-url> gdb-mcp
+git clone https://github.com/chitao1234/gdb-mcp.git
 cd gdb-mcp
-```
-
-### Step 2: Create Virtual Environment and Install
-
-**Linux/macOS:**
-```bash
 python3 -m venv venv
-source venv/bin/activate
-pip install -e ".[dev]"
+source venv/bin/activate          # Windows: venv\Scripts\activate
+pip install .
 ```
 
-**Windows (Command Prompt):**
-```cmd
-python -m venv venv
-venv\Scripts\activate
-pip install -e ".[dev]"
-```
-
-This will create a virtual environment and install all dependencies.
-
-### Step 2.5: Verify Installation (Optional but Recommended)
-
-Before configuring Claude Desktop, verify the installation works:
-
-**Test the module can be imported:**
-```bash
-# From any directory
-/absolute/path/to/gdb-mcp/venv/bin/python -c "import gdb_mcp; print('OK')"
-```
-
-**Test the server can start:**
-```bash
-# From any directory (Ctrl+C to stop)
-/absolute/path/to/gdb-mcp/venv/bin/python -m gdb_mcp
-```
-
-You should see: `INFO:gdb_mcp.server:GDB MCP Server starting...`
-
-This confirms:
-- ✓ The virtual environment is set up correctly
-- ✓ All dependencies are installed
-- ✓ The module can be found from any working directory
-- ✓ The server can start successfully
-
-If you see errors, check the Troubleshooting section below.
-
-If you need streamable HTTP instead of stdio, launch:
-
-```bash
-/absolute/path/to/gdb-mcp/venv/bin/python -m gdb_mcp --transport streamable-http --host 127.0.0.1 --port 8000 --path /mcp
-```
-
-Then connect your MCP client to `http://127.0.0.1:8000/mcp`.
-
-### Step 3: Configure Your MCP Client
-
-1. Find your Claude Desktop config file location:
-   - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-   - **Linux**: `~/.config/Claude/claude_desktop_config.json`
-   - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-
-2. Edit the file (create if it doesn't exist)
-
-3. Add the GDB MCP server configuration with absolute paths:
-
-**Example for macOS/Linux** (adjust path to match your installation):
-```json
-{
-  "mcpServers": {
-    "gdb": {
-      "command": "/Users/yourname/projects/gdb-mcp/venv/bin/python",
-      "args": ["-m", "gdb_mcp"]
-    }
-  }
-}
-```
-
-**Example for Windows** (adjust path to match your installation):
-```json
-{
-  "mcpServers": {
-    "gdb": {
-      "command": "C:\\Users\\yourname\\projects\\gdb-mcp\\venv\\Scripts\\python.exe",
-      "args": ["-m", "gdb_mcp"]
-    }
-  }
-}
-```
-
-**Pro tip:** Use the absolute path from `pwd` (Linux/macOS) or `cd` (Windows) command to get the exact path.
-
-### Step 4: Restart Claude Desktop
-
-Close and reopen Claude Desktop to load the new MCP server.
-
-### Step 5: Verify It Works
-
-In Claude Desktop, try:
-```
-Do you have access to GDB debugging tools?
-```
-
-Claude should confirm it has access to the `gdb_*` tools.
-
----
-
-## Finding Your Absolute Path
-
-If you're not sure of the absolute path to your gdb-mcp directory:
-
-**Linux/macOS:**
-```bash
-cd /path/to/gdb-mcp
-pwd
-# This shows the full path, e.g., /home/username/projects/gdb-mcp
-```
-
-Your Python path would be: `/home/username/projects/gdb-mcp/venv/bin/python`
-
-**Windows:**
-```cmd
-cd \path\to\gdb-mcp
-cd
-# This shows the full path, e.g., C:\Users\username\projects\gdb-mcp
-```
-
-Your Python path would be: `C:\Users\username\projects\gdb-mcp\venv\Scripts\python.exe`
-
----
-
-## Example Configurations
-
-### Multiple MCP Servers
-
-If you already have other MCP servers configured:
-
-```json
-{
-  "mcpServers": {
-    "filesystem": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/yourname/Desktop"]
-    },
-    "gdb": {
-      "command": "/Users/yourname/projects/gdb-mcp/venv/bin/python",
-      "args": ["-m", "gdb_mcp"]
-    },
-    "github": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"],
-      "env": {
-        "GITHUB_TOKEN": "your-token"
-      }
-    }
-  }
-}
-```
-
-### With Environment Variables
-
-If you need to set environment variables for GDB:
+MCP clients that spawn the server need an absolute path rather than an activated
+shell. Point the client at the environment's interpreter:
 
 ```json
 {
   "mcpServers": {
     "gdb": {
       "command": "/absolute/path/to/gdb-mcp/venv/bin/python",
-      "args": ["-m", "gdb_mcp"],
-      "env": {
-        "PATH": "/usr/local/bin:/usr/bin:/bin",
-        "GDB_CUSTOM_VAR": "value"
-      }
+      "args": ["-m", "gdb_mcp"]
     }
   }
 }
 ```
 
----
+On Windows the command is
+`C:\\absolute\\path\\to\\gdb-mcp\\venv\\Scripts\\python.exe`.
+
+A user-level install without a virtual environment also works, but the commands
+land in the user script directory (`~/.local/bin` on Linux), which must be on
+`PATH`:
+
+```bash
+python3 -m pip install --user .
+```
+
+## Install With uv
+
+```bash
+git clone https://github.com/chitao1234/gdb-mcp.git
+cd gdb-mcp
+uv tool install .          # same idea as pipx: isolated, on PATH
+```
+
+For a development environment in the checkout, `uv sync --extra dev` builds
+`.venv` from `uv.lock`.
+
+## Editable Or Development Install
+
+To work on gdb-mcp itself, install the checkout in editable mode with the test
+and lint tooling:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -e ".[dev]"
+```
+
+`.venv/bin/pytest -q` then runs the suite (the integration tests need `gdb` and
+`g++`). The full check list and repository conventions live in
+[AGENTS.md](AGENTS.md).
+
+## Configure Your MCP Client
+
+### stdio (default)
+
+Most clients spawn the server themselves. With a pipx install the command is
+simply on `PATH`:
+
+```json
+{
+  "mcpServers": {
+    "gdb": {
+      "command": "gdb-mcp-server"
+    }
+  }
+}
+```
+
+Claude Desktop configuration paths:
+
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Linux: `~/.config/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+Any client that can run a command over stdio takes the same shape; with a
+virtualenv install, use the absolute interpreter path and `["-m", "gdb_mcp"]` as
+shown above.
+
+### Streamable HTTP
+
+When the client expects an HTTP endpoint instead of a spawned process, start the
+server yourself:
+
+```bash
+gdb-mcp-server --transport streamable-http --host 127.0.0.1 --port 8000 --path /mcp
+```
+
+The MCP endpoint is `http://127.0.0.1:8000/mcp`. Keep it on loopback, or set a
+bearer token when it is reachable by anything else:
+
+```bash
+export GDB_MCP_AUTH_TOKEN=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
+gdb-mcp-server --transport streamable-http --port 8000
+```
+
+### Using the CLI client instead
+
+`gdb-mcp-client` needs no separate install and no pre-started server: when you do
+not pass `--server-url`, it starts a background server for the current project
+and reuses it for later commands.
+
+```bash
+gdb-mcp-client start ./build/app
+gdb-mcp-client break add main
+gdb-mcp-client run
+gdb-mcp-client bt
+gdb-mcp-client stop
+```
+
+The [gdb-mcp-cli skill](skills/gdb-mcp-cli/SKILL.md) covers the command set,
+default-session handling, and background-server management.
+
+## Verifying The Installation
+
+**Commands exist:**
+
+```bash
+which gdb-mcp-server gdb-mcp-client      # Windows: where ...
+gdb-mcp-client --version
+```
+
+**The server starts** (Ctrl+C to stop; stdio mode waits for a client):
+
+```bash
+gdb-mcp-server
+```
+
+You should see a line like:
+
+```
+2026-01-01 12:00:00,000 - gdb_mcp.mcp.app - INFO - GDB MCP Server starting...
+```
+
+**The client reaches a server end to end:**
+
+```bash
+gdb-mcp-client status
+```
+
+With no session yet it reports an empty list, which still proves the client
+started a background server and completed a round trip.
+
+**GDB is usable:** `gdb --version`, and `which gdb` for the binary the server
+will spawn.
 
 ## Troubleshooting
 
-### "Command not found" or "File not found"
+### `gdb-mcp-server: command not found`
 
-**Problem:** Claude Desktop can't find the Python executable.
+The script directory is not on `PATH`. For pipx run `pipx ensurepath` and restart
+your shell; for a user install add `~/.local/bin` (Linux) or
+`~/Library/Python/3.x/bin` (macOS) to `PATH`.
 
-**Solution:**
-1. Make sure you're using an **absolute path** (starts with `/` on Linux/macOS or `C:\` on Windows)
-2. Verify the file exists:
-   ```bash
-   ls /path/to/gdb-mcp/venv/bin/python  # Linux/macOS
-   dir C:\path\to\gdb-mcp\venv\Scripts\python.exe  # Windows
-   ```
+### `ModuleNotFoundError: No module named 'mcp'` or similar
 
-### "Module not found: gdb_mcp"
+The install did not finish. Re-run it — `pipx reinstall gdb-mcp-server`, or
+`pip install -e .` inside the virtualenv.
 
-**Problem:** The package isn't installed in the virtual environment.
+### The server warns that it was imported from a `build/lib` path
 
-**Solution:** Re-run the setup script or manually install:
-```bash
-source venv/bin/activate  # Linux/macOS
-# or
-venv\Scripts\activate  # Windows
+A stale `build/` tree in the checkout is shadowing `src/`. Remove it
+(`rm -rf build/`) or install in editable mode.
 
-pip install -e .
-```
+### `GDB not found` when a session starts
 
-### "GDB not found"
+GDB is missing or not on the `PATH` of the process that runs the server. Install
+it (above) or point `GDB_PATH` at the binary you want.
 
-**Problem:** GDB isn't installed or not in PATH.
+### The MCP client shows no GDB tools
 
-**Solution:** Install GDB:
-```bash
-# Debian/Ubuntu
-sudo apt install gdb
+Check that the JSON configuration is valid, that the command path is absolute
+when a virtualenv is involved, that backslashes are escaped on Windows
+(`C:\\path\\...`), and restart the client afterwards. Client-side logs usually
+list the reason a server failed to launch.
 
-# macOS
-brew install gdb
+### The background server will not start
 
-# Fedora/RHEL
-sudo dnf install gdb
-```
+`gdb-mcp-client` prints the tail of the daemon log; the full log is under the
+state directory (`GDB_MCP_STATE_DIR`, default the platform cache directory).
+`gdb-mcp-client daemon status` shows what is registered, and
+`gdb-mcp-client daemon stop` removes it.
 
-### Virtual Environment Not Created
+### A call times out
 
-**Problem:** `python3 -m venv` fails.
+GDB is usually busy because the inferior is still running. See the troubleshooting
+section in [README.md](README.md).
 
-**Solution:** Install venv package:
-```bash
-# Debian/Ubuntu
-sudo apt install python3-venv
-
-# Or use virtualenv instead
-pip install virtualenv
-virtualenv venv
-```
-
-### Claude Desktop Doesn't Show GDB Tools
-
-**Problem:** MCP server isn't loading.
-
-**Solutions:**
-1. Check Claude Desktop logs (usually in the app's help/debug menu)
-2. Verify the JSON configuration is valid (no syntax errors)
-3. Make sure the path uses forward slashes `/` or escaped backslashes `\\` (not single `\`)
-4. Restart Claude Desktop after making config changes
-
----
-
-## Manual Testing
-
-You can test the server manually before configuring Claude Desktop.
-
-**Method 1: Direct path (recommended - same as Claude Desktop uses):**
-```bash
-# From any directory, using absolute path to venv Python
-/absolute/path/to/gdb-mcp/venv/bin/python -m gdb_mcp  # Linux/macOS
-# or
-C:\absolute\path\to\gdb-mcp\venv\Scripts\python.exe -m gdb_mcp  # Windows
-
-# You should see: INFO:gdb_mcp.server:GDB MCP Server starting...
-# Press Ctrl+C to exit
-```
-
-**Method 2: After activating the virtual environment:**
-```bash
-# Activate virtual environment
-source venv/bin/activate  # Linux/macOS
-# or
-venv\Scripts\activate  # Windows
-
-# Run the server
-python -m gdb_mcp
-
-# It should start and wait for input (Ctrl+C to exit)
-```
-
-**Important:** Method 1 (direct path) is preferred because it's exactly how Claude Desktop will run it. If Method 1 works from any directory, then Claude Desktop will work too.
-
----
-
-## Updating the Server
-
-To update to a newer version:
+## Updating
 
 ```bash
-cd /path/to/gdb-mcp
+cd gdb-mcp
 git pull
-source venv/bin/activate  # or venv\Scripts\activate on Windows
-pip install -e ".[dev]"  # Installs package with all dependencies
+pipx install --force .        # or: .venv/bin/pip install -e ".[dev]"
 ```
 
-Then restart Claude Desktop.
-
----
+Restart any MCP client that spawns the server, and stop background servers
+(`gdb-mcp-client daemon stop`) so the next command picks up the new code.
 
 ## Uninstalling
 
-1. Remove the gdb-mcp directory:
-   ```bash
-   rm -rf /path/to/gdb-mcp  # Linux/macOS
-   # or
-   rmdir /s /q C:\path\to\gdb-mcp  # Windows
-   ```
+```bash
+pipx uninstall gdb-mcp-server        # pipx or uv tool install
+rm -rf /path/to/gdb-mcp              # virtualenv or editable install
+```
 
-2. Remove the configuration from Claude Desktop config file
-
-3. Restart Claude Desktop
-
----
+Then remove the server entry from your MCP client configuration and restart it.
+Background servers and cookies live under the state directory and can be removed
+with `gdb-mcp-client daemon stop` followed by deleting that directory.
 
 ## Getting Help
 
-If you encounter issues:
-
-1. Check the [README.md](README.md) for detailed documentation
-2. Verify GDB is installed: `gdb --version`
-3. Check Python version: `python3 --version` (should be 3.10+)
-4. Look at Claude Desktop logs for error messages
-5. Try running the server manually (see "Manual Testing" above)
+- [README.md](README.md) — overview, quick start, operating notes, environment
+  variables
+- [TOOLS.md](TOOLS.md) — the tool contract
+- [skills/debug-with-gdb-mcp](skills/debug-with-gdb-mcp/SKILL.md) and
+  [skills/gdb-mcp-cli](skills/gdb-mcp-cli/SKILL.md) — worked workflows
+- [AGENTS.md](AGENTS.md) — repository conventions and the check list
