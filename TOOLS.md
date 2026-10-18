@@ -1,8 +1,7 @@
 # GDB MCP Server - Tools Reference
 
-This document describes the current v2 MCP interface. The public surface is a clean break from the earlier one-tool-per-operation inventory.
-
-All examples in this file use current v2 tool names. Historical names appear only in the migration appendix at the end.
+This document is the contract for the MCP tools this server exposes: every tool,
+its actions, request fields, response fields, and error codes.
 
 ## Transport Note
 
@@ -15,7 +14,9 @@ Only the connection method changes. Tool names, arguments, and response envelope
 
 ## CLI Client Note
 
-The same public tool inventory is also available through the first-party `gdb-mcp-client` command when the server is running in streamable HTTP mode:
+The same tool inventory is available through the first-party `gdb-mcp-client`
+command, which starts and reuses a background server per project unless you point
+it at one with `--server-url`:
 
 ```bash
 gdb-mcp-client \
@@ -834,45 +835,3 @@ Example:
   "timeout_sec": 30
 }
 ```
-
-## Migration Appendix
-
-Historical tool names map to the v2 surface as follows. Keep new clients, prompts, skills, and examples on the v2 names above.
-
-- `gdb_start_session` -> `gdb_session_start`
-- `gdb_list_sessions` -> `gdb_session_query(action="list")`
-- `gdb_get_status` -> `gdb_session_query(action="status")`
-- `gdb_stop_session` -> `gdb_session_manage(action="stop")`
-- `gdb_list_inferiors` -> `gdb_inferior_query(action="list")`
-- `gdb_select_inferior` -> `gdb_inferior_manage(action="select")`
-- `gdb_add_inferior` -> `gdb_inferior_manage(action="create")`
-- `gdb_remove_inferior` -> `gdb_inferior_manage(action="remove")`
-- `gdb_set_follow_fork_mode` -> `gdb_inferior_manage(action="set_follow_fork_mode")`
-- `gdb_set_detach_on_fork` -> `gdb_inferior_manage(action="set_detach_on_fork")`
-- `gdb_run` -> `gdb_execution_manage(action="run")`
-- `gdb_continue` -> `gdb_execution_manage(action="continue")`
-- `gdb_interrupt` -> `gdb_execution_manage(action="interrupt")`
-- `gdb_step` -> `gdb_execution_manage(action="step")`
-- `gdb_next` -> `gdb_execution_manage(action="next")`
-- `gdb_finish` -> `gdb_execution_manage(action="finish")`
-- `gdb_wait_for_stop` -> `gdb_execution_manage(action="wait_for_stop")`
-- `gdb_set_breakpoint` -> `gdb_breakpoint_manage(action="create", breakpoint.kind="code")`
-- `gdb_set_watchpoint` -> `gdb_breakpoint_manage(action="create", breakpoint.kind="watch")`
-- `gdb_set_catchpoint` -> `gdb_breakpoint_manage(action="create", breakpoint.kind="catch")`
-- `gdb_list_breakpoints` -> `gdb_breakpoint_query(action="list")`
-- `gdb_delete_breakpoint` -> `gdb_breakpoint_manage(action="delete")`
-- `gdb_delete_watchpoint` -> `gdb_breakpoint_manage(action="delete")`
-- `gdb_enable_breakpoint` -> `gdb_breakpoint_manage(action="enable")`
-- `gdb_disable_breakpoint` -> `gdb_breakpoint_manage(action="disable")`
-- `gdb_get_threads` -> `gdb_context_query(action="threads")`
-- `gdb_get_backtrace` -> `gdb_context_query(action="backtrace")`
-- `gdb_get_frame_info` -> `gdb_context_query(action="frame")`
-- `gdb_select_thread` -> `gdb_context_manage(action="select_thread")`
-- `gdb_select_frame` -> `gdb_context_manage(action="select_frame")`
-- `gdb_evaluate_expression` -> `gdb_inspect_query(action="evaluate")`
-- `gdb_get_variables` -> `gdb_inspect_query(action="variables")`
-- `gdb_get_registers` -> `gdb_inspect_query(action="registers")`
-- `gdb_read_memory` -> `gdb_inspect_query(action="memory")`
-- `gdb_disassemble` -> `gdb_inspect_query(action="disassembly")`
-- `gdb_get_source_context` -> `gdb_inspect_query(action="source")`
-- `gdb_batch` -> `gdb_workflow_batch`

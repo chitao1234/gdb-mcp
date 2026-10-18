@@ -1,6 +1,6 @@
 # gdb-mcp Playbooks
 
-This file contains copy-ready payloads for the current v2 gdb-mcp interface. Use the action-based family tools directly; historical one-tool-per-operation names are retired.
+This file contains copy-ready payloads for the gdb-mcp tools. Use the action-based family tools directly.
 
 ## Fast Decision Map
 

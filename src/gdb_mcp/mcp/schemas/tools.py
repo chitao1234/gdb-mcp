@@ -190,7 +190,7 @@ def build_tool_definitions() -> list[Tool]:
         Tool(
             name=TOOL_WORKFLOW_BATCH,
             description=(
-                "Execute a structured sequence of session-scoped v2 GDB tools atomically within one session. "
+                "Execute a structured sequence of session-scoped GDB tools atomically within one session. "
                 "Each step names an existing tool plus tool-specific arguments excluding "
                 "session_id, which is inherited from the enclosing batch request."
             ),

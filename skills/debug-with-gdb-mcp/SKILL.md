@@ -7,7 +7,7 @@ description: Use when Codex needs to debug a native program through gdb-mcp, inc
 
 ## Overview
 
-Use gdb-mcp through its v2 structured interface: one startup tool, domain-specific query and manage families, and dedicated workflow tools for batch execution, capture, and failure campaigns. Prefer structured payloads over ad-hoc CLI transcripts, validate state after every transition, and preserve enough evidence that another agent can reproduce the session.
+Use gdb-mcp through its structured interface: one startup tool, domain-specific query and manage families, and dedicated workflow tools for batch execution, capture, and failure campaigns. Prefer structured payloads over ad-hoc CLI transcripts, validate state after every transition, and preserve enough evidence that another agent can reproduce the session.
 
 The workflow is transport-independent: every tool and payload below works the same over stdio or streamable HTTP. Server start-up and connection configuration live in [`../../INSTALL.md`](../../INSTALL.md).
 
@@ -330,7 +330,7 @@ Treat these outcomes as hard gates:
 ### Flaky Failure Reproduction
 
 1. Prefer `gdb_run_until_failure` over handwritten rerun loops.
-2. Put repeatable setup in `setup_steps` using v2 tool names and arguments.
+2. Put repeatable setup in `setup_steps` using the tool names and arguments.
 3. Encode failure criteria with structured `stop_reasons`, `execution_states`, `exit_codes`, or `result_text_regex`.
 4. Capture bundles automatically on failure so you keep the exact failing evidence.
 5. Use `gdb_workflow_batch` for one-shot ordered sequences inside a known session.
