@@ -300,7 +300,7 @@ def test_attach_process_v2(attachable_program, start_session_result, stop_sessio
             "gdb_attach_process",
             {"session_id": session_id, "pid": process.pid, "timeout_sec": 30},
         )
-        assert attach["status"] == "success"
+        assert attach["status"] == "success", attach
 
         status = call_gdb_tool(
             "gdb_session_query",

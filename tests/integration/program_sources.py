@@ -72,7 +72,26 @@ int main(void) {
 ATTACHABLE_C_PROGRAM = """
 #include <unistd.h>
 
+#ifdef __linux__
+#include <sys/prctl.h>
+
+#ifndef PR_SET_PTRACER
+#define PR_SET_PTRACER 0x59616d61
+#endif
+
+#ifndef PR_SET_PTRACER_ANY
+#define PR_SET_PTRACER_ANY ((unsigned long)-1)
+#endif
+#endif
+
 int main(void) {
+#ifdef __linux__
+    /* Kernels run with yama ptrace_scope=1 by default, which only lets a
+       process be traced by its own descendants. The debugger attaches as a
+       sibling, so the target has to authorize any tracer explicitly. */
+    prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY);
+#endif
+
     while (1) {
         sleep(1);
     }
