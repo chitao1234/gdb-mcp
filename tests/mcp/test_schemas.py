@@ -32,7 +32,7 @@ class TestStartSessionArgs:
 
     def test_minimal_args(self) -> None:
         """Test creating StartSessionArgs with minimal arguments."""
-        args = StartSessionArgs.model_validate({})
+        args = StartSessionArgs()
         assert args.program is None
         assert args.args is None
         assert args.init_commands is None
@@ -43,14 +43,12 @@ class TestStartSessionArgs:
 
     def test_full_args(self) -> None:
         """Test creating StartSessionArgs with all arguments."""
-        args = StartSessionArgs.model_validate(
-            {
-                "program": "/bin/ls",
-                "args": ["-la", "/tmp"],
-                "init_commands": ["set pagination off"],
-                "env": {"DEBUG": "1"},
-                "gdb_path": "/usr/local/bin/gdb",
-            }
+        args = StartSessionArgs(
+            program="/bin/ls",
+            args=["-la", "/tmp"],
+            init_commands=["set pagination off"],
+            env={"DEBUG": "1"},
+            gdb_path="/usr/local/bin/gdb",
         )
 
         assert args.program == "/bin/ls"
@@ -62,14 +60,12 @@ class TestStartSessionArgs:
     def test_start_session_accepts_shell_style_string_args(self) -> None:
         """Startup args should accept a shell-style string for parity with gdb_run."""
 
-        args = StartSessionArgs.model_validate({"program": "/bin/ls", "args": '--mode "fast path"'})
+        args = StartSessionArgs(program="/bin/ls", args='--mode "fast path"')
         assert args.args == '--mode "fast path"'
 
     def test_env_dict_validation(self) -> None:
         """Test that env accepts dictionary of strings."""
-        args = StartSessionArgs.model_validate(
-            {"program": "/bin/ls", "env": {"VAR1": "value1", "VAR2": "value2"}}
-        )
+        args = StartSessionArgs(program="/bin/ls", env={"VAR1": "value1", "VAR2": "value2"})
 
         assert args.env == {"VAR1": "value1", "VAR2": "value2"}
 
@@ -77,6 +73,7 @@ class TestStartSessionArgs:
         """Unexpected request keys should fail validation instead of being ignored."""
 
         with pytest.raises(ValidationError) as exc_info:
+            # Invalid on purpose: only the raw-payload path can express this.
             StartSessionArgs.model_validate({"program": "/bin/ls", "workingdir": "/tmp/work"})
 
         assert "workingdir" in str(exc_info.value)
@@ -88,13 +85,12 @@ class TestExecuteCommandArgs:
     def test_command_required(self) -> None:
         """Test that command is required."""
         with pytest.raises(ValidationError):
+            # Invalid on purpose: only the raw-payload path can express this.
             ExecuteCommandArgs.model_validate({})
 
     def test_command_arg(self) -> None:
         """Test command argument."""
-        args = ExecuteCommandArgs.model_validate(
-            {"session_id": 1, "command": "info threads", "timeout_sec": 10}
-        )
+        args = ExecuteCommandArgs(session_id=1, command="info threads", timeout_sec=10)
         assert args.session_id == 1
         assert args.command == "info threads"
         assert args.timeout_sec == 10
@@ -103,6 +99,7 @@ class TestExecuteCommandArgs:
         """Extra command fields should not be silently dropped."""
 
         with pytest.raises(ValidationError) as exc_info:
+            # Invalid on purpose: only the raw-payload path can express this.
             ExecuteCommandArgs.model_validate(
                 {"session_id": 1, "command": "info threads", "timeout_seconds": 10}
             )
@@ -295,12 +292,13 @@ class TestAttachProcessArgs:
         """Attach requests should require a positive PID."""
 
         with pytest.raises(ValidationError):
+            # Invalid on purpose: only the raw-payload path can express this.
             AttachProcessArgs.model_validate({"session_id": 1})
 
     def test_attach_args(self) -> None:
         """Attach requests should accept pid and timeout."""
 
-        args = AttachProcessArgs.model_validate({"session_id": 1, "pid": 4321, "timeout_sec": 15})
+        args = AttachProcessArgs(session_id=1, pid=4321, timeout_sec=15)
         assert args.session_id == 1
         assert args.pid == 4321
         assert args.timeout_sec == 15
@@ -312,19 +310,17 @@ class TestBatchArgs:
     def test_batch_args_minimal(self) -> None:
         """Batch requests should accept one valid step."""
 
-        args = BatchArgs.model_validate(
-            {
-                "session_id": 1,
-                "steps": [
-                    {
-                        "tool": "gdb_breakpoint_manage",
-                        "arguments": {
-                            "action": "disable",
-                            "breakpoint": {"number": 3},
-                        },
-                    }
-                ],
-            }
+        args = BatchArgs(
+            session_id=1,
+            steps=[
+                BatchStepArgs(
+                    tool="gdb_breakpoint_manage",
+                    arguments={
+                        "action": "disable",
+                        "breakpoint": {"number": 3},
+                    },
+                )
+            ],
         )
 
         assert args.session_id == 1
@@ -336,13 +332,13 @@ class TestBatchArgs:
         """Batches must include at least one step."""
 
         with pytest.raises(ValidationError):
-            BatchArgs.model_validate({"session_id": 1, "steps": []})
+            BatchArgs(session_id=1, steps=[])
 
     def test_batch_step_rejects_unknown_tool(self) -> None:
         """Batch step tools should be validated against the supported allowlist."""
 
         with pytest.raises(ValidationError) as exc_info:
-            BatchStepArgs.model_validate({"tool": "gdb_get_status", "arguments": {}})
+            BatchStepArgs(tool="gdb_get_status", arguments={})
 
         assert "gdb_get_status" in str(exc_info.value)
 
@@ -350,6 +346,7 @@ class TestBatchArgs:
         """Batch step definitions should reject unexpected keys."""
 
         with pytest.raises(ValidationError) as exc_info:
+            # Invalid on purpose: only the raw-payload path can express this.
             BatchStepArgs.model_validate(
                 {"tool": "gdb_session_query", "arguments": {}, "unexpected": True}
             )
@@ -359,14 +356,12 @@ class TestBatchArgs:
     def test_batch_step_accepts_v2_tool_names(self) -> None:
         """Batch steps should accept the consolidated v2 tool inventory."""
 
-        step = BatchStepArgs.model_validate(
-            {
-                "tool": "gdb_breakpoint_manage",
-                "arguments": {
-                    "action": "disable",
-                    "breakpoint": {"number": 3},
-                },
-            }
+        step = BatchStepArgs(
+            tool="gdb_breakpoint_manage",
+            arguments={
+                "action": "disable",
+                "breakpoint": {"number": 3},
+            },
         )
 
         assert step.tool == "gdb_breakpoint_manage"
@@ -378,7 +373,7 @@ class TestBatchArgs:
     def test_batch_allows_string_step_shorthand(self) -> None:
         """Batch steps should allow shorthand tool-name strings."""
 
-        args = BatchArgs.model_validate({"session_id": 1, "steps": ["gdb_session_query"]})
+        args = BatchArgs(session_id=1, steps=["gdb_session_query"])
         assert args.steps == ["gdb_session_query"]
 
 
@@ -388,7 +383,7 @@ class TestCaptureBundleArgs:
     def test_capture_bundle_defaults(self) -> None:
         """Capture requests should provide sensible defaults."""
 
-        args = CaptureBundleArgs.model_validate({"session_id": 1})
+        args = CaptureBundleArgs(session_id=1)
 
         assert args.session_id == 1
         assert args.output_dir is None
@@ -408,6 +403,7 @@ class TestCaptureBundleArgs:
         """Capture requests should reject unexpected keys."""
 
         with pytest.raises(ValidationError) as exc_info:
+            # Invalid on purpose: only the raw-payload path can express this.
             CaptureBundleArgs.model_validate({"session_id": 1, "output": "/tmp/out"})
 
         assert "output" in str(exc_info.value)
@@ -415,15 +411,13 @@ class TestCaptureBundleArgs:
     def test_capture_bundle_allows_memory_range_shorthand(self) -> None:
         """Capture requests should allow shorthand memory-range strings."""
 
-        args = CaptureBundleArgs.model_validate({"session_id": 1, "memory_ranges": ["&value:16@2"]})
+        args = CaptureBundleArgs(session_id=1, memory_ranges=["&value:16@2"])
         assert args.memory_ranges == ["&value:16@2"]
 
     def test_capture_memory_range_args(self) -> None:
         """Capture memory ranges should accept address, count, offset, and optional name."""
 
-        args = CaptureMemoryRangeArgs.model_validate(
-            {"address": "&value", "count": 16, "offset": 2, "name": "snapshot"}
-        )
+        args = CaptureMemoryRangeArgs(address="&value", count=16, offset=2, name="snapshot")
 
         assert args.address == "&value"
         assert args.count == 16
@@ -437,7 +431,7 @@ class TestRunUntilFailureArgs:
     def test_run_until_failure_defaults(self) -> None:
         """Campaign requests should default to one iteration and failure capture."""
 
-        args = RunUntilFailureArgs.model_validate({})
+        args = RunUntilFailureArgs()
 
         assert args.startup.program is None
         assert args.setup_steps == []
@@ -452,7 +446,7 @@ class TestRunUntilFailureArgs:
     def test_run_until_failure_capture_args_defaults(self) -> None:
         """Capture settings should expose deterministic defaults."""
 
-        args = RunUntilFailureCaptureArgs.model_validate({})
+        args = RunUntilFailureCaptureArgs()
 
         assert args.enabled is True
         assert args.output_dir is None
@@ -465,9 +459,7 @@ class TestRunUntilFailureArgs:
         """Capture naming should reject bundle_name and bundle_name_prefix together."""
 
         with pytest.raises(ValidationError) as exc_info:
-            RunUntilFailureCaptureArgs.model_validate(
-                {"bundle_name": "exact", "bundle_name_prefix": "prefix"}
-            )
+            RunUntilFailureCaptureArgs(bundle_name="exact", bundle_name_prefix="prefix")
 
         assert "mutually exclusive" in str(exc_info.value)
 
@@ -475,6 +467,7 @@ class TestRunUntilFailureArgs:
         """Campaign requests should reject unexpected top-level keys."""
 
         with pytest.raises(ValidationError) as exc_info:
+            # Invalid on purpose: only the raw-payload path can express this.
             RunUntilFailureArgs.model_validate({"iterations": 5})
 
         assert "iterations" in str(exc_info.value)
@@ -482,12 +475,10 @@ class TestRunUntilFailureArgs:
     def test_run_until_failure_accepts_shorthand_steps_and_string_run_args(self) -> None:
         """Campaign requests should allow step shorthand and shell-style run args."""
 
-        args = RunUntilFailureArgs.model_validate(
-            {
-                "setup_steps": ["gdb_session_query"],
-                "run_args": '--mode "fast path"',
-                "capture": {"memory_ranges": ["&value:8"]},
-            }
+        args = RunUntilFailureArgs(
+            setup_steps=["gdb_session_query"],
+            run_args='--mode "fast path"',
+            capture={"memory_ranges": ["&value:8"]},
         )
         assert args.setup_steps == ["gdb_session_query"]
         assert args.run_args == '--mode "fast path"'
@@ -500,21 +491,18 @@ class TestCallFunctionArgs:
     def test_function_call_required(self) -> None:
         """Test that function_call is required."""
         with pytest.raises(ValidationError):
+            # Invalid on purpose: only the raw-payload path can express this.
             CallFunctionArgs.model_validate({})
 
     def test_function_call_arg(self) -> None:
         """Test function_call argument."""
-        args = CallFunctionArgs.model_validate(
-            {"session_id": 1, "function_call": 'printf("hello")', "timeout_sec": 12}
-        )
+        args = CallFunctionArgs(session_id=1, function_call='printf("hello")', timeout_sec=12)
         assert args.session_id == 1
         assert args.function_call == 'printf("hello")'
         assert args.timeout_sec == 12
 
     def test_function_call_with_args(self) -> None:
         """Test function_call with multiple arguments."""
-        args = CallFunctionArgs.model_validate(
-            {"session_id": 2, "function_call": 'snprintf(buf, 100, "%d", x)'}
-        )
+        args = CallFunctionArgs(session_id=2, function_call='snprintf(buf, 100, "%d", x)')
         assert args.session_id == 2
         assert args.function_call == 'snprintf(buf, 100, "%d", x)'

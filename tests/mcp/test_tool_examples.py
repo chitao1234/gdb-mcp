@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import jsonschema  # type: ignore[import-untyped]  # jsonschema ships no type stubs
+import jsonschema
 import pytest
 from pydantic import BaseModel
 
