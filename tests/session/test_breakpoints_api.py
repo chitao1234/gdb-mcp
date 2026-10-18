@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import cast
+from collections.abc import Callable
+from typing import Protocol, cast
 
 from gdb_mcp.domain import (
     BreakpointListInfo,
@@ -13,6 +14,28 @@ from gdb_mcp.domain import (
 )
 from gdb_mcp.session.breakpoints import SessionBreakpointService, _insert_blocked_reason
 from gdb_mcp.session.command_runner import SessionCommandRunner
+from gdb_mcp.session.service import SessionService
+from tests.support import dig, mapping, mapping_list, sequence, text
+
+MiRecordBuilder = Callable[..., dict[str, object]]
+MiConsoleBuilder = Callable[[str], dict[str, object]]
+
+
+class _FakeStdinView(Protocol):
+    """Read-only view of the recording stdin double installed by conftest."""
+
+    writes: list[bytes]
+
+
+class _FakeIoManagerView(Protocol):
+    stdin: _FakeStdinView
+
+
+class _ControllerDouble(Protocol):
+    io_manager: _FakeIoManagerView
+
+
+ScriptedSessionBuilder = Callable[..., tuple[SessionService, _ControllerDouble]]
 
 
 class _StubBreakpointService(SessionBreakpointService):
@@ -59,7 +82,9 @@ def test_insert_blocked_reason_prefers_the_line_after_the_warning() -> None:
 class TestBreakpointApi:
     """Test breakpoint management through the public API."""
 
-    def test_set_breakpoint_simple(self, scripted_running_session, mi_result):
+    def test_set_breakpoint_simple(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """Setting a simple breakpoint should return breakpoint details."""
 
         session, controller = scripted_running_session(
@@ -81,10 +106,12 @@ class TestBreakpointApi:
 
         assert result["status"] == "success"
         assert "breakpoint" in result
-        assert result["breakpoint"]["func"] == "main"
+        assert dig(result, "breakpoint", "func") == "main"
         assert controller.io_manager.stdin.writes[0].decode().endswith('-break-insert "main"\n')
 
-    def test_set_breakpoint_with_condition(self, scripted_running_session, mi_result):
+    def test_set_breakpoint_with_condition(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """Conditional and temporary flags should be preserved in the command."""
 
         session, controller = scripted_running_session([mi_result({"bkpt": {"number": "1"}})])
@@ -101,7 +128,9 @@ class TestBreakpointApi:
         command = controller.io_manager.stdin.writes[0].decode()
         assert '-break-insert -t -c "x > 10" "foo.c:42"' in command
 
-    def test_set_breakpoint_quotes_locations_with_spaces(self, scripted_running_session, mi_result):
+    def test_set_breakpoint_quotes_locations_with_spaces(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """Breakpoint locations should remain one MI argument even with spaces."""
 
         session, controller = scripted_running_session([mi_result({"bkpt": {"number": "1"}})])
@@ -115,7 +144,9 @@ class TestBreakpointApi:
             .endswith('-break-insert "/tmp/my source.c:12"\n')
         )
 
-    def test_list_breakpoints(self, scripted_running_session, mi_result):
+    def test_list_breakpoints(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """Listing breakpoints should surface the breakpoint table body."""
 
         session, controller = scripted_running_session(
@@ -137,10 +168,12 @@ class TestBreakpointApi:
 
         assert result["status"] == "success"
         assert result["count"] == 2
-        assert len(result["breakpoints"]) == 2
+        assert len(sequence(result["breakpoints"])) == 2
         assert controller.io_manager.stdin.writes[0].decode().endswith("-break-list\n")
 
-    def test_set_watchpoint(self, scripted_running_session, mi_result):
+    def test_set_watchpoint(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """Watchpoint creation should list the resulting watchpoint record."""
 
         session, controller = scripted_running_session(
@@ -165,13 +198,15 @@ class TestBreakpointApi:
         result = result_to_mapping(session.set_watchpoint("value", access="access"))
 
         assert result["status"] == "success"
-        assert result["breakpoint"]["number"] == "2"
-        assert result["breakpoint"]["type"] == "hw watchpoint"
+        assert dig(result, "breakpoint", "number") == "2"
+        assert dig(result, "breakpoint", "type") == "hw watchpoint"
         written = [command.decode() for command in controller.io_manager.stdin.writes]
         assert written[0].endswith('-break-watch -a "value"\n')
         assert written[1].endswith("-break-list\n")
 
-    def test_set_watchpoint_handles_hw_awpt_payload(self, scripted_running_session, mi_result):
+    def test_set_watchpoint_handles_hw_awpt_payload(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """Access watchpoints should accept the hw-awpt result payload shape."""
 
         session, _controller = scripted_running_session(
@@ -196,12 +231,12 @@ class TestBreakpointApi:
         result = result_to_mapping(session.set_watchpoint("value", access="access"))
 
         assert result["status"] == "success"
-        assert result["breakpoint"]["number"] == "2"
-        assert result["breakpoint"]["type"] == "acc watchpoint"
+        assert dig(result, "breakpoint", "number") == "2"
+        assert dig(result, "breakpoint", "type") == "acc watchpoint"
 
     def test_set_watchpoint_errors_when_breakpoint_refresh_fails(
-        self, scripted_running_session, mi_result
-    ):
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """Watchpoint creation should error when the follow-up inventory refresh fails."""
 
         session, controller = scripted_running_session(
@@ -212,15 +247,17 @@ class TestBreakpointApi:
         result = result_to_mapping(session.set_watchpoint("value"))
 
         assert result["status"] == "error"
-        assert "could not be confirmed" in result["message"]
-        assert result["details"]["created_breakpoint_number"] == 2
-        assert result["details"]["create_payload"] == {"wpt": {"number": "2", "exp": "value"}}
-        assert result["details"]["refresh_error"]["message"] == "break-list failed"
+        assert "could not be confirmed" in text(result["message"])
+        assert dig(result, "details", "created_breakpoint_number") == 2
+        assert dig(result, "details", "create_payload") == {"wpt": {"number": "2", "exp": "value"}}
+        assert dig(result, "details", "refresh_error", "message") == "break-list failed"
         written = [command.decode() for command in controller.io_manager.stdin.writes]
         assert written[0].endswith('-break-watch "value"\n')
         assert written[1].endswith("-break-list\n")
 
-    def test_delete_watchpoint(self, scripted_running_session, mi_result):
+    def test_delete_watchpoint(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """Watchpoint deletion should reuse GDB's shared breakpoint namespace."""
 
         session, controller = scripted_running_session([mi_result()])
@@ -228,10 +265,15 @@ class TestBreakpointApi:
         result = result_to_mapping(session.delete_watchpoint(4))
 
         assert result["status"] == "success"
-        assert "Watchpoint 4 deleted" in result["message"]
+        assert "Watchpoint 4 deleted" in text(result["message"])
         assert controller.io_manager.stdin.writes[0].decode().endswith("-break-delete 4\n")
 
-    def test_set_catchpoint(self, scripted_running_session, mi_console, mi_result):
+    def test_set_catchpoint(
+        self,
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_console: MiConsoleBuilder,
+        mi_result: MiRecordBuilder,
+    ) -> None:
         """Catchpoint creation should parse the CLI catchpoint number and refresh details."""
 
         session, controller = scripted_running_session(
@@ -268,16 +310,19 @@ class TestBreakpointApi:
         result = result_to_mapping(session.set_catchpoint("fork", temporary=True))
 
         assert result["status"] == "success"
-        assert result["breakpoint"]["number"] == "3"
-        assert result["breakpoint"]["type"] == "catchpoint"
+        assert dig(result, "breakpoint", "number") == "3"
+        assert dig(result, "breakpoint", "type") == "catchpoint"
         written = [command.decode() for command in controller.io_manager.stdin.writes]
         assert written[0].endswith("-break-list\n")
         assert written[1].endswith('-interpreter-exec console "tcatch fork"\n')
         assert written[2].endswith("-break-list\n")
 
     def test_set_temporary_catchpoint_parses_temporary_prefix(
-        self, scripted_running_session, mi_console, mi_result
-    ):
+        self,
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_console: MiConsoleBuilder,
+        mi_result: MiRecordBuilder,
+    ) -> None:
         """Temporary catchpoint output should parse correctly without false errors."""
 
         session, controller = scripted_running_session(
@@ -314,15 +359,18 @@ class TestBreakpointApi:
         result = result_to_mapping(session.set_catchpoint("throw", temporary=True))
 
         assert result["status"] == "success"
-        assert result["breakpoint"]["number"] == "4"
+        assert dig(result, "breakpoint", "number") == "4"
         written = [command.decode() for command in controller.io_manager.stdin.writes]
         assert written[0].endswith("-break-list\n")
         assert written[1].endswith('-interpreter-exec console "tcatch throw"\n')
         assert written[2].endswith("-break-list\n")
 
     def test_set_catchpoint_errors_when_refreshed_inventory_misses_created_number(
-        self, scripted_running_session, mi_console, mi_result
-    ):
+        self,
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_console: MiConsoleBuilder,
+        mi_result: MiRecordBuilder,
+    ) -> None:
         """Catchpoint creation should error if the refreshed inventory omits the created number."""
 
         session, controller = scripted_running_session(
@@ -359,10 +407,10 @@ class TestBreakpointApi:
         result = result_to_mapping(session.set_catchpoint("fork"))
 
         assert result["status"] == "error"
-        assert "did not return breakpoint 3" in result["message"]
-        assert result["details"]["created_breakpoint_number"] == 3
-        assert result["details"]["create_output"] == "Catchpoint 3 (fork)"
-        assert result["details"]["refreshed_breakpoints"] == [
+        assert "did not return breakpoint 3" in text(result["message"])
+        assert dig(result, "details", "created_breakpoint_number") == 3
+        assert dig(result, "details", "create_output") == "Catchpoint 3 (fork)"
+        assert dig(result, "details", "refreshed_breakpoints") == [
             {
                 "number": "7",
                 "type": "catchpoint",
@@ -375,8 +423,8 @@ class TestBreakpointApi:
         assert written[2].endswith("-break-list\n")
 
     def test_set_breakpoint_reports_blocking_existing_breakpoint(
-        self, scripted_running_session, mi_result
-    ):
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """A stale uninsertable breakpoint should be named, not blamed on the new location."""
 
         session, controller = scripted_running_session(
@@ -413,19 +461,19 @@ class TestBreakpointApi:
 
         assert result["status"] == "error"
         assert result["code"] == "breakpoint_insert_blocked"
-        assert "existing breakpoint(s) 1 cannot be inserted" in result["message"]
-        assert "Cannot access memory at address 0x114d" in result["message"]
-        details = result["details"]
+        assert "existing breakpoint(s) 1 cannot be inserted" in text(result["message"])
+        assert "Cannot access memory at address 0x114d" in text(result["message"])
+        details = mapping(result["details"])
         assert details["requested_location"] == "t.c:3"
         assert details["blocked_breakpoint_numbers"] == [1]
-        assert details["blocked_breakpoints"][0]["number"] == "1"
+        assert mapping_list(details["blocked_breakpoints"])[0]["number"] == "1"
         written = [command.decode() for command in controller.io_manager.stdin.writes]
         assert written[0].endswith('-break-insert "t.c:3"\n')
         assert written[1].endswith("-break-list\n")
 
     def test_set_breakpoint_confirms_when_blocker_preempts_the_result(
-        self, scripted_running_session, mi_result
-    ):
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """When GDB created the new breakpoint anyway, report success and warn about the blocker."""
 
         session, _controller = scripted_running_session(
@@ -468,13 +516,15 @@ class TestBreakpointApi:
         result = result_to_mapping(session.set_breakpoint("t.c:3"))
 
         assert result["status"] == "success"
-        assert result["breakpoint"]["number"] == "2"
+        assert dig(result, "breakpoint", "number") == "2"
         assert result["warnings"]
-        assert "existing breakpoint(s) 1 cannot be inserted" in result["warnings"][0]
+        assert "existing breakpoint(s) 1 cannot be inserted" in text(
+            sequence(result["warnings"])[0]
+        )
 
     def test_set_breakpoint_matches_normalized_original_location(
-        self, scripted_running_session, mi_result
-    ):
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """A created breakpoint is found even if GDB stores a quoted location."""
 
         session, _controller = scripted_running_session(
@@ -515,11 +565,11 @@ class TestBreakpointApi:
         result = result_to_mapping(session.set_breakpoint("t.c:3"))
 
         assert result["status"] == "success"
-        assert result["breakpoint"]["number"] == "2"
+        assert dig(result, "breakpoint", "number") == "2"
 
     def test_set_breakpoint_reports_when_requested_breakpoint_cannot_be_inserted(
-        self, scripted_running_session, mi_result
-    ):
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """When the requested breakpoint itself is the blocker, attribute the failure to it."""
 
         session, _controller = scripted_running_session(
@@ -559,11 +609,11 @@ class TestBreakpointApi:
         assert result["message"] == (
             "Breakpoint 1 at *0x114d cannot be inserted " "(Cannot access memory at address 0x114d)"
         )
-        assert result["details"]["created_breakpoint"]["number"] == "1"
+        assert dig(result, "details", "created_breakpoint", "number") == "1"
 
     def test_set_breakpoint_leaves_unrelated_errors_untouched(
-        self, scripted_running_session, mi_result
-    ):
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """Errors that are not insert-blocked warnings must pass through unchanged."""
 
         session, controller = scripted_running_session(
@@ -575,6 +625,6 @@ class TestBreakpointApi:
         assert result["status"] == "error"
         assert result["code"] == "error"
         assert result["message"] == 'No symbol "nope" in current context.'
-        assert "blocked_breakpoint_numbers" not in result["details"]
+        assert "blocked_breakpoint_numbers" not in mapping(result["details"])
         written = [command.decode() for command in controller.io_manager.stdin.writes]
         assert len(written) == 1

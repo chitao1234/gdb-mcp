@@ -7,6 +7,15 @@ from pathlib import Path
 
 import pytest
 
+from tests.support import dig, integer, mapping_list, text
+
+from .conftest import (
+    CallGdbTool,
+    CompileProgram,
+    StartSession,
+    StartSessionResult,
+    StopSession,
+)
 from .program_sources import (
     CRASHING_C_PROGRAM,
     DELAY_EXIT_C_PROGRAM,
@@ -17,7 +26,7 @@ from .program_sources import (
 
 
 @pytest.fixture
-def compiled_program(compile_program):
+def compiled_program(compile_program: CompileProgram) -> str:
     """Compile the shared C++ test program."""
 
     return compile_program(
@@ -28,20 +37,24 @@ def compiled_program(compile_program):
 
 
 @pytest.fixture
-def session_id(compiled_program, start_session):
+def session_id(compiled_program: str, start_session: StartSession) -> int:
     """Start one integration session and return its ID."""
 
     return start_session(compiled_program)
 
 
 @pytest.mark.integration
-def test_session_lifecycle_and_status_v2(compiled_program, start_session_result, call_gdb_tool):
+def test_session_lifecycle_and_status_v2(
+    compiled_program: str,
+    start_session_result: StartSessionResult,
+    call_gdb_tool: CallGdbTool,
+) -> None:
     """Session lifecycle queries should expose the direct v2 action envelope."""
 
     start = start_session_result(compiled_program)
     assert start["status"] == "success"
     assert start["target_loaded"] is True
-    session_id = start["session_id"]
+    session_id = integer(start["session_id"])
 
     status = call_gdb_tool(
         "gdb_session_query",
@@ -49,9 +62,9 @@ def test_session_lifecycle_and_status_v2(compiled_program, start_session_result,
     )
     assert status["status"] == "success"
     assert status["action"] == "status"
-    assert status["result"]["is_running"] is True
-    assert status["result"]["target_loaded"] is True
-    assert status["result"]["execution_state"] == "not_started"
+    assert dig(status, "result", "is_running") is True
+    assert dig(status, "result", "target_loaded") is True
+    assert dig(status, "result", "execution_state") == "not_started"
 
     stop = call_gdb_tool(
         "gdb_session_manage",
@@ -59,18 +72,18 @@ def test_session_lifecycle_and_status_v2(compiled_program, start_session_result,
     )
     assert stop["status"] == "success"
     assert stop["action"] == "stop"
-    assert "stopped" in stop["result"]["message"].lower()
+    assert "stopped" in text(dig(stop, "result", "message")).lower()
 
     after_stop = call_gdb_tool(
         "gdb_session_query",
         {"session_id": session_id, "action": "status", "query": {}},
     )
     assert after_stop["status"] == "error"
-    assert "Invalid session_id" in after_stop["message"]
+    assert "Invalid session_id" in text(after_stop["message"])
 
 
 @pytest.mark.integration
-def test_breakpoint_query_run_and_status_v2(session_id, call_gdb_tool):
+def test_breakpoint_query_run_and_status_v2(session_id: int, call_gdb_tool: CallGdbTool) -> None:
     """Code breakpoints should use direct v2 manage/query calls."""
 
     create = call_gdb_tool(
@@ -83,7 +96,7 @@ def test_breakpoint_query_run_and_status_v2(session_id, call_gdb_tool):
     )
     assert create["status"] == "success"
     assert create["action"] == "create"
-    assert "main" in create["result"]["breakpoint"]["func"]
+    assert "main" in text(dig(create, "result", "breakpoint", "func"))
 
     listed = call_gdb_tool(
         "gdb_breakpoint_query",
@@ -91,7 +104,7 @@ def test_breakpoint_query_run_and_status_v2(session_id, call_gdb_tool):
     )
     assert listed["status"] == "success"
     assert listed["action"] == "list"
-    assert listed["result"]["count"] == 1
+    assert dig(listed, "result", "count") == 1
 
     run = call_gdb_tool(
         "gdb_execution_manage",
@@ -104,12 +117,12 @@ def test_breakpoint_query_run_and_status_v2(session_id, call_gdb_tool):
         "gdb_session_query",
         {"session_id": session_id, "action": "status", "query": {}},
     )
-    assert status["result"]["execution_state"] == "paused"
-    assert status["result"]["stop_reason"] == "breakpoint-hit"
+    assert dig(status, "result", "execution_state") == "paused"
+    assert dig(status, "result", "stop_reason") == "breakpoint-hit"
 
 
 @pytest.mark.integration
-def test_breakpoint_manage_flow_v2(session_id, call_gdb_tool):
+def test_breakpoint_manage_flow_v2(session_id: int, call_gdb_tool: CallGdbTool) -> None:
     """Representative breakpoint mutations should stay on the v2 surface."""
 
     first = call_gdb_tool(
@@ -129,8 +142,8 @@ def test_breakpoint_manage_flow_v2(session_id, call_gdb_tool):
         },
     )
 
-    number = int(first["result"]["breakpoint"]["number"])
-    other_number = int(second["result"]["breakpoint"]["number"])
+    number = int(text(dig(first, "result", "breakpoint", "number")))
+    other_number = int(text(dig(second, "result", "breakpoint", "number")))
 
     disable = call_gdb_tool(
         "gdb_breakpoint_manage",
@@ -154,11 +167,11 @@ def test_breakpoint_manage_flow_v2(session_id, call_gdb_tool):
         "gdb_breakpoint_query",
         {"session_id": session_id, "action": "list", "query": {}},
     )
-    assert listed["result"]["count"] == 1
+    assert dig(listed, "result", "count") == 1
 
 
 @pytest.mark.integration
-def test_workflow_batch_v2(session_id, call_gdb_tool):
+def test_workflow_batch_v2(session_id: int, call_gdb_tool: CallGdbTool) -> None:
     """Workflow batch should report v2 step metadata without test-only translation."""
 
     batch = call_gdb_tool(
@@ -191,16 +204,17 @@ def test_workflow_batch_v2(session_id, call_gdb_tool):
     assert batch["status"] == "success"
     assert batch["count"] == 3
     assert batch["error_count"] == 0
-    assert batch["steps"][0]["tool"] == "gdb_breakpoint_manage"
-    assert batch["steps"][1]["tool"] == "gdb_execution_manage"
-    assert batch["steps"][1]["stop_event"]["reason"] == "breakpoint-hit"
-    assert batch["steps"][2]["tool"] == "gdb_context_query"
-    assert batch["steps"][2]["action"] == "backtrace"
-    assert batch["steps"][2]["result"]["result"]["count"] > 0
+    steps = mapping_list(batch["steps"])
+    assert steps[0]["tool"] == "gdb_breakpoint_manage"
+    assert steps[1]["tool"] == "gdb_execution_manage"
+    assert dig(steps[1], "stop_event", "reason") == "breakpoint-hit"
+    assert steps[2]["tool"] == "gdb_context_query"
+    assert steps[2]["action"] == "backtrace"
+    assert integer(dig(steps[2], "result", "result", "count")) > 0
 
 
 @pytest.mark.integration
-def test_capture_bundle_v2(session_id, tmp_path, call_gdb_tool):
+def test_capture_bundle_v2(session_id: int, tmp_path: Path, call_gdb_tool: CallGdbTool) -> None:
     """Capture bundles should write artifacts from a live direct-v2 stop state."""
 
     call_gdb_tool(
@@ -221,14 +235,16 @@ def test_capture_bundle_v2(session_id, tmp_path, call_gdb_tool):
         {"session_id": session_id, "output_dir": str(tmp_path), "bundle_name": "capture"},
     )
     assert bundle["status"] == "success"
-    assert bundle["artifact_count"] > 0
-    manifest = json.loads(Path(bundle["manifest_path"]).read_text())
+    assert integer(bundle["artifact_count"]) > 0
+    manifest = json.loads(Path(text(bundle["manifest_path"])).read_text())
     assert manifest["bundle_name"] == "capture"
     assert manifest["stop_reason"] == "breakpoint-hit"
 
 
 @pytest.mark.integration
-def test_run_until_failure_v2(compile_program, tmp_path, call_gdb_tool):
+def test_run_until_failure_v2(
+    compile_program: CompileProgram, tmp_path: Path, call_gdb_tool: CallGdbTool
+) -> None:
     """Failure campaign should operate on the public v2 workflow tool."""
 
     crashing = compile_program(
@@ -257,11 +273,16 @@ def test_run_until_failure_v2(compile_program, tmp_path, call_gdb_tool):
     )
     assert result["status"] == "success"
     assert result["matched_failure"] is True
-    assert result["capture_bundle"]["bundle_name"] == "failure"
+    assert dig(result, "capture_bundle", "bundle_name") == "failure"
 
 
 @pytest.mark.integration
-def test_watchpoint_v2(compile_program, start_session, stop_session, call_gdb_tool):
+def test_watchpoint_v2(
+    compile_program: CompileProgram,
+    start_session: StartSession,
+    stop_session: StopSession,
+    call_gdb_tool: CallGdbTool,
+) -> None:
     """Watchpoint creation should route through breakpoint_manage(create)."""
 
     program = compile_program(
@@ -291,7 +312,7 @@ def test_watchpoint_v2(compile_program, start_session, stop_session, call_gdb_to
             "gdb_session_query",
             {"session_id": session_id, "action": "status", "query": {}},
         )
-        assert status["result"]["stop_reason"] in {
+        assert dig(status, "result", "stop_reason") in {
             "watchpoint-trigger",
             "watchpoint-scope",
         }
@@ -300,7 +321,12 @@ def test_watchpoint_v2(compile_program, start_session, stop_session, call_gdb_to
 
 
 @pytest.mark.integration
-def test_catchpoint_v2(compile_program, start_session, stop_session, call_gdb_tool):
+def test_catchpoint_v2(
+    compile_program: CompileProgram,
+    start_session: StartSession,
+    stop_session: StopSession,
+    call_gdb_tool: CallGdbTool,
+) -> None:
     """Catchpoint creation should stay on the public v2 breakpoint tool."""
 
     program = compile_program(
@@ -330,15 +356,18 @@ def test_catchpoint_v2(compile_program, start_session, stop_session, call_gdb_to
             "gdb_session_query",
             {"session_id": session_id, "action": "status", "query": {}},
         )
-        assert status["result"]["execution_state"] == "paused"
+        assert dig(status, "result", "execution_state") == "paused"
     finally:
         stop_session(session_id, ignore_errors=True)
 
 
 @pytest.mark.integration
 def test_wait_for_stop_after_background_run_v2(
-    compile_program, start_session, stop_session, call_gdb_tool
-):
+    compile_program: CompileProgram,
+    start_session: StartSession,
+    stop_session: StopSession,
+    call_gdb_tool: CallGdbTool,
+) -> None:
     """Background runs should be paired with an explicit wait_for_stop action."""
 
     program = compile_program(
@@ -367,14 +396,14 @@ def test_wait_for_stop_after_background_run_v2(
             },
         )
         assert waited["status"] == "success"
-        assert waited["result"]["matched"] is True
-        assert waited["result"]["execution_state"] == "exited"
+        assert dig(waited, "result", "matched") is True
+        assert dig(waited, "result", "execution_state") == "exited"
     finally:
         stop_session(session_id, ignore_errors=True)
 
 
 @pytest.mark.integration
-def test_inferior_and_fork_controls_v2(session_id, call_gdb_tool):
+def test_inferior_and_fork_controls_v2(session_id: int, call_gdb_tool: CallGdbTool) -> None:
     """Inferior lifecycle and fork policy changes should use their v2 family tools."""
 
     create = call_gdb_tool(
@@ -382,14 +411,14 @@ def test_inferior_and_fork_controls_v2(session_id, call_gdb_tool):
         {"session_id": session_id, "action": "create", "inferior": {"make_current": False}},
     )
     assert create["status"] == "success"
-    inferior_id = create["result"]["inferior_id"]
+    inferior_id = integer(dig(create, "result", "inferior_id"))
 
     listed = call_gdb_tool(
         "gdb_inferior_query",
         {"session_id": session_id, "action": "list", "query": {}},
     )
     assert listed["status"] == "success"
-    assert listed["result"]["count"] >= 2
+    assert integer(dig(listed, "result", "count")) >= 2
 
     follow = call_gdb_tool(
         "gdb_inferior_manage",
@@ -415,8 +444,8 @@ def test_inferior_and_fork_controls_v2(session_id, call_gdb_tool):
         "gdb_session_query",
         {"session_id": session_id, "action": "status", "query": {}},
     )
-    assert status["result"]["follow_fork_mode"] == "child"
-    assert status["result"]["detach_on_fork"] is False
+    assert dig(status, "result", "follow_fork_mode") == "child"
+    assert dig(status, "result", "detach_on_fork") is False
 
     remove = call_gdb_tool(
         "gdb_inferior_manage",

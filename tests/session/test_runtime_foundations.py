@@ -6,12 +6,15 @@ import threading
 
 from gdb_mcp.domain import CommandTranscriptEntry, StopEvent
 from gdb_mcp.session.config import SessionConfig
+from gdb_mcp.session.service import SessionService
 
 
 class TestRuntimeFoundations:
     """Test bounded runtime state used by higher-level workflow tools."""
 
-    def test_begin_startup_clears_stop_history_and_transcript(self, session_service):
+    def test_begin_startup_clears_stop_history_and_transcript(
+        self, session_service: SessionService
+    ) -> None:
         """New startup attempts should clear prior execution observations."""
 
         session_service.runtime.record_stop_event(
@@ -29,7 +32,7 @@ class TestRuntimeFoundations:
         assert session_service.runtime.stop_history == []
         assert session_service.runtime.command_transcript == []
 
-    def test_stop_history_is_bounded(self, session_service):
+    def test_stop_history_is_bounded(self, session_service: SessionService) -> None:
         """Stop-event history should retain only the newest configured entries."""
 
         session_service.runtime.stop_history_limit = 2
@@ -42,7 +45,7 @@ class TestRuntimeFoundations:
         assert session_service.runtime.last_stop_event is not None
         assert session_service.runtime.last_stop_event.reason == "c"
 
-    def test_command_transcript_is_bounded(self, session_service):
+    def test_command_transcript_is_bounded(self, session_service: SessionService) -> None:
         """Command transcript history should retain only the newest configured entries."""
 
         session_service.runtime.command_transcript_limit = 2
@@ -62,7 +65,9 @@ class TestRuntimeFoundations:
             "three",
         ]
 
-    def test_inferior_state_tracking_follows_selected_inferior(self, session_service):
+    def test_inferior_state_tracking_follows_selected_inferior(
+        self, session_service: SessionService
+    ) -> None:
         """Global execution fields should mirror the currently selected inferior state."""
 
         runtime = session_service.runtime
@@ -84,7 +89,9 @@ class TestRuntimeFoundations:
         assert summaries[1]["execution_state"] == "exited"
         assert summaries[1]["is_current"] is True
 
-    def test_update_inferior_inventory_reconciles_state_map(self, session_service):
+    def test_update_inferior_inventory_reconciles_state_map(
+        self, session_service: SessionService
+    ) -> None:
         """Inventory refresh should drop stale inferiors and keep active ones."""
 
         runtime = session_service.runtime
@@ -101,7 +108,9 @@ class TestRuntimeFoundations:
         assert summaries[0]["inferior_id"] == 1
         assert summaries[0]["execution_state"] == "paused"
 
-    def test_remove_inferior_reselects_remaining_state(self, session_service):
+    def test_remove_inferior_reselects_remaining_state(
+        self, session_service: SessionService
+    ) -> None:
         """Removing the selected inferior should synchronize status to a remaining inferior."""
 
         runtime = session_service.runtime
@@ -116,7 +125,9 @@ class TestRuntimeFoundations:
         summaries = runtime.inferiors_state_summary()
         assert [record["inferior_id"] for record in summaries] == [1]
 
-    def test_ensure_inferior_allocates_state_and_count(self, session_service):
+    def test_ensure_inferior_allocates_state_and_count(
+        self, session_service: SessionService
+    ) -> None:
         """ensure_inferior should allocate state records without mutating selected status."""
 
         runtime = session_service.runtime
@@ -129,7 +140,9 @@ class TestRuntimeFoundations:
         assert runtime.inferior_count == 2
         assert runtime.current_inferior_id == 1
 
-    def test_inferior_summary_reads_are_serialized_by_the_state_lock(self, session_service):
+    def test_inferior_summary_reads_are_serialized_by_the_state_lock(
+        self, session_service: SessionService
+    ) -> None:
         """Snapshot readers must take the state lock instead of racing writers."""
 
         runtime = session_service.runtime

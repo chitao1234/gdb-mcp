@@ -12,11 +12,15 @@ import pytest
 
 from gdb_mcp.client.cli import main
 from gdb_mcp.mcp.app import create_streamable_http_app
+from gdb_mcp.mcp.runtime import ServerRuntime
 from tests.integration.program_sources import CRASHING_C_PROGRAM, TEST_CPP_PROGRAM
+from tests.support import dig, integer, mapping_list, text
+
+from .conftest import CompileProgram, StartSessionResult
 
 
 @pytest.mark.integration
-def test_cli_calls_real_streamable_http_app(integration_runtime):
+def test_cli_calls_real_streamable_http_app(integration_runtime: ServerRuntime) -> None:
     app = create_streamable_http_app(
         integration_runtime.app,
         path="/mcp",
@@ -54,16 +58,16 @@ def test_cli_calls_real_streamable_http_app(integration_runtime):
 
 @pytest.mark.integration
 def test_cli_calls_real_streamable_http_workflow_batch(
-    integration_runtime,
-    compile_program,
-    start_session_result,
-):
+    integration_runtime: ServerRuntime,
+    compile_program: CompileProgram,
+    start_session_result: StartSessionResult,
+) -> None:
     program = compile_program(
         TEST_CPP_PROGRAM,
         filename="cli_batch.cpp",
         compiler="g++",
     )
-    session_id = start_session_result(program)["session_id"]
+    session_id = integer(start_session_result(program)["session_id"])
     app = create_streamable_http_app(
         integration_runtime.app,
         path="/mcp",
@@ -103,22 +107,23 @@ def test_cli_calls_real_streamable_http_workflow_batch(
     assert exit_code == 0
     assert payload["status"] == "success"
     assert payload["count"] == 1
-    assert payload["steps"][0]["tool"] == "gdb_session_query"
-    assert payload["steps"][0]["action"] == "status"
+    steps = mapping_list(payload["steps"])
+    assert steps[0]["tool"] == "gdb_session_query"
+    assert steps[0]["action"] == "status"
 
 
 @pytest.mark.integration
 def test_cli_calls_real_streamable_http_workflow_batch_with_nested_step_args(
-    integration_runtime,
-    compile_program,
-    start_session_result,
-):
+    integration_runtime: ServerRuntime,
+    compile_program: CompileProgram,
+    start_session_result: StartSessionResult,
+) -> None:
     program = compile_program(
         TEST_CPP_PROGRAM,
         filename="cli_nested_batch.cpp",
         compiler="g++",
     )
-    session_id = start_session_result(program)["session_id"]
+    session_id = integer(start_session_result(program)["session_id"])
     app = create_streamable_http_app(
         integration_runtime.app,
         path="/mcp",
@@ -180,26 +185,27 @@ def test_cli_calls_real_streamable_http_workflow_batch_with_nested_step_args(
     assert exit_code == 0
     assert payload["status"] == "success"
     assert payload["count"] == 3
-    assert payload["steps"][0]["label"] == "break-main"
-    assert payload["steps"][1]["label"] == "run"
-    assert payload["steps"][1]["stop_event"]["reason"] == "breakpoint-hit"
-    assert payload["steps"][2]["label"] == "stack"
-    assert payload["steps"][2]["action"] == "backtrace"
-    assert payload["steps"][2]["result"]["result"]["count"] >= 1
+    steps = mapping_list(payload["steps"])
+    assert steps[0]["label"] == "break-main"
+    assert steps[1]["label"] == "run"
+    assert dig(steps[1], "stop_event", "reason") == "breakpoint-hit"
+    assert steps[2]["label"] == "stack"
+    assert steps[2]["action"] == "backtrace"
+    assert integer(dig(steps[2], "result", "result", "count")) >= 1
 
 
 @pytest.mark.integration
 def test_cli_calls_real_streamable_http_workflow_batch_with_single_list_step_arg(
-    integration_runtime,
-    compile_program,
-    start_session_result,
-):
+    integration_runtime: ServerRuntime,
+    compile_program: CompileProgram,
+    start_session_result: StartSessionResult,
+) -> None:
     program = compile_program(
         TEST_CPP_PROGRAM,
         filename="cli_single_list_batch.cpp",
         compiler="g++",
     )
-    session_id = start_session_result(program)["session_id"]
+    session_id = integer(start_session_result(program)["session_id"])
     app = create_streamable_http_app(
         integration_runtime.app,
         path="/mcp",
@@ -241,16 +247,17 @@ def test_cli_calls_real_streamable_http_workflow_batch_with_single_list_step_arg
     assert exit_code == 0
     assert payload["status"] == "success"
     assert payload["count"] == 1
-    assert payload["steps"][0]["tool"] == "gdb_breakpoint_query"
-    assert payload["steps"][0]["action"] == "list"
+    steps = mapping_list(payload["steps"])
+    assert steps[0]["tool"] == "gdb_breakpoint_query"
+    assert steps[0]["action"] == "list"
 
 
 @pytest.mark.integration
 def test_cli_calls_real_streamable_http_run_until_failure(
-    integration_runtime,
-    compile_program,
-    tmp_path,
-):
+    integration_runtime: ServerRuntime,
+    compile_program: CompileProgram,
+    tmp_path: Path,
+) -> None:
     crashing = compile_program(
         CRASHING_C_PROGRAM,
         filename="cli_crash_signal.c",
@@ -303,16 +310,16 @@ def test_cli_calls_real_streamable_http_run_until_failure(
     assert exit_code == 0
     assert payload["status"] == "success"
     assert payload["matched_failure"] is True
-    assert payload["capture_bundle"]["bundle_name"] == "cli-failure"
-    assert Path(payload["capture_bundle"]["manifest_path"]).exists()
+    assert dig(payload, "capture_bundle", "bundle_name") == "cli-failure"
+    assert Path(text(dig(payload, "capture_bundle", "manifest_path"))).exists()
 
 
 @pytest.mark.integration
 def test_cli_calls_real_streamable_http_run_until_failure_with_setup_steps(
-    integration_runtime,
-    compile_program,
-    tmp_path,
-):
+    integration_runtime: ServerRuntime,
+    compile_program: CompileProgram,
+    tmp_path: Path,
+) -> None:
     program = compile_program(
         TEST_CPP_PROGRAM,
         filename="cli_run_until_failure_setup.cpp",
@@ -375,5 +382,5 @@ def test_cli_calls_real_streamable_http_run_until_failure_with_setup_steps(
     assert exit_code == 0
     assert payload["status"] == "success"
     assert payload["matched_failure"] is True
-    assert payload["capture_bundle"]["bundle_name"] == "cli-break-main"
-    assert Path(payload["capture_bundle"]["manifest_path"]).exists()
+    assert dig(payload, "capture_bundle", "bundle_name") == "cli-break-main"
+    assert Path(text(dig(payload, "capture_bundle", "manifest_path"))).exists()

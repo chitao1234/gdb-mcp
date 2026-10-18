@@ -24,7 +24,7 @@ pip install -e ".[dev]"
 .venv/bin/ruff check src tests
 
 # Type-check
-.venv/bin/mypy src
+.venv/bin/mypy src tests
 ```
 
 ### Run All Tests

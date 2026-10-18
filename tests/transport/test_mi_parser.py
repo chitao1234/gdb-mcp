@@ -8,10 +8,10 @@ from gdb_mcp.transport.mi_parser import extract_mi_result_payload, parse_mi_resp
 class TestMiParser:
     """Test parser-only behavior independent of the session layer."""
 
-    def test_parse_mi_responses_collects_streams_and_notifications(self):
+    def test_parse_mi_responses_collects_streams_and_notifications(self) -> None:
         """Parser output should retain console, result, and notify records."""
 
-        responses = [
+        responses: list[dict[str, object]] = [
             {"type": "console", "payload": "Test output\n"},
             {"type": "result", "message": "done", "payload": {"msg": "done"}},
             {"type": "notify", "payload": {"msg": "thread-created"}},
@@ -24,7 +24,7 @@ class TestMiParser:
         assert parsed.result_class == "done"
         assert {"message": None, "payload": {"msg": "thread-created"}} in parsed.notify
 
-    def test_extract_mi_result_payload_from_command_execution_shape(self):
+    def test_extract_mi_result_payload_from_command_execution_shape(self) -> None:
         """Inner MI result payloads should be extracted from command results."""
 
         payload = extract_mi_result_payload(
@@ -39,7 +39,7 @@ class TestMiParser:
 
         assert payload == {"threads": []}
 
-    def test_parsed_mi_response_extracts_error_message(self):
+    def test_parsed_mi_response_extracts_error_message(self) -> None:
         """MI error results should expose their human-readable message."""
 
         parsed = parse_mi_responses(

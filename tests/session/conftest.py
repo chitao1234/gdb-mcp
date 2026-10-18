@@ -3,23 +3,30 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from unittest.mock import MagicMock
 
 import pytest
 
-from gdb_mcp.domain import CommandExecutionInfo, OperationSuccess
+from gdb_mcp.domain import CommandExecutionInfo, OperationSuccess, StructuredPayload
 from gdb_mcp.session.factory import create_default_session_service
+from gdb_mcp.session.service import SessionService
+from gdb_mcp.transport.mi_models import MiRecord
+from gdb_mcp.transport.protocols import (
+    ControllerIoManagerProtocol,
+    GdbProcessProtocol,
+)
 
 
 @pytest.fixture
-def session_service():
+def session_service() -> SessionService:
     """Create a fresh default session service for one test."""
 
     return create_default_session_service()
 
 
 @pytest.fixture
-def running_session(session_service):
+def running_session(session_service: SessionService) -> SessionService:
     """Create a session with a controller attached and marked running."""
 
     session_service.runtime.controller = MagicMock()
@@ -28,7 +35,7 @@ def running_session(session_service):
 
 
 class _FakeStdin:
-    def __init__(self):
+    def __init__(self) -> None:
         self.writes: list[bytes] = []
         self.flush_count = 0
 
@@ -42,24 +49,27 @@ class _FakeStdin:
 class ScriptedController:
     """Controller double that returns scripted GDB/MI response batches."""
 
-    def __init__(self, response_batches: list[list[dict[str, object]]]):
-        self.io_manager = MagicMock()
-        self.io_manager.stdin = _FakeStdin()
+    def __init__(self, response_batches: list[list[dict[str, object]]]) -> None:
+        self._stdin = _FakeStdin()
+        self.io_manager: ControllerIoManagerProtocol = MagicMock()
+        self.io_manager.stdin = self._stdin
         self._response_batches = [list(batch) for batch in response_batches]
         self._emit_empty = False
-        self.gdb_process = MagicMock()
+        self.gdb_process: GdbProcessProtocol | None = MagicMock()
         self.exit_called = False
 
     def _current_token(self) -> int | None:
-        if not self.io_manager.stdin.writes:
+        if not self._stdin.writes:
             return None
-        command = self.io_manager.stdin.writes[-1].decode()
+        command = self._stdin.writes[-1].decode()
         match = re.match(r"(\d+)", command)
         if match is None:
             return None
         return int(match.group(1))
 
-    def get_gdb_response(self, *, timeout_sec: float, raise_error_on_timeout: bool):
+    def get_gdb_response(
+        self, *, timeout_sec: float, raise_error_on_timeout: bool
+    ) -> list[MiRecord]:
         del timeout_sec, raise_error_on_timeout
 
         if self._emit_empty:
@@ -89,7 +99,7 @@ class ScriptedController:
 
 
 @pytest.fixture
-def mi_result():
+def mi_result() -> Callable[..., dict[str, object]]:
     """Build one MI result record."""
 
     def build(
@@ -103,7 +113,7 @@ def mi_result():
 
 
 @pytest.fixture
-def mi_console():
+def mi_console() -> Callable[[str], dict[str, object]]:
     """Build one MI console stream record."""
 
     def build(payload: str) -> dict[str, object]:
@@ -113,7 +123,7 @@ def mi_console():
 
 
 @pytest.fixture
-def mi_notify():
+def mi_notify() -> Callable[..., dict[str, object]]:
     """Build one MI async notification record."""
 
     def build(message: str, payload: dict[str, object] | None = None) -> dict[str, object]:
@@ -123,10 +133,14 @@ def mi_notify():
 
 
 @pytest.fixture
-def scripted_running_session(session_service):
+def scripted_running_session(
+    session_service: SessionService,
+) -> Callable[..., tuple[SessionService, ScriptedController]]:
     """Create a running session backed by a scripted controller."""
 
-    def build(*response_batches: list[dict[str, object]]):
+    def build(
+        *response_batches: list[dict[str, object]]
+    ) -> tuple[SessionService, ScriptedController]:
         controller = ScriptedController(list(response_batches))
         session_service.runtime.controller = controller
         session_service.runtime.mark_ready()
@@ -136,13 +150,13 @@ def scripted_running_session(session_service):
 
 
 @pytest.fixture
-def command_result():
+def command_result() -> Callable[..., OperationSuccess[CommandExecutionInfo]]:
     """Build a typed command-execution result for session-layer mocks."""
 
     def build(
         command: str,
         *,
-        result: dict[str, object] | None = None,
+        result: StructuredPayload | None = None,
         output: str | None = None,
     ) -> OperationSuccess[CommandExecutionInfo]:
         return OperationSuccess(CommandExecutionInfo(command=command, result=result, output=output))
@@ -151,7 +165,7 @@ def command_result():
 
 
 @pytest.fixture
-def prompt_response():
+def prompt_response() -> Callable[..., dict[str, object]]:
     """Build a normalized transport response payload for prompt waits."""
 
     def build(

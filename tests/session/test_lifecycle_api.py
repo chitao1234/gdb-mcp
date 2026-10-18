@@ -3,15 +3,28 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
+from typing import cast
 from unittest.mock import MagicMock, Mock, patch
 
-from gdb_mcp.domain import OperationError, result_to_mapping
+from gdb_mcp.domain import (
+    CommandExecutionInfo,
+    OperationError,
+    OperationResult,
+    OperationSuccess,
+    result_to_mapping,
+)
+from gdb_mcp.session.service import SessionService
+from tests.support import sequence, text
+
+PromptResponseBuilder = Callable[..., dict[str, object]]
+CommandResultBuilder = Callable[..., OperationSuccess[CommandExecutionInfo]]
 
 
 class TestLifecycleApi:
     """Test session lifecycle behavior through the public API."""
 
-    def test_get_status_no_session(self, session_service):
+    def test_get_status_no_session(self, session_service: SessionService) -> None:
         """Status should reflect an idle session before startup."""
 
         status = result_to_mapping(session_service.get_status())
@@ -23,7 +36,9 @@ class TestLifecycleApi:
         assert status["stop_reason"] is None
         assert status["exit_code"] is None
 
-    def test_get_status_marks_dead_gdb_process_inactive(self, running_session):
+    def test_get_status_marks_dead_gdb_process_inactive(
+        self, running_session: SessionService
+    ) -> None:
         """Status should reconcile against a dead GDB child process."""
 
         with patch.object(running_session._command_runner, "is_gdb_alive", return_value=False):
@@ -37,15 +52,15 @@ class TestLifecycleApi:
         assert running_session.controller is None
         assert running_session.state.value == "failed"
 
-    def test_stop_no_session(self, session_service):
+    def test_stop_no_session(self, session_service: SessionService) -> None:
         """Stopping without a controller should return a user-facing error."""
 
         result = result_to_mapping(session_service.stop())
 
         assert result["status"] == "error"
-        assert "No active session" in result["message"]
+        assert "No active session" in text(result["message"])
 
-    def test_start_session_already_running(self, session_service):
+    def test_start_session_already_running(self, session_service: SessionService) -> None:
         """Starting twice should be rejected before touching transport."""
 
         session_service.runtime.controller = Mock()
@@ -53,10 +68,15 @@ class TestLifecycleApi:
         result = result_to_mapping(session_service.start(program="/bin/ls"))
 
         assert result["status"] == "error"
-        assert "already running" in result["message"].lower()
+        assert "already running" in text(result["message"]).lower()
 
     @patch("gdb_mcp.session.factory.GdbController")
-    def test_start_session_basic(self, mock_controller_class, session_service, prompt_response):
+    def test_start_session_basic(
+        self,
+        mock_controller_class: MagicMock,
+        session_service: SessionService,
+        prompt_response: PromptResponseBuilder,
+    ) -> None:
         """Basic startup should attach a controller and expose program info."""
 
         mock_controller_class.return_value = MagicMock()
@@ -85,10 +105,10 @@ class TestLifecycleApi:
     @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_with_custom_gdb_path(
         self,
-        mock_controller_class,
-        session_service,
-        prompt_response,
-    ):
+        mock_controller_class: MagicMock,
+        session_service: SessionService,
+        prompt_response: PromptResponseBuilder,
+    ) -> None:
         """Explicit gdb_path should be forwarded into process startup."""
 
         mock_controller_class.return_value = MagicMock()
@@ -117,10 +137,10 @@ class TestLifecycleApi:
     @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_with_program_and_core_uses_explicit_exec_and_core_flags(
         self,
-        mock_controller_class,
-        session_service,
-        prompt_response,
-    ):
+        mock_controller_class: MagicMock,
+        session_service: SessionService,
+        prompt_response: PromptResponseBuilder,
+    ) -> None:
         """Core-dump startup should use explicit GDB options instead of argv passthrough."""
 
         mock_controller_class.return_value = MagicMock()
@@ -151,10 +171,10 @@ class TestLifecycleApi:
     @patch.dict(os.environ, {"GDB_PATH": "/custom/path/to/gdb"})
     def test_start_session_with_gdb_path_env_var(
         self,
-        mock_controller_class,
-        session_service,
-        prompt_response,
-    ):
+        mock_controller_class: MagicMock,
+        session_service: SessionService,
+        prompt_response: PromptResponseBuilder,
+    ) -> None:
         """GDB_PATH should be used when gdb_path is not provided."""
 
         mock_controller_class.return_value = MagicMock()
@@ -182,10 +202,10 @@ class TestLifecycleApi:
     @patch.dict(os.environ, {"GDB_PATH": "/env/gdb"})
     def test_start_session_explicit_path_overrides_env_var(
         self,
-        mock_controller_class,
-        session_service,
-        prompt_response,
-    ):
+        mock_controller_class: MagicMock,
+        session_service: SessionService,
+        prompt_response: PromptResponseBuilder,
+    ) -> None:
         """An explicit gdb_path should override GDB_PATH."""
 
         mock_controller_class.return_value = MagicMock()
@@ -214,17 +234,17 @@ class TestLifecycleApi:
     @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_with_env_variables(
         self,
-        mock_controller_class,
-        session_service,
-        prompt_response,
-        command_result,
-    ):
+        mock_controller_class: MagicMock,
+        session_service: SessionService,
+        prompt_response: PromptResponseBuilder,
+        command_result: CommandResultBuilder,
+    ) -> None:
         """Environment variables should be translated into init commands."""
 
         del mock_controller_class
         env_commands: list[str] = []
 
-        def mock_execute(command, **kwargs):
+        def mock_execute(command: str, **kwargs: object) -> OperationResult[CommandExecutionInfo]:
             del kwargs
             if "set environment" in command:
                 env_commands.append(command)
@@ -258,17 +278,17 @@ class TestLifecycleApi:
     @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_applies_environment_before_init_commands(
         self,
-        mock_controller_class,
-        session_service,
-        prompt_response,
-        command_result,
-    ):
+        mock_controller_class: MagicMock,
+        session_service: SessionService,
+        prompt_response: PromptResponseBuilder,
+        command_result: CommandResultBuilder,
+    ) -> None:
         """Inferior environment should be set before init commands can run the target."""
 
         del mock_controller_class
         executed_commands: list[str] = []
 
-        def mock_execute(command, **kwargs):
+        def mock_execute(command: str, **kwargs: object) -> OperationResult[CommandExecutionInfo]:
             del kwargs
             executed_commands.append(command)
             return command_result(command, output="")
@@ -305,17 +325,17 @@ class TestLifecycleApi:
     @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_passes_environment_values_verbatim(
         self,
-        mock_controller_class,
-        session_service,
-        prompt_response,
-        command_result,
-    ):
+        mock_controller_class: MagicMock,
+        session_service: SessionService,
+        prompt_response: PromptResponseBuilder,
+        command_result: CommandResultBuilder,
+    ) -> None:
         """Environment values must reach GDB unchanged, with no extra escape layer."""
 
         del mock_controller_class
         executed_commands: list[str] = []
 
-        def mock_execute(command, **kwargs):
+        def mock_execute(command: str, **kwargs: object) -> OperationResult[CommandExecutionInfo]:
             del kwargs
             executed_commands.append(command)
             return command_result(command, output="")
@@ -343,17 +363,17 @@ class TestLifecycleApi:
     @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_rejects_environment_value_with_newline(
         self,
-        mock_controller_class,
-        session_service,
-        prompt_response,
-        command_result,
-    ):
+        mock_controller_class: MagicMock,
+        session_service: SessionService,
+        prompt_response: PromptResponseBuilder,
+        command_result: CommandResultBuilder,
+    ) -> None:
         """A newline in an environment value would inject a command, so reject it."""
 
         del mock_controller_class
         executed_commands: list[str] = []
 
-        def mock_execute(command, **kwargs):
+        def mock_execute(command: str, **kwargs: object) -> OperationResult[CommandExecutionInfo]:
             del kwargs
             executed_commands.append(command)
             return command_result(command, output="")
@@ -376,22 +396,22 @@ class TestLifecycleApi:
             )
 
         assert result["status"] == "error"
-        assert "must not contain newlines" in result["message"]
+        assert "must not contain newlines" in text(result["message"])
         assert not any(command.startswith("set environment") for command in executed_commands)
 
     @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_fails_when_env_setup_fails(
         self,
-        mock_controller_class,
-        session_service,
-        prompt_response,
-        command_result,
-    ):
+        mock_controller_class: MagicMock,
+        session_service: SessionService,
+        prompt_response: PromptResponseBuilder,
+        command_result: CommandResultBuilder,
+    ) -> None:
         """Environment setup failures should fail startup instead of reporting READY."""
 
         del mock_controller_class
 
-        def mock_execute(command, **kwargs):
+        def mock_execute(command: str, **kwargs: object) -> OperationResult[CommandExecutionInfo]:
             del kwargs
             if command.startswith("set environment "):
                 return OperationError(message="Permission denied for environment setup")
@@ -415,9 +435,9 @@ class TestLifecycleApi:
             )
 
         assert result["status"] == "error"
-        assert "environment" in result["message"].lower()
+        assert "environment" in text(result["message"]).lower()
 
-    def test_start_session_rejects_args_with_core(self, session_service):
+    def test_start_session_rejects_args_with_core(self, session_service: SessionService) -> None:
         """Core analysis and inferior argv are mutually exclusive at startup."""
 
         result = result_to_mapping(
@@ -429,7 +449,7 @@ class TestLifecycleApi:
         )
 
         assert result["status"] == "error"
-        assert "cannot combine 'args' with 'core'" in result["message"].lower()
+        assert "cannot combine 'args' with 'core'" in text(result["message"]).lower()
         assert session_service.state.value == "failed"
         assert session_service.config is not None
         assert session_service.config.args == ("-l",)
@@ -438,10 +458,10 @@ class TestLifecycleApi:
     @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_detects_missing_debug_symbols(
         self,
-        mock_controller_class,
-        session_service,
-        prompt_response,
-    ):
+        mock_controller_class: MagicMock,
+        session_service: SessionService,
+        prompt_response: PromptResponseBuilder,
+    ) -> None:
         """Startup warnings should surface missing debug symbols."""
 
         mock_controller_class.return_value = MagicMock()
@@ -464,15 +484,17 @@ class TestLifecycleApi:
 
         assert result["status"] == "success"
         assert "warnings" in result
-        assert any("not compiled with -g" in warning for warning in result["warnings"])
+        assert any(
+            "not compiled with -g" in text(warning) for warning in sequence(result["warnings"])
+        )
 
     @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_missing_program_leaves_target_unloaded(
         self,
-        mock_controller_class,
-        session_service,
-        prompt_response,
-    ):
+        mock_controller_class: MagicMock,
+        session_service: SessionService,
+        prompt_response: PromptResponseBuilder,
+    ) -> None:
         """Missing startup targets should not report target_loaded=true."""
 
         mock_controller_class.return_value = MagicMock()
@@ -501,23 +523,23 @@ class TestLifecycleApi:
         assert result["status"] == "success"
         assert result["target_loaded"] is False
         assert "warnings" in result
-        assert "Program file not found" in result["warnings"]
+        assert "Program file not found" in [text(item) for item in sequence(result["warnings"])]
         assert status["target_loaded"] is False
 
     @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_refreshes_target_loaded_after_init_commands(
         self,
-        mock_controller_class,
-        session_service,
-        prompt_response,
-        command_result,
-    ):
+        mock_controller_class: MagicMock,
+        session_service: SessionService,
+        prompt_response: PromptResponseBuilder,
+        command_result: CommandResultBuilder,
+    ) -> None:
         """Final startup target state should be refreshed from GDB after init commands."""
 
         del mock_controller_class
         executed_commands: list[str] = []
 
-        def mock_execute(command, **kwargs):
+        def mock_execute(command: str, **kwargs: object) -> OperationResult[CommandExecutionInfo]:
             del kwargs
             executed_commands.append(command)
             return command_result(command, output="")
@@ -548,11 +570,11 @@ class TestLifecycleApi:
     @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_warns_when_target_loaded_refresh_fails(
         self,
-        mock_controller_class,
-        session_service,
-        prompt_response,
-        command_result,
-    ):
+        mock_controller_class: MagicMock,
+        session_service: SessionService,
+        prompt_response: PromptResponseBuilder,
+        command_result: CommandResultBuilder,
+    ) -> None:
         """Startup should keep the last known target_loaded value but surface probe failure."""
 
         mock_controller_class.return_value = MagicMock()
@@ -587,10 +609,10 @@ class TestLifecycleApi:
         assert any(
             warning
             == "Could not refresh target_loaded from GDB after startup commands: info files failed"
-            for warning in result["warnings"]
+            for warning in sequence(result["warnings"])
         )
 
-    def test_stop_active_session(self, running_session):
+    def test_stop_active_session(self, running_session: SessionService) -> None:
         """Stopping an active session should clear the controller and running flag."""
 
         result = result_to_mapping(running_session.stop())
@@ -599,15 +621,18 @@ class TestLifecycleApi:
         assert running_session.controller is None
         assert running_session.is_running is False
 
-    def test_stop_failure_marks_session_failed_and_not_running(self, running_session):
+    def test_stop_failure_marks_session_failed_and_not_running(
+        self, running_session: SessionService
+    ) -> None:
         """Shutdown failures should not leave the session marked as running."""
 
-        running_session.controller.exit.side_effect = RuntimeError("exit failed")
+        # running_session installs a MagicMock controller (see conftest).
+        cast(MagicMock, running_session.controller).exit.side_effect = RuntimeError("exit failed")
 
         result = result_to_mapping(running_session.stop())
 
         assert result["status"] == "error"
-        assert "exit failed" in result["message"]
+        assert "exit failed" in text(result["message"])
         assert running_session.controller is None
         assert running_session.is_running is False
         assert running_session.state.value == "failed"

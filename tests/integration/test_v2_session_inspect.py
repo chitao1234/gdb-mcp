@@ -6,6 +6,16 @@ import subprocess
 
 import pytest
 
+from tests.support import dig, integer, mapping, mapping_list
+
+from .conftest import (
+    CallGdbTool,
+    CompileProgram,
+    CompileProgramWithCore,
+    StartSession,
+    StartSessionResult,
+    StopSession,
+)
 from .program_sources import (
     ATTACHABLE_C_PROGRAM,
     CRASHING_C_PROGRAM,
@@ -14,7 +24,7 @@ from .program_sources import (
 
 
 @pytest.fixture
-def compiled_program(compile_program):
+def compiled_program(compile_program: CompileProgram) -> str:
     """Compile the shared C++ program used by inspect-oriented integration tests."""
 
     return compile_program(
@@ -25,14 +35,16 @@ def compiled_program(compile_program):
 
 
 @pytest.fixture
-def session_id(compiled_program, start_session):
+def session_id(compiled_program: str, start_session: StartSession) -> int:
     """Start one integration session and return its ID."""
 
     return start_session(compiled_program)
 
 
 @pytest.fixture
-def compiled_program_and_core(compile_program_with_core):
+def compiled_program_and_core(
+    compile_program_with_core: CompileProgramWithCore,
+) -> tuple[str, str]:
     """Compile a crashing program and return its executable/core-dump paths."""
 
     return compile_program_with_core(
@@ -43,7 +55,7 @@ def compiled_program_and_core(compile_program_with_core):
 
 
 @pytest.fixture
-def attachable_program(compile_program):
+def attachable_program(compile_program: CompileProgram) -> str:
     """Compile a long-running program that can be attached to."""
 
     return compile_program(
@@ -54,7 +66,7 @@ def attachable_program(compile_program):
 
 
 @pytest.mark.integration
-def test_context_and_inspect_queries_v2(session_id, call_gdb_tool):
+def test_context_and_inspect_queries_v2(session_id: int, call_gdb_tool: CallGdbTool) -> None:
     """Representative context and inspect queries should use the v2 envelopes."""
 
     call_gdb_tool(
@@ -76,7 +88,7 @@ def test_context_and_inspect_queries_v2(session_id, call_gdb_tool):
     )
     assert threads["status"] == "success"
     assert threads["action"] == "threads"
-    assert threads["result"]["count"] >= 1
+    assert integer(dig(threads, "result", "count")) >= 1
 
     backtrace = call_gdb_tool(
         "gdb_context_query",
@@ -84,7 +96,7 @@ def test_context_and_inspect_queries_v2(session_id, call_gdb_tool):
     )
     assert backtrace["status"] == "success"
     assert backtrace["action"] == "backtrace"
-    assert backtrace["result"]["count"] > 0
+    assert integer(dig(backtrace, "result", "count")) > 0
 
     frame = call_gdb_tool(
         "gdb_context_query",
@@ -92,7 +104,7 @@ def test_context_and_inspect_queries_v2(session_id, call_gdb_tool):
     )
     assert frame["status"] == "success"
     assert frame["action"] == "frame"
-    assert "func" in frame["result"]["frame"]
+    assert "func" in mapping(dig(frame, "result", "frame"))
 
     variables = call_gdb_tool(
         "gdb_inspect_query",
@@ -104,7 +116,7 @@ def test_context_and_inspect_queries_v2(session_id, call_gdb_tool):
     )
     assert variables["status"] == "success"
     assert variables["action"] == "variables"
-    assert isinstance(variables["result"]["variables"], list)
+    assert isinstance(dig(variables, "result", "variables"), list)
 
     evaluated = call_gdb_tool(
         "gdb_inspect_query",
@@ -112,11 +124,11 @@ def test_context_and_inspect_queries_v2(session_id, call_gdb_tool):
     )
     assert evaluated["status"] == "success"
     assert evaluated["action"] == "evaluate"
-    assert evaluated["result"]["value"] == "5"
+    assert dig(evaluated, "result", "value") == "5"
 
 
 @pytest.mark.integration
-def test_source_and_disassembly_queries_v2(session_id, call_gdb_tool):
+def test_source_and_disassembly_queries_v2(session_id: int, call_gdb_tool: CallGdbTool) -> None:
     """Source and disassembly queries should use the location union directly."""
 
     call_gdb_tool(
@@ -146,7 +158,7 @@ def test_source_and_disassembly_queries_v2(session_id, call_gdb_tool):
     )
     assert disassembly["status"] == "success"
     assert disassembly["action"] == "disassembly"
-    assert disassembly["result"]["count"] > 0
+    assert integer(dig(disassembly, "result", "count")) > 0
 
     source = call_gdb_tool(
         "gdb_inspect_query",
@@ -162,12 +174,12 @@ def test_source_and_disassembly_queries_v2(session_id, call_gdb_tool):
     )
     assert source["status"] == "success"
     assert source["action"] == "source"
-    assert source["result"]["count"] > 0
-    assert any(line.get("is_current") for line in source["result"]["lines"])
+    assert integer(dig(source, "result", "count")) > 0
+    assert any(line.get("is_current") for line in mapping_list(dig(source, "result", "lines")))
 
 
 @pytest.mark.integration
-def test_memory_query_v2(session_id, call_gdb_tool):
+def test_memory_query_v2(session_id: int, call_gdb_tool: CallGdbTool) -> None:
     """Memory inspection should remain available through gdb_inspect_query."""
 
     call_gdb_tool(
@@ -189,13 +201,13 @@ def test_memory_query_v2(session_id, call_gdb_tool):
     )
     assert memory["status"] == "success"
     assert memory["action"] == "memory"
-    assert memory["result"]["captured_bytes"] > 0
+    assert integer(dig(memory, "result", "captured_bytes")) > 0
 
 
 @pytest.mark.integration
 def test_startup_missing_program_reports_target_not_loaded_v2(
-    compiled_program, call_gdb_tool, stop_session
-):
+    compiled_program: str, call_gdb_tool: CallGdbTool, stop_session: StopSession
+) -> None:
     """A missing program should open a session but report no loaded target."""
 
     result = call_gdb_tool(
@@ -206,13 +218,13 @@ def test_startup_missing_program_reports_target_not_loaded_v2(
     assert result["target_loaded"] is False
 
     if "session_id" in result:
-        stop_session(result["session_id"], ignore_errors=True)
+        stop_session(integer(result["session_id"]), ignore_errors=True)
 
 
 @pytest.mark.integration
 def test_startup_existing_program_reports_target_loaded_v2(
-    compiled_program, call_gdb_tool, stop_session
-):
+    compiled_program: str, call_gdb_tool: CallGdbTool, stop_session: StopSession
+) -> None:
     """Loading an existing executable should report the target as loaded."""
 
     result = call_gdb_tool(
@@ -223,13 +235,15 @@ def test_startup_existing_program_reports_target_loaded_v2(
     assert result["target_loaded"] is True
 
     if "session_id" in result:
-        stop_session(result["session_id"], ignore_errors=True)
+        stop_session(integer(result["session_id"]), ignore_errors=True)
 
 
 @pytest.mark.integration
 def test_startup_program_with_core_reports_target_loaded_v2(
-    compiled_program_and_core, call_gdb_tool, stop_session
-):
+    compiled_program_and_core: tuple[str, str],
+    call_gdb_tool: CallGdbTool,
+    stop_session: StopSession,
+) -> None:
     """Loading an executable together with its core should report a target."""
 
     program, core = compiled_program_and_core
@@ -241,11 +255,11 @@ def test_startup_program_with_core_reports_target_loaded_v2(
     assert result["target_loaded"] is True
 
     if "session_id" in result:
-        stop_session(result["session_id"], ignore_errors=True)
+        stop_session(integer(result["session_id"]), ignore_errors=True)
 
 
 @pytest.mark.integration
-def test_execute_command_escape_hatch_v2(session_id, call_gdb_tool):
+def test_execute_command_escape_hatch_v2(session_id: int, call_gdb_tool: CallGdbTool) -> None:
     """The escape hatch should remain a direct public tool, not a test shim."""
 
     result = call_gdb_tool(
@@ -258,7 +272,9 @@ def test_execute_command_escape_hatch_v2(session_id, call_gdb_tool):
 
 
 @pytest.mark.integration
-def test_get_status_reports_exited_state_after_continue_v2(session_id, call_gdb_tool):
+def test_get_status_reports_exited_state_after_continue_v2(
+    session_id: int, call_gdb_tool: CallGdbTool
+) -> None:
     """Status should update through the v2 query envelope after continue completes."""
 
     call_gdb_tool(
@@ -283,18 +299,23 @@ def test_get_status_reports_exited_state_after_continue_v2(session_id, call_gdb_
         {"session_id": session_id, "action": "status", "query": {}},
     )
     assert status["status"] == "success"
-    assert status["result"]["execution_state"] in {"paused", "exited"}
+    assert dig(status, "result", "execution_state") in {"paused", "exited"}
 
 
 @pytest.mark.integration
-def test_attach_process_v2(attachable_program, start_session_result, stop_session, call_gdb_tool):
+def test_attach_process_v2(
+    attachable_program: str,
+    start_session_result: StartSessionResult,
+    stop_session: StopSession,
+    call_gdb_tool: CallGdbTool,
+) -> None:
     """Attach-by-PID should work without legacy wrappers or response flattening."""
 
     process = subprocess.Popen([attachable_program])
     session_id: int | None = None
     try:
         start = start_session_result(attachable_program)
-        session_id = start["session_id"]
+        session_id = integer(start["session_id"])
 
         attach = call_gdb_tool(
             "gdb_attach_process",
@@ -307,7 +328,7 @@ def test_attach_process_v2(attachable_program, start_session_result, stop_sessio
             {"session_id": session_id, "action": "status", "query": {}},
         )
         assert status["status"] == "success"
-        assert status["result"]["execution_state"] == "paused"
+        assert dig(status, "result", "execution_state") == "paused"
     finally:
         if session_id is not None:
             stop_session(session_id, ignore_errors=True)

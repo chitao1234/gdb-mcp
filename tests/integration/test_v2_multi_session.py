@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import pytest
 
+from tests.support import dig, integer, mapping_list, text
+
+from .conftest import CallGdbTool, CompileProgram, StartSession, StopSession
 from .program_sources import TEST_PROGRAM_1, TEST_PROGRAM_2
 
 
 @pytest.fixture
-def compiled_program_1(compile_program):
+def compiled_program_1(compile_program: CompileProgram) -> str:
     """Compile the first simple C program used for session-isolation tests."""
 
     return compile_program(
@@ -19,7 +22,7 @@ def compiled_program_1(compile_program):
 
 
 @pytest.fixture
-def compiled_program_2(compile_program):
+def compiled_program_2(compile_program: CompileProgram) -> str:
     """Compile the second simple C program used for session-isolation tests."""
 
     return compile_program(
@@ -31,12 +34,12 @@ def compiled_program_2(compile_program):
 
 @pytest.mark.integration
 def test_session_inventory_and_status_are_isolated_v2(
-    compiled_program_1,
-    compiled_program_2,
-    start_session,
-    stop_session,
-    call_gdb_tool,
-):
+    compiled_program_1: str,
+    compiled_program_2: str,
+    start_session: StartSession,
+    stop_session: StopSession,
+    call_gdb_tool: CallGdbTool,
+) -> None:
     """Global session inventory should list multiple live sessions distinctly."""
 
     session_id_1 = start_session(compiled_program_1)
@@ -45,7 +48,10 @@ def test_session_inventory_and_status_are_isolated_v2(
         sessions = call_gdb_tool("gdb_session_query", {"action": "list", "query": {}})
         assert sessions["status"] == "success"
         assert sessions["action"] == "list"
-        listed_ids = {item["session_id"] for item in sessions["result"]["sessions"]}
+        listed_ids = {
+            integer(item["session_id"])
+            for item in mapping_list(dig(sessions, "result", "sessions"))
+        }
         assert listed_ids == {session_id_1, session_id_2}
 
         status_1 = call_gdb_tool(
@@ -56,8 +62,8 @@ def test_session_inventory_and_status_are_isolated_v2(
             "gdb_session_query",
             {"session_id": session_id_2, "action": "status", "query": {}},
         )
-        assert status_1["result"]["is_running"] is True
-        assert status_2["result"]["is_running"] is True
+        assert dig(status_1, "result", "is_running") is True
+        assert dig(status_2, "result", "is_running") is True
     finally:
         stop_session(session_id_1, ignore_errors=True)
         stop_session(session_id_2, ignore_errors=True)
@@ -65,12 +71,12 @@ def test_session_inventory_and_status_are_isolated_v2(
 
 @pytest.mark.integration
 def test_breakpoints_are_isolated_between_sessions_v2(
-    compiled_program_1,
-    compiled_program_2,
-    start_session,
-    stop_session,
-    call_gdb_tool,
-):
+    compiled_program_1: str,
+    compiled_program_2: str,
+    start_session: StartSession,
+    stop_session: StopSession,
+    call_gdb_tool: CallGdbTool,
+) -> None:
     """Breakpoints created in one session should not leak into another."""
 
     session_id_1 = start_session(compiled_program_1)
@@ -93,8 +99,8 @@ def test_breakpoints_are_isolated_between_sessions_v2(
             "gdb_breakpoint_query",
             {"session_id": session_id_2, "action": "list", "query": {}},
         )
-        assert listed_1["result"]["count"] == 1
-        assert listed_2["result"]["count"] == 0
+        assert dig(listed_1, "result", "count") == 1
+        assert dig(listed_2, "result", "count") == 0
     finally:
         stop_session(session_id_1, ignore_errors=True)
         stop_session(session_id_2, ignore_errors=True)
@@ -102,12 +108,12 @@ def test_breakpoints_are_isolated_between_sessions_v2(
 
 @pytest.mark.integration
 def test_execution_state_and_backtrace_are_isolated_v2(
-    compiled_program_1,
-    compiled_program_2,
-    start_session,
-    stop_session,
-    call_gdb_tool,
-):
+    compiled_program_1: str,
+    compiled_program_2: str,
+    start_session: StartSession,
+    stop_session: StopSession,
+    call_gdb_tool: CallGdbTool,
+) -> None:
     """Execution and backtrace queries should be routed to the selected session only."""
 
     session_id_1 = start_session(compiled_program_1)
@@ -135,8 +141,8 @@ def test_execution_state_and_backtrace_are_isolated_v2(
             "gdb_context_query",
             {"session_id": session_id_2, "action": "backtrace", "query": {}},
         )
-        assert backtrace_1["result"]["count"] > 0
-        assert backtrace_2["result"]["count"] > 0
+        assert integer(dig(backtrace_1, "result", "count")) > 0
+        assert integer(dig(backtrace_2, "result", "count")) > 0
     finally:
         stop_session(session_id_1, ignore_errors=True)
         stop_session(session_id_2, ignore_errors=True)
@@ -144,12 +150,12 @@ def test_execution_state_and_backtrace_are_isolated_v2(
 
 @pytest.mark.integration
 def test_stop_one_session_does_not_affect_other_v2(
-    compiled_program_1,
-    compiled_program_2,
-    start_session,
-    stop_session,
-    call_gdb_tool,
-):
+    compiled_program_1: str,
+    compiled_program_2: str,
+    start_session: StartSession,
+    stop_session: StopSession,
+    call_gdb_tool: CallGdbTool,
+) -> None:
     """Stopping one session should not invalidate another live session."""
 
     session_id_1 = start_session(compiled_program_1)
@@ -178,7 +184,7 @@ def test_stop_one_session_does_not_affect_other_v2(
 
 
 @pytest.mark.integration
-def test_invalid_session_id_returns_error_v2(call_gdb_tool):
+def test_invalid_session_id_returns_error_v2(call_gdb_tool: CallGdbTool) -> None:
     """Invalid session IDs should return the public v2 error envelope."""
 
     result = call_gdb_tool(
@@ -186,5 +192,5 @@ def test_invalid_session_id_returns_error_v2(call_gdb_tool):
         {"session_id": 999, "action": "status", "query": {}},
     )
     assert result["status"] == "error"
-    assert "Invalid session_id: 999" in result["message"]
-    assert "gdb_session_start" in result["message"]
+    assert "Invalid session_id: 999" in text(result["message"])
+    assert "gdb_session_start" in text(result["message"])

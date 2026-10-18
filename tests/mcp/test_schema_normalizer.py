@@ -15,6 +15,7 @@ from gdb_mcp.contracts import (
 )
 from gdb_mcp.mcp.schema_normalizer import public_input_schema
 from gdb_mcp.mcp.schemas import StartSessionArgs, build_tool_definitions
+from tests.support import dig, mapping
 
 _UNSUPPORTED_KEYS = ("oneOf", "anyOf", "allOf", "$ref", "$defs", "discriminator")
 
@@ -59,8 +60,11 @@ def test_public_input_schema_returns_independent_copies() -> None:
     assert first == second
     assert first is not second
 
-    first["properties"]["program"]["type"] = "number"
-    assert public_input_schema(StartSessionArgs)["properties"]["program"]["type"] == "string"
+    mapping(dig(first, "properties", "program"))["type"] = "number"
+    assert (
+        mapping(dig(public_input_schema(StartSessionArgs), "properties", "program"))["type"]
+        == "string"
+    )
 
 
 def test_public_input_schema_examples_do_not_pollute_the_cache() -> None:

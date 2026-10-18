@@ -47,7 +47,7 @@ the same tools and can keep one server per project running in the background.
 ```bash
 .venv/bin/black --check src tests
 .venv/bin/ruff check src tests
-.venv/bin/mypy src
+.venv/bin/mypy src tests
 .venv/bin/pytest -q     # includes tests/integration/, which needs gdb and g++
 git diff --check
 ```

@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import ClassVar
-from unittest.mock import ANY, AsyncMock, Mock, patch
+from pathlib import Path
+from typing import ClassVar, cast
+from unittest.mock import ANY, AsyncMock, MagicMock, Mock, patch
 
 import uvicorn
-from mcp.types import TextContent, Tool
+from mcp.types import CallToolResult, TextContent, Tool
 from starlette.applications import Starlette
 from starlette.responses import PlainTextResponse
+from starlette.routing import Route
 from starlette.testclient import TestClient
+from starlette.types import Receive, Scope, Send
 
 from gdb_mcp.mcp.app import (
     _ReadyReportingServer,
@@ -25,7 +29,7 @@ from gdb_mcp.mcp.app import (
 class TestMcpAppToolRegistration:
     """Verify registered call tool handlers bypass the SDK schema gate."""
 
-    def test_call_tool_skips_sdk_input_schema_validation(self):
+    def test_call_tool_skips_sdk_input_schema_validation(self) -> None:
         """Inputs valid for the typed models must reach the handler unchanged."""
 
         from mcp.shared.memory import create_connected_server_and_client_session
@@ -45,13 +49,13 @@ class TestMcpAppToolRegistration:
                 )
             ]
 
-        async def call_tool(name: str, arguments: object) -> list[TextContent]:
+        async def call_tool(name: str, arguments: object) -> CallToolResult:
             seen.append(arguments)
-            return [TextContent(type="text", text='{"status": "success"}')]
+            return CallToolResult(content=[TextContent(type="text", text='{"status": "success"}')])
 
         app = create_mcp_app(list_tools_handler=list_tools, call_tool_handler=call_tool)
 
-        async def exercise():
+        async def exercise() -> CallToolResult:
             async with create_connected_server_and_client_session(app) as session:
                 return await session.call_tool("probe", {"args": "not-an-array"})
 
@@ -67,8 +71,8 @@ class TestStreamableHttpApp:
     @patch("gdb_mcp.mcp.app.StreamableHTTPSessionManager")
     def test_create_streamable_http_app_registers_route_and_shutdown(
         self,
-        mock_session_manager_cls,
-    ):
+        mock_session_manager_cls: MagicMock,
+    ) -> None:
         """The helper should build the route and wire shutdown cleanup into lifespan."""
 
         mcp_app = Mock()
@@ -76,7 +80,7 @@ class TestStreamableHttpApp:
         session_manager = Mock()
 
         @asynccontextmanager
-        async def manager_lifespan():
+        async def manager_lifespan() -> AsyncIterator[None]:
             yield
 
         session_manager.run.return_value = manager_lifespan()
@@ -89,7 +93,10 @@ class TestStreamableHttpApp:
         )
 
         assert isinstance(app, Starlette)
-        assert [route.path for route in app.routes] == ["/mcp", "/shutdown"]
+        assert [route.path for route in app.routes if isinstance(route, Route)] == [
+            "/mcp",
+            "/shutdown",
+        ]
 
         async def exercise_lifespan() -> None:
             async with app.router.lifespan_context(app):
@@ -104,22 +111,22 @@ class TestStreamableHttpApp:
     @patch("gdb_mcp.mcp.app.StreamableHTTPSessionManager")
     def test_create_streamable_http_app_forwards_requests_to_session_manager(
         self,
-        mock_session_manager_cls,
-    ):
+        mock_session_manager_cls: MagicMock,
+    ) -> None:
         """The created Starlette app should route requests through the session manager."""
 
         mcp_app = Mock()
         shutdown = Mock()
 
         class FakeSessionManager:
-            def __init__(self):
-                self.scopes: list[dict[str, object]] = []
+            def __init__(self) -> None:
+                self.scopes: list[Scope] = []
 
             @asynccontextmanager
-            async def run(self):
+            async def run(self) -> AsyncIterator[None]:
                 yield
 
-            async def handle_request(self, scope, receive, send) -> None:
+            async def handle_request(self, scope: Scope, receive: Receive, send: Send) -> None:
                 self.scopes.append(scope)
                 response = PlainTextResponse("ok")
                 await response(scope, receive, send)
@@ -146,10 +153,10 @@ class TestStreamableHttpApp:
     @patch("gdb_mcp.mcp.app.create_streamable_http_app")
     def test_run_streamable_http_app_uses_uvicorn(
         self,
-        mock_create_streamable_http_app,
-        mock_config_cls,
-        mock_server_cls,
-    ):
+        mock_create_streamable_http_app: MagicMock,
+        mock_config_cls: MagicMock,
+        mock_server_cls: MagicMock,
+    ) -> None:
         """The helper should wrap the Starlette app in a uvicorn server."""
 
         mcp_app = Mock()
@@ -198,11 +205,11 @@ class TestStreamableHttpApp:
     @patch("gdb_mcp.mcp.app.create_streamable_http_app")
     def test_run_streamable_http_app_logs_the_startup_message(
         self,
-        mock_create_streamable_http_app,
-        mock_config_cls,
-        mock_server_cls,
-        mock_get_logger,
-    ):
+        mock_create_streamable_http_app: MagicMock,
+        mock_config_cls: MagicMock,
+        mock_server_cls: MagicMock,
+        mock_get_logger: MagicMock,
+    ) -> None:
         """The startup message should be logged once with the effective log level."""
 
         mcp_app = Mock()
@@ -231,7 +238,7 @@ class TestStreamableHttpApp:
             "GDB MCP Server starting...",
         )
 
-    def test_ready_reporting_server_writes_the_bound_address(self, tmp_path):
+    def test_ready_reporting_server_writes_the_bound_address(self, tmp_path: Path) -> None:
         """The ready file must carry the address uvicorn actually bound."""
 
         config = uvicorn.Config(Mock(), host="127.0.0.1", port=0, log_level="warning")
@@ -239,13 +246,15 @@ class TestStreamableHttpApp:
         server = _ReadyReportingServer(config, ready_file=ready_file, path="/mcp")
 
         class FakeSocket:
-            def getsockname(self):
+            def getsockname(self) -> tuple[str, int]:
                 return ("127.0.0.1", 42631)
 
         class FakeBoundServer:
             sockets: ClassVar[list[FakeSocket]] = [FakeSocket()]
 
-        server.servers = [FakeBoundServer()]
+        # `startup` only reads `.sockets` off the bound server, so this stand-in
+        # is safe to treat as the asyncio server it stands in for.
+        server.servers = cast("list[asyncio.Server]", [FakeBoundServer()])
 
         with patch("gdb_mcp.mcp.app.uvicorn.Server.startup", new=AsyncMock()):
             asyncio.run(server.startup())

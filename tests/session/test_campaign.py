@@ -27,7 +27,7 @@ from gdb_mcp.session.workflow import BatchStepTemplate
 class TestRunUntilFailureService:
     """Test campaign loop behavior independently of the MCP handler layer."""
 
-    def test_matches_default_signal_stop_and_captures_bundle(self):
+    def test_matches_default_signal_stop_and_captures_bundle(self) -> None:
         """Signal stops should match the default failure criteria and trigger capture."""
 
         session = Mock()
@@ -85,7 +85,7 @@ class TestRunUntilFailureService:
         ]
         session.stop.assert_called_once()
 
-    def test_returns_success_when_no_failure_matches(self):
+    def test_returns_success_when_no_failure_matches(self) -> None:
         """Campaigns should complete cleanly when no predicate matches."""
 
         session_1 = Mock()
@@ -155,7 +155,7 @@ class TestRunUntilFailureService:
         session_1.stop.assert_called_once()
         session_2.stop.assert_called_once()
 
-    def test_setup_batch_failure_stops_before_run(self):
+    def test_setup_batch_failure_stops_before_run(self) -> None:
         """Setup-step failures should stop the campaign before gdb_run executes."""
 
         session = Mock()

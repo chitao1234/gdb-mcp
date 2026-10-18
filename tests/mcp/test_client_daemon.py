@@ -8,8 +8,10 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import cast
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from typing_extensions import Self
 
 from gdb_mcp.client import daemon
@@ -24,13 +26,13 @@ from gdb_mcp.client.daemon import (
 )
 
 
-def test_state_dir_honors_the_override(monkeypatch, tmp_path: Path) -> None:
+def test_state_dir_honors_the_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("GDB_MCP_STATE_DIR", str(tmp_path / "state"))
 
     assert state_dir() == tmp_path / "state"
 
 
-def test_state_dir_uses_xdg_cache_home(monkeypatch, tmp_path: Path) -> None:
+def test_state_dir_uses_xdg_cache_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("GDB_MCP_STATE_DIR", raising=False)
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setattr(sys, "platform", "linux")
@@ -38,7 +40,9 @@ def test_state_dir_uses_xdg_cache_home(monkeypatch, tmp_path: Path) -> None:
     assert state_dir() == tmp_path / "cache" / "gdb-mcp"
 
 
-def test_state_dir_follows_platform_conventions(monkeypatch, tmp_path: Path) -> None:
+def test_state_dir_follows_platform_conventions(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.delenv("GDB_MCP_STATE_DIR", raising=False)
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
     monkeypatch.delenv("LOCALAPPDATA", raising=False)
@@ -67,7 +71,9 @@ def test_project_root_falls_back_to_the_directory(tmp_path: Path) -> None:
     assert project_root(nested) == nested
 
 
-def test_daemon_paths_are_stable_and_keyed_by_root(monkeypatch, tmp_path: Path) -> None:
+def test_daemon_paths_are_stable_and_keyed_by_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("GDB_MCP_STATE_DIR", str(tmp_path / "state"))
 
     first = daemon_paths(tmp_path / "one")
@@ -79,7 +85,7 @@ def test_daemon_paths_are_stable_and_keyed_by_root(monkeypatch, tmp_path: Path) 
     assert first.cookie.parent == tmp_path / "state" / "daemons"
 
 
-def test_cookie_round_trip_is_private(monkeypatch, tmp_path: Path) -> None:
+def test_cookie_round_trip_is_private(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("GDB_MCP_STATE_DIR", str(tmp_path / "state"))
     paths = daemon_paths(tmp_path)
 
@@ -90,7 +96,9 @@ def test_cookie_round_trip_is_private(monkeypatch, tmp_path: Path) -> None:
         assert (paths.cookie.stat().st_mode & 0o777) == 0o600
 
 
-def test_resolve_server_returns_explicit_urls_untouched(monkeypatch, tmp_path: Path) -> None:
+def test_resolve_server_returns_explicit_urls_untouched(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("GDB_MCP_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.delenv("GDB_MCP_AUTH_TOKEN", raising=False)
 
@@ -100,7 +108,9 @@ def test_resolve_server_returns_explicit_urls_untouched(monkeypatch, tmp_path: P
     assert not (tmp_path / "state").exists()
 
 
-def test_resolve_server_reads_the_token_from_the_environment(monkeypatch, tmp_path: Path) -> None:
+def test_resolve_server_reads_the_token_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("GDB_MCP_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setenv("GDB_MCP_AUTH_TOKEN", "env-secret")
 
@@ -109,7 +119,9 @@ def test_resolve_server_reads_the_token_from_the_environment(monkeypatch, tmp_pa
     assert resolved == ResolvedServer("http://example.test/mcp", "env-secret", False)
 
 
-def test_resolve_server_reuses_a_live_cookie(monkeypatch, tmp_path: Path) -> None:
+def test_resolve_server_reuses_a_live_cookie(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("GDB_MCP_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
     paths = daemon_paths()
@@ -125,7 +137,9 @@ def test_resolve_server_reuses_a_live_cookie(monkeypatch, tmp_path: Path) -> Non
     mock_spawn.assert_not_awaited()
 
 
-def test_resolve_server_replaces_a_stale_cookie(monkeypatch, tmp_path: Path) -> None:
+def test_resolve_server_replaces_a_stale_cookie(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("GDB_MCP_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
     paths = daemon_paths()
@@ -143,14 +157,16 @@ def test_resolve_server_replaces_a_stale_cookie(monkeypatch, tmp_path: Path) -> 
     assert not paths.cookie.exists()
 
 
-def test_daemon_status_without_cookie(monkeypatch, tmp_path: Path) -> None:
+def test_daemon_status_without_cookie(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("GDB_MCP_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
 
     assert "no background server" in asyncio.run(daemon_status())
 
 
-def test_stop_daemon_without_cookie_is_idempotent(monkeypatch, tmp_path: Path) -> None:
+def test_stop_daemon_without_cookie_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("GDB_MCP_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
 
@@ -183,7 +199,9 @@ class _FakeClient:
         return self._response
 
 
-def test_stop_daemon_reports_a_refusal_and_keeps_the_cookie(monkeypatch, tmp_path: Path) -> None:
+def test_stop_daemon_reports_a_refusal_and_keeps_the_cookie(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("GDB_MCP_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
     paths = daemon_paths()
@@ -199,7 +217,7 @@ def test_stop_daemon_reports_a_refusal_and_keeps_the_cookie(monkeypatch, tmp_pat
 
 
 def test_stop_daemon_waits_for_the_process_and_clears_the_cookie(
-    monkeypatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("GDB_MCP_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
@@ -221,7 +239,9 @@ def test_stop_daemon_waits_for_the_process_and_clears_the_cookie(
     assert not paths.cookie.exists()
 
 
-def test_wait_for_ready_reads_the_ready_file(monkeypatch, tmp_path: Path) -> None:
+def test_wait_for_ready_reads_the_ready_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("GDB_MCP_STATE_DIR", str(tmp_path / "state"))
     paths = daemon_paths(tmp_path)
     paths.ready.parent.mkdir(parents=True, exist_ok=True)
@@ -233,12 +253,18 @@ def test_wait_for_ready_reads_the_ready_file(monkeypatch, tmp_path: Path) -> Non
         def poll(self) -> None:
             return None
 
-    ready = asyncio.run(daemon._wait_for_ready(paths, _LiveProcess()))
+    # `_wait_for_ready` only calls `poll()`, so this stand-in is safe to treat
+    # as the Popen it stands in for.
+    ready = asyncio.run(
+        daemon._wait_for_ready(paths, cast("subprocess.Popen[bytes]", _LiveProcess()))
+    )
 
     assert ready["port"] == 4242
 
 
-def test_async_exclusive_lock_serializes_acquisitions(monkeypatch, tmp_path: Path) -> None:
+def test_async_exclusive_lock_serializes_acquisitions(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     if os.name == "nt":  # pragma: no cover - flock semantics differ on Windows
         return
     monkeypatch.setenv("GDB_MCP_STATE_DIR", str(tmp_path / "state"))

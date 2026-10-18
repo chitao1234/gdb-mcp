@@ -6,12 +6,13 @@ from unittest.mock import MagicMock, patch
 
 from gdb_mcp.domain import OperationError, OperationSuccess, SessionStartInfo
 from gdb_mcp.session.service import SessionService, SessionState
+from gdb_mcp.transport.protocols import GdbControllerProtocol
 
 
 class TestSessionService:
     """Basic tests for the new session service boundary."""
 
-    def test_initialization_uses_injected_dependencies(self):
+    def test_initialization_uses_injected_dependencies(self) -> None:
         """SessionService should start with no controller and CREATED state."""
 
         service = SessionService(
@@ -28,7 +29,7 @@ class TestSessionService:
         assert service.command_transcript == ()
         assert service.runtime.workflow_lock is not None
 
-    def test_start_success_uses_injected_controller_factory(self):
+    def test_start_success_uses_injected_controller_factory(self) -> None:
         """Startup should use the injected controller factory rather than importing one directly."""
 
         controller_factory = MagicMock(return_value=MagicMock())
@@ -66,7 +67,7 @@ class TestSessionService:
             time_to_check_for_additional_output_sec=1.0,
         )
 
-    def test_start_with_working_dir_uses_process_cwd_without_chdir(self):
+    def test_start_with_working_dir_uses_process_cwd_without_chdir(self) -> None:
         """working_dir should be forwarded into process startup instead of mutating global cwd."""
 
         controller_factory = MagicMock(return_value=MagicMock())
@@ -103,14 +104,14 @@ class TestSessionService:
         )
         fake_os.chdir.assert_not_called()
 
-    def test_start_serializes_concurrent_calls(self):
+    def test_start_serializes_concurrent_calls(self) -> None:
         """Concurrent start attempts should not create multiple controllers."""
 
         controller_factory_calls = 0
         controller_factory_lock = threading.Lock()
         start_barrier = threading.Barrier(3)
 
-        def controller_factory(**kwargs):
+        def controller_factory(**kwargs: object) -> GdbControllerProtocol:
             del kwargs
             nonlocal controller_factory_calls
             with controller_factory_lock:

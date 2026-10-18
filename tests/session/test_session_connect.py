@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from gdb_mcp.domain import result_to_mapping
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.transport import EndpointError
+from tests.support import text
 
 
 class _ScriptedExternalController:
@@ -24,9 +27,12 @@ class _ScriptedExternalController:
         call = self.io_manager.stdin.write.call_args
         if call is None:
             return None
-        return call.args[0].decode()
+        written: bytes = call.args[0]
+        return written.decode()
 
-    def get_gdb_response(self, *, timeout_sec: float, raise_error_on_timeout: bool):
+    def get_gdb_response(
+        self, *, timeout_sec: float, raise_error_on_timeout: bool
+    ) -> list[dict[str, object]]:
         del timeout_sec, raise_error_on_timeout
         command = self._last_command()
         if command is None:
@@ -48,20 +54,22 @@ class _ScriptedExternalController:
         self.exited = True
 
 
-def test_start_with_endpoint_adopts_external_controller(monkeypatch):
+def test_start_with_endpoint_adopts_external_controller(monkeypatch: pytest.MonkeyPatch) -> None:
     """An endpoint session must adopt a controller instead of spawning gdb."""
 
     session = create_default_session_service()
     controller = _ScriptedExternalController()
     created: dict[str, str] = {}
 
-    def fake_create(endpoint, *, time_to_check_for_additional_output_sec=0.2):
+    def fake_create(
+        endpoint: str, *, time_to_check_for_additional_output_sec: float = 0.2
+    ) -> _ScriptedExternalController:
         created["endpoint"] = endpoint
         return controller
 
     monkeypatch.setattr("gdb_mcp.session.lifecycle.create_external_controller", fake_create)
 
-    def boom(*args, **kwargs):
+    def boom(*args: object, **kwargs: object) -> None:
         raise AssertionError("transport.start (spawn) must not run for endpoint sessions")
 
     monkeypatch.setattr(session.runtime.transport, "start", boom)
@@ -75,7 +83,7 @@ def test_start_with_endpoint_adopts_external_controller(monkeypatch):
     assert session.controller is controller
 
 
-def test_start_rejects_endpoint_with_program():
+def test_start_rejects_endpoint_with_program() -> None:
     """Connecting to an endpoint must not also request a target."""
 
     session = create_default_session_service()
@@ -83,16 +91,16 @@ def test_start_rejects_endpoint_with_program():
     payload = result_to_mapping(session.start(program="/bin/true", endpoint="tcp://127.0.0.1:1"))
 
     assert payload["status"] == "error"
-    assert "do not also pass" in payload["message"]
+    assert "do not also pass" in text(payload["message"])
     assert session.controller is None
 
 
-def test_start_reports_endpoint_connection_failure(monkeypatch):
+def test_start_reports_endpoint_connection_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """A failed endpoint connection surfaces as an actionable error."""
 
     session = create_default_session_service()
 
-    def boom(endpoint, *, time_to_check_for_additional_output_sec=0.2):
+    def boom(endpoint: str, *, time_to_check_for_additional_output_sec: float = 0.2) -> None:
         raise EndpointError(f"Could not reach MI endpoint {endpoint}")
 
     monkeypatch.setattr("gdb_mcp.session.lifecycle.create_external_controller", boom)
@@ -100,5 +108,5 @@ def test_start_reports_endpoint_connection_failure(monkeypatch):
     payload = result_to_mapping(session.start(endpoint="unix:///tmp/nope.sock"))
 
     assert payload["status"] == "error"
-    assert "Could not reach MI endpoint unix:///tmp/nope.sock" in payload["message"]
+    assert "Could not reach MI endpoint unix:///tmp/nope.sock" in text(payload["message"])
     assert session.controller is None

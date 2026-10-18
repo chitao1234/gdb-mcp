@@ -17,7 +17,7 @@ from gdb_mcp.client.runtime import ClientToolResponse
 SERVER_URL = "http://127.0.0.1:41000/mcp"
 
 
-def _managed(monkeypatch, tmp_path: Path) -> ResolvedServer:
+def _managed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> ResolvedServer:
     """Point the CLI at a managed background server rooted at tmp_path."""
 
     monkeypatch.setenv("GDB_MCP_STATE_DIR", str(tmp_path / "state"))
@@ -25,7 +25,9 @@ def _managed(monkeypatch, tmp_path: Path) -> ResolvedServer:
     return ResolvedServer(SERVER_URL, "tok", False, True)
 
 
-def _call(argv: list[str], resolved: ResolvedServer, *, response: dict[str, object] | None = None):
+def _call(
+    argv: list[str], resolved: ResolvedServer, *, response: dict[str, object] | None = None
+) -> tuple[int, AsyncMock, str, str]:
     """Run main() with a mocked transport, returning exit code, call, stdout, stderr."""
 
     stdout = StringIO()
@@ -43,7 +45,9 @@ def _call(argv: list[str], resolved: ResolvedServer, *, response: dict[str, obje
     return exit_code, invoke, stdout.getvalue(), stderr.getvalue()
 
 
-def _failed_call(argv: list[str], resolved: ResolvedServer):
+def _failed_call(
+    argv: list[str], resolved: ResolvedServer
+) -> tuple[int | str | None, str, AsyncMock]:
     """Run main() expecting an argparse-level failure."""
 
     stdout = StringIO()
@@ -60,7 +64,9 @@ def _failed_call(argv: list[str], resolved: ResolvedServer):
     return exc_info.value.code, stderr.getvalue(), invoke
 
 
-def test_facade_run_uses_the_remembered_session(monkeypatch, tmp_path: Path) -> None:
+def test_facade_run_uses_the_remembered_session(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     resolved = _managed(monkeypatch, tmp_path)
     daemon.remember_session_id(5)
 
@@ -68,23 +74,30 @@ def test_facade_run_uses_the_remembered_session(monkeypatch, tmp_path: Path) -> 
 
     assert exit_code == 0
     call = invoke.await_args
+    assert call is not None
     assert call.args[0] == SERVER_URL
     assert call.args[1] == "gdb_execution_manage"
     assert call.args[2]["action"] == "run"
     assert call.args[2]["session_id"] == 5
 
 
-def test_facade_start_takes_a_positional_program(monkeypatch, tmp_path: Path) -> None:
+def test_facade_start_takes_a_positional_program(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     resolved = _managed(monkeypatch, tmp_path)
 
     exit_code, invoke, _stdout, _stderr = _call(["start", "/bin/true"], resolved)
 
     assert exit_code == 0
-    assert invoke.await_args.args[2] == {"program": "/bin/true"}
+    call = invoke.await_args
+    assert call is not None
+    assert call.args[2] == {"program": "/bin/true"}
     assert daemon.remembered_session_id() is None
 
 
-def test_facade_start_remembers_the_new_session(monkeypatch, tmp_path: Path) -> None:
+def test_facade_start_remembers_the_new_session(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     resolved = _managed(monkeypatch, tmp_path)
 
     exit_code, _invoke, _stdout, _stderr = _call(
@@ -97,28 +110,38 @@ def test_facade_start_remembers_the_new_session(monkeypatch, tmp_path: Path) -> 
     assert daemon.remembered_session_id() == 9
 
 
-def test_facade_break_add_sets_the_code_kind(monkeypatch, tmp_path: Path) -> None:
+def test_facade_break_add_sets_the_code_kind(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     resolved = _managed(monkeypatch, tmp_path)
     daemon.remember_session_id(3)
 
     exit_code, invoke, _stdout, _stderr = _call(["break", "add", "main"], resolved)
 
     assert exit_code == 0
-    payload = invoke.await_args.args[2]
+    call = invoke.await_args
+    assert call is not None
+    payload = call.args[2]
     assert payload["action"] == "create"
     assert payload["session_id"] == 3
     assert payload["breakpoint"]["kind"] == "code"
     assert payload["breakpoint"]["location"] == "main"
 
 
-def test_facade_watch_and_catch_fix_the_kind(monkeypatch, tmp_path: Path) -> None:
+def test_facade_watch_and_catch_fix_the_kind(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     resolved = _managed(monkeypatch, tmp_path)
     daemon.remember_session_id(3)
 
     _code, watch_invoke, _stdout, _stderr = _call(["watch", "value"], resolved)
-    watch_payload = watch_invoke.await_args.args[2]
+    watch_call = watch_invoke.await_args
+    assert watch_call is not None
+    watch_payload = watch_call.args[2]
     _code, catch_invoke, _stdout, _stderr = _call(["catch", "throw"], resolved)
-    catch_payload = catch_invoke.await_args.args[2]
+    catch_call = catch_invoke.await_args
+    assert catch_call is not None
+    catch_payload = catch_call.args[2]
 
     assert watch_payload["breakpoint"]["kind"] == "watch"
     assert watch_payload["breakpoint"]["expression"] == "value"
@@ -126,28 +149,36 @@ def test_facade_watch_and_catch_fix_the_kind(monkeypatch, tmp_path: Path) -> Non
     assert catch_payload["breakpoint"]["event"] == "throw"
 
 
-def test_facade_break_rm_uses_the_positional_number(monkeypatch, tmp_path: Path) -> None:
+def test_facade_break_rm_uses_the_positional_number(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     resolved = _managed(monkeypatch, tmp_path)
     daemon.remember_session_id(3)
 
     exit_code, invoke, _stdout, _stderr = _call(["break", "rm", "4"], resolved)
 
     assert exit_code == 0
-    payload = invoke.await_args.args[2]
+    call = invoke.await_args
+    assert call is not None
+    payload = call.args[2]
     assert payload["action"] == "delete"
     assert payload["breakpoint"] == {"number": 4}
 
 
-def test_facade_status_needs_no_session(monkeypatch, tmp_path: Path) -> None:
+def test_facade_status_needs_no_session(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     resolved = _managed(monkeypatch, tmp_path)
 
     exit_code, invoke, _stdout, _stderr = _call(["status"], resolved)
 
     assert exit_code == 0
-    assert invoke.await_args.args[2] == {"action": "list"}
+    call = invoke.await_args
+    assert call is not None
+    assert call.args[2] == {"action": "list"}
 
 
-def test_facade_rejects_two_sources_for_one_field(monkeypatch, tmp_path: Path) -> None:
+def test_facade_rejects_two_sources_for_one_field(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     resolved = _managed(monkeypatch, tmp_path)
 
     exit_code, stderr, _invoke = _failed_call(
@@ -159,7 +190,7 @@ def test_facade_rejects_two_sources_for_one_field(monkeypatch, tmp_path: Path) -
     assert "not both" in stderr
 
 
-def test_facade_reports_a_missing_session(monkeypatch, tmp_path: Path) -> None:
+def test_facade_reports_a_missing_session(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     resolved = _managed(monkeypatch, tmp_path)
 
     exit_code, stderr, _invoke = _failed_call(["bt"], resolved)
@@ -168,7 +199,7 @@ def test_facade_reports_a_missing_session(monkeypatch, tmp_path: Path) -> None:
     assert "no debug session is recorded" in stderr
 
 
-def test_tool_fallback_accepts_short_names(monkeypatch, tmp_path: Path) -> None:
+def test_tool_fallback_accepts_short_names(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     resolved = _managed(monkeypatch, tmp_path)
 
     exit_code, invoke, _stdout, _stderr = _call(
@@ -176,11 +207,15 @@ def test_tool_fallback_accepts_short_names(monkeypatch, tmp_path: Path) -> None:
     )
 
     assert exit_code == 0
-    assert invoke.await_args.args[1] == "gdb_session_query"
-    assert invoke.await_args.args[2] == {"action": "list"}
+    call = invoke.await_args
+    assert call is not None
+    assert call.args[1] == "gdb_session_query"
+    assert call.args[2] == {"action": "list"}
 
 
-def test_payload_json_accepts_the_tool_prefix(monkeypatch, tmp_path: Path) -> None:
+def test_payload_json_accepts_the_tool_prefix(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     resolved = _managed(monkeypatch, tmp_path)
 
     exit_code, invoke, _stdout, _stderr = _call(
@@ -189,11 +224,13 @@ def test_payload_json_accepts_the_tool_prefix(monkeypatch, tmp_path: Path) -> No
     )
 
     assert exit_code == 0
-    assert invoke.await_args.args[1] == "gdb_session_query"
-    assert invoke.await_args.args[2] == {"action": "list"}
+    call = invoke.await_args
+    assert call is not None
+    assert call.args[1] == "gdb_session_query"
+    assert call.args[2] == {"action": "list"}
 
 
-def test_unknown_tool_is_rejected(monkeypatch, tmp_path: Path) -> None:
+def test_unknown_tool_is_rejected(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     resolved = _managed(monkeypatch, tmp_path)
 
     exit_code, stderr, _invoke = _failed_call(["tool", "nonsense"], resolved)
@@ -202,14 +239,18 @@ def test_unknown_tool_is_rejected(monkeypatch, tmp_path: Path) -> None:
     assert "nonsense" in stderr
 
 
-def test_facade_exec_takes_a_positional_command(monkeypatch, tmp_path: Path) -> None:
+def test_facade_exec_takes_a_positional_command(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     resolved = _managed(monkeypatch, tmp_path)
     daemon.remember_session_id(2)
 
     exit_code, invoke, _stdout, _stderr = _call(["exec", "info files"], resolved)
 
     assert exit_code == 0
-    payload = invoke.await_args.args[2]
+    call = invoke.await_args
+    assert call is not None
+    payload = call.args[2]
     assert payload["command"] == "info files"
     assert payload["session_id"] == 2
 

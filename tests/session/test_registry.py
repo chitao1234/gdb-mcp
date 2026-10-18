@@ -3,6 +3,8 @@
 import threading
 from unittest.mock import MagicMock, Mock
 
+import pytest
+
 from gdb_mcp.domain import (
     OperationError,
     OperationSuccess,
@@ -16,6 +18,7 @@ from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.registry import SessionRegistry
 from gdb_mcp.session.service import SessionService
 from gdb_mcp.session.state import SessionState
+from tests.support import failed, succeeded
 
 
 def _session_double() -> Mock:
@@ -61,7 +64,7 @@ def _publish_session(manager: SessionRegistry, session: Mock, *, program: str = 
 class TestSessionRegistry:
     """Test cases for the session registry."""
 
-    def test_start_session_returns_sequential_ids(self):
+    def test_start_session_returns_sequential_ids(self) -> None:
         """Successful start_session calls should allocate sequential IDs starting at 1."""
 
         sessions = [_session_double(), _session_double(), _session_double()]
@@ -70,7 +73,7 @@ class TestSessionRegistry:
 
         index = {"value": 0}
 
-        def session_factory():
+        def session_factory() -> Mock:
             session = sessions[index["value"]]
             index["value"] += 1
             return session
@@ -86,7 +89,7 @@ class TestSessionRegistry:
         assert isinstance(result_2, OperationSuccess)
         assert isinstance(result_3, OperationSuccess)
 
-    def test_get_session_returns_correct_session(self):
+    def test_get_session_returns_correct_session(self) -> None:
         """get_session should return the exact published session object."""
 
         session = _session_double()
@@ -97,7 +100,7 @@ class TestSessionRegistry:
         assert manager.get_session(session_id) is session
         assert manager.get_session(session_id) is session
 
-    def test_get_session_returns_none_for_invalid_id(self):
+    def test_get_session_returns_none_for_invalid_id(self) -> None:
         """Test that get_session returns None for non-existent session IDs."""
 
         session = _session_double()
@@ -110,7 +113,7 @@ class TestSessionRegistry:
         session_id = _publish_session(manager, session)
         assert manager.get_session(session_id + 1) is None
 
-    def test_close_session_stops_and_removes_active_session(self):
+    def test_close_session_stops_and_removes_active_session(self) -> None:
         """close_session should stop and remove active sessions atomically."""
 
         session = _session_double()
@@ -126,7 +129,7 @@ class TestSessionRegistry:
         session.stop.assert_called_once()
         assert manager.get_session(session_id) is None
 
-    def test_close_session_keeps_session_when_stop_fails(self):
+    def test_close_session_keeps_session_when_stop_fails(self) -> None:
         """Failed close operations should retain registry ownership for retry/inspection."""
 
         session = _session_double()
@@ -142,7 +145,7 @@ class TestSessionRegistry:
         assert result.message == "stop failed"
         assert manager.get_session(session_id) is session
 
-    def test_close_session_rejects_inconsistent_running_session_without_controller(self):
+    def test_close_session_rejects_inconsistent_running_session_without_controller(self) -> None:
         """close_session should not silently drop a logically running session."""
 
         session = _session_double()
@@ -160,7 +163,7 @@ class TestSessionRegistry:
         assert session_id not in manager._closing_sessions
         assert manager.resolve_session(session_id) is session
 
-    def test_resolve_session_rejects_closing_sessions(self):
+    def test_resolve_session_rejects_closing_sessions(self) -> None:
         """Closing sessions should reject new command resolution with a clear error."""
 
         session = _session_double()
@@ -174,7 +177,7 @@ class TestSessionRegistry:
         assert "closing" in result.message.lower()
         assert result.code == "session_closing"
 
-    def test_resolve_session_reports_an_unknown_id_with_its_own_code(self):
+    def test_resolve_session_reports_an_unknown_id_with_its_own_code(self) -> None:
         """An unknown id should be distinguishable from other session failures."""
 
         manager = SessionRegistry(session_factory=lambda: _session_double())
@@ -185,7 +188,7 @@ class TestSessionRegistry:
         assert "Invalid session_id: 404" in result.message
         assert result.code == "invalid_session"
 
-    def test_unknown_session_error_lists_the_live_sessions(self):
+    def test_unknown_session_error_lists_the_live_sessions(self) -> None:
         """The error should name the sessions a caller can switch to."""
 
         session = _session_double()
@@ -199,7 +202,7 @@ class TestSessionRegistry:
         assert f"Live sessions: {first}, {second}" in result.message
         assert result.details["live_session_ids"] == [first, second]
 
-    def test_unknown_session_error_says_when_nothing_is_live(self):
+    def test_unknown_session_error_says_when_nothing_is_live(self) -> None:
         manager = SessionRegistry(session_factory=lambda: _session_double())
 
         result = manager.resolve_session(404)
@@ -208,7 +211,7 @@ class TestSessionRegistry:
         assert "Live sessions: none" in result.message
         assert result.details["live_session_ids"] == []
 
-    def test_list_sessions_returns_structured_summaries(self):
+    def test_list_sessions_returns_structured_summaries(self) -> None:
         """Session inventory should expose metadata useful for multi-session clients."""
 
         session = _session_double()
@@ -275,7 +278,7 @@ class TestSessionRegistry:
         assert summary.follow_fork_mode == "child"
         assert summary.detach_on_fork is False
 
-    def test_close_session_removes_failed_dead_session_without_stop(self):
+    def test_close_session_removes_failed_dead_session_without_stop(self) -> None:
         """Dead failed sessions should be removable without another stop attempt."""
 
         session = _session_double()
@@ -293,7 +296,7 @@ class TestSessionRegistry:
         session.stop.assert_not_called()
         assert manager.get_session(session_id) is None
 
-    def test_concurrent_start_session_thread_safe(self):
+    def test_concurrent_start_session_thread_safe(self) -> None:
         """Concurrent start_session calls should publish unique IDs."""
 
         sessions = [_session_double() for _ in range(10)]
@@ -303,7 +306,7 @@ class TestSessionRegistry:
         index = {"value": 0}
         index_lock = threading.Lock()
 
-        def session_factory():
+        def session_factory() -> Mock:
             with index_lock:
                 session = sessions[index["value"]]
                 index["value"] += 1
@@ -313,7 +316,7 @@ class TestSessionRegistry:
         session_ids: list[int] = []
         session_ids_lock = threading.Lock()
 
-        def start_sessions():
+        def start_sessions() -> None:
             session_id, result = manager.start_session(program="/bin/ls")
             assert isinstance(result, OperationSuccess)
             assert session_id is not None
@@ -333,7 +336,7 @@ class TestSessionRegistry:
         assert len(set(session_ids)) == 10
         assert sorted(session_ids) == list(range(1, 11))
 
-    def test_start_session_only_publishes_successful_sessions(self):
+    def test_start_session_only_publishes_successful_sessions(self) -> None:
         """Failed startup should not leave a reachable session in the registry."""
 
         session = _session_double()
@@ -347,7 +350,7 @@ class TestSessionRegistry:
         assert result.message == "boom"
         assert manager.get_session(1) is None
 
-    def test_start_session_stores_successful_session(self):
+    def test_start_session_stores_successful_session(self) -> None:
         """Atomic startup should publish the session only after success."""
 
         session = _session_double()
@@ -360,7 +363,7 @@ class TestSessionRegistry:
         assert isinstance(result, OperationSuccess)
         assert manager.get_session(session_id) is session
 
-    def test_shutdown_all_stops_and_clears_sessions(self):
+    def test_shutdown_all_stops_and_clears_sessions(self) -> None:
         """Shutdown should stop every registered session and clear the registry."""
 
         sessions = [_session_double(), _session_double()]
@@ -371,7 +374,7 @@ class TestSessionRegistry:
 
         index = {"value": 0}
 
-        def session_factory():
+        def session_factory() -> Mock:
             session = sessions[index["value"]]
             index["value"] += 1
             return session
@@ -392,7 +395,7 @@ class TestSessionRegistry:
         assert manager.get_session(session_id_1) is None
         assert manager.get_session(session_id_2) is None
 
-    def test_shutdown_all_removes_failed_dead_sessions_without_stop(self):
+    def test_shutdown_all_removes_failed_dead_sessions_without_stop(self) -> None:
         """Shutdown should not try to stop sessions whose transport has already died."""
 
         session = _session_double()
@@ -406,18 +409,18 @@ class TestSessionRegistry:
         results = manager.shutdown_all()
 
         assert isinstance(results[session_id], OperationSuccess)
-        assert results[session_id].value.message == "Session removed"
+        assert succeeded(results[session_id]).message == "Session removed"
         session.stop.assert_not_called()
         assert manager.get_session(session_id) is None
 
-    def test_default_factory_returns_session_service(self):
+    def test_default_factory_returns_session_service(self) -> None:
         """The default registry factory should construct SessionService directly."""
 
         session = create_default_session_service()
 
         assert isinstance(session, SessionService)
 
-    def test_shutdown_all_times_out_on_hung_session(self, monkeypatch):
+    def test_shutdown_all_times_out_on_hung_session(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A session whose stop hangs must not block shutdown forever."""
 
         monkeypatch.setattr(registry_module, "_SHUTDOWN_TIMEOUT_SEC", 0.1)
@@ -427,7 +430,7 @@ class TestSessionRegistry:
         session.controller = object()
         release = threading.Event()
 
-        def hang():
+        def hang() -> OperationSuccess[SessionMessage]:
             release.wait(timeout=5)
             return OperationSuccess(SessionMessage(message="stopped"))
 
@@ -438,4 +441,4 @@ class TestSessionRegistry:
             release.set()
 
         assert isinstance(results[session_id], OperationError)
-        assert "Timed out" in results[session_id].message
+        assert "Timed out" in failed(results[session_id]).message

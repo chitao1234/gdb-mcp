@@ -4,22 +4,31 @@ from __future__ import annotations
 
 import asyncio
 from datetime import timedelta
-from unittest.mock import AsyncMock, Mock, patch
+from types import TracebackType
+from typing import Generic, TypeVar
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from mcp.types import CallToolResult, TextContent
 
 from gdb_mcp.client.runtime import _session_read_timeout, invoke_tool
 
+ValueT = TypeVar("ValueT")
 
-class _AsyncContextManager:
-    def __init__(self, value):
+
+class _AsyncContextManager(Generic[ValueT]):
+    def __init__(self, value: ValueT) -> None:
         self._value = value
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> ValueT:
         return self._value
 
-    async def __aexit__(self, exc_type, exc, tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool:
         return False
 
 
@@ -28,9 +37,9 @@ class TestClientRuntime:
     @patch("gdb_mcp.client.runtime.streamable_http_client")
     def test_invoke_tool_initializes_session_and_returns_json_payload(
         self,
-        mock_streamable_http_client,
-        mock_client_session_cls,
-    ):
+        mock_streamable_http_client: MagicMock,
+        mock_client_session_cls: MagicMock,
+    ) -> None:
         read_stream = Mock()
         write_stream = Mock()
         mock_streamable_http_client.return_value = _AsyncContextManager(
@@ -78,9 +87,9 @@ class TestClientRuntime:
     @patch("gdb_mcp.client.runtime.streamable_http_client")
     def test_invoke_tool_preserves_tool_error_flag(
         self,
-        mock_streamable_http_client,
-        mock_client_session_cls,
-    ):
+        mock_streamable_http_client: MagicMock,
+        mock_client_session_cls: MagicMock,
+    ) -> None:
         read_stream = Mock()
         write_stream = Mock()
         mock_streamable_http_client.return_value = _AsyncContextManager(
@@ -118,9 +127,9 @@ class TestClientRuntime:
     @patch("gdb_mcp.client.runtime.streamable_http_client")
     def test_invoke_tool_forwards_custom_http_client(
         self,
-        mock_streamable_http_client,
-        mock_client_session_cls,
-    ):
+        mock_streamable_http_client: MagicMock,
+        mock_client_session_cls: MagicMock,
+    ) -> None:
         read_stream = Mock()
         write_stream = Mock()
         http_client = Mock()
@@ -156,10 +165,10 @@ class TestClientRuntime:
     @patch("gdb_mcp.client.runtime.streamable_http_client")
     def test_owned_http_client_uses_mcp_sse_timeouts(
         self,
-        mock_streamable_http_client,
-        mock_client_session_cls,
-        mock_async_client_cls,
-    ):
+        mock_streamable_http_client: MagicMock,
+        mock_client_session_cls: MagicMock,
+        mock_async_client_cls: MagicMock,
+    ) -> None:
         """A CLI-owned client must survive tool calls that outlive httpx defaults.
 
         httpx's built-in 5s read timeout tears down the streamed tool response for
@@ -207,9 +216,9 @@ class TestClientRuntime:
     @patch("gdb_mcp.client.runtime.streamable_http_client")
     def test_invoke_tool_prefers_structured_content(
         self,
-        mock_streamable_http_client,
-        mock_client_session_cls,
-    ):
+        mock_streamable_http_client: MagicMock,
+        mock_client_session_cls: MagicMock,
+    ) -> None:
         """Structured output should be used directly instead of re-parsing text."""
 
         read_stream = Mock()
@@ -243,9 +252,9 @@ class TestClientRuntime:
     @patch("gdb_mcp.client.runtime.streamable_http_client")
     def test_invoke_tool_rejects_non_object_json_payload(
         self,
-        mock_streamable_http_client,
-        mock_client_session_cls,
-    ):
+        mock_streamable_http_client: MagicMock,
+        mock_client_session_cls: MagicMock,
+    ) -> None:
         read_stream = Mock()
         write_stream = Mock()
         mock_streamable_http_client.return_value = _AsyncContextManager(
@@ -274,9 +283,9 @@ class TestClientRuntime:
     @patch("gdb_mcp.client.runtime.streamable_http_client")
     def test_invoke_tool_rejects_malformed_json_payload(
         self,
-        mock_streamable_http_client,
-        mock_client_session_cls,
-    ):
+        mock_streamable_http_client: MagicMock,
+        mock_client_session_cls: MagicMock,
+    ) -> None:
         read_stream = Mock()
         write_stream = Mock()
         mock_streamable_http_client.return_value = _AsyncContextManager(
@@ -303,18 +312,20 @@ class TestClientRuntime:
 class TestSessionReadTimeout:
     """The per-call read timeout bounds silent hangs without capping normal work."""
 
-    def test_defaults_to_thirty_minutes(self, monkeypatch):
+    def test_defaults_to_thirty_minutes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("GDB_MCP_CLIENT_READ_TIMEOUT_SEC", raising=False)
 
         assert _session_read_timeout() == timedelta(seconds=1800.0)
 
-    def test_env_override_is_honoured(self, monkeypatch):
+    def test_env_override_is_honoured(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("GDB_MCP_CLIENT_READ_TIMEOUT_SEC", "45.5")
 
         assert _session_read_timeout() == timedelta(seconds=45.5)
 
     @pytest.mark.parametrize("value", ["", "abc", "0", "-5"])
-    def test_invalid_env_falls_back_to_default(self, monkeypatch, value):
+    def test_invalid_env_falls_back_to_default(
+        self, monkeypatch: pytest.MonkeyPatch, value: str
+    ) -> None:
         monkeypatch.setenv("GDB_MCP_CLIENT_READ_TIMEOUT_SEC", value)
 
         assert _session_read_timeout() == timedelta(seconds=1800.0)

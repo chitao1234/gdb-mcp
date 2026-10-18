@@ -7,6 +7,8 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from gdb_mcp.client import daemon
 from gdb_mcp.client.cli import main
 from gdb_mcp.client.daemon import ResolvedServer
@@ -15,13 +17,15 @@ from gdb_mcp.client.runtime import ClientToolResponse
 SERVER_URL = "http://127.0.0.1:41000/mcp"
 
 
-def _managed(monkeypatch, tmp_path: Path) -> ResolvedServer:
+def _managed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> ResolvedServer:
     monkeypatch.setenv("GDB_MCP_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
     return ResolvedServer(SERVER_URL, "tok", False, True)
 
 
-def _call(argv: list[str], resolved: ResolvedServer, *, response: ClientToolResponse):
+def _call(
+    argv: list[str], resolved: ResolvedServer, *, response: ClientToolResponse
+) -> tuple[int, AsyncMock, str, str]:
     stdout = StringIO()
     stderr = StringIO()
     with (
@@ -34,7 +38,7 @@ def _call(argv: list[str], resolved: ResolvedServer, *, response: ClientToolResp
     return exit_code, invoke, stdout.getvalue(), stderr.getvalue()
 
 
-def test_session_current_without_a_default(monkeypatch, tmp_path: Path) -> None:
+def test_session_current_without_a_default(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     resolved = _managed(monkeypatch, tmp_path)
 
     exit_code, _invoke, _stdout, stderr = _call(
@@ -47,7 +51,9 @@ def test_session_current_without_a_default(monkeypatch, tmp_path: Path) -> None:
     assert "no default session" in stderr
 
 
-def test_session_current_reports_the_stored_session(monkeypatch, tmp_path: Path) -> None:
+def test_session_current_reports_the_stored_session(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     resolved = _managed(monkeypatch, tmp_path)
     daemon.remember_session_id(3)
 
@@ -61,7 +67,7 @@ def test_session_current_reports_the_stored_session(monkeypatch, tmp_path: Path)
     assert stdout == "3\n"
 
 
-def test_session_use_validates_and_stores(monkeypatch, tmp_path: Path) -> None:
+def test_session_use_validates_and_stores(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     resolved = _managed(monkeypatch, tmp_path)
 
     exit_code, invoke, stdout, _stderr = _call(
@@ -73,11 +79,15 @@ def test_session_use_validates_and_stores(monkeypatch, tmp_path: Path) -> None:
     assert exit_code == 0
     assert "default session: 3" in stdout
     assert daemon.remembered_session_id() == 3
-    assert invoke.await_args.args[1] == "gdb_session_query"
-    assert invoke.await_args.args[2] == {"action": "status", "session_id": 3}
+    call = invoke.await_args
+    assert call is not None
+    assert call.args[1] == "gdb_session_query"
+    assert call.args[2] == {"action": "status", "session_id": 3}
 
 
-def test_session_use_rejects_an_unknown_session(monkeypatch, tmp_path: Path) -> None:
+def test_session_use_rejects_an_unknown_session(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     resolved = _managed(monkeypatch, tmp_path)
 
     exit_code, _invoke, _stdout, stderr = _call(
@@ -94,7 +104,9 @@ def test_session_use_rejects_an_unknown_session(monkeypatch, tmp_path: Path) -> 
     assert daemon.remembered_session_id() is None
 
 
-def test_session_use_requires_the_background_server(monkeypatch, tmp_path: Path) -> None:
+def test_session_use_requires_the_background_server(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("GDB_MCP_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
     resolved = ResolvedServer(SERVER_URL, None, False, False)
@@ -110,7 +122,7 @@ def test_session_use_requires_the_background_server(monkeypatch, tmp_path: Path)
     invoke.assert_not_awaited()
 
 
-def test_status_marks_the_default_session(monkeypatch, tmp_path: Path) -> None:
+def test_status_marks_the_default_session(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     resolved = _managed(monkeypatch, tmp_path)
     daemon.remember_session_id(3)
 
@@ -132,7 +144,9 @@ def test_status_marks_the_default_session(monkeypatch, tmp_path: Path) -> None:
     assert "(not running)" not in stdout
 
 
-def test_status_marks_a_session_that_is_gone(monkeypatch, tmp_path: Path) -> None:
+def test_status_marks_a_session_that_is_gone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     resolved = _managed(monkeypatch, tmp_path)
     daemon.remember_session_id(3)
 
@@ -149,7 +163,9 @@ def test_status_marks_a_session_that_is_gone(monkeypatch, tmp_path: Path) -> Non
     assert "default session: 3 (not running)" in stdout
 
 
-def test_stopping_the_default_session_forgets_it(monkeypatch, tmp_path: Path) -> None:
+def test_stopping_the_default_session_forgets_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     resolved = _managed(monkeypatch, tmp_path)
     daemon.remember_session_id(3)
 
@@ -166,7 +182,9 @@ def test_stopping_the_default_session_forgets_it(monkeypatch, tmp_path: Path) ->
     assert daemon.remembered_session_id() is None
 
 
-def test_stopping_another_session_keeps_the_default(monkeypatch, tmp_path: Path) -> None:
+def test_stopping_another_session_keeps_the_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     resolved = _managed(monkeypatch, tmp_path)
     daemon.remember_session_id(3)
 

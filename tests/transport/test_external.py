@@ -5,6 +5,7 @@ from __future__ import annotations
 import socket
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
@@ -18,7 +19,7 @@ from gdb_mcp.transport.external import (
 class TestParseMiEndpoint:
     """Endpoint strings should parse into typed descriptions."""
 
-    def test_tcp(self):
+    def test_tcp(self) -> None:
         endpoint = parse_mi_endpoint("tcp://127.0.0.1:4399")
 
         assert endpoint.kind == "tcp"
@@ -26,13 +27,13 @@ class TestParseMiEndpoint:
         assert endpoint.port == 4399
         assert endpoint.display == "tcp://127.0.0.1:4399"
 
-    def test_unix(self):
+    def test_unix(self) -> None:
         endpoint = parse_mi_endpoint("unix:///tmp/gdb-mcp.sock")
 
         assert endpoint.kind == "unix"
         assert endpoint.path == "/tmp/gdb-mcp.sock"
 
-    def test_pty(self):
+    def test_pty(self) -> None:
         endpoint = parse_mi_endpoint("pty:///dev/pts/7")
 
         assert endpoint.kind == "pty"
@@ -50,7 +51,7 @@ class TestParseMiEndpoint:
             "http://x",
         ],
     )
-    def test_invalid(self, value):
+    def test_invalid(self, value: str) -> None:
         with pytest.raises(EndpointError):
             parse_mi_endpoint(value)
 
@@ -58,7 +59,7 @@ class TestParseMiEndpoint:
 class TestExternalMiController:
     """The controller should speak MI over an externally owned stream."""
 
-    def test_reads_records_over_unix_socket(self, tmp_path):
+    def test_reads_records_over_unix_socket(self, tmp_path: Path) -> None:
         socket_path = str(tmp_path / "gdb.sock")
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         server.bind(socket_path)
@@ -95,7 +96,7 @@ class TestExternalMiController:
 
         assert any(record.get("type") == "result" for record in records)
 
-    def test_reads_records_with_crlf_line_endings(self, tmp_path):
+    def test_reads_records_with_crlf_line_endings(self, tmp_path: Path) -> None:
         """A tty-style CRLF stream must still yield a result record.
 
         A cooked tty (for example ``socat ... ,pty`` without ``raw,echo=0``)
@@ -144,11 +145,11 @@ class TestExternalMiController:
         assert results[0].get("message") == "done"
         assert not [record for record in records if record.get("type") == "output"]
 
-    def test_unreachable_endpoint_raises(self):
+    def test_unreachable_endpoint_raises(self) -> None:
         with pytest.raises(EndpointError):
             ExternalMiController("unix:///tmp/definitely-not-here-gdb-mcp.sock")
 
-    def test_exit_is_idempotent(self, tmp_path):
+    def test_exit_is_idempotent(self, tmp_path: Path) -> None:
         socket_path = str(tmp_path / "gdb.sock")
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         server.bind(socket_path)

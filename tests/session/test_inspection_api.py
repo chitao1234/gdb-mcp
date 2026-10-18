@@ -2,20 +2,48 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from pathlib import Path
+from typing import Protocol
+
 from gdb_mcp.domain import result_to_mapping
+from gdb_mcp.session.service import SessionService
+from tests.support import mapping_list, sequence
+
+MiRecordBuilder = Callable[..., dict[str, object]]
+MiConsoleBuilder = Callable[[str], dict[str, object]]
+
+
+class _FakeStdinView(Protocol):
+    """Read-only view of the recording stdin double installed by conftest."""
+
+    writes: list[bytes]
+
+
+class _FakeIoManagerView(Protocol):
+    stdin: _FakeStdinView
+
+
+class _ControllerDouble(Protocol):
+    io_manager: _FakeIoManagerView
+
+
+ScriptedSessionBuilder = Callable[..., tuple[SessionService, _ControllerDouble]]
 
 
 class TestThreadAndStackInspectionApi:
     """Test thread selection and stack inspection behavior."""
 
-    def test_get_threads_no_session(self, session_service):
+    def test_get_threads_no_session(self, session_service: SessionService) -> None:
         """Thread inspection without a controller should fail."""
 
         result = result_to_mapping(session_service.get_threads())
 
         assert result["status"] == "error"
 
-    def test_get_threads_success(self, scripted_running_session, mi_result):
+    def test_get_threads_success(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """Thread inspection should surface thread count and current thread."""
 
         session, controller = scripted_running_session(
@@ -39,7 +67,9 @@ class TestThreadAndStackInspectionApi:
         assert result["current_thread_id"] == "1"
         assert controller.io_manager.stdin.writes[0].decode().endswith("-thread-info\n")
 
-    def test_select_thread(self, scripted_running_session, mi_result):
+    def test_select_thread(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """Thread selection should surface the selected thread and frame."""
 
         session, controller = scripted_running_session(
@@ -60,7 +90,12 @@ class TestThreadAndStackInspectionApi:
         assert result["new_thread_id"] == "2"
         assert controller.io_manager.stdin.writes[0].decode().endswith("-thread-select 2\n")
 
-    def test_list_inferiors(self, scripted_running_session, mi_console, mi_result):
+    def test_list_inferiors(
+        self,
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_console: MiConsoleBuilder,
+        mi_result: MiRecordBuilder,
+    ) -> None:
         """Inferior inventory should parse the CLI table into structured records."""
 
         session, controller = scripted_running_session(
@@ -77,10 +112,10 @@ class TestThreadAndStackInspectionApi:
         assert result["status"] == "success"
         assert result["count"] == 2
         assert result["current_inferior_id"] == 1
-        assert result["inferiors"][0]["inferior_id"] == 1
-        assert result["inferiors"][0]["is_current"] is True
-        assert result["inferiors"][0]["executable"] == "/tmp/app"
-        assert result["inferiors"][1]["inferior_id"] == 2
+        assert mapping_list(result["inferiors"])[0]["inferior_id"] == 1
+        assert mapping_list(result["inferiors"])[0]["is_current"] is True
+        assert mapping_list(result["inferiors"])[0]["executable"] == "/tmp/app"
+        assert mapping_list(result["inferiors"])[1]["inferior_id"] == 2
         assert (
             controller.io_manager.stdin.writes[0]
             .decode()
@@ -89,10 +124,10 @@ class TestThreadAndStackInspectionApi:
 
     def test_list_inferiors_includes_runtime_state_summary(
         self,
-        scripted_running_session,
-        mi_console,
-        mi_result,
-    ):
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_console: MiConsoleBuilder,
+        mi_result: MiRecordBuilder,
+    ) -> None:
         """Inferior listings should carry known runtime state metadata per inferior."""
 
         session, _controller = scripted_running_session(
@@ -109,13 +144,18 @@ class TestThreadAndStackInspectionApi:
         result = result_to_mapping(session.list_inferiors())
 
         assert result["status"] == "success"
-        assert result["inferiors"][0]["inferior_id"] == 1
-        assert result["inferiors"][0]["execution_state"] == "unknown"
-        assert result["inferiors"][1]["inferior_id"] == 2
-        assert result["inferiors"][1]["execution_state"] == "paused"
-        assert result["inferiors"][1]["stop_reason"] == "signal-received"
+        assert mapping_list(result["inferiors"])[0]["inferior_id"] == 1
+        assert mapping_list(result["inferiors"])[0]["execution_state"] == "unknown"
+        assert mapping_list(result["inferiors"])[1]["inferior_id"] == 2
+        assert mapping_list(result["inferiors"])[1]["execution_state"] == "paused"
+        assert mapping_list(result["inferiors"])[1]["stop_reason"] == "signal-received"
 
-    def test_select_inferior(self, scripted_running_session, mi_console, mi_result):
+    def test_select_inferior(
+        self,
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_console: MiConsoleBuilder,
+        mi_result: MiRecordBuilder,
+    ) -> None:
         """Inferior selection should refresh inventory and update runtime state."""
 
         session, controller = scripted_running_session(
@@ -143,7 +183,9 @@ class TestThreadAndStackInspectionApi:
         assert written[0].endswith('-interpreter-exec console "inferior 2"\n')
         assert written[1].endswith('-interpreter-exec console "info inferiors"\n')
 
-    def test_get_backtrace_default(self, scripted_running_session, mi_result):
+    def test_get_backtrace_default(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """Backtrace requests should return frame count for the current thread."""
 
         session, controller = scripted_running_session(
@@ -158,7 +200,9 @@ class TestThreadAndStackInspectionApi:
         assert result["thread_id"] == 7
         assert controller.io_manager.stdin.writes[0].decode().endswith("-stack-list-frames 0 99\n")
 
-    def test_get_backtrace_specific_thread(self, scripted_running_session, mi_result):
+    def test_get_backtrace_specific_thread(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """Backtrace requests for a specific thread should restore the original selection."""
 
         session, controller = scripted_running_session(
@@ -183,9 +227,9 @@ class TestThreadAndStackInspectionApi:
 
     def test_get_backtrace_max_frames_is_an_upper_bound(
         self,
-        scripted_running_session,
-        mi_result,
-    ):
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_result: MiRecordBuilder,
+    ) -> None:
         """The requested max_frames count should not become an inclusive upper index."""
 
         session, controller = scripted_running_session(
@@ -201,7 +245,9 @@ class TestThreadAndStackInspectionApi:
 class TestDataInspectionApi:
     """Test data-inspection behavior through the public API."""
 
-    def test_evaluate_expression(self, scripted_running_session, mi_result):
+    def test_evaluate_expression(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """Expression evaluation should surface the resulting value."""
 
         session, controller = scripted_running_session([mi_result({"value": "42"})])
@@ -219,9 +265,9 @@ class TestDataInspectionApi:
 
     def test_evaluate_expression_escapes_quotes_and_backslashes(
         self,
-        scripted_running_session,
-        mi_result,
-    ):
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_result: MiRecordBuilder,
+    ) -> None:
         """Expression evaluation should escape MI-sensitive characters."""
 
         session, controller = scripted_running_session([mi_result({"value": "5"})])
@@ -237,9 +283,9 @@ class TestDataInspectionApi:
 
     def test_evaluate_expression_with_thread_and_frame_restores_selection(
         self,
-        scripted_running_session,
-        mi_result,
-    ):
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_result: MiRecordBuilder,
+    ) -> None:
         """Expression evaluation should support stateless context overrides."""
 
         session, controller = scripted_running_session(
@@ -266,9 +312,9 @@ class TestDataInspectionApi:
 
     def test_evaluate_expression_restores_selection_on_frame_switch_error(
         self,
-        scripted_running_session,
-        mi_result,
-    ):
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_result: MiRecordBuilder,
+    ) -> None:
         """Failed temporary frame selection should still restore the original context."""
 
         session, controller = scripted_running_session(
@@ -294,7 +340,9 @@ class TestDataInspectionApi:
 class TestStructuredCodeInspectionApi:
     """Test structured disassembly and source-context helpers."""
 
-    def test_disassemble_current_context(self, scripted_running_session, mi_result):
+    def test_disassemble_current_context(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """Disassembly should flatten current-context MI output into instruction records."""
 
         session, _controller = scripted_running_session(
@@ -314,14 +362,14 @@ class TestStructuredCodeInspectionApi:
 
         assert result["status"] == "success"
         assert result["count"] == 2
-        assert result["instructions"][0]["address"] == "0x401000"
+        assert mapping_list(result["instructions"])[0]["address"] == "0x401000"
         assert result["mode"] == "assembly"
 
     def test_disassemble_with_thread_and_frame_restores_selection(
         self,
-        scripted_running_session,
-        mi_result,
-    ):
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_result: MiRecordBuilder,
+    ) -> None:
         """Temporary disassembly context switches should restore thread/frame selection."""
 
         session, controller = scripted_running_session(
@@ -341,7 +389,9 @@ class TestStructuredCodeInspectionApi:
         assert written[-2].endswith("-thread-select 1\n")
         assert written[-1].endswith("-stack-select-frame 0\n")
 
-    def test_get_source_context_file_line_selector(self, tmp_path, session_service):
+    def test_get_source_context_file_line_selector(
+        self, tmp_path: Path, session_service: SessionService
+    ) -> None:
         """Source-context reads should return a bounded structured file window."""
 
         source_file = tmp_path / "main.c"
@@ -360,15 +410,15 @@ class TestStructuredCodeInspectionApi:
         assert result["file"] == str(source_file)
         assert result["start_line"] == 1
         assert result["end_line"] == 2
-        assert result["lines"][1]["line_number"] == 2
-        assert result["lines"][1]["is_current"] is True
+        assert mapping_list(result["lines"])[1]["line_number"] == 2
+        assert mapping_list(result["lines"])[1]["is_current"] is True
 
     def test_get_source_context_with_thread_and_frame_restores_selection(
         self,
-        scripted_running_session,
-        mi_result,
-        tmp_path,
-    ):
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_result: MiRecordBuilder,
+        tmp_path: Path,
+    ) -> None:
         """Source-context overrides should restore the original thread/frame selection."""
 
         source_file = tmp_path / "worker.c"
@@ -403,7 +453,9 @@ class TestStructuredCodeInspectionApi:
         assert written[-2].endswith("-thread-select 1\n")
         assert written[-1].endswith("-stack-select-frame 0\n")
 
-    def test_get_variables(self, scripted_running_session, mi_result):
+    def test_get_variables(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """Variable inspection should restore the original thread/frame selection."""
 
         session, controller = scripted_running_session(
@@ -430,7 +482,7 @@ class TestStructuredCodeInspectionApi:
         assert result["status"] == "success"
         assert result["thread_id"] == 2
         assert result["frame"] == 1
-        assert len(result["variables"]) == 2
+        assert len(sequence(result["variables"])) == 2
         written = [command.decode() for command in controller.io_manager.stdin.writes]
         assert written[0].endswith("-thread-info\n")
         assert written[1].endswith("-stack-info-frame\n")
@@ -444,9 +496,9 @@ class TestStructuredCodeInspectionApi:
 
     def test_get_variables_reports_current_thread_when_no_override_is_supplied(
         self,
-        scripted_running_session,
-        mi_result,
-    ):
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_result: MiRecordBuilder,
+    ) -> None:
         """Variable inspection should report the effective current thread in its payload."""
 
         session, _controller = scripted_running_session(
@@ -462,9 +514,11 @@ class TestStructuredCodeInspectionApi:
         assert result["status"] == "success"
         assert result["thread_id"] == 1
         assert result["frame"] == 0
-        assert len(result["variables"]) == 1
+        assert len(sequence(result["variables"])) == 1
 
-    def test_get_registers(self, scripted_running_session, mi_result):
+    def test_get_registers(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """Register inspection should surface all returned register values."""
 
         session, controller = scripted_running_session(
@@ -483,7 +537,7 @@ class TestStructuredCodeInspectionApi:
         result = result_to_mapping(session.get_registers())
 
         assert result["status"] == "success"
-        assert len(result["registers"]) == 2
+        assert len(sequence(result["registers"])) == 2
         assert (
             controller.io_manager.stdin.writes[0]
             .decode()
@@ -492,9 +546,9 @@ class TestStructuredCodeInspectionApi:
 
     def test_get_registers_with_thread_and_frame_restores_selection(
         self,
-        scripted_running_session,
-        mi_result,
-    ):
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_result: MiRecordBuilder,
+    ) -> None:
         """Register inspection should support stateless context overrides."""
 
         session, controller = scripted_running_session(
@@ -510,7 +564,7 @@ class TestStructuredCodeInspectionApi:
         result = result_to_mapping(session.get_registers(thread_id=2, frame=1))
 
         assert result["status"] == "success"
-        assert len(result["registers"]) == 1
+        assert len(sequence(result["registers"])) == 1
         written = [command.decode() for command in controller.io_manager.stdin.writes]
         assert written[0].endswith("-thread-info\n")
         assert written[1].endswith("-stack-info-frame\n")
@@ -521,9 +575,9 @@ class TestStructuredCodeInspectionApi:
 
     def test_get_registers_restores_selection_on_frame_switch_error(
         self,
-        scripted_running_session,
-        mi_result,
-    ):
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_result: MiRecordBuilder,
+    ) -> None:
         """Failed temporary frame selection should still restore context for register reads."""
 
         session, controller = scripted_running_session(
@@ -547,9 +601,9 @@ class TestStructuredCodeInspectionApi:
 
     def test_get_registers_supports_number_filters_and_natural_format(
         self,
-        scripted_running_session,
-        mi_result,
-    ):
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_result: MiRecordBuilder,
+    ) -> None:
         """Register listing should pass explicit number filters and natural format token."""
 
         session, controller = scripted_running_session(
@@ -570,7 +624,7 @@ class TestStructuredCodeInspectionApi:
         )
 
         assert result["status"] == "success"
-        assert len(result["registers"]) == 2
+        assert len(sequence(result["registers"])) == 2
         assert (
             controller.io_manager.stdin.writes[0]
             .decode()
@@ -579,9 +633,9 @@ class TestStructuredCodeInspectionApi:
 
     def test_get_registers_resolves_name_filters(
         self,
-        scripted_running_session,
-        mi_result,
-    ):
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_result: MiRecordBuilder,
+    ) -> None:
         """Register-name filters should resolve to register numbers before value lookup."""
 
         session, controller = scripted_running_session(
@@ -592,12 +646,14 @@ class TestStructuredCodeInspectionApi:
         result = result_to_mapping(session.get_registers(register_names=["rip"]))
 
         assert result["status"] == "success"
-        assert result["registers"][0]["number"] == "2"
+        assert mapping_list(result["registers"])[0]["number"] == "2"
         written = [command.decode() for command in controller.io_manager.stdin.writes]
         assert written[0].endswith("-data-list-register-names\n")
         assert written[1].endswith("-data-list-register-values x 2\n")
 
-    def test_get_registers_can_omit_vector_registers(self, scripted_running_session, mi_result):
+    def test_get_registers_can_omit_vector_registers(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """Vector/SIMD registers should be filtered when include_vector_registers is false."""
 
         session, controller = scripted_running_session(
@@ -617,12 +673,14 @@ class TestStructuredCodeInspectionApi:
         result = result_to_mapping(session.get_registers(include_vector_registers=False))
 
         assert result["status"] == "success"
-        assert len(result["registers"]) == 1
-        assert result["registers"][0]["number"] == "0"
+        assert len(sequence(result["registers"])) == 1
+        assert mapping_list(result["registers"])[0]["number"] == "0"
         written = [command.decode() for command in controller.io_manager.stdin.writes]
         assert written[1].endswith("-data-list-register-names 0 17\n")
 
-    def test_get_registers_applies_max_registers_limit(self, scripted_running_session, mi_result):
+    def test_get_registers_applies_max_registers_limit(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """Register payload should respect max_registers upper bounds."""
 
         session, _controller = scripted_running_session(
@@ -642,9 +700,11 @@ class TestStructuredCodeInspectionApi:
         result = result_to_mapping(session.get_registers(max_registers=2))
 
         assert result["status"] == "success"
-        assert len(result["registers"]) == 2
+        assert len(sequence(result["registers"])) == 2
 
-    def test_read_memory(self, scripted_running_session, mi_result):
+    def test_read_memory(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
         """Memory reads should surface captured blocks and byte counts."""
 
         session, controller = scripted_running_session(
@@ -680,9 +740,9 @@ class TestStructuredCodeInspectionApi:
 
     def test_get_variables_restores_selection_on_frame_switch_error(
         self,
-        scripted_running_session,
-        mi_result,
-    ):
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_result: MiRecordBuilder,
+    ) -> None:
         """Failed temporary frame selection should still restore context for variable reads."""
 
         session, controller = scripted_running_session(

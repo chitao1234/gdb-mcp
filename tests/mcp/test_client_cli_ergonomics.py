@@ -15,7 +15,7 @@ from gdb_mcp.client.runtime import ClientToolResponse
 SERVER_URL = "http://127.0.0.1:8000/mcp"
 
 
-def test_server_url_falls_back_to_environment(monkeypatch) -> None:
+def test_server_url_falls_back_to_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GDB_MCP_SERVER_URL", SERVER_URL)
 
     args = parse_client_args(
@@ -26,7 +26,7 @@ def test_server_url_falls_back_to_environment(monkeypatch) -> None:
     assert args.server_url == SERVER_URL
 
 
-def test_explicit_server_url_wins_over_environment(monkeypatch) -> None:
+def test_explicit_server_url_wins_over_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GDB_MCP_SERVER_URL", "http://elsewhere.invalid/mcp")
 
     args = parse_client_args(
@@ -38,7 +38,9 @@ def test_explicit_server_url_wins_over_environment(monkeypatch) -> None:
 
 
 @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-def test_missing_server_url_is_resolved_from_the_daemon(mock_invoke_tool, monkeypatch) -> None:
+def test_missing_server_url_is_resolved_from_the_daemon(
+    mock_invoke_tool: AsyncMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.delenv("GDB_MCP_SERVER_URL", raising=False)
     mock_invoke_tool.return_value = ClientToolResponse(
         payload={"status": "success"}, is_error=False
@@ -61,7 +63,9 @@ def test_missing_server_url_is_resolved_from_the_daemon(mock_invoke_tool, monkey
 
 
 @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-def test_daemon_failure_is_reported_with_exit_code_one(mock_invoke_tool, monkeypatch) -> None:
+def test_daemon_failure_is_reported_with_exit_code_one(
+    mock_invoke_tool: AsyncMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.delenv("GDB_MCP_SERVER_URL", raising=False)
     stderr = StringIO()
 
@@ -75,7 +79,9 @@ def test_daemon_failure_is_reported_with_exit_code_one(mock_invoke_tool, monkeyp
 
 
 @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-def test_payload_json_sends_the_raw_payload(mock_invoke_tool, monkeypatch) -> None:
+def test_payload_json_sends_the_raw_payload(
+    mock_invoke_tool: AsyncMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("GDB_MCP_SERVER_URL", SERVER_URL)
     mock_invoke_tool.return_value = ClientToolResponse(
         payload={"status": "success"}, is_error=False
@@ -103,7 +109,9 @@ def test_payload_json_sends_the_raw_payload(mock_invoke_tool, monkeypatch) -> No
 
 
 @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-def test_payload_json_rejects_field_flags(mock_invoke_tool, monkeypatch) -> None:
+def test_payload_json_rejects_field_flags(
+    mock_invoke_tool: AsyncMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("GDB_MCP_SERVER_URL", SERVER_URL)
     stderr = StringIO()
 
@@ -127,7 +135,9 @@ def test_payload_json_rejects_field_flags(mock_invoke_tool, monkeypatch) -> None
 
 
 @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-def test_payload_json_is_validated_against_the_tool_schema(mock_invoke_tool, monkeypatch) -> None:
+def test_payload_json_is_validated_against_the_tool_schema(
+    mock_invoke_tool: AsyncMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("GDB_MCP_SERVER_URL", SERVER_URL)
     stderr = StringIO()
 
@@ -149,7 +159,9 @@ def test_payload_json_is_validated_against_the_tool_schema(mock_invoke_tool, mon
 
 
 @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-def test_batch_step_failures_set_a_nonzero_exit_code(mock_invoke_tool, monkeypatch) -> None:
+def test_batch_step_failures_set_a_nonzero_exit_code(
+    mock_invoke_tool: AsyncMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("GDB_MCP_SERVER_URL", SERVER_URL)
     mock_invoke_tool.return_value = ClientToolResponse(
         payload={"status": "success", "count": 2, "error_count": 1},
@@ -170,7 +182,9 @@ def test_batch_step_failures_set_a_nonzero_exit_code(mock_invoke_tool, monkeypat
     assert exit_code == 1
 
 
-def test_subcommand_help_lists_validated_payload_examples(capsys) -> None:
+def test_subcommand_help_lists_validated_payload_examples(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     with pytest.raises(SystemExit) as exc_info:
         asyncio.run(main(["tool", "gdb_breakpoint_manage", "--help"]))
 
@@ -180,7 +194,7 @@ def test_subcommand_help_lists_validated_payload_examples(capsys) -> None:
     assert '"kind": "code"' in output
 
 
-def test_version_flag_prints_the_client_version(capsys) -> None:
+def test_version_flag_prints_the_client_version(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as exc_info:
         build_parser().parse_args(["--version"])
 
@@ -189,7 +203,9 @@ def test_version_flag_prints_the_client_version(capsys) -> None:
 
 
 @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-def test_session_id_is_accepted_before_the_subcommand(mock_invoke_tool, monkeypatch) -> None:
+def test_session_id_is_accepted_before_the_subcommand(
+    mock_invoke_tool: AsyncMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("GDB_MCP_SERVER_URL", SERVER_URL)
     mock_invoke_tool.return_value = ClientToolResponse(
         payload={"status": "success"}, is_error=False

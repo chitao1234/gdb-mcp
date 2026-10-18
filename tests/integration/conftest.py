@@ -8,17 +8,75 @@ import logging
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
-from typing import cast
+from typing import Protocol
 
 import pytest
+from mcp.types import TextContent
 
-from gdb_mcp.mcp.runtime import create_server_runtime
+from gdb_mcp.mcp.runtime import ServerRuntime, create_server_runtime
 from gdb_mcp.session.registry import SessionRegistry
+
+from ..support import integer, mapping
+
+
+class CallGdbTool(Protocol):
+    """Invoke one MCP tool and return its deserialized JSON payload."""
+
+    def __call__(self, tool_name: str, arguments: dict[str, object]) -> dict[str, object]: ...
+
+
+class CompileProgram(Protocol):
+    """Compile one test program and return its executable path."""
+
+    def __call__(
+        self,
+        source: str,
+        *,
+        filename: str,
+        compiler: str,
+        compiler_args: list[str] | None = None,
+    ) -> str: ...
+
+
+class CompileProgramWithCore(Protocol):
+    """Compile a crashing test program and return its executable and core paths."""
+
+    def __call__(
+        self,
+        source: str,
+        *,
+        filename: str,
+        compiler: str,
+        compiler_args: list[str] | None = None,
+    ) -> tuple[str, str]: ...
+
+
+class StartSession(Protocol):
+    """Start a GDB session and return its session ID."""
+
+    def __call__(
+        self, program: str, *, init_commands: list[str] | None = None, **kwargs: object
+    ) -> int: ...
+
+
+class StartSessionResult(Protocol):
+    """Start a GDB session and return the full start payload."""
+
+    def __call__(
+        self, program: str, *, init_commands: list[str] | None = None, **kwargs: object
+    ) -> dict[str, object]: ...
+
+
+class StopSession(Protocol):
+    """Stop a GDB session and return the manage payload."""
+
+    def __call__(self, session_id: int, *, ignore_errors: bool = False) -> dict[str, object]: ...
 
 
 @pytest.fixture(scope="module")
-def integration_runtime(request):
+def integration_runtime(request: pytest.FixtureRequest) -> Iterator[ServerRuntime]:
     """Create an isolated MCP runtime and session registry for one test module."""
 
     session_manager = SessionRegistry()
@@ -34,12 +92,14 @@ def integration_runtime(request):
 
 
 @pytest.fixture(scope="module")
-def call_gdb_tool(integration_runtime):
+def call_gdb_tool(integration_runtime: ServerRuntime) -> CallGdbTool:
     """Invoke one MCP tool directly and deserialize the JSON response payload."""
 
     def invoke(tool_name: str, arguments: dict[str, object]) -> dict[str, object]:
         result = asyncio.run(integration_runtime.call_tool(tool_name, arguments))
-        return cast(dict[str, object], json.loads(result.content[0].text))
+        content = result.content[0]
+        assert isinstance(content, TextContent), content
+        return mapping(json.loads(content.text))
 
     return invoke
 
@@ -57,7 +117,7 @@ def _disable_debuginfod(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _cleanup_sessions(integration_runtime):
+def _cleanup_sessions(integration_runtime: ServerRuntime) -> Iterator[None]:
     """Ensure sessions do not leak between tests within a module."""
 
     yield
@@ -66,7 +126,7 @@ def _cleanup_sessions(integration_runtime):
 
 
 @pytest.fixture
-def compile_program():
+def compile_program() -> Iterator[CompileProgram]:
     """Compile one test program and clean up its temporary directory after the test."""
 
     temp_dirs: list[Path] = []
@@ -110,7 +170,7 @@ def compile_program():
 
 
 @pytest.fixture
-def compile_program_with_core():
+def compile_program_with_core() -> Iterator[CompileProgramWithCore]:
     """Compile a program, generate a core dump with GDB, and return both paths.
 
     The core is produced by running the program under GDB and calling
@@ -190,7 +250,7 @@ def compile_program_with_core():
 
 
 @pytest.fixture
-def default_init_commands():
+def default_init_commands() -> list[str]:
     """Return the standard init commands used by most integration sessions."""
 
     return [
@@ -200,7 +260,7 @@ def default_init_commands():
 
 
 @pytest.fixture
-def start_session(start_session_result):
+def start_session(start_session_result: StartSessionResult) -> StartSession:
     """Start a GDB session and return its session ID."""
 
     def start(
@@ -209,17 +269,21 @@ def start_session(start_session_result):
         init_commands: list[str] | None = None,
         **kwargs: object,
     ) -> int:
-        return start_session_result(
-            program,
-            init_commands=init_commands,
-            **kwargs,
-        )["session_id"]
+        return integer(
+            start_session_result(
+                program,
+                init_commands=init_commands,
+                **kwargs,
+            )["session_id"]
+        )
 
     return start
 
 
 @pytest.fixture
-def start_session_result(call_gdb_tool, default_init_commands):
+def start_session_result(
+    call_gdb_tool: CallGdbTool, default_init_commands: list[str]
+) -> StartSessionResult:
     """Start a GDB session and return the full start payload."""
 
     def start(
@@ -244,7 +308,7 @@ def start_session_result(call_gdb_tool, default_init_commands):
 
 
 @pytest.fixture
-def stop_session(call_gdb_tool):
+def stop_session(call_gdb_tool: CallGdbTool) -> StopSession:
     """Stop a GDB session and optionally ignore cleanup failures."""
 
     def stop(session_id: int, *, ignore_errors: bool = False) -> dict[str, object]:

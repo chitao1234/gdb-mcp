@@ -16,7 +16,7 @@ from gdb_mcp.client.runtime import ClientToolResponse
 
 
 class TestClientCli:
-    def test_render_action_payload_preserves_top_level_fields_on_key_collision(self):
+    def test_render_action_payload_preserves_top_level_fields_on_key_collision(self) -> None:
         rendered = render_action_payload(
             {
                 "status": "success",
@@ -38,26 +38,30 @@ class TestClientCli:
             "  execution_state: paused"
         )
 
-    def test_parse_client_args_allows_missing_server_url(self, monkeypatch):
+    def test_parse_client_args_allows_missing_server_url(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.delenv("GDB_MCP_SERVER_URL", raising=False)
 
         args = parse_client_args(["start", "--program", "/bin/true"])
 
         assert args.server_url is None
 
-    def test_build_parser_formats_help_with_percent_descriptions(self):
+    def test_build_parser_formats_help_with_percent_descriptions(self) -> None:
         help_text = build_parser().format_help()
 
         assert "Call an MCP tool by name" in help_text
 
-    def test_build_parser_exposes_the_facade_commands(self):
+    def test_build_parser_exposes_the_facade_commands(self) -> None:
         help_text = build_parser().format_help()
 
         assert "start" in help_text
         assert "status" in help_text
         assert "break" in help_text
 
-    def test_subcommand_help_preserves_percent_description(self, capsys):
+    def test_subcommand_help_preserves_percent_description(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         with pytest.raises(SystemExit) as exc_info:
             build_parser().parse_args(["tool", "gdb_call_function", "--help"])
 
@@ -67,7 +71,7 @@ class TestClientCli:
         assert "x=%%d\\n" not in help_text
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_invokes_session_start_with_flat_flags(self, mock_invoke_tool):
+    def test_main_invokes_session_start_with_flat_flags(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={
                 "status": "success",
@@ -118,7 +122,7 @@ class TestClientCli:
         assert "target_loaded: True" in rendered
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_connects_to_external_endpoint(self, mock_invoke_tool):
+    def test_main_connects_to_external_endpoint(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={
                 "status": "success",
@@ -158,7 +162,7 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_json_mode_prints_raw_payload(self, mock_invoke_tool):
+    def test_main_json_mode_prints_raw_payload(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "message": "attached"},
             is_error=False,
@@ -185,7 +189,7 @@ class TestClientCli:
         assert json.loads(stdout.getvalue()) == {"status": "success", "message": "attached"}
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_accepts_global_flags_after_subcommand(self, mock_invoke_tool):
+    def test_main_accepts_global_flags_after_subcommand(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "message": "attached"},
             is_error=False,
@@ -218,7 +222,7 @@ class TestClientCli:
         )
         assert json.loads(stdout.getvalue()) == {"status": "success", "message": "attached"}
 
-    def test_main_reports_schema_validation_as_cli_error(self):
+    def test_main_reports_schema_validation_as_cli_error(self) -> None:
         stderr = StringIO()
 
         with pytest.raises(SystemExit) as exc_info:
@@ -243,7 +247,7 @@ class TestClientCli:
         assert "timeout_sec" in stderr.getvalue()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_invokes_execute_command_payload(self, mock_invoke_tool):
+    def test_main_invokes_execute_command_payload(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "message": "ok"},
             is_error=False,
@@ -275,7 +279,7 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_invokes_call_function_payload(self, mock_invoke_tool):
+    def test_main_invokes_call_function_payload(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "message": "called"},
             is_error=False,
@@ -305,7 +309,7 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_invokes_capture_bundle_payload(self, mock_invoke_tool):
+    def test_main_invokes_capture_bundle_payload(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "artifact_count": 3},
             is_error=False,
@@ -361,7 +365,9 @@ class TestClientCli:
         "gdb_mcp.client.cli.invoke_tool",
         new_callable=AsyncMock,
     )
-    def test_main_reports_runtime_failures_without_traceback(self, mock_invoke_tool):
+    def test_main_reports_runtime_failures_without_traceback(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         exception_group_type = getattr(builtins, "ExceptionGroup", None)
         if exception_group_type is None:
             pytest.skip("ExceptionGroup is not available on this Python version")
@@ -390,7 +396,7 @@ class TestClientCli:
         assert "connection refused" in stderr.getvalue()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_session_query_status_payload(self, mock_invoke_tool):
+    def test_main_builds_session_query_status_payload(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "action": "status", "result": {"is_running": False}},
             is_error=False,
@@ -421,7 +427,9 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_session_query_list_with_session_id(self, mock_invoke_tool):
+    def test_main_rejects_session_query_list_with_session_id(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"},
             is_error=False,
@@ -447,7 +455,9 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_session_query_status_without_session_id(self, mock_invoke_tool):
+    def test_main_rejects_session_query_status_without_session_id(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"},
             is_error=False,
@@ -474,7 +484,7 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_session_query_list_payload(self, mock_invoke_tool):
+    def test_main_builds_session_query_list_payload(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "action": "list", "result": {"sessions": []}},
             is_error=False,
@@ -500,7 +510,7 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_session_manage_stop_payload(self, mock_invoke_tool):
+    def test_main_builds_session_manage_stop_payload(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "action": "stop", "result": {"stopped": True}},
             is_error=False,
@@ -528,7 +538,7 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_inferior_manage_create_payload(self, mock_invoke_tool):
+    def test_main_builds_inferior_manage_create_payload(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "action": "create", "result": {"inferior_id": 3}},
             is_error=False,
@@ -566,7 +576,7 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_inferior_query_current_payload(self, mock_invoke_tool):
+    def test_main_builds_inferior_query_current_payload(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "action": "current", "result": {"inferior_id": 1}},
             is_error=False,
@@ -597,7 +607,9 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_inferior_remove_with_executable_flag(self, mock_invoke_tool):
+    def test_main_rejects_inferior_remove_with_executable_flag(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"},
             is_error=False,
@@ -630,7 +642,9 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_inferior_set_detach_on_fork_default_payload(self, mock_invoke_tool):
+    def test_main_builds_inferior_set_detach_on_fork_default_payload(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={
                 "status": "success",
@@ -669,7 +683,9 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_execution_interrupt_with_wait_flags(self, mock_invoke_tool):
+    def test_main_rejects_execution_interrupt_with_wait_flags(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"},
             is_error=False,
@@ -697,7 +713,7 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_execution_interrupt_with_args(self, mock_invoke_tool):
+    def test_main_rejects_execution_interrupt_with_args(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"},
             is_error=False,
@@ -725,7 +741,7 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_execution_run_action_payload(self, mock_invoke_tool):
+    def test_main_builds_execution_run_action_payload(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "action": "run", "result": {"execution_state": "paused"}},
             is_error=False,
@@ -773,7 +789,7 @@ class TestClientCli:
         assert "execution_state: paused" in rendered
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_execution_wait_for_stop_payload(self, mock_invoke_tool):
+    def test_main_builds_execution_wait_for_stop_payload(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "action": "wait_for_stop", "result": {"matched": True}},
             is_error=False,
@@ -814,7 +830,9 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_execution_wait_for_stop_zero_timeout(self, mock_invoke_tool):
+    def test_main_rejects_execution_wait_for_stop_zero_timeout(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"},
             is_error=False,
@@ -842,7 +860,9 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_context_threads_with_thread_flag(self, mock_invoke_tool):
+    def test_main_rejects_context_threads_with_thread_flag(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"},
             is_error=False,
@@ -870,7 +890,7 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_context_query_backtrace_payload(self, mock_invoke_tool):
+    def test_main_builds_context_query_backtrace_payload(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "action": "backtrace", "result": {"count": 3}},
             is_error=False,
@@ -906,7 +926,9 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_context_backtrace_with_frame_flag(self, mock_invoke_tool):
+    def test_main_rejects_context_backtrace_with_frame_flag(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"},
             is_error=False,
@@ -934,7 +956,9 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_context_manage_select_frame_payload(self, mock_invoke_tool):
+    def test_main_builds_context_manage_select_frame_payload(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "action": "select_frame", "result": {"frame": 2}},
             is_error=False,
@@ -971,7 +995,9 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_context_select_thread_with_frame_flag(self, mock_invoke_tool):
+    def test_main_rejects_context_select_thread_with_frame_flag(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"},
             is_error=False,
@@ -1004,7 +1030,7 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_breakpoint_query_list_payload(self, mock_invoke_tool):
+    def test_main_builds_breakpoint_query_list_payload(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "action": "list", "result": {"count": 0}},
             is_error=False,
@@ -1033,7 +1059,9 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_breakpoint_query_filtered_list_payload(self, mock_invoke_tool):
+    def test_main_builds_breakpoint_query_filtered_list_payload(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "action": "list", "result": {"count": 1}},
             is_error=False,
@@ -1071,7 +1099,7 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_renders_action_payload_top_level_list(self, mock_invoke_tool):
+    def test_main_renders_action_payload_top_level_list(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={
                 "status": "success",
@@ -1105,7 +1133,7 @@ class TestClientCli:
         assert "warnings: ['deprecated-filter', 'partial-symbols']" not in rendered
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_breakpoint_query_get_payload(self, mock_invoke_tool):
+    def test_main_builds_breakpoint_query_get_payload(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "action": "get", "result": {"breakpoint": {"number": 1}}},
             is_error=False,
@@ -1142,7 +1170,9 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_breakpoint_query_get_with_list_flags(self, mock_invoke_tool):
+    def test_main_rejects_breakpoint_query_get_with_list_flags(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"}, is_error=False
         )
@@ -1174,7 +1204,7 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_breakpoint_create_payload(self, mock_invoke_tool):
+    def test_main_builds_breakpoint_create_payload(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={
                 "status": "success",
@@ -1216,7 +1246,7 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_breakpoint_update_payload(self, mock_invoke_tool):
+    def test_main_builds_breakpoint_update_payload(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={
                 "status": "success",
@@ -1260,7 +1290,9 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_breakpoint_update_with_create_flags(self, mock_invoke_tool):
+    def test_main_rejects_breakpoint_update_with_create_flags(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"}, is_error=False
         )
@@ -1292,7 +1324,9 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_breakpoint_update_with_location_flag_only(self, mock_invoke_tool):
+    def test_main_rejects_breakpoint_update_with_location_flag_only(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"}, is_error=False
         )
@@ -1325,7 +1359,9 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_breakpoint_update_with_explicit_no_temporary(self, mock_invoke_tool):
+    def test_main_rejects_breakpoint_update_with_explicit_no_temporary(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"}, is_error=False
         )
@@ -1355,7 +1391,7 @@ class TestClientCli:
         assert "--temporary" in stderr.getvalue()
         mock_invoke_tool.assert_not_awaited()
 
-    def test_build_breakpoint_update_omits_default_clear_condition_before_validation(self):
+    def test_build_breakpoint_update_omits_default_clear_condition_before_validation(self) -> None:
         import gdb_mcp.client.specs as client_specs
 
         args = parse_client_args(
@@ -1387,7 +1423,7 @@ class TestClientCli:
         }
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_inspect_source_location_payload(self, mock_invoke_tool):
+    def test_main_builds_inspect_source_location_payload(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "action": "source", "result": {"line_start": 40}},
             is_error=False,
@@ -1433,7 +1469,9 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_inspect_source_address_location_payload(self, mock_invoke_tool):
+    def test_main_builds_inspect_source_address_location_payload(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "action": "source", "result": {"line_start": 40}},
             is_error=False,
@@ -1469,7 +1507,9 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_inspect_disassembly_address_location_payload(self, mock_invoke_tool):
+    def test_main_builds_inspect_disassembly_address_location_payload(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "action": "disassembly", "result": {"count": 4}},
             is_error=False,
@@ -1505,7 +1545,7 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_defaults_source_location_to_current(self, mock_invoke_tool):
+    def test_main_defaults_source_location_to_current(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "action": "source", "result": {"line_start": 40}},
             is_error=False,
@@ -1537,7 +1577,9 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_defaults_disassembly_location_to_current(self, mock_invoke_tool):
+    def test_main_defaults_disassembly_location_to_current(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "action": "disassembly", "result": {"count": 4}},
             is_error=False,
@@ -1569,7 +1611,9 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_honors_an_explicit_session_query_status_action(self, mock_invoke_tool):
+    def test_main_honors_an_explicit_session_query_status_action(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "action": "status", "result": {"is_running": False}},
             is_error=False,
@@ -1599,7 +1643,9 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_normalizes_short_workflow_step_tool_names(self, mock_invoke_tool):
+    def test_main_normalizes_short_workflow_step_tool_names(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "count": 1, "error_count": 0},
             is_error=False,
@@ -1634,7 +1680,9 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_workflow_batch_from_grouped_step_flags(self, mock_invoke_tool):
+    def test_main_builds_workflow_batch_from_grouped_step_flags(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "count": 2, "error_count": 0},
             is_error=False,
@@ -1691,7 +1739,7 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_renders_workflow_batch_human_output(self, mock_invoke_tool):
+    def test_main_renders_workflow_batch_human_output(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={
                 "status": "success",
@@ -1734,7 +1782,7 @@ class TestClientCli:
         assert "label: stack" in rendered
         assert "{'tool':" not in rendered
 
-    def test_build_workflow_batch_omits_default_flags_before_validation(self):
+    def test_build_workflow_batch_omits_default_flags_before_validation(self) -> None:
         import gdb_mcp.client.specs as client_specs
 
         args = parse_client_args(
@@ -1773,7 +1821,9 @@ class TestClientCli:
         }
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_workflow_batch_preserves_string_step_arguments(self, mock_invoke_tool):
+    def test_main_builds_workflow_batch_preserves_string_step_arguments(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "count": 1, "error_count": 0},
             is_error=False,
@@ -1815,7 +1865,9 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_workflow_batch_list_step_arguments(self, mock_invoke_tool):
+    def test_main_builds_workflow_batch_list_step_arguments(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "count": 1, "error_count": 0},
             is_error=False,
@@ -1864,7 +1916,9 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_workflow_batch_single_list_step_argument(self, mock_invoke_tool):
+    def test_main_builds_workflow_batch_single_list_step_argument(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "count": 1, "error_count": 0},
             is_error=False,
@@ -1906,7 +1960,9 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_workflow_batch_step_session_id_argument(self, mock_invoke_tool):
+    def test_main_rejects_workflow_batch_step_session_id_argument(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"}, is_error=False
         )
@@ -1937,7 +1993,9 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_workflow_batch_session_query_list_step(self, mock_invoke_tool):
+    def test_main_rejects_workflow_batch_session_query_list_step(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"}, is_error=False
         )
@@ -1968,7 +2026,9 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_workflow_batch_conflicting_dotted_assignments(self, mock_invoke_tool):
+    def test_main_rejects_workflow_batch_conflicting_dotted_assignments(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"}, is_error=False
         )
@@ -1999,7 +2059,9 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_workflow_batch_malformed_dotted_assignment(self, mock_invoke_tool):
+    def test_main_rejects_workflow_batch_malformed_dotted_assignment(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"}, is_error=False
         )
@@ -2028,7 +2090,9 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_builds_run_until_failure_with_prefixed_flags(self, mock_invoke_tool):
+    def test_main_builds_run_until_failure_with_prefixed_flags(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "matched_failure": False, "iterations_completed": 1},
             is_error=False,
@@ -2074,7 +2138,7 @@ class TestClientCli:
         )
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_renders_run_until_failure_human_output(self, mock_invoke_tool):
+    def test_main_renders_run_until_failure_human_output(self, mock_invoke_tool: AsyncMock) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={
                 "status": "success",
@@ -2126,8 +2190,8 @@ class TestClientCli:
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_builds_run_until_failure_setup_steps_from_prefixed_flags(
         self,
-        mock_invoke_tool,
-    ):
+        mock_invoke_tool: AsyncMock,
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "matched_failure": False, "iterations_completed": 1},
             is_error=False,
@@ -2168,8 +2232,8 @@ class TestClientCli:
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
     def test_main_builds_run_until_failure_setup_step_single_list_argument(
         self,
-        mock_invoke_tool,
-    ):
+        mock_invoke_tool: AsyncMock,
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success", "matched_failure": False, "iterations_completed": 1},
             is_error=False,
@@ -2202,7 +2266,7 @@ class TestClientCli:
             auth_token=None,
         )
 
-    def test_build_run_until_failure_omits_default_sections_before_validation(self):
+    def test_build_run_until_failure_omits_default_sections_before_validation(self) -> None:
         import gdb_mcp.client.specs as client_specs
 
         args = parse_client_args(
@@ -2241,7 +2305,9 @@ class TestClientCli:
         }
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_run_until_failure_invalid_setup_step(self, mock_invoke_tool):
+    def test_main_rejects_run_until_failure_invalid_setup_step(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"}, is_error=False
         )
@@ -2268,7 +2334,9 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_inspect_source_with_disassembly_flags(self, mock_invoke_tool):
+    def test_main_rejects_inspect_source_with_disassembly_flags(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"}, is_error=False
         )
@@ -2297,7 +2365,9 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_inspect_variables_with_file_flag_only(self, mock_invoke_tool):
+    def test_main_rejects_inspect_variables_with_file_flag_only(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"}, is_error=False
         )
@@ -2324,7 +2394,9 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_inspect_variables_with_location_selector_flags(self, mock_invoke_tool):
+    def test_main_rejects_inspect_variables_with_location_selector_flags(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"}, is_error=False
         )
@@ -2357,7 +2429,9 @@ class TestClientCli:
         mock_invoke_tool.assert_not_awaited()
 
     @patch("gdb_mcp.client.cli.invoke_tool", new_callable=AsyncMock)
-    def test_main_rejects_run_until_failure_conflicting_capture_names(self, mock_invoke_tool):
+    def test_main_rejects_run_until_failure_conflicting_capture_names(
+        self, mock_invoke_tool: AsyncMock
+    ) -> None:
         mock_invoke_tool.return_value = ClientToolResponse(
             payload={"status": "success"}, is_error=False
         )
@@ -2383,7 +2457,7 @@ class TestClientCli:
         assert "mutually exclusive" in stderr.getvalue()
         mock_invoke_tool.assert_not_awaited()
 
-    def test_client_tool_specs_preserve_cli_help_order(self):
+    def test_client_tool_specs_preserve_cli_help_order(self) -> None:
         from gdb_mcp.client.specs import CLIENT_TOOL_SPECS
 
         assert tuple(CLIENT_TOOL_SPECS) == (

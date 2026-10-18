@@ -11,7 +11,7 @@ from gdb_mcp.session.state import SessionState
 class TestSessionConfig:
     """Test normalized session configuration helpers."""
 
-    def test_from_inputs_normalizes_mutable_values(self):
+    def test_from_inputs_normalizes_mutable_values(self) -> None:
         """Lists and dicts should be copied into immutable/canonical shapes."""
 
         args = ["--flag", "value"]
@@ -44,7 +44,7 @@ class TestSessionConfig:
 class TestSessionState:
     """Test that SessionService tracks the explicit lifecycle state."""
 
-    def test_initial_state_is_created(self):
+    def test_initial_state_is_created(self) -> None:
         """Fresh sessions should start in CREATED state without config."""
 
         session = create_default_session_service()
@@ -53,7 +53,9 @@ class TestSessionState:
         assert session.config is None
 
     @patch("gdb_mcp.session.factory.GdbController")
-    def test_start_success_sets_config_and_ready_state(self, mock_controller_class):
+    def test_start_success_sets_config_and_ready_state(
+        self, mock_controller_class: MagicMock
+    ) -> None:
         """Successful startup should populate config and move to READY."""
 
         mock_controller_class.return_value = MagicMock()
@@ -81,10 +83,10 @@ class TestSessionState:
     @patch("gdb_mcp.session.factory.create_gdb_controller")
     def test_start_with_working_dir_does_not_change_process_cwd(
         self,
-        mock_create_controller,
-        mock_isdir,
-        mock_chdir,
-    ):
+        mock_create_controller: MagicMock,
+        mock_isdir: MagicMock,
+        mock_chdir: MagicMock,
+    ) -> None:
         """working_dir should be forwarded into process startup without chdir."""
 
         mock_create_controller.return_value = MagicMock()
@@ -110,7 +112,7 @@ class TestSessionState:
         mock_isdir.assert_called_once_with("/tmp/work")
         mock_chdir.assert_not_called()
 
-    def test_start_failure_sets_failed_state_and_config(self):
+    def test_start_failure_sets_failed_state_and_config(self) -> None:
         """Validation failures during startup should still record attempted config."""
 
         session = create_default_session_service()
@@ -124,7 +126,7 @@ class TestSessionState:
         assert session.config is not None
         assert session.config.working_dir == "/definitely/missing"
 
-    def test_stop_success_sets_stopped_state(self):
+    def test_stop_success_sets_stopped_state(self) -> None:
         """Stopping an active session should move it to STOPPED."""
 
         session = create_default_session_service()

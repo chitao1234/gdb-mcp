@@ -9,6 +9,10 @@ import subprocess
 
 import pytest
 
+from tests.support import dig, integer
+
+from .conftest import CallGdbTool, CompileProgram
+
 _CONNECT_C_PROGRAM = """
 #include <stdio.h>
 
@@ -22,7 +26,9 @@ int main(void) {
 
 
 @pytest.mark.integration
-def test_connect_to_externally_started_gdb_over_pty(compile_program, call_gdb_tool):
+def test_connect_to_externally_started_gdb_over_pty(
+    compile_program: CompileProgram, call_gdb_tool: CallGdbTool
+) -> None:
     """gdb-mcp should attach to a gdb that another process started on a pty."""
 
     program = compile_program(
@@ -52,7 +58,7 @@ def test_connect_to_externally_started_gdb_over_pty(compile_program, call_gdb_to
         assert start["status"] == "success", start
         assert start["endpoint"] == f"pty://{slave_name}"
         assert start["target_loaded"] is True
-        session_id = start["session_id"]
+        session_id = integer(start["session_id"])
 
         breakpoint = call_gdb_tool(
             "gdb_breakpoint_manage",
@@ -63,7 +69,7 @@ def test_connect_to_externally_started_gdb_over_pty(compile_program, call_gdb_to
             },
         )
         assert breakpoint["status"] == "success", breakpoint
-        assert breakpoint["result"]["breakpoint"]["func"] == "main"
+        assert dig(breakpoint, "result", "breakpoint", "func") == "main"
 
         stopped = call_gdb_tool(
             "gdb_session_manage",

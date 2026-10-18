@@ -8,6 +8,7 @@ import logging
 from unittest.mock import MagicMock, Mock
 
 import pytest
+from mcp.types import TextContent
 
 from gdb_mcp.domain import (
     BreakpointInfo,
@@ -32,6 +33,8 @@ from gdb_mcp.domain import (
 from gdb_mcp.mcp.handlers import TOOL_SPECS, dispatch_tool_call
 from gdb_mcp.mcp.schemas import build_tool_definitions
 from gdb_mcp.session.factory import create_default_session_service
+from gdb_mcp.session.registry import SessionRegistry
+from tests.support import dig, mapping, mapping_list, text
 
 
 def _session_double(**runtime_state: object) -> Mock:
@@ -47,7 +50,7 @@ def _session_double(**runtime_state: object) -> Mock:
     return session
 
 
-def dispatch(name: str, arguments, session_manager) -> dict[str, object]:
+def dispatch(name: str, arguments: object, session_manager: SessionRegistry) -> dict[str, object]:
     """Call the structured MCP dispatcher and parse its JSON payload."""
 
     result = asyncio.run(
@@ -58,13 +61,15 @@ def dispatch(name: str, arguments, session_manager) -> dict[str, object]:
             logger=logging.getLogger("test-mcp-handlers"),
         )
     )
-    return json.loads(result.content[0].text)
+    content = result.content[0]
+    assert isinstance(content, TextContent)
+    return mapping(json.loads(content.text))
 
 
 class TestHandlerDispatch:
     """Test direct MCP handler dispatch against the handler boundary."""
 
-    def test_start_session_returns_session_id(self):
+    def test_start_session_returns_session_id(self) -> None:
         """Successful startup should include the published session ID."""
 
         manager = Mock()
@@ -79,7 +84,7 @@ class TestHandlerDispatch:
         assert result_data["status"] == "success"
         assert result_data["session_id"] == 42
 
-    def test_start_session_normalizes_shell_style_string_args(self):
+    def test_start_session_normalizes_shell_style_string_args(self) -> None:
         """Startup args in shell-string form should be normalized before session creation."""
 
         manager = Mock()
@@ -104,7 +109,7 @@ class TestHandlerDispatch:
             core=None,
         )
 
-    def test_start_session_failure_does_not_expose_session_id(self):
+    def test_start_session_failure_does_not_expose_session_id(self) -> None:
         """Failed startup should not expose a session ID."""
 
         manager = Mock()
@@ -118,7 +123,7 @@ class TestHandlerDispatch:
         assert result_data["status"] == "error"
         assert "session_id" not in result_data
 
-    def test_connect_session_passes_endpoint_to_registry(self):
+    def test_connect_session_passes_endpoint_to_registry(self) -> None:
         """Connecting should forward the endpoint and publish the session ID."""
 
         manager = Mock()
@@ -140,7 +145,7 @@ class TestHandlerDispatch:
         assert result_data["status"] == "success"
         assert result_data["session_id"] == 11
 
-    def test_connect_session_failure_does_not_expose_session_id(self):
+    def test_connect_session_failure_does_not_expose_session_id(self) -> None:
         """A failed endpoint connection should not expose a session ID."""
 
         manager = Mock()
@@ -158,7 +163,7 @@ class TestHandlerDispatch:
         assert result_data["status"] == "error"
         assert "session_id" not in result_data
 
-    def test_session_query_list_routes_to_registry(self):
+    def test_session_query_list_routes_to_registry(self) -> None:
         """Global session inventory requests should route through gdb_session_query."""
 
         manager = Mock()
@@ -184,10 +189,10 @@ class TestHandlerDispatch:
         manager.resolve_session.assert_not_called()
         assert result_data["status"] == "success"
         assert result_data["action"] == "list"
-        assert result_data["result"]["count"] == 1
-        assert result_data["result"]["sessions"][0]["session_id"] == 1
+        assert dig(result_data, "result", "count") == 1
+        assert mapping_list(dig(result_data, "result", "sessions"))[0]["session_id"] == 1
 
-    def test_tool_with_valid_session_id_works(self):
+    def test_tool_with_valid_session_id_works(self) -> None:
         """Session-scoped tools should route to the retrieved session."""
 
         manager = Mock()
@@ -207,10 +212,10 @@ class TestHandlerDispatch:
         session.get_status.assert_called_once()
         assert result_data["status"] == "success"
         assert result_data["action"] == "status"
-        assert result_data["result"]["is_running"] is False
-        assert result_data["result"]["target_loaded"] is False
+        assert dig(result_data, "result", "is_running") is False
+        assert dig(result_data, "result", "target_loaded") is False
 
-    def test_tool_with_invalid_session_id_returns_error(self):
+    def test_tool_with_invalid_session_id_returns_error(self) -> None:
         """Invalid session IDs should fail before any tool execution."""
 
         manager = Mock()
@@ -225,10 +230,10 @@ class TestHandlerDispatch:
         )
 
         assert result_data["status"] == "error"
-        assert "Invalid session_id: 999" in result_data["message"]
-        assert "gdb_session_start" in result_data["message"]
+        assert "Invalid session_id: 999" in text(result_data["message"])
+        assert "gdb_session_start" in text(result_data["message"])
 
-    def test_tool_with_closing_session_returns_closing_error(self):
+    def test_tool_with_closing_session_returns_closing_error(self) -> None:
         """Commands against closing sessions should get a precise lifecycle error."""
 
         manager = Mock()
@@ -241,13 +246,15 @@ class TestHandlerDispatch:
         )
 
         assert result_data["status"] == "error"
-        assert "closing" in result_data["message"]
+        assert "closing" in text(result_data["message"])
 
 
 class TestSessionFailureContext:
     """Session-scoped failures should carry the state the caller needs to recover."""
 
-    def _dispatch_backtrace_failure(self, message: str, **runtime_state: object):
+    def _dispatch_backtrace_failure(
+        self, message: str, **runtime_state: object
+    ) -> dict[str, object]:
         session = _session_double(**runtime_state)
         session.get_backtrace.return_value = OperationError(
             message=message, details={"command": "-stack-list-frames 0 1"}
@@ -261,7 +268,7 @@ class TestSessionFailureContext:
             manager,
         )
 
-    def test_failure_carries_session_state_and_specific_code(self):
+    def test_failure_carries_session_state_and_specific_code(self) -> None:
         result_data = self._dispatch_backtrace_failure(
             "No registers.",
             execution_state="exited",
@@ -270,26 +277,26 @@ class TestSessionFailureContext:
         )
 
         assert result_data["code"] == "no_registers"
-        assert result_data["details"]["command"] == "-stack-list-frames 0 1"
-        assert result_data["details"]["session_id"] == 11
-        assert result_data["details"]["execution_state"] == "exited"
-        assert result_data["details"]["stop_reason"] == "exited"
-        assert result_data["details"]["exit_code"] == 1
+        assert dig(result_data, "details", "command") == "-stack-list-frames 0 1"
+        assert dig(result_data, "details", "session_id") == 11
+        assert dig(result_data, "details", "execution_state") == "exited"
+        assert dig(result_data, "details", "stop_reason") == "exited"
+        assert dig(result_data, "details", "exit_code") == 1
 
-    def test_absent_state_is_omitted(self):
+    def test_absent_state_is_omitted(self) -> None:
         result_data = self._dispatch_backtrace_failure("No registers.", execution_state="paused")
 
-        assert result_data["details"]["execution_state"] == "paused"
-        assert "exit_code" not in result_data["details"]
-        assert "stop_reason" not in result_data["details"]
+        assert dig(result_data, "details", "execution_state") == "paused"
+        assert "exit_code" not in mapping(result_data["details"])
+        assert "stop_reason" not in mapping(result_data["details"])
 
-    def test_unclassified_failure_keeps_the_generic_code(self):
+    def test_unclassified_failure_keeps_the_generic_code(self) -> None:
         result_data = self._dispatch_backtrace_failure(
             "something inexplicable", execution_state="paused"
         )
 
         assert result_data["code"] == "error"
-        assert result_data["details"]["execution_state"] == "paused"
+        assert dig(result_data, "details", "execution_state") == "paused"
 
     @pytest.mark.parametrize(
         ("message", "expected_code"),
@@ -312,12 +319,14 @@ class TestSessionFailureContext:
             ("GDB returned an error", "error"),
         ],
     )
-    def test_failure_messages_map_to_branchable_codes(self, message, expected_code):
+    def test_failure_messages_map_to_branchable_codes(
+        self, message: str, expected_code: str
+    ) -> None:
         result_data = self._dispatch_backtrace_failure(message)
 
         assert result_data["code"] == expected_code
 
-    def test_successful_results_are_not_annotated(self):
+    def test_successful_results_are_not_annotated(self) -> None:
         session = _session_double(execution_state="paused")
         session.get_backtrace.return_value = OperationSuccess({"thread_id": 1, "frames": []})
         manager = Mock()
@@ -332,7 +341,7 @@ class TestSessionFailureContext:
         assert result_data["status"] == "success"
         assert "execution_state" not in result_data
 
-    def test_tool_with_missing_session_id_returns_validation_error(self):
+    def test_tool_with_missing_session_id_returns_validation_error(self) -> None:
         """Known tools should validate arguments before session lookup."""
 
         manager = Mock()
@@ -340,10 +349,10 @@ class TestSessionFailureContext:
         result_data = dispatch("gdb_session_query", {"action": "status", "query": {}}, manager)
 
         assert result_data["status"] == "error"
-        assert "session_id" in result_data["message"]
+        assert "session_id" in text(result_data["message"])
         manager.resolve_session.assert_not_called()
 
-    def test_tool_with_non_object_arguments_returns_validation_error(self):
+    def test_tool_with_non_object_arguments_returns_validation_error(self) -> None:
         """Non-dict arguments should fail as request validation errors."""
 
         manager = Mock()
@@ -355,7 +364,7 @@ class TestSessionFailureContext:
         assert result_data["tool"] == "gdb_session_query"
         manager.resolve_session.assert_not_called()
 
-    def test_tool_with_unknown_argument_returns_validation_error(self):
+    def test_tool_with_unknown_argument_returns_validation_error(self) -> None:
         """Unexpected tool arguments should be rejected at the MCP boundary."""
 
         manager = Mock()
@@ -367,10 +376,10 @@ class TestSessionFailureContext:
         )
 
         assert result_data["status"] == "error"
-        assert "unexpected" in result_data["message"]
+        assert "unexpected" in text(result_data["message"])
         manager.resolve_session.assert_not_called()
 
-    def test_session_manage_stop_routes_to_registry_close(self):
+    def test_session_manage_stop_routes_to_registry_close(self) -> None:
         """Successful stop should go through the registry lifecycle API."""
 
         manager = Mock()
@@ -388,9 +397,9 @@ class TestSessionFailureContext:
         manager.resolve_session.assert_not_called()
         assert result_data["status"] == "success"
         assert result_data["action"] == "stop"
-        assert result_data["result"]["message"] == "Session stopped"
+        assert dig(result_data, "result", "message") == "Session stopped"
 
-    def test_unknown_tool_returns_unknown_tool_error(self):
+    def test_unknown_tool_returns_unknown_tool_error(self) -> None:
         """Unknown tools should fail before any session lookup happens."""
 
         manager = Mock()
@@ -401,7 +410,7 @@ class TestSessionFailureContext:
         assert result_data["message"] == "Unknown tool: gdb_typo_tool"
         manager.resolve_session.assert_not_called()
 
-    def test_execute_command_routes_to_correct_session(self):
+    def test_execute_command_routes_to_correct_session(self) -> None:
         """Execute-command requests should forward the command payload."""
 
         manager = Mock()
@@ -420,7 +429,7 @@ class TestSessionFailureContext:
         manager.resolve_session.assert_called_once_with(5)
         session.execute_command.assert_called_once_with(command="info threads", timeout_sec=12)
 
-    def test_execution_manage_run_routes_wait_policy(self):
+    def test_execution_manage_run_routes_wait_policy(self) -> None:
         """Execution manage run should translate wait policy into session arguments."""
 
         manager = Mock()
@@ -449,7 +458,7 @@ class TestSessionFailureContext:
             wait_for_stop=False,
         )
 
-    def test_execution_run_accepts_omitted_execution_payload(self):
+    def test_execution_run_accepts_omitted_execution_payload(self) -> None:
         """Run should work without an explicit execution payload."""
 
         manager = Mock()
@@ -465,7 +474,7 @@ class TestSessionFailureContext:
 
         session.run.assert_called_once_with(args=None, timeout_sec=30, wait_for_stop=True)
 
-    def test_run_accepts_shell_style_string_args(self):
+    def test_run_accepts_shell_style_string_args(self) -> None:
         """String-form run args should be shell-split before forwarding."""
 
         manager = Mock()
@@ -492,7 +501,7 @@ class TestSessionFailureContext:
             wait_for_stop=True,
         )
 
-    def test_add_inferior_routes_to_correct_session(self):
+    def test_add_inferior_routes_to_correct_session(self) -> None:
         """Inferior creation requests should forward executable and selection policy."""
 
         manager = Mock()
@@ -515,7 +524,7 @@ class TestSessionFailureContext:
             make_current=True,
         )
 
-    def test_add_inferior_accepts_omitted_inferior_payload(self):
+    def test_add_inferior_accepts_omitted_inferior_payload(self) -> None:
         """Inferior creation should work without an explicit inferior payload."""
 
         manager = Mock()
@@ -531,7 +540,7 @@ class TestSessionFailureContext:
 
         session.add_inferior.assert_called_once_with(executable=None, make_current=False)
 
-    def test_remove_inferior_routes_to_correct_session(self):
+    def test_remove_inferior_routes_to_correct_session(self) -> None:
         """Inferior removal requests should forward the normalized inferior ID."""
 
         manager = Mock()
@@ -547,7 +556,7 @@ class TestSessionFailureContext:
 
         session.remove_inferior.assert_called_once_with(inferior_id=2)
 
-    def test_execution_manage_continue_routes_ack_mode(self):
+    def test_execution_manage_continue_routes_ack_mode(self) -> None:
         """Execution manage continue should translate wait policy into session arguments."""
 
         manager = Mock()
@@ -570,7 +579,7 @@ class TestSessionFailureContext:
             timeout_sec=5,
         )
 
-    def test_finish_routes_to_execution_service(self):
+    def test_finish_routes_to_execution_service(self) -> None:
         """Finish requests should forward timeout to the session execution API."""
 
         manager = Mock()
@@ -590,7 +599,7 @@ class TestSessionFailureContext:
 
         session.finish.assert_called_once_with(timeout_sec=9, wait_for_stop=True)
 
-    def test_attach_process_routes_to_correct_session(self):
+    def test_attach_process_routes_to_correct_session(self) -> None:
         """Attach requests should forward pid and timeout."""
 
         manager = Mock()
@@ -609,7 +618,7 @@ class TestSessionFailureContext:
         manager.resolve_session.assert_called_once_with(3)
         session.attach_process.assert_called_once_with(pid=42, timeout_sec=9)
 
-    def test_context_manage_select_thread_routes_to_service(self):
+    def test_context_manage_select_thread_routes_to_service(self) -> None:
         """Context manage should route thread selection through the session service."""
 
         manager = Mock()
@@ -629,7 +638,7 @@ class TestSessionFailureContext:
 
         session.select_thread.assert_called_once_with(thread_id=7)
 
-    def test_context_manage_select_frame_routes_to_service(self):
+    def test_context_manage_select_frame_routes_to_service(self) -> None:
         """Context manage should route frame selection through the session service."""
 
         manager = Mock()
@@ -651,7 +660,7 @@ class TestSessionFailureContext:
 
         session.select_frame.assert_called_once_with(frame_number=2)
 
-    def test_context_query_threads_routes_to_service(self):
+    def test_context_query_threads_routes_to_service(self) -> None:
         """Context query threads should route through the session service."""
 
         manager = Mock()
@@ -673,7 +682,7 @@ class TestSessionFailureContext:
 
         session.get_threads.assert_called_once_with()
 
-    def test_context_query_frame_routes_with_thread_and_frame_override(self):
+    def test_context_query_frame_routes_with_thread_and_frame_override(self) -> None:
         """Context query frame should route optional thread/frame overrides."""
 
         manager = Mock()
@@ -695,7 +704,7 @@ class TestSessionFailureContext:
 
         session.get_frame_info.assert_called_once_with(thread_id=7, frame=1)
 
-    def test_inspect_query_disassembly_routes_location_union(self):
+    def test_inspect_query_disassembly_routes_location_union(self) -> None:
         """Inspect query disassembly should route location unions into service kwargs."""
 
         manager = Mock()
@@ -745,7 +754,7 @@ class TestSessionFailureContext:
             mode="mixed",
         )
 
-    def test_inspect_query_variables_routes_context_selector(self):
+    def test_inspect_query_variables_routes_context_selector(self) -> None:
         """Inspect query variables should route optional context selection."""
 
         manager = Mock()
@@ -767,7 +776,7 @@ class TestSessionFailureContext:
 
         session.get_variables.assert_called_once_with(thread_id=3, frame=1)
 
-    def test_inspect_query_source_routes_file_range(self):
+    def test_inspect_query_source_routes_file_range(self) -> None:
         """Inspect query source should route file-range selectors."""
 
         manager = Mock()
@@ -822,7 +831,7 @@ class TestSessionFailureContext:
             context_after=0,
         )
 
-    def test_breakpoint_query_get_routes_to_service(self):
+    def test_breakpoint_query_get_routes_to_service(self) -> None:
         """Breakpoint query get should route through the breakpoint service."""
 
         manager = Mock()
@@ -840,7 +849,7 @@ class TestSessionFailureContext:
 
         session.get_breakpoint.assert_called_once_with(4)
 
-    def test_breakpoint_query_list_routes_enabled_filter(self):
+    def test_breakpoint_query_list_routes_enabled_filter(self) -> None:
         """Breakpoint query list should apply the enabled-state filter after listing."""
 
         manager = Mock()
@@ -868,10 +877,10 @@ class TestSessionFailureContext:
 
         session.list_breakpoints.assert_called_once_with()
         assert result_data["action"] == "list"
-        assert result_data["result"]["count"] == 1
-        assert result_data["result"]["breakpoints"][0]["number"] == "1"
+        assert dig(result_data, "result", "count") == 1
+        assert mapping_list(dig(result_data, "result", "breakpoints"))[0]["number"] == "1"
 
-    def test_breakpoint_manage_update_routes_changes(self):
+    def test_breakpoint_manage_update_routes_changes(self) -> None:
         """Breakpoint manage update should route condition changes."""
 
         manager = Mock()
@@ -898,7 +907,7 @@ class TestSessionFailureContext:
             clear_condition=False,
         )
 
-    def test_inferior_query_current_returns_current_inferior(self):
+    def test_inferior_query_current_returns_current_inferior(self) -> None:
         """Inferior query current should unwrap the selected inferior from inventory."""
 
         manager = Mock()
@@ -923,9 +932,9 @@ class TestSessionFailureContext:
 
         assert result_data["status"] == "success"
         assert result_data["action"] == "current"
-        assert result_data["result"]["inferior"]["inferior_id"] == 1
+        assert dig(result_data, "result", "inferior", "inferior_id") == 1
 
-    def test_inferior_manage_select_routes_to_service(self):
+    def test_inferior_manage_select_routes_to_service(self) -> None:
         """Inferior manage select should route through the session service."""
 
         manager = Mock()
@@ -947,7 +956,7 @@ class TestSessionFailureContext:
 
         session.select_inferior.assert_called_once_with(inferior_id=2)
 
-    def test_set_watchpoint_routes_to_correct_session(self):
+    def test_set_watchpoint_routes_to_correct_session(self) -> None:
         """Watchpoint requests should forward expression and access mode."""
 
         manager = Mock()
@@ -974,7 +983,7 @@ class TestSessionFailureContext:
         manager.resolve_session.assert_called_once_with(3)
         session.set_watchpoint.assert_called_once_with(expression="value", access="access")
 
-    def test_delete_watchpoint_routes_to_correct_session(self):
+    def test_delete_watchpoint_routes_to_correct_session(self) -> None:
         """Watchpoint deletion should forward the shared breakpoint number."""
 
         manager = Mock()
@@ -993,7 +1002,7 @@ class TestSessionFailureContext:
         manager.resolve_session.assert_called_once_with(3)
         session.delete_breakpoint.assert_called_once_with(number=2)
 
-    def test_set_catchpoint_routes_to_correct_session(self):
+    def test_set_catchpoint_routes_to_correct_session(self) -> None:
         """Catchpoint requests should forward kind, argument, and temporary flag."""
 
         manager = Mock()
@@ -1025,7 +1034,7 @@ class TestSessionFailureContext:
             temporary=True,
         )
 
-    def test_wait_for_stop_routes_to_correct_session(self):
+    def test_wait_for_stop_routes_to_correct_session(self) -> None:
         """Wait requests should forward timeout and optional reason filters."""
 
         manager = Mock()
@@ -1049,7 +1058,7 @@ class TestSessionFailureContext:
             stop_reasons=("fork",),
         )
 
-    def test_read_memory_routes_to_correct_session(self):
+    def test_read_memory_routes_to_correct_session(self) -> None:
         """Memory read requests should forward address, count, and offset."""
 
         manager = Mock()
@@ -1070,7 +1079,7 @@ class TestSessionFailureContext:
         manager.resolve_session.assert_called_once_with(3)
         session.read_memory.assert_called_once_with(address="&value", count=4, offset=1)
 
-    def test_list_inferiors_routes_to_correct_session(self):
+    def test_list_inferiors_routes_to_correct_session(self) -> None:
         """Inferior inventory requests should route to the resolved session."""
 
         manager = Mock()
@@ -1087,7 +1096,7 @@ class TestSessionFailureContext:
         manager.resolve_session.assert_called_once_with(4)
         session.list_inferiors.assert_called_once_with()
 
-    def test_select_inferior_routes_to_correct_session(self):
+    def test_select_inferior_routes_to_correct_session(self) -> None:
         """Inferior selection should forward the requested inferior ID."""
 
         manager = Mock()
@@ -1104,7 +1113,7 @@ class TestSessionFailureContext:
         manager.resolve_session.assert_called_once_with(4)
         session.select_inferior.assert_called_once_with(inferior_id=2)
 
-    def test_set_follow_fork_mode_routes_to_correct_session(self):
+    def test_set_follow_fork_mode_routes_to_correct_session(self) -> None:
         """Follow-fork-mode requests should forward the selected mode."""
 
         manager = Mock()
@@ -1125,7 +1134,7 @@ class TestSessionFailureContext:
         manager.resolve_session.assert_called_once_with(4)
         session.set_follow_fork_mode.assert_called_once_with(mode="child")
 
-    def test_set_detach_on_fork_routes_to_correct_session(self):
+    def test_set_detach_on_fork_routes_to_correct_session(self) -> None:
         """Detach-on-fork requests should forward the selected boolean value."""
 
         manager = Mock()
@@ -1146,7 +1155,7 @@ class TestSessionFailureContext:
         manager.resolve_session.assert_called_once_with(4)
         session.set_detach_on_fork.assert_called_once_with(enabled=False)
 
-    def test_set_breakpoint_routes_to_correct_session(self):
+    def test_set_breakpoint_routes_to_correct_session(self) -> None:
         """Breakpoint requests should be routed to the resolved session."""
 
         manager = Mock()
@@ -1169,18 +1178,20 @@ class TestSessionFailureContext:
         manager.resolve_session.assert_called_once_with(3)
         session.set_breakpoint.assert_called_once()
 
-    def test_workflow_batch_routes_validated_steps_and_captures_stop_event(self):
+    def test_workflow_batch_routes_validated_steps_and_captures_stop_event(self) -> None:
         """Workflow batch requests should execute validated session steps atomically."""
 
         manager = Mock()
         session = create_default_session_service()
-        session.set_breakpoint = Mock(
+        session.set_breakpoint = Mock(  # type: ignore[method-assign]  # test double
             return_value=OperationSuccess(
                 BreakpointInfo(breakpoint={"number": "1", "original_location": "main"})
             )
         )
 
-        def continue_side_effect(*, wait_for_stop, timeout_sec):
+        def continue_side_effect(
+            *, wait_for_stop: bool, timeout_sec: int
+        ) -> OperationSuccess[CommandExecutionInfo]:
             assert wait_for_stop is True
             assert timeout_sec == 30
             session.runtime.mark_inferior_paused("breakpoint-hit")
@@ -1193,7 +1204,9 @@ class TestSessionFailureContext:
             session.runtime.record_stop_event(stop_event)
             return OperationSuccess(CommandExecutionInfo(command="-exec-continue"))
 
-        session.continue_execution = Mock(side_effect=continue_side_effect)
+        session.continue_execution = Mock(  # type: ignore[method-assign]  # test double
+            side_effect=continue_side_effect
+        )
         manager.resolve_session.return_value = session
 
         result_data = dispatch(
@@ -1224,14 +1237,15 @@ class TestSessionFailureContext:
         assert result_data["completed_steps"] == 2
         assert result_data["error_count"] == 0
         assert result_data["stopped_early"] is False
-        assert result_data["steps"][0]["tool"] == "gdb_breakpoint_manage"
-        assert result_data["steps"][0]["action"] == "create"
-        assert result_data["steps"][0]["label"] == "break main"
-        assert result_data["steps"][0]["status"] == "success"
-        assert result_data["steps"][1]["tool"] == "gdb_execution_manage"
-        assert result_data["steps"][1]["action"] == "continue"
-        assert result_data["steps"][1]["stop_event"]["reason"] == "breakpoint-hit"
-        assert result_data["last_stop_event"]["reason"] == "breakpoint-hit"
+        steps = mapping_list(result_data["steps"])
+        assert steps[0]["tool"] == "gdb_breakpoint_manage"
+        assert steps[0]["action"] == "create"
+        assert steps[0]["label"] == "break main"
+        assert steps[0]["status"] == "success"
+        assert steps[1]["tool"] == "gdb_execution_manage"
+        assert steps[1]["action"] == "continue"
+        assert mapping(steps[1]["stop_event"])["reason"] == "breakpoint-hit"
+        assert dig(result_data, "last_stop_event", "reason") == "breakpoint-hit"
         session.set_breakpoint.assert_called_once_with(
             location="main",
             condition=None,
@@ -1239,15 +1253,15 @@ class TestSessionFailureContext:
         )
         session.continue_execution.assert_called_once_with(wait_for_stop=True, timeout_sec=30)
 
-    def test_workflow_batch_stops_on_first_error_by_default(self):
+    def test_workflow_batch_stops_on_first_error_by_default(self) -> None:
         """Fail-fast workflow batches should stop before executing later steps."""
 
         manager = Mock()
         session = create_default_session_service()
-        session.execute_command = Mock(
+        session.execute_command = Mock(  # type: ignore[method-assign]  # test double
             return_value=OperationError(message="boom", details={"command": "info threads"})
         )
-        session.get_status = Mock(
+        session.get_status = Mock(  # type: ignore[method-assign]  # test double
             return_value=OperationSuccess(
                 SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=False)
             )
@@ -1277,16 +1291,16 @@ class TestSessionFailureContext:
         assert result_data["error_count"] == 1
         assert result_data["stopped_early"] is True
         assert result_data["failure_step_index"] == 0
-        assert result_data["steps"][0]["status"] == "error"
+        assert mapping_list(result_data["steps"])[0]["status"] == "error"
         session.execute_command.assert_called_once_with(command="info threads", timeout_sec=30)
         session.get_status.assert_not_called()
 
-    def test_workflow_batch_accepts_string_step_shorthand(self):
+    def test_workflow_batch_accepts_string_step_shorthand(self) -> None:
         """Workflow batch requests should allow shorthand step strings."""
 
         manager = Mock()
         session = create_default_session_service()
-        session.capture_bundle = Mock(
+        session.capture_bundle = Mock(  # type: ignore[method-assign]  # test double
             return_value=OperationSuccess(SessionMessage(message="bundle written"))
         )
         manager.resolve_session.return_value = session
@@ -1302,10 +1316,10 @@ class TestSessionFailureContext:
 
         assert result_data["status"] == "success"
         assert result_data["completed_steps"] == 1
-        assert result_data["steps"][0]["tool"] == "gdb_capture_bundle"
+        assert mapping_list(result_data["steps"])[0]["tool"] == "gdb_capture_bundle"
         session.capture_bundle.assert_called_once()
 
-    def test_session_tool_dispatch_uses_workflow_lock(self):
+    def test_session_tool_dispatch_uses_workflow_lock(self) -> None:
         """Session-scoped tools should serialize through the workflow lock."""
 
         manager = Mock()
@@ -1328,7 +1342,7 @@ class TestSessionFailureContext:
         workflow_lock.__enter__.assert_called_once()
         workflow_lock.__exit__.assert_called_once()
 
-    def test_workflow_batch_rejects_step_level_session_id(self):
+    def test_workflow_batch_rejects_step_level_session_id(self) -> None:
         """Workflow batch steps should inherit session_id from the batch envelope only."""
 
         manager = Mock()
@@ -1350,9 +1364,9 @@ class TestSessionFailureContext:
         )
 
         assert result_data["status"] == "error"
-        assert "must not include session_id" in result_data["message"]
+        assert "must not include session_id" in text(result_data["message"])
 
-    def test_workflow_batch_rejects_session_query_list_step(self):
+    def test_workflow_batch_rejects_session_query_list_step(self) -> None:
         """Workflow batch should reject the global session inventory action inside steps."""
 
         manager = Mock()
@@ -1374,12 +1388,11 @@ class TestSessionFailureContext:
         )
 
         assert result_data["status"] == "error"
-        assert (
-            "gdb_session_query(action=list) is not valid inside gdb_workflow_batch"
-            in result_data["message"]
+        assert "gdb_session_query(action=list) is not valid inside gdb_workflow_batch" in text(
+            result_data["message"]
         )
 
-    def test_capture_bundle_routes_to_session(self):
+    def test_capture_bundle_routes_to_session(self) -> None:
         """Capture requests should forward the bundle options to the resolved session."""
 
         manager = Mock()
@@ -1422,7 +1435,7 @@ class TestSessionFailureContext:
             include_stop_history=True,
         )
 
-    def test_capture_bundle_accepts_memory_range_shorthand(self):
+    def test_capture_bundle_accepts_memory_range_shorthand(self) -> None:
         """Capture requests should parse shorthand memory-range strings."""
 
         manager = Mock()
@@ -1446,7 +1459,7 @@ class TestSessionFailureContext:
             MemoryCaptureRange(address="&value", count=4, offset=1, name=None)
         ]
 
-    def test_run_until_failure_capture_forwards_memory_ranges(self):
+    def test_run_until_failure_capture_forwards_memory_ranges(self) -> None:
         """Campaign capture settings should forward explicit memory ranges to bundle capture."""
 
         manager = Mock()
@@ -1485,7 +1498,7 @@ class TestSessionFailureContext:
             MemoryCaptureRange(address="&value", count=8, offset=0, name="value-bytes")
         ]
 
-    def test_run_until_failure_capture_accepts_exact_bundle_name(self):
+    def test_run_until_failure_capture_accepts_exact_bundle_name(self) -> None:
         """Campaign capture should accept bundle_name alias for deterministic naming."""
 
         manager = Mock()
@@ -1522,7 +1535,7 @@ class TestSessionFailureContext:
         session.capture_bundle.assert_called_once()
         assert session.capture_bundle.call_args.kwargs["bundle_name"] == "exact-bundle"
 
-    def test_run_until_failure_uses_untracked_sessions(self):
+    def test_run_until_failure_uses_untracked_sessions(self) -> None:
         """Campaign requests should create fresh untracked sessions and return campaign data."""
 
         manager = Mock()
@@ -1571,7 +1584,7 @@ class TestSessionFailureContext:
         assert result_data["trigger"] == "stop_reason:signal-received"
         assert result_data["capture_bundle"] is None
 
-    def test_multiple_tools_use_different_sessions(self):
+    def test_multiple_tools_use_different_sessions(self) -> None:
         """Separate session IDs should be routed independently."""
 
         manager = Mock()
@@ -1584,7 +1597,7 @@ class TestSessionFailureContext:
             SessionStatusSnapshot(is_running=True, target_loaded=True, has_controller=True)
         )
 
-        def resolve_session_side_effect(session_id):
+        def resolve_session_side_effect(session_id: int) -> Mock | OperationError:
             if session_id == 1:
                 return session_1
             if session_id == 2:
@@ -1609,10 +1622,10 @@ class TestSessionFailureContext:
         assert manager.resolve_session.call_count == 2
         session_1.get_status.assert_called_once()
         session_2.get_status.assert_called_once()
-        assert result_1["result"]["is_running"] is False
-        assert result_2["result"]["is_running"] is True
+        assert dig(result_1, "result", "is_running") is False
+        assert dig(result_2, "result", "is_running") is True
 
-    def test_evaluate_expression_routes_thread_and_frame_overrides(self):
+    def test_evaluate_expression_routes_thread_and_frame_overrides(self) -> None:
         """Expression requests should forward optional context overrides."""
 
         manager = Mock()
@@ -1634,7 +1647,7 @@ class TestSessionFailureContext:
 
         session.evaluate_expression.assert_called_once_with("x", thread_id=2, frame=1)
 
-    def test_evaluate_expression_accepts_numeric_string_overrides(self):
+    def test_evaluate_expression_accepts_numeric_string_overrides(self) -> None:
         """Expression context overrides should accept numeric-string values."""
 
         manager = Mock()
@@ -1656,7 +1669,7 @@ class TestSessionFailureContext:
 
         session.evaluate_expression.assert_called_once_with("x", thread_id=2, frame=1)
 
-    def test_get_registers_routes_thread_and_frame_overrides(self):
+    def test_get_registers_routes_thread_and_frame_overrides(self) -> None:
         """Register requests should forward optional context overrides."""
 
         manager = Mock()
@@ -1686,7 +1699,7 @@ class TestSessionFailureContext:
             value_format="hex",
         )
 
-    def test_get_registers_accepts_numeric_string_overrides(self):
+    def test_get_registers_accepts_numeric_string_overrides(self) -> None:
         """Register context overrides should accept numeric-string values."""
 
         manager = Mock()
@@ -1716,7 +1729,7 @@ class TestSessionFailureContext:
             value_format="hex",
         )
 
-    def test_get_registers_routes_filter_and_format_options(self):
+    def test_get_registers_routes_filter_and_format_options(self) -> None:
         """Register requests should forward selector and rendering options."""
 
         manager = Mock()
@@ -1752,7 +1765,7 @@ class TestSessionFailureContext:
             value_format="natural",
         )
 
-    def test_get_backtrace_accepts_numeric_string_thread_id(self):
+    def test_get_backtrace_accepts_numeric_string_thread_id(self) -> None:
         """Backtrace requests should accept numeric-string thread IDs."""
 
         manager = Mock()
@@ -1774,7 +1787,7 @@ class TestSessionFailureContext:
 
         session.get_backtrace.assert_called_once_with(thread_id=2, max_frames=5)
 
-    def test_disassemble_routes_normalized_selectors(self):
+    def test_disassemble_routes_normalized_selectors(self) -> None:
         """Disassembly requests should forward normalized selector values."""
 
         manager = Mock()
@@ -1810,7 +1823,7 @@ class TestSessionFailureContext:
             mode="mixed",
         )
 
-    def test_get_variables_accepts_numeric_string_context(self):
+    def test_get_variables_accepts_numeric_string_context(self) -> None:
         """Variable requests should accept numeric-string thread/frame selectors."""
 
         manager = Mock()
@@ -1830,7 +1843,7 @@ class TestSessionFailureContext:
 
         session.get_variables.assert_called_once_with(thread_id=2, frame=3)
 
-    def test_get_source_context_routes_normalized_selectors(self):
+    def test_get_source_context_routes_normalized_selectors(self) -> None:
         """Source-context requests should forward normalized selector values."""
 
         manager = Mock()
@@ -1865,7 +1878,7 @@ class TestSessionFailureContext:
             context_after=3,
         )
 
-    def test_tool_definitions_match_dispatch_registry(self):
+    def test_tool_definitions_match_dispatch_registry(self) -> None:
         """Every exported tool should have a matching dispatch path and vice versa."""
 
         exported_tools = {tool.name for tool in build_tool_definitions()}

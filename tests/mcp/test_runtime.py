@@ -5,6 +5,8 @@ import json
 import logging
 from unittest.mock import ANY, AsyncMock, MagicMock, Mock, patch
 
+from mcp.types import TextContent
+
 from gdb_mcp.domain import OperationSuccess, SessionMessage, SessionStatusSnapshot
 from gdb_mcp.mcp.runtime import ServerRuntime, create_server_runtime
 
@@ -23,7 +25,7 @@ def _session_double() -> Mock:
 class TestServerRuntime:
     """Test runtime-level dependency injection."""
 
-    def test_runtime_dispatches_v2_status_query(self):
+    def test_runtime_dispatches_v2_status_query(self) -> None:
         """The runtime should dispatch v2 status queries using the injected registry provider."""
 
         mock_manager = Mock()
@@ -44,7 +46,9 @@ class TestServerRuntime:
                 {"session_id": 7, "action": "status", "query": {}},
             )
         )
-        result_data = json.loads(result.content[0].text)
+        content = result.content[0]
+        assert isinstance(content, TextContent)
+        result_data = json.loads(content.text)
 
         assert result_data["status"] == "success"
         assert result_data["action"] == "status"
@@ -52,7 +56,7 @@ class TestServerRuntime:
         mock_manager.resolve_session.assert_called_once_with(7)
         mock_session.get_status.assert_called_once()
 
-    def test_runtime_shutdown_uses_injected_session_manager(self):
+    def test_runtime_shutdown_uses_injected_session_manager(self) -> None:
         """Shutdown should call through the injected registry provider."""
 
         mock_manager = Mock()
@@ -70,7 +74,7 @@ class TestServerRuntime:
         mock_manager.shutdown_all.assert_called_once()
 
     @patch("gdb_mcp.mcp.runtime.run_stdio_app", new_callable=AsyncMock)
-    def test_run_stdio_delegates_to_stdio_helper(self, mock_run_stdio_app):
+    def test_run_stdio_delegates_to_stdio_helper(self, mock_run_stdio_app: AsyncMock) -> None:
         """The explicit stdio runner should delegate through the stdio helper."""
 
         mock_manager = Mock()
@@ -90,8 +94,8 @@ class TestServerRuntime:
     @patch("gdb_mcp.mcp.runtime.run_streamable_http_app", new_callable=AsyncMock)
     def test_run_streamable_http_delegates_to_http_helper(
         self,
-        mock_run_streamable_http_app,
-    ):
+        mock_run_streamable_http_app: AsyncMock,
+    ) -> None:
         """The explicit HTTP runner should delegate through the HTTP helper."""
 
         mock_manager = Mock()
@@ -123,7 +127,9 @@ class TestServerRuntime:
 
     @patch("gdb_mcp.mcp.runtime.asyncio.run")
     @patch.object(ServerRuntime, "main", return_value="main-coroutine")
-    def test_run_server_delegates_through_main(self, mock_main, mock_asyncio_run):
+    def test_run_server_delegates_through_main(
+        self, mock_main: Mock, mock_asyncio_run: Mock
+    ) -> None:
         """The synchronous entrypoint should keep main() as the compatibility alias."""
 
         mock_manager = Mock()

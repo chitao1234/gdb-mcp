@@ -280,13 +280,13 @@ def test_build_inspect_source_payload() -> None:
 def test_build_workflow_batch_payload_from_typed_steps() -> None:
     typed_input = WorkflowBatchInput(
         session_id=7,
-        steps=[
+        steps=(
             SessionStepInput(
                 tool="gdb_context_query",
                 label="stack",
                 arguments={"action": "backtrace", "query": {"max_frames": 20}},
-            )
-        ],
+            ),
+        ),
         fail_fast=False,
         capture_stop_events=True,
     )
@@ -308,28 +308,28 @@ def test_build_workflow_batch_payload_from_typed_steps() -> None:
 def test_build_run_until_failure_payload_from_typed_input() -> None:
     typed_input = RunUntilFailureInput(
         startup_program="/bin/true",
-        startup_args=[],
-        startup_init_commands=["set pagination off"],
+        startup_args=(),
+        startup_init_commands=("set pagination off",),
         startup_env=None,
         startup_gdb_path=None,
         startup_working_dir=None,
         startup_core=None,
-        setup_steps=[],
-        run_args=[],
+        setup_steps=(),
+        run_args=(),
         run_timeout_sec=15,
         max_iterations=2,
         failure_on_error=True,
         failure_on_timeout=True,
-        failure_stop_reasons=["signal-received"],
-        failure_execution_states=[],
-        failure_exit_codes=[],
+        failure_stop_reasons=("signal-received",),
+        failure_execution_states=(),
+        failure_exit_codes=(),
         failure_result_text_regex=None,
         capture_enabled=True,
         capture_output_dir=None,
         capture_bundle_name_prefix=None,
         capture_bundle_name=None,
-        capture_expressions=["errno"],
-        capture_memory_ranges=["&errno:8"],
+        capture_expressions=("errno",),
+        capture_memory_ranges=("&errno:8",),
         capture_max_frames=100,
         capture_include_threads=True,
         capture_include_backtraces=True,

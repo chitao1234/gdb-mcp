@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import logging
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
@@ -14,7 +14,7 @@ class TestServerEntrypoint:
     """Keep minimal coverage for the thin compatibility entrypoint."""
 
     @patch("gdb_mcp.server.create_default_runtime")
-    def test_main_defaults_to_stdio_transport(self, mock_create_default_runtime):
+    def test_main_defaults_to_stdio_transport(self, mock_create_default_runtime: MagicMock) -> None:
         """main() should keep stdio as the zero-argument default transport."""
 
         from gdb_mcp.server import main
@@ -31,7 +31,9 @@ class TestServerEntrypoint:
         runtime.run_streamable_http.assert_not_called()
 
     @patch("gdb_mcp.server.create_default_runtime")
-    def test_main_selects_streamable_http_transport(self, mock_create_default_runtime):
+    def test_main_selects_streamable_http_transport(
+        self, mock_create_default_runtime: MagicMock
+    ) -> None:
         """main() should route explicit HTTP transport flags to the HTTP runner."""
 
         from gdb_mcp.server import main
@@ -66,7 +68,7 @@ class TestServerEntrypoint:
         )
         runtime.run_stdio.assert_not_called()
 
-    def test_parse_server_config_rejects_http_flags_for_stdio(self):
+    def test_parse_server_config_rejects_http_flags_for_stdio(self) -> None:
         """HTTP-only flags should be rejected when stdio remains selected."""
 
         from gdb_mcp.server import parse_server_config
@@ -76,7 +78,7 @@ class TestServerEntrypoint:
 
         assert exc_info.value.code == 2
 
-    def test_parse_server_config_rejects_non_rooted_http_path(self):
+    def test_parse_server_config_rejects_non_rooted_http_path(self) -> None:
         """HTTP paths should be validated before the runtime starts."""
 
         from gdb_mcp.server import parse_server_config
@@ -86,7 +88,7 @@ class TestServerEntrypoint:
 
         assert exc_info.value.code == 2
 
-    def test_parse_server_config_defaults_streamable_http_settings(self):
+    def test_parse_server_config_defaults_streamable_http_settings(self) -> None:
         """HTTP transport should normalize omitted host, port, and path values."""
 
         from gdb_mcp.server import parse_server_config
@@ -98,7 +100,7 @@ class TestServerEntrypoint:
         assert config.port == 8000
         assert config.path == "/mcp"
 
-    def test_parse_server_config_preserves_explicit_port_zero(self):
+    def test_parse_server_config_preserves_explicit_port_zero(self) -> None:
         """A caller should be able to request an ephemeral HTTP port with --port 0."""
 
         from gdb_mcp.server import parse_server_config
@@ -109,7 +111,7 @@ class TestServerEntrypoint:
         assert config.port == 0
 
     @pytest.mark.parametrize("port", ["-1", "70000"])
-    def test_parse_server_config_rejects_invalid_http_ports(self, port):
+    def test_parse_server_config_rejects_invalid_http_ports(self, port: str) -> None:
         """HTTP port validation should reject values outside the valid TCP range."""
 
         from gdb_mcp.server import parse_server_config
@@ -119,7 +121,7 @@ class TestServerEntrypoint:
 
         assert exc_info.value.code == 2
 
-    def test_import_does_not_configure_logging(self):
+    def test_import_does_not_configure_logging(self) -> None:
         """Importing the compatibility module should not mutate host logging setup."""
 
         from gdb_mcp import server
@@ -130,7 +132,9 @@ class TestServerEntrypoint:
         assert mock_basic_config.call_count == 0
 
     @patch("gdb_mcp.server.create_default_runtime")
-    def test_main_builds_a_fresh_runtime_for_each_invocation(self, mock_create_default_runtime):
+    def test_main_builds_a_fresh_runtime_for_each_invocation(
+        self, mock_create_default_runtime: MagicMock
+    ) -> None:
         """Repeated main() calls should not keep a module-global runtime cache."""
 
         from gdb_mcp.server import main
@@ -156,11 +160,11 @@ class TestServerEntrypoint:
     @patch("gdb_mcp.server.logger.warning")
     def test_run_server_warns_when_module_is_loaded_from_build_lib(
         self,
-        mock_warning,
-        _mock_configure_logging,
-        mock_main,
-        mock_asyncio_run,
-    ):
+        mock_warning: MagicMock,
+        _mock_configure_logging: MagicMock,
+        mock_main: Mock,
+        mock_asyncio_run: MagicMock,
+    ) -> None:
         """CLI startup should flag potentially stale build/lib shadow imports."""
 
         from gdb_mcp import server

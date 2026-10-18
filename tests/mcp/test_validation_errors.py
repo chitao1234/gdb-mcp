@@ -8,6 +8,8 @@ import logging
 from typing import Any
 from unittest.mock import Mock
 
+from mcp.types import TextContent
+
 from gdb_mcp.domain import OperationSuccess, SessionMessage
 from gdb_mcp.mcp.handlers import dispatch_tool_call
 
@@ -22,13 +24,17 @@ def _dispatch(name: str, arguments: object, manager: Mock) -> dict[str, Any]:
         )
     )
     assert result.isError is True
-    return json.loads(result.content[0].text)
+    content = result.content[0]
+    assert isinstance(content, TextContent)
+    payload = json.loads(content.text)
+    assert isinstance(payload, dict)
+    return payload
 
 
 class TestValidationErrorEnvelope:
     """Validation failures should map onto actionable field errors."""
 
-    def test_missing_conditional_field_names_the_union_tag(self):
+    def test_missing_conditional_field_names_the_union_tag(self) -> None:
         """A missing kind-specific field should produce the documented message."""
 
         payload = _dispatch(
@@ -50,7 +56,7 @@ class TestValidationErrorEnvelope:
             }
         ]
 
-    def test_multiple_failures_are_all_reported(self):
+    def test_multiple_failures_are_all_reported(self) -> None:
         """Every failure should be visible; truncation is the caller's decision."""
 
         payload = _dispatch(
@@ -71,7 +77,7 @@ class TestValidationErrorEnvelope:
             "breakpoint.bogus",
         ]
 
-    def test_missing_discriminator_is_reported_as_missing_field(self):
+    def test_missing_discriminator_is_reported_as_missing_field(self) -> None:
         """A missing kind should point at the discriminator property itself."""
 
         payload = _dispatch(
@@ -84,7 +90,7 @@ class TestValidationErrorEnvelope:
         assert payload["details"]["field_errors"][0]["field"] == "breakpoint.kind"
         assert payload["details"]["field_errors"][0]["issue"] == "missing"
 
-    def test_unknown_action_lists_expected_values(self):
+    def test_unknown_action_lists_expected_values(self) -> None:
         """An invalid action should list the accepted values."""
 
         payload = _dispatch(
@@ -102,7 +108,7 @@ class TestValidationErrorEnvelope:
             "message": payload["message"],
         }
 
-    def test_missing_session_id_mentions_the_action(self):
+    def test_missing_session_id_mentions_the_action(self) -> None:
         """Missing top-level fields should name the selected action."""
 
         payload = _dispatch("gdb_session_query", {"action": "status"}, Mock())
@@ -111,7 +117,7 @@ class TestValidationErrorEnvelope:
         assert payload["details"]["field_errors"][0]["field"] == "session_id"
         assert payload["details"]["field_errors"][0]["issue"] == "missing"
 
-    def test_unknown_field_reports_not_allowed(self):
+    def test_unknown_field_reports_not_allowed(self) -> None:
         """Unexpected keys should be reported as not allowed."""
 
         payload = _dispatch(
@@ -123,7 +129,7 @@ class TestValidationErrorEnvelope:
         assert payload["details"]["field_errors"][0]["field"] == "unexpected"
         assert payload["details"]["field_errors"][0]["issue"] == "not_allowed"
 
-    def test_model_validator_failure_keeps_the_domain_message(self):
+    def test_model_validator_failure_keeps_the_domain_message(self) -> None:
         """Custom model validators should surface their own message."""
 
         payload = _dispatch(
@@ -136,7 +142,7 @@ class TestValidationErrorEnvelope:
         assert payload["details"]["field_errors"][0]["field"] == "changes"
         assert payload["action"] == "update"
 
-    def test_non_object_arguments_fail_as_validation_error(self):
+    def test_non_object_arguments_fail_as_validation_error(self) -> None:
         """Non-object arguments should still produce a structured error."""
 
         payload = _dispatch("gdb_session_query", ["not", "an", "object"], Mock())
@@ -150,7 +156,7 @@ class TestValidationErrorEnvelope:
 class TestSuccessfulDispatch:
     """Successful calls should not be flagged as MCP errors."""
 
-    def test_success_result_keeps_is_error_false(self):
+    def test_success_result_keeps_is_error_false(self) -> None:
         """The dispatcher should only set isError for error envelopes."""
 
         manager = Mock()
@@ -168,5 +174,7 @@ class TestSuccessfulDispatch:
         )
 
         assert result.isError is False
-        payload = json.loads(result.content[0].text)
+        content = result.content[0]
+        assert isinstance(content, TextContent)
+        payload = json.loads(content.text)
         assert payload["status"] == "success"
