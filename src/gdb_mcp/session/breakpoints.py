@@ -36,6 +36,21 @@ _INSERT_BLOCKED_RE = re.compile(
 )
 
 
+def _mi_operand(argument: str) -> str:
+    """Quote one MI operand, ending option parsing when it starts with ``-``.
+
+    MI reads a leading ``-`` as an option, so an Objective-C method such as
+    ``-[Point sum]`` or a watch expression such as ``-x`` reaches GDB as an
+    unknown option instead of a location. These commands accept ``--`` to end
+    option parsing.
+    """
+
+    quoted = quote_mi_string(argument)
+    if argument.startswith("-"):
+        return f"-- {quoted}"
+    return quoted
+
+
 def _blocked_breakpoint_numbers(message: str) -> list[int]:
     """Return the breakpoint numbers GDB reported it cannot insert, in order."""
 
@@ -108,7 +123,7 @@ class SessionBreakpointService:
         if condition:
             cmd_parts.extend(["-c", quote_mi_string(condition)])
 
-        cmd_parts.append(quote_mi_string(location))
+        cmd_parts.append(_mi_operand(location))
 
         result = self._command_runner.execute_command_result(
             " ".join(cmd_parts), timeout_sec=DEFAULT_TIMEOUT_SEC
@@ -151,7 +166,7 @@ class SessionBreakpointService:
             cmd_parts.append("-r")
         elif access == "access":
             cmd_parts.append("-a")
-        cmd_parts.append(quote_mi_string(expression))
+        cmd_parts.append(_mi_operand(expression))
 
         result = self._command_runner.execute_command_result(
             " ".join(cmd_parts), timeout_sec=DEFAULT_TIMEOUT_SEC

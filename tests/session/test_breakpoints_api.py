@@ -144,6 +144,49 @@ class TestBreakpointApi:
             .endswith('-break-insert "/tmp/my source.c:12"\n')
         )
 
+    def test_set_breakpoint_ends_option_parsing_for_objc_methods(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
+        """An Objective-C method name starts with '-', which MI reads as an option."""
+
+        session, controller = scripted_running_session(
+            [mi_result({"bkpt": {"number": "1", "func": "-[Point sum]"}})]
+        )
+
+        result = result_to_mapping(session.set_breakpoint("-[Point sum]"))
+
+        assert result["status"] == "success"
+        assert (
+            controller.io_manager.stdin.writes[0]
+            .decode()
+            .endswith('-break-insert -- "-[Point sum]"\n')
+        )
+
+    def test_set_watchpoint_ends_option_parsing_for_negative_expressions(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
+        """A watch expression may start with '-', which MI reads as an option."""
+
+        session, controller = scripted_running_session(
+            [mi_result({"wpt": {"number": "2", "exp": "-x"}})],
+            [
+                mi_result(
+                    {
+                        "BreakpointTable": {
+                            "body": [
+                                {"number": "2", "type": "watchpoint", "what": "-x"},
+                            ]
+                        }
+                    }
+                )
+            ],
+        )
+
+        result = result_to_mapping(session.set_watchpoint("-x"))
+
+        assert result["status"] == "success"
+        assert controller.io_manager.stdin.writes[0].decode().endswith('-break-watch -- "-x"\n')
+
     def test_list_breakpoints(
         self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
     ) -> None:
