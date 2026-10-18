@@ -45,7 +45,7 @@ Prefer the structured MCP tools directly when the environment does not grant she
 | Start / list / stop sessions | `start`, `status`, `stop` |
 | Connect to an externally started gdb | `connect ENDPOINT` |
 | Default session | `session use ID`, `session current` |
-| Run control | `run`, `continue`, `interrupt`, `step`, `next`, `finish`, `wait-stop` |
+| Run control | `run`, `continue`, `interrupt`, `step`, `next`, `finish`, `wait-stop` (`--reverse` for reverse execution) |
 | Attach to a PID | `attach PID` |
 | Threads, frames, backtrace | `threads`, `frame N`, `bt` |
 | Variables, registers, memory, source, assembly | `locals`, `regs`, `memory ADDR`, `list`, `disasm` |

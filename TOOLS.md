@@ -232,8 +232,13 @@ Dedicated startup tool. This is not action-based.
 - `env`: optional environment mapping applied before `init_commands`
 - `gdb_path`: optional GDB binary override
 - `working_dir`: optional working directory for the GDB process
+- `rr_replay`: optional rr trace directory to replay instead of launching a program
 
-`args` and `core` are mutually exclusive.
+`args` and `core` are mutually exclusive. `rr_replay` cannot be combined with
+`program`, `args`, or `core`: the recording already owns the target, so the
+session runs `rr replay --interpreter=mi <trace>` instead of a plain `gdb`. The
+`RR_PATH` environment variable (default `rr`) selects the rr binary, and
+`gdb_path` is passed to rr as its `-d` debugger choice.
 
 ### Success Fields
 
@@ -397,10 +402,31 @@ Run or synchronize execution state.
 
 `wait_until` can be `acknowledged` or `stop` (default `stop`). Omitting `execution` entirely is equivalent to `wait_until="stop"` with the default timeout. For `run`, `execution.args` may also override the inferior argv as an explicit list or one shell-style string.
 
+`continue`, `step`, `next`, and `finish` also accept `"reverse": true`, which
+runs the command backwards (`-exec-continue --reverse` and friends). It requires
+a target that can execute in reverse: an `rr_replay` session, or a gdb recording
+started with `record`/`target record-full`. `run`, `interrupt`, and
+`wait_for_stop` reject the flag.
+
 ### Notes
 
 - `run`, `continue`, `step`, `next`, and `interrupt` wrap the structured command result produced by GDB. Inside `result`, expect `command`, optional text `output`, and optional machine-readable `result`.
 - `wait_for_stop` is the structured replacement for manual polling.
+
+### Reverse Debugging
+
+Two ways to get a reversible session:
+
+1. **rr (recommended)**: record outside gdb-mcp (`rr record ./app`), then
+   `gdb_session_start {"rr_replay": "/path/to/trace"}`. Breakpoints, `continue`,
+   and `reverse` stepping all work, and `gdb_execute_command` can still reach
+   rr-specific commands such as `when` or `info record`.
+2. **gdb recording**: start a normal session and run
+   `gdb_execute_command {"command": "record"}` before the region of interest.
+
+Reverse stepping goes through `gdb_execution_manage` with
+`"execution": {"reverse": true}`; the escape hatch
+(`gdb_execute_command {"command": "reverse-step"}`) remains available.
 
 ## `gdb_breakpoint_query`
 

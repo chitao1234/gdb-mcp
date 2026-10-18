@@ -51,6 +51,12 @@ def _augment_call_error(message: str, function_call: str) -> str:
     return f"{message} (cast the call, e.g. 'call (int){function_call}')"
 
 
+def _exec_command(base: str, *, reverse: bool) -> str:
+    """Return one MI execution command, optionally in the reverse direction."""
+
+    return f"{base} --reverse" if reverse else base
+
+
 class SessionExecutionService:
     """Execution and command-control operations."""
 
@@ -270,8 +276,9 @@ class SessionExecutionService:
         *,
         wait_for_stop: bool = True,
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
-        """Continue execution of the program."""
+        """Continue execution of the program, forward or backward."""
         if not self._runtime.has_controller:
             return OperationError(message="No active GDB session")
         if self._runtime.execution_state == "running":
@@ -282,7 +289,7 @@ class SessionExecutionService:
                 )
             )
         return self._command_runner.execute_command_result(
-            "-exec-continue",
+            _exec_command("-exec-continue", reverse=reverse),
             timeout_sec=timeout_sec,
             allow_running_timeout=not wait_for_stop,
         )
@@ -414,10 +421,11 @@ class SessionExecutionService:
         *,
         wait_for_stop: bool = True,
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
-        """Step into the next source line."""
+        """Step into the next source line, forward or backward."""
         return self._command_runner.execute_command_result(
-            "-exec-step",
+            _exec_command("-exec-step", reverse=reverse),
             timeout_sec=timeout_sec,
             allow_running_timeout=not wait_for_stop,
         )
@@ -427,10 +435,11 @@ class SessionExecutionService:
         *,
         wait_for_stop: bool = True,
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
-        """Step over the next source line."""
+        """Step over the next source line, forward or backward."""
         return self._command_runner.execute_command_result(
-            "-exec-next",
+            _exec_command("-exec-next", reverse=reverse),
             timeout_sec=timeout_sec,
             allow_running_timeout=not wait_for_stop,
         )
@@ -440,11 +449,12 @@ class SessionExecutionService:
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
         *,
         wait_for_stop: bool = True,
+        reverse: bool = False,
     ) -> OperationSuccess[FinishInfo] | OperationError:
-        """Finish the current frame and stop in the caller."""
+        """Finish the current frame and stop in the caller, forward or backward."""
 
         result = self._command_runner.execute_command_result(
-            "-exec-finish",
+            _exec_command("-exec-finish", reverse=reverse),
             timeout_sec=timeout_sec,
             allow_running_timeout=not wait_for_stop,
         )

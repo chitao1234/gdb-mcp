@@ -51,6 +51,14 @@ class StartSessionArgs(StrictArgsModel):
             "Example: If debugging a server that loads config from './config.json', set working_dir to the server's directory."
         ),
     )
+    rr_replay: str | None = Field(
+        None,
+        description=(
+            "Path to an rr trace directory (or 'latest-trace') to replay instead of "
+            "launching a program. Starts 'rr replay --interpreter=mi', which brings "
+            "reverse execution. Cannot be combined with program, args, or core."
+        ),
+    )
     core: str | None = Field(
         None,
         description=(

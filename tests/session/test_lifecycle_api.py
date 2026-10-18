@@ -168,6 +168,77 @@ class TestLifecycleApi:
         assert "--args" not in command
 
     @patch("gdb_mcp.session.factory.GdbController")
+    def test_start_session_with_rr_replay_spawns_rr(
+        self,
+        mock_controller_class: MagicMock,
+        session_service: SessionService,
+        prompt_response: PromptResponseBuilder,
+    ) -> None:
+        """An rr replay should start 'rr replay --interpreter=mi' on the trace."""
+
+        mock_controller_class.return_value = MagicMock()
+
+        with (
+            patch.object(
+                session_service._command_runner,
+                "send_command_and_wait_for_prompt",
+                return_value=prompt_response(
+                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
+                ),
+            ),
+            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
+        ):
+            result = result_to_mapping(session_service.start(rr_replay="/traces/app-0"))
+
+        command = mock_controller_class.call_args[1]["command"]
+
+        assert result["status"] == "success"
+        assert result["rr_replay"] == "/traces/app-0"
+        assert command[:3] == ["rr", "replay", "--interpreter=mi"]
+        assert command[-1] == "/traces/app-0"
+        assert "-d" in command
+
+    @patch("gdb_mcp.session.factory.GdbController")
+    @patch.dict(os.environ, {"RR_PATH": "/opt/rr/bin/rr"})
+    def test_start_session_with_rr_replay_honors_rr_path(
+        self,
+        mock_controller_class: MagicMock,
+        session_service: SessionService,
+        prompt_response: PromptResponseBuilder,
+    ) -> None:
+        """RR_PATH should choose the rr binary, like GDB_PATH chooses gdb."""
+
+        mock_controller_class.return_value = MagicMock()
+
+        with (
+            patch.object(
+                session_service._command_runner,
+                "send_command_and_wait_for_prompt",
+                return_value=prompt_response(
+                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
+                ),
+            ),
+            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
+        ):
+            session_service.start(rr_replay="/traces/app-0")
+
+        command = mock_controller_class.call_args[1]["command"]
+        assert command[0] == "/opt/rr/bin/rr"
+
+    def test_start_session_rejects_rr_replay_with_program(
+        self, session_service: SessionService
+    ) -> None:
+        """An rr trace owns the target, so a program cannot be loaded as well."""
+
+        result = result_to_mapping(
+            session_service.start(rr_replay="/traces/app-0", program="/bin/ls")
+        )
+
+        assert result["status"] == "error"
+        assert "rr trace already owns the target" in text(result["message"]).lower()
+        assert session_service.state.value == "failed"
+
+    @patch("gdb_mcp.session.factory.GdbController")
     @patch.dict(os.environ, {"GDB_PATH": "/custom/path/to/gdb"})
     def test_start_session_with_gdb_path_env_var(
         self,

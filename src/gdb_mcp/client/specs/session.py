@@ -38,6 +38,11 @@ def _configure_session_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--gdb-path")
     parser.add_argument("--working-dir")
     parser.add_argument("--core")
+    parser.add_argument(
+        "--rr-replay",
+        dest="rr_replay",
+        help="rr trace directory to replay (starts 'rr replay', enables reverse execution)",
+    )
 
 
 def _build_session_start(typed_input: SessionStartInput) -> dict[str, object]:

@@ -40,7 +40,13 @@ class ExecutionRunPayload(ExecutionWaitPolicy):
 
 
 class ExecutionControlPayload(ExecutionWaitPolicy):
-    pass
+    reverse: bool = Field(
+        False,
+        description=(
+            "Run this command backwards. Requires a target that can execute in reverse, "
+            "such as an 'rr replay' session or gdb's record mode."
+        ),
+    )
 
 
 class ExecutionWaitForStopPayload(StrictArgsModel):

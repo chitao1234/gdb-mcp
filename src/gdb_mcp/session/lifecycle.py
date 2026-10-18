@@ -70,12 +70,15 @@ class SessionLifecycleService:
         working_dir: str | None = None,
         core: str | None = None,
         endpoint: str | None = None,
+        rr_replay: str | None = None,
     ) -> OperationSuccess[SessionStartInfo] | OperationError:
         """Start a new GDB session.
 
         When ``endpoint`` is given the session connects to a GDB/MI stream that
         another process started (``tcp://``, ``unix://`` or ``pty://``) instead
-        of spawning its own ``gdb``.
+        of spawning its own ``gdb``. When ``rr_replay`` is given the session
+        spawns ``rr replay --interpreter=mi`` on that trace instead of a plain
+        ``gdb``.
         """
         with self._runtime.lifecycle_lock:
             if self._runtime.has_controller:
@@ -93,10 +96,27 @@ class SessionLifecycleService:
                 working_dir=working_dir,
                 core=core,
                 endpoint=endpoint,
+                rr_replay=rr_replay,
             )
             self._runtime.begin_startup(config)
 
             try:
+                if rr_replay and (program or args or core):
+                    message = (
+                        "An rr trace already owns the target; do not also pass program, "
+                        "args, or core when replaying a recording."
+                    )
+                    self._runtime.mark_failed(message)
+                    return OperationError(message=message)
+
+                if rr_replay and endpoint:
+                    message = (
+                        "An rr replay starts its own debugger; do not also pass endpoint, "
+                        "which expects an externally started GDB/MI stream."
+                    )
+                    self._runtime.mark_failed(message)
+                    return OperationError(message=message)
+
                 if endpoint and (program or args or core):
                     message = (
                         "An external endpoint already owns the target; do not also pass "
@@ -138,6 +158,8 @@ class SessionLifecycleService:
                         program=program,
                         args=args,
                         core=core,
+                        rr_replay=rr_replay,
+                        rr_path=self._runtime.os_module.environ.get("RR_PATH", "rr"),
                     )
                     self._runtime.transport.start(
                         command=gdb_command,
@@ -300,6 +322,7 @@ class SessionLifecycleService:
                         env_output=env_output or None,
                         init_output=init_output or None,
                         endpoint=endpoint,
+                        rr_replay=rr_replay,
                     )
                 )
 
@@ -369,8 +392,15 @@ class SessionLifecycleService:
         program: str | None,
         args: list[str] | None,
         core: str | None,
+        rr_replay: str | None = None,
+        rr_path: str = "rr",
     ) -> list[str]:
         """Build a GDB startup argv for the supported launch modes."""
+
+        if rr_replay:
+            # rr replays the trace itself, so it owns the target and chooses the
+            # gdb that speaks MI to us.
+            return [rr_path, "replay", "--interpreter=mi", "-d", gdb_path, rr_replay]
 
         command = [gdb_path, "--quiet", "--interpreter=mi"]
         if core:

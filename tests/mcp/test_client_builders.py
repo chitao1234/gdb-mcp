@@ -50,6 +50,7 @@ def test_parse_session_start_input_from_namespace() -> None:
         core=None,
         gdb_path=None,
         working_dir=None,
+        rr_replay=None,
     )
 
     assert parse_session_start_input(namespace) == SessionStartInput(
@@ -60,6 +61,7 @@ def test_parse_session_start_input_from_namespace() -> None:
         core=None,
         gdb_path=None,
         working_dir=None,
+        rr_replay=None,
     )
 
 
@@ -72,6 +74,7 @@ def test_build_session_start_payload_from_typed_input() -> None:
         core=None,
         gdb_path=None,
         working_dir=None,
+        rr_replay=None,
     )
 
     assert build_session_start_payload(typed_input) == {
@@ -148,6 +151,39 @@ def test_build_inferior_manage_detach_on_fork_defaults_enabled() -> None:
     }
 
 
+def test_build_execution_manage_payload_includes_reverse() -> None:
+    typed_input = ExecutionManageInput(
+        action="step",
+        session_id=7,
+        args=(),
+        wait_until="stop",
+        timeout_sec=None,
+        stop_reasons=(),
+        reverse=True,
+    )
+
+    assert build_execution_manage_payload(typed_input) == {
+        "session_id": 7,
+        "action": "step",
+        "execution": {"wait_until": "stop", "reverse": True},
+    }
+
+
+def test_build_session_start_payload_includes_rr_replay() -> None:
+    typed_input = SessionStartInput(
+        program=None,
+        args=(),
+        init_commands=(),
+        env=None,
+        core=None,
+        gdb_path=None,
+        working_dir=None,
+        rr_replay="/traces/app-0",
+    )
+
+    assert build_session_start_payload(typed_input) == {"rr_replay": "/traces/app-0"}
+
+
 def test_build_execution_manage_run_payload() -> None:
     typed_input = ExecutionManageInput(
         action="run",
@@ -156,6 +192,7 @@ def test_build_execution_manage_run_payload() -> None:
         wait_until="stop",
         timeout_sec=30,
         stop_reasons=(),
+        reverse=False,
     )
 
     assert build_execution_manage_payload(typed_input) == {
@@ -177,6 +214,7 @@ def test_build_execution_manage_wait_for_stop_preserves_explicit_zero_timeout() 
         wait_until=None,
         timeout_sec=0,
         stop_reasons=(),
+        reverse=False,
     )
 
     assert build_execution_manage_payload(typed_input) == {

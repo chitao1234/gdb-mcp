@@ -69,6 +69,7 @@ class SessionRegistry:
         working_dir: str | None = None,
         core: str | None = None,
         endpoint: str | None = None,
+        rr_replay: str | None = None,
     ) -> tuple[int | None, OperationSuccess[SessionStartInfo] | OperationError]:
         """
         Start a session and only publish it if startup succeeds.
@@ -88,6 +89,7 @@ class SessionRegistry:
             working_dir=working_dir,
             core=core,
             endpoint=endpoint,
+            rr_replay=rr_replay,
         )
 
         if isinstance(result, OperationError):
@@ -199,6 +201,7 @@ class SessionRegistry:
                 detach_on_fork=runtime.detach_on_fork,
                 last_failure_message=runtime.last_failure_message,
                 endpoint=config.endpoint if config is not None else None,
+                rr_replay=config.rr_replay if config is not None else None,
             )
 
     def close_session(self, session_id: int) -> OperationSuccess[SessionMessage] | OperationError:

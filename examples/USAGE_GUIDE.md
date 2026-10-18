@@ -640,6 +640,64 @@ Use `gdb_run_until_failure` instead of hand-written rerun loops:
 - If execution is still running, use `gdb_execution_manage(action="wait_for_stop")` or `gdb_execution_manage(action="interrupt")`
 - For long-running launches, prefer `gdb_execution_manage(action="run", execution.wait_until="acknowledged")`
 
+## Example Workflow: Reverse Debugging with rr
+
+### Goal
+
+Step backwards from a failure instead of reproducing it again.
+
+### Setup
+
+Record once, outside gdb-mcp:
+
+```bash
+rr record ./crashy_app --input data.txt
+# rr prints (or `rr ls` shows) the trace directory
+```
+
+### Step 1: Replay the recording
+
+```json
+{
+  "rr_replay": "/home/me/.local/share/rr/crashy_app-0"
+}
+```
+
+The trace owns the target, so do not pass `program`, `args`, or `core`.
+
+### Step 2: Stop at the failure
+
+```json
+{
+  "session_id": 1,
+  "action": "create",
+  "breakpoint": {"kind": "code", "location": "crash_site"}
+}
+```
+
+```json
+{"session_id": 1, "action": "continue"}
+```
+
+### Step 3: Walk backwards
+
+```json
+{
+  "session_id": 1,
+  "action": "step",
+  "execution": {"reverse": true}
+}
+```
+
+Then re-read the frame and locals after each reverse step:
+
+```json
+{"session_id": 1, "action": "frame", "query": {}}
+```
+
+`execution.reverse` works on any reversible target; a plain session returns a GDB
+error telling you the target cannot execute in reverse.
+
 ## Tips for Working with AI
 
 1. Be explicit about the executable, core dump, or PID.

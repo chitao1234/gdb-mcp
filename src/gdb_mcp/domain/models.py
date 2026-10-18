@@ -130,6 +130,7 @@ class SessionSummary:
     detach_on_fork: bool | None = None
     last_failure_message: str | None = None
     endpoint: str | None = None
+    rr_replay: str | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -156,6 +157,7 @@ class SessionStartInfo:
     env_output: list[StructuredPayload] | None = None
     init_output: list[StructuredPayload] | None = None
     endpoint: str | None = None
+    rr_replay: str | None = None
 
 
 @dataclass(slots=True, frozen=True)

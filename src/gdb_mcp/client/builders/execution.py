@@ -33,6 +33,8 @@ def build_execution_manage_payload(typed_input: ExecutionManageInput) -> dict[st
         execution_payload["wait_until"] = typed_input.wait_until
     if typed_input.timeout_sec is not None:
         execution_payload["timeout_sec"] = typed_input.timeout_sec
+    if typed_input.reverse:
+        execution_payload["reverse"] = True
 
     payload["execution"] = execution_payload
     return payload

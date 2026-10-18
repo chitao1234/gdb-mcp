@@ -63,6 +63,14 @@ class TestStartSessionArgs:
         args = StartSessionArgs(program="/bin/ls", args='--mode "fast path"')
         assert args.args == '--mode "fast path"'
 
+    def test_rr_replay_is_accepted(self) -> None:
+        """Startup should accept an rr trace to replay instead of a program."""
+
+        args = StartSessionArgs(rr_replay="/traces/app-0")
+
+        assert args.rr_replay == "/traces/app-0"
+        assert args.program is None
+
     def test_env_dict_validation(self) -> None:
         """Test that env accepts dictionary of strings."""
         args = StartSessionArgs(program="/bin/ls", env={"VAR1": "value1", "VAR2": "value2"})
@@ -257,6 +265,25 @@ class TestV2ActionArgs:
         assert execution.wait_until == "stop"
         assert execution.timeout_sec is None
         assert execution.args is None
+
+    def test_execution_continue_accepts_reverse_direction(self) -> None:
+        """Continue should accept a reverse direction flag."""
+
+        args = ExecutionManageArgs.model_validate(
+            {"session_id": 4, "action": "continue", "execution": {"reverse": True}}
+        )
+
+        execution = args.root.execution
+        assert isinstance(execution, ExecutionControlPayload)
+        assert execution.reverse is True
+
+    def test_execution_run_rejects_reverse_direction(self) -> None:
+        """Run has no reverse direction, so the flag is not part of its payload."""
+
+        with pytest.raises(ValidationError):
+            ExecutionManageArgs.model_validate(
+                {"session_id": 4, "action": "run", "execution": {"reverse": True}}
+            )
 
     def test_execution_continue_accepts_flattened_wait_fields(self) -> None:
         """Continue should accept wait_until and timeout_sec directly."""

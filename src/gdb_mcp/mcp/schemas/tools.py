@@ -74,8 +74,11 @@ def build_tool_definitions() -> list[Tool]:
                 "core (core dump path - uses --core flag for proper symbol resolution), "
                 "init_commands (GDB commands to run after environment setup), "
                 "env (environment variables applied before init_commands), gdb_path (GDB binary path), "
-                "working_dir (directory to run program from). "
-                "NOTE: 'args' and 'core' are mutually exclusive in one startup request. "
+                "working_dir (directory to run program from), "
+                "rr_replay (rr trace directory to replay with 'rr replay', which brings reverse "
+                "execution). "
+                "NOTE: 'args' and 'core' are mutually exclusive in one startup request, and "
+                "'rr_replay' cannot be combined with program, args, core, or endpoint. "
                 "The success response includes 'target_loaded' so callers can distinguish "
                 "between 'GDB started' and 'requested target actually loaded'. "
                 "IMPORTANT for core dump debugging: Set 'sysroot' and 'solib-search-path' AFTER "
@@ -136,7 +139,9 @@ def build_tool_definitions() -> list[Tool]:
             name=TOOL_EXECUTION_MANAGE,
             description=(
                 "Run, continue, interrupt, step, next, finish, or wait for stop events "
-                "using action-scoped execution payloads."
+                "using action-scoped execution payloads. Continue, step, next, and finish "
+                "accept 'reverse: true' to run backwards on a target that supports it "
+                "(an 'rr replay' session, or gdb's record mode)."
             ),
             inputSchema=public_input_schema(
                 ExecutionManageArgs,

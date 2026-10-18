@@ -164,6 +164,7 @@ class SessionService:
         working_dir: str | None = None,
         core: str | None = None,
         endpoint: str | None = None,
+        rr_replay: str | None = None,
     ) -> OperationSuccess[SessionStartInfo] | OperationError:
         """Delegate session startup to the lifecycle service."""
 
@@ -176,6 +177,7 @@ class SessionService:
             working_dir=working_dir,
             core=core,
             endpoint=endpoint,
+            rr_replay=rr_replay,
         )
 
     def stop(self) -> OperationSuccess[SessionMessage] | OperationError:
@@ -259,12 +261,14 @@ class SessionService:
         *,
         wait_for_stop: bool = True,
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate continue to the execution service."""
 
         return self._execution.continue_execution(
             wait_for_stop=wait_for_stop,
             timeout_sec=timeout_sec,
+            reverse=reverse,
         )
 
     def wait_for_stop(
@@ -285,12 +289,14 @@ class SessionService:
         *,
         wait_for_stop: bool = True,
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate single-step to the execution service."""
 
         return self._execution.step(
             wait_for_stop=wait_for_stop,
             timeout_sec=timeout_sec,
+            reverse=reverse,
         )
 
     def next(
@@ -298,12 +304,14 @@ class SessionService:
         *,
         wait_for_stop: bool = True,
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate next/step-over to the execution service."""
 
         return self._execution.next(
             wait_for_stop=wait_for_stop,
             timeout_sec=timeout_sec,
+            reverse=reverse,
         )
 
     def finish(
@@ -311,11 +319,13 @@ class SessionService:
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
         *,
         wait_for_stop: bool = True,
+        reverse: bool = False,
     ) -> OperationSuccess[FinishInfo] | OperationError:
         """Delegate finish/step-out to the execution service."""
 
         return self._execution.finish(
             timeout_sec=timeout_sec,
+            reverse=reverse,
             wait_for_stop=wait_for_stop,
         )
 

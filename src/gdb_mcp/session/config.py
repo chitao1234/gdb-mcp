@@ -15,6 +15,7 @@ class SessionConfig:
     working_dir: str | None = None
     core: str | None = None
     endpoint: str | None = None
+    rr_replay: str | None = None
 
     @classmethod
     def from_inputs(
@@ -28,6 +29,7 @@ class SessionConfig:
         working_dir: str | None = None,
         core: str | None = None,
         endpoint: str | None = None,
+        rr_replay: str | None = None,
     ) -> "SessionConfig":
         """Build an immutable session config from mutable API inputs."""
 
@@ -40,4 +42,5 @@ class SessionConfig:
             working_dir=working_dir,
             core=core,
             endpoint=endpoint,
+            rr_replay=rr_replay,
         )

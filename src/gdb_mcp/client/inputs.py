@@ -37,6 +37,7 @@ class SessionStartInput:
     core: str | None
     gdb_path: str | None
     working_dir: str | None
+    rr_replay: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +79,7 @@ class ExecutionManageInput:
     wait_until: ExecutionWaitUntil | None
     timeout_sec: int | None
     stop_reasons: tuple[str, ...]
+    reverse: bool
 
 
 @dataclass(frozen=True, slots=True)

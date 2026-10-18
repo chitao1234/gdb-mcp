@@ -62,6 +62,7 @@ def _handle_start_session(
         gdb_path=args.gdb_path,
         working_dir=args.working_dir,
         core=args.core,
+        rr_replay=args.rr_replay,
     )
     return _publish_session_result(session_id, result)
 

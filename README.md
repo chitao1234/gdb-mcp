@@ -157,6 +157,16 @@ gdb-mcp-server
 
 If both are present, `gdb_session_start.gdb_path` overrides `GDB_PATH`.
 
+### `RR_PATH`
+
+Overrides the `rr` binary used by `gdb_session_start(rr_replay=...)`. Defaults
+to `rr` on `PATH`.
+
+```bash
+export RR_PATH=/opt/rr/bin/rr
+gdb-mcp-client start --rr-replay ~/.local/share/rr/app-0
+```
+
 ### `GDB_MCP_LOG_LEVEL`
 
 Controls server logging.

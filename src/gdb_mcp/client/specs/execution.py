@@ -38,12 +38,16 @@ def _validate_execution_manage_input(typed_input: ExecutionManageInput) -> None:
             invalid_flags.append("--timeout-sec")
         if typed_input.stop_reasons:
             invalid_flags.append("--stop-reason")
+        if typed_input.reverse:
+            invalid_flags.append("--reverse")
     elif typed_input.action in {"continue", "step", "next", "finish"}:
         if typed_input.args:
             invalid_flags.append("--arg")
         if typed_input.stop_reasons:
             invalid_flags.append("--stop-reason")
     elif typed_input.action == "run":
+        if typed_input.reverse:
+            invalid_flags.append("--reverse")
         if typed_input.stop_reasons:
             invalid_flags.append("--stop-reason")
     elif typed_input.action == "wait_for_stop":
@@ -51,6 +55,8 @@ def _validate_execution_manage_input(typed_input: ExecutionManageInput) -> None:
             invalid_flags.append("--arg")
         if typed_input.wait_until is not None:
             invalid_flags.append("--wait-until")
+        if typed_input.reverse:
+            invalid_flags.append("--reverse")
 
     _raise_invalid_action_flags(typed_input.action, invalid_flags)
 
@@ -66,6 +72,11 @@ def _configure_execution_manage(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--timeout-sec", type=int, default=None)
     parser.add_argument("--stop-reason", dest="stop_reasons", action="append", default=None)
+    parser.add_argument(
+        "--reverse",
+        action="store_true",
+        help="Run the command backwards (rr replay or gdb record mode)",
+    )
 
 
 def _build_execution_manage(typed_input: ExecutionManageInput) -> dict[str, object]:

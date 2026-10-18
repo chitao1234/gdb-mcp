@@ -15,6 +15,7 @@ This file contains copy-ready payloads for the current v2 gdb-mcp interface. Use
 | Need source or assembly around a stop | `gdb_inspect_query(action="source" | "disassembly")` | `gdb_execution_manage(action="finish")`, `gdb_context_query(action="frame")`, focused register or variable reads |
 | Flaky crash reproduction | `gdb_run_until_failure` | `capture` bundle plus expression and memory snapshots |
 | Fork-heavy behavior | `gdb_inferior_manage(action="set_follow_fork_mode" | "set_detach_on_fork")`, `gdb_breakpoint_manage(action="create", breakpoint.kind="catch")` | `gdb_session_query(action="status")`, `gdb_inferior_query(action="list")`, `gdb_inferior_manage(action="select")` |
+| Reverse debugging an rr recording | `gdb_session_start` with `rr_replay`, then `gdb_execution_manage(action="continue" | "step" | "next" | "finish", execution.reverse=true)` | `gdb_context_query(action="frame")` after each reverse step; `gdb_execute_command("when")` for rr's own commands |
 | Manual inferior lifecycle | `gdb_inferior_manage(action="create")`, `gdb_inferior_query(action="list")`, `gdb_inferior_manage(action="select")` | `gdb_inferior_manage(action="remove")` |
 
 ## Startup Recipes
@@ -35,6 +36,22 @@ This file contains copy-ready payloads for the current v2 gdb-mcp interface. Use
   }
 }
 ```
+
+### Replay an rr Recording for Reverse Debugging
+
+```bash
+# outside gdb-mcp: record once
+rr record ./app --flag value
+```
+
+```json
+{
+  "rr_replay": "/home/me/.local/share/rr/app-0"
+}
+```
+
+The trace owns the target, so `program`, `args`, and `core` are rejected. Breakpoints,
+`continue`, and `execution.reverse` all work against the recording.
 
 ### Later Rerun with Different Args
 
@@ -455,6 +472,33 @@ Use `gdb_run_until_failure` to avoid ad-hoc loops:
 ```
 
 When you need a deterministic single output directory name, use `capture.bundle_name` instead of `bundle_name_prefix`.
+
+## Playbook 9: Reverse Debugging an rr Recording
+
+Use when a failure is rare and you want to step *backwards* from the crash instead of
+reproducing it repeatedly.
+
+```json
+{"rr_replay": "/home/me/.local/share/rr/app-0"}
+```
+
+1. `gdb_session_start` with `rr_replay` (record first: `rr record ./app`).
+2. `gdb_breakpoint_manage(action="create", breakpoint.location="crash_site")`.
+3. `gdb_execution_manage(action="continue")` to reach the failure.
+4. Inspect, then walk back: `gdb_execution_manage(action="step", execution.reverse=true)` or
+   `action="continue"` with `execution.reverse=true` to rewind to the previous stop.
+5. Re-read state after each reverse step: `gdb_context_query(action="frame")`,
+   `gdb_inspect_query(action="variables")`.
+6. rr-specific commands stay reachable through the escape hatch:
+   `gdb_execute_command("when")`, `gdb_execute_command("info record")`.
+
+Notes:
+
+- `reverse` requires a reversible target; on a plain session it returns a GDB error.
+- The recording already ran once, so `run` is not meaningful: continue from the trace's
+  current event.
+- The same `execution.reverse` flag works for a gdb recording started with
+  `gdb_execute_command("record")`.
 
 ## Escape Hatches
 

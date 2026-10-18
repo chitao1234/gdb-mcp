@@ -86,6 +86,7 @@ def parse_session_start_input(namespace: argparse.Namespace) -> SessionStartInpu
         core=namespace.core,
         gdb_path=namespace.gdb_path,
         working_dir=namespace.working_dir,
+        rr_replay=namespace.rr_replay,
     )
 
 
@@ -131,6 +132,7 @@ def parse_execution_manage_input(namespace: argparse.Namespace) -> ExecutionMana
         wait_until=cast(ExecutionWaitUntil | None, namespace.wait_until),
         timeout_sec=namespace.timeout_sec,
         stop_reasons=tuple(namespace.stop_reasons or ()),
+        reverse=bool(namespace.reverse),
     )
 
 

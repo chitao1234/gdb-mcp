@@ -107,6 +107,7 @@ class TestHandlerDispatch:
             gdb_path=None,
             working_dir=None,
             core=None,
+            rr_replay=None,
         )
 
     def test_start_session_failure_does_not_expose_session_id(self) -> None:
@@ -577,7 +578,28 @@ class TestSessionFailureContext:
         session.continue_execution.assert_called_once_with(
             wait_for_stop=False,
             timeout_sec=5,
+            reverse=False,
         )
+
+    def test_execution_manage_reverse_direction_reaches_the_session(self) -> None:
+        """A reverse request should be forwarded as reverse execution."""
+
+        manager = Mock()
+        session = _session_double()
+        session.step.return_value = OperationSuccess({"command": "-exec-step --reverse"})
+        manager.resolve_session.return_value = session
+
+        dispatch(
+            "gdb_execution_manage",
+            {
+                "session_id": 4,
+                "action": "step",
+                "execution": {"reverse": True, "wait_until": "stop"},
+            },
+            manager,
+        )
+
+        session.step.assert_called_once_with(wait_for_stop=True, timeout_sec=30, reverse=True)
 
     def test_finish_routes_to_execution_service(self) -> None:
         """Finish requests should forward timeout to the session execution API."""
@@ -597,7 +619,7 @@ class TestSessionFailureContext:
             manager,
         )
 
-        session.finish.assert_called_once_with(timeout_sec=9, wait_for_stop=True)
+        session.finish.assert_called_once_with(timeout_sec=9, wait_for_stop=True, reverse=False)
 
     def test_attach_process_routes_to_correct_session(self) -> None:
         """Attach requests should forward pid and timeout."""
@@ -1190,10 +1212,11 @@ class TestSessionFailureContext:
         )
 
         def continue_side_effect(
-            *, wait_for_stop: bool, timeout_sec: int
+            *, wait_for_stop: bool, timeout_sec: int, reverse: bool
         ) -> OperationSuccess[CommandExecutionInfo]:
             assert wait_for_stop is True
             assert timeout_sec == 30
+            assert reverse is False
             session.runtime.mark_inferior_paused("breakpoint-hit")
             stop_event = StopEvent(
                 execution_state="paused",
@@ -1251,7 +1274,9 @@ class TestSessionFailureContext:
             condition=None,
             temporary=False,
         )
-        session.continue_execution.assert_called_once_with(wait_for_stop=True, timeout_sec=30)
+        session.continue_execution.assert_called_once_with(
+            wait_for_stop=True, timeout_sec=30, reverse=False
+        )
 
     def test_workflow_batch_stops_on_first_error_by_default(self) -> None:
         """Fail-fast workflow batches should stop before executing later steps."""

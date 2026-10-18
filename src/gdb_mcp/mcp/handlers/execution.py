@@ -50,6 +50,7 @@ def _handle_execution_manage(session: SessionService, args: ExecutionManageArgs)
             return session.continue_execution(
                 wait_for_stop=wait_for_stop,
                 timeout_sec=timeout_sec,
+                reverse=action_args.execution.reverse,
             )
         case ExecutionInterruptAction():
             return session.interrupt()
@@ -60,6 +61,7 @@ def _handle_execution_manage(session: SessionService, args: ExecutionManageArgs)
             return session.step(
                 wait_for_stop=wait_for_stop,
                 timeout_sec=timeout_sec,
+                reverse=action_args.execution.reverse,
             )
         case ExecutionNextAction():
             timeout_sec, wait_for_stop = _execution_wait_policy(
@@ -68,6 +70,7 @@ def _handle_execution_manage(session: SessionService, args: ExecutionManageArgs)
             return session.next(
                 wait_for_stop=wait_for_stop,
                 timeout_sec=timeout_sec,
+                reverse=action_args.execution.reverse,
             )
         case ExecutionFinishAction():
             timeout_sec, wait_for_stop = _execution_wait_policy(
@@ -76,6 +79,7 @@ def _handle_execution_manage(session: SessionService, args: ExecutionManageArgs)
             return session.finish(
                 timeout_sec=timeout_sec,
                 wait_for_stop=wait_for_stop,
+                reverse=action_args.execution.reverse,
             )
         case ExecutionWaitForStopAction():
             return session.wait_for_stop(

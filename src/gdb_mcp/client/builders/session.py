@@ -23,6 +23,8 @@ def build_session_start_payload(typed_input: SessionStartInput) -> dict[str, obj
         payload["gdb_path"] = typed_input.gdb_path
     if typed_input.working_dir is not None:
         payload["working_dir"] = typed_input.working_dir
+    if typed_input.rr_replay is not None:
+        payload["rr_replay"] = typed_input.rr_replay
     return payload
 
 
