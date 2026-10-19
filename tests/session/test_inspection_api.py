@@ -736,6 +736,7 @@ class TestStructuredCodeInspectionApi:
         """Memory reads should surface captured blocks and byte counts."""
 
         session, controller = scripted_running_session(
+            [mi_result({"features": ["data-read-memory-bytes"]})],
             [
                 mi_result(
                     {
@@ -749,7 +750,7 @@ class TestStructuredCodeInspectionApi:
                         ]
                     }
                 )
-            ]
+            ],
         )
 
         result = result_to_mapping(session.read_memory("&value", 4, offset=1))
@@ -760,7 +761,79 @@ class TestStructuredCodeInspectionApi:
         assert result["offset"] == 1
         assert result["block_count"] == 1
         assert result["captured_bytes"] == 4
-        assert controller.decoded_writes[0].endswith('-data-read-memory-bytes -o 1 "&value" 4\n')
+        assert controller.decoded_writes[-1].endswith('-data-read-memory-bytes -o 1 "&value" 4\n')
+
+    def test_read_memory_falls_back_without_bytes_command(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
+        """GDB without `-data-read-memory-bytes` should read through the old table form."""
+
+        session, controller = scripted_running_session(
+            [mi_result({"features": ["thread-info"]})],
+            [
+                mi_result(
+                    {
+                        "addr": "0x1000",
+                        "nr-bytes": "4",
+                        "total-bytes": "4",
+                        "memory": [{"addr": "0x1000", "data": ["0x01", "0x02", "0x03", "0x04"]}],
+                    }
+                )
+            ],
+        )
+
+        result = result_to_mapping(session.read_memory("&value", 4))
+
+        assert result["status"] == "success"
+        assert result["captured_bytes"] == 4
+        assert result["block_count"] == 1
+        block = mapping_list(result["blocks"])[0]
+        assert block["contents"] == "01020304"
+        assert block["begin"] == "0x1000"
+        assert block["end"] == "0x1004"
+        assert controller.decoded_writes[-1].endswith('-data-read-memory "&value" x 1 1 4\n')
+
+    def test_read_memory_fallback_truncates_at_unreadable(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
+        """The legacy table stops at the first `N/A`, so only the readable prefix is kept."""
+
+        session, _controller = scripted_running_session(
+            [mi_result({"features": []})],
+            [
+                mi_result(
+                    {
+                        "addr": "0x2000",
+                        "nr-bytes": "2",
+                        "total-bytes": "4",
+                        "memory": [{"addr": "0x2000", "data": ["0xaa", "0xbb", "N/A", "0xcc"]}],
+                    }
+                )
+            ],
+        )
+
+        result = result_to_mapping(session.read_memory("&hole", 4))
+
+        assert result["status"] == "success"
+        assert result["captured_bytes"] == 2
+        assert mapping_list(result["blocks"])[0]["contents"] == "aabb"
+
+    def test_read_memory_capability_probe_is_cached(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
+        """The `-list-features` probe should run at most once per session."""
+
+        session, controller = scripted_running_session(
+            [mi_result({"features": ["data-read-memory-bytes"]})],
+            [mi_result({"memory": [{"begin": "0x1", "contents": "00"}]})],
+            [mi_result({"memory": [{"begin": "0x1", "contents": "00"}]})],
+        )
+
+        session.read_memory("&a", 1)
+        session.read_memory("&a", 1)
+
+        probes = [w for w in controller.decoded_writes if w.endswith("-list-features\n")]
+        assert len(probes) == 1
 
     def test_get_variables_restores_selection_on_frame_switch_error(
         self,

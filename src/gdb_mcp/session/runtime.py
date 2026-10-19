@@ -60,6 +60,9 @@ class SessionRuntime:
     # Whether this GDB supports `-data-disassemble -a` (GDB >= 8.3), probed via
     # `-list-features` the first time a whole-function disassembly is requested.
     disassemble_a_supported: bool | None = None
+    # Whether this GDB supports `-data-read-memory-bytes` (GDB >= 7.3), probed on
+    # the first memory read.
+    read_memory_bytes_supported: bool | None = None
     artifact_root: str | None = None
     last_stop_event: StopEvent | None = None
     stop_history: list[StopEvent] = field(default_factory=list)
@@ -120,6 +123,7 @@ class SessionRuntime:
         self.follow_fork_mode = None
         self.detach_on_fork = None
         self.disassemble_a_supported = None
+        self.read_memory_bytes_supported = None
 
     def mark_ready(self) -> None:
         """Mark the session as ready for requests."""

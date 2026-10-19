@@ -34,7 +34,7 @@ This server sits on top of it and adds:
 ## Requirements
 
 - Python 3.10 or newer
-- GDB 7.3 or newer on `PATH` (GDB with Python support is recommended, so
+- GDB 7.0 or newer on `PATH` (GDB with Python support is recommended, so
   toolchain pretty-printers can load)
 - Optional: `rr` for reverse debugging, `rust-gdb` or similar wrappers for
   language-specific pretty-printers

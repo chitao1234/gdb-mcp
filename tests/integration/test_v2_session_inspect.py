@@ -7,6 +7,7 @@ import subprocess
 import pytest
 
 from gdb_mcp.session.inspection.disassembly import InspectionDisassembly
+from gdb_mcp.session.inspection.memory import InspectionMemory
 from tests.support import dig, integer, mapping, mapping_list
 
 from .conftest import (
@@ -191,6 +192,40 @@ def test_memory_query_v2(session_id: int, call_gdb_tool: CallGdbTool) -> None:
         {"session_id": session_id, "action": "memory", "query": {"address": "&main", "count": 8}},
     )
     assert memory["status"] == "success"
+    assert memory["action"] == "memory"
+    assert integer(dig(memory, "result", "captured_bytes")) > 0
+
+
+@pytest.mark.integration
+def test_memory_fallback_without_bytes_command_v2(
+    session_id: int, call_gdb_tool: CallGdbTool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pre-7.3 memory fallback should work against a real GDB."""
+
+    monkeypatch.setattr(InspectionMemory, "_supports_read_memory_bytes", lambda self: False)
+
+    call_gdb_tool(
+        "gdb_breakpoint_manage",
+        {
+            "session_id": session_id,
+            "action": "create",
+            "breakpoint": {"kind": "code", "location": "main"},
+        },
+    )
+    call_gdb_tool(
+        "gdb_execution_manage",
+        {"session_id": session_id, "action": "run", "execution": {}},
+    )
+
+    memory = call_gdb_tool(
+        "gdb_inspect_query",
+        {
+            "session_id": session_id,
+            "action": "memory",
+            "query": {"address": "&main", "count": 8},
+        },
+    )
+    assert memory["status"] == "success", memory
     assert memory["action"] == "memory"
     assert integer(dig(memory, "result", "captured_bytes")) > 0
 
