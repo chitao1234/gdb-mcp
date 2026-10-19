@@ -57,7 +57,12 @@ class InspectRegistersQueryArgs(StrictArgsModel):
         default_factory=list, description="Optional register-name selectors"
     )
     include_vector_registers: bool = Field(
-        True, description="Whether to include vector/SIMD registers"
+        True,
+        description=(
+            "Whether to include vector/SIMD registers. When false, registers are "
+            "classified with the target architecture; explicit register_numbers or "
+            "register_names bypass the filter."
+        ),
     )
     max_registers: int | None = Field(None, gt=0, description="Optional maximum register count")
     value_format: RegisterValueFormat = Field("hex", description="Value rendering mode")

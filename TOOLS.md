@@ -602,6 +602,16 @@ Read program state without using raw debugger commands.
 - `max_registers`
 - `value_format`
 
+`include_vector_registers=false` classifies registers with the target
+architecture, inferred from the register names GDB reports. Filtered families:
+x86 `xmm/ymm/zmm/mm/k/tmm`; AArch64 `v/q/d/s/h/b` plus SVE `z/p/ffr` and SME
+`za/zt0`; ARM `d/s/q` and MVE `p0`; RISC-V `v`; PowerPC `vr/v/vs/cvr/cvs/ev`;
+s390 `v`; LoongArch `vr/xr`. Names that are not vector registers on some target
+(such as RISC-V `s0`) are never filtered, and control/status registers such as
+`mxcsr`, `vscr`, `fpsr`, and `fpcr` are kept. Explicit `register_numbers` or
+`register_names` are returned as requested and bypass the filter. When the
+architecture cannot be inferred, only unambiguous vector names are removed.
+
 ### Memory Notes
 
 - `blocks` carries only the readable memory. A request that spans unreadable
