@@ -161,7 +161,7 @@ class SessionCaptureService:
                 failed_sections.append("threads")
             elif isinstance(threads_result, OperationSuccess):
                 for thread in threads_result.value.threads:
-                    raw_id = as_text(thread.get("id"))
+                    raw_id = as_text(thread.id)
                     if raw_id is not None and raw_id.isdigit():
                         thread_ids.append(int(raw_id))
 

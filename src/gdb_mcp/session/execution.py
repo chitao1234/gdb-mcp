@@ -178,11 +178,11 @@ class SessionExecutionService:
         return OperationSuccess(
             InferiorAddInfo(
                 inferior_id=inferior_id,
-                is_current=bool(record.get("is_current", False)),
-                display=record.get("display"),
-                description=record.get("description"),
-                connection=record.get("connection"),
-                executable=record.get("executable"),
+                is_current=bool(record.is_current),
+                display=record.display,
+                description=record.description,
+                connection=record.connection,
+                executable=record.executable,
                 current_inferior_id=inventory_result.value.current_inferior_id,
                 inferior_count=inventory_result.value.count,
                 message=f"Inferior {inferior_id} added",
@@ -825,6 +825,6 @@ class SessionExecutionService:
         """Return one inferior record by numeric ID."""
 
         return next(
-            (record for record in payload.inferiors if record.get("inferior_id") == inferior_id),
+            (record for record in payload.inferiors if record.inferior_id == inferior_id),
             None,
         )

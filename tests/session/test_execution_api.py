@@ -75,7 +75,7 @@ class TestExecutionApi:
         assert stop_event.breakpoint_number == "1"
         assert stop_event.command == "-exec-continue"
         assert stop_event.frame is not None
-        assert stop_event.frame["func"] == "main"
+        assert stop_event.frame.func == "main"
         assert session.runtime.stop_history[-1] == stop_event
         transcript_entry = session.command_transcript[-1]
         assert transcript_entry.command == "-exec-continue"

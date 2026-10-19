@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from typing import Literal
 
 from ...domain import (
@@ -11,7 +12,7 @@ from ...domain import (
     OperationError,
     OperationSuccess,
 )
-from ...domain.parsing import as_int, as_text_or_number
+from ...domain.parsing import as_int, as_optional_mapping, as_text_or_number
 from ...transport import (
     extract_mi_result_payload,
     quote_mi_string,
@@ -268,13 +269,13 @@ class InspectionDisassembly:
 
     def _normalize_disassembly_payload(
         self,
-        payload: object,
+        payload: Mapping[str, object] | None,
         *,
         current_address: str | None,
     ) -> list[DisassemblyInstructionRecord]:
         """Flatten MI disassembly payloads into stable instruction records."""
 
-        if not isinstance(payload, dict):
+        if payload is None:
             return []
 
         raw_instructions = payload.get("asm_insns")
@@ -283,17 +284,21 @@ class InspectionDisassembly:
 
         instructions: list[DisassemblyInstructionRecord] = []
         for entry in raw_instructions:
-            if not isinstance(entry, dict):
+            entry_payload = as_optional_mapping(entry)
+            if entry_payload is None:
                 continue
 
-            nested = entry.get("line_asm_insn")
+            nested = entry_payload.get("line_asm_insn")
             if isinstance(nested, list):
-                line = as_int(entry.get("line"))
-                file = as_text_or_number(entry.get("file"))
-                fullname = as_text_or_number(entry.get("fullname"))
+                line = as_int(entry_payload.get("line"))
+                file = as_text_or_number(entry_payload.get("file"))
+                fullname = as_text_or_number(entry_payload.get("fullname"))
                 for raw_instruction in nested:
+                    instruction_payload = as_optional_mapping(raw_instruction)
+                    if instruction_payload is None:
+                        continue
                     record = self._normalize_disassembly_instruction(
-                        raw_instruction,
+                        instruction_payload,
                         file=file,
                         fullname=fullname,
                         line=line,
@@ -304,7 +309,7 @@ class InspectionDisassembly:
                 continue
 
             record = self._normalize_disassembly_instruction(
-                entry,
+                entry_payload,
                 file=None,
                 fullname=None,
                 line=None,
@@ -317,7 +322,7 @@ class InspectionDisassembly:
 
     def _normalize_disassembly_instruction(
         self,
-        payload: object,
+        payload: Mapping[str, object],
         *,
         file: str | None,
         fullname: str | None,
@@ -326,15 +331,12 @@ class InspectionDisassembly:
     ) -> DisassemblyInstructionRecord | None:
         """Normalize one MI disassembly instruction record."""
 
-        if not isinstance(payload, dict):
-            return None
-
         address = as_text_or_number(payload.get("address"))
         instruction = as_text_or_number(payload.get("inst"))
         if address is None or instruction is None:
             return None
 
-        record: DisassemblyInstructionRecord = {
+        record: dict[str, object] = {
             "address": address,
             "instruction": instruction,
         }
@@ -357,7 +359,7 @@ class InspectionDisassembly:
             record["line"] = line
         if current_address is not None and self._addresses_equal(address, current_address):
             record["is_current"] = True
-        return record
+        return DisassemblyInstructionRecord.from_payload(record)
 
     @staticmethod
     def _first_instruction_address(
@@ -367,7 +369,7 @@ class InspectionDisassembly:
 
         if not instructions:
             return None
-        address = instructions[0].get("address")
+        address = instructions[0].address
         return address if isinstance(address, str) else None
 
     @staticmethod
@@ -378,7 +380,7 @@ class InspectionDisassembly:
 
         if not instructions:
             return None
-        address = instructions[-1].get("address")
+        address = instructions[-1].address
         return address if isinstance(address, str) else None
 
     @staticmethod
@@ -388,7 +390,7 @@ class InspectionDisassembly:
         """Return the first function label present in the instruction list."""
 
         for instruction in instructions:
-            function = instruction.get("function")
+            function = instruction.function
             if isinstance(function, str):
                 return function
         return None
@@ -400,7 +402,7 @@ class InspectionDisassembly:
         """Return the first source file present in the instruction list."""
 
         for instruction in instructions:
-            file = instruction.get("file")
+            file = instruction.file
             if isinstance(file, str):
                 return file
         return None
@@ -412,7 +414,7 @@ class InspectionDisassembly:
         """Return the first full source path present in the instruction list."""
 
         for instruction in instructions:
-            fullname = instruction.get("fullname")
+            fullname = instruction.fullname
             if isinstance(fullname, str):
                 return fullname
         return None
@@ -424,7 +426,7 @@ class InspectionDisassembly:
         """Return the first source line present in the instruction list."""
 
         for instruction in instructions:
-            line = instruction.get("line")
+            line = instruction.line
             if isinstance(line, int):
                 return line
         return None

@@ -47,13 +47,18 @@ debugger is behind the session:
 - `enabled` (breakpoints) is a boolean; GDB reports `y`/`n`
 - `times` (breakpoints) is an integer hit count; GDB reports a string
 - `level` (frames) is an integer; GDB reports a string
+- `number` (registers) is an integer index; GDB reports a string
 - `stop_kind` accompanies every `stop_reason` (and `final_stop_kind` every
   `final_stop_reason`) with the canonical meaning: `breakpoint`, `watchpoint`,
   `step`, `signal`, `exception`, `exit`, `entry`, `pause`, or `unknown`. The
   debugger's own `stop_reason` string is kept as-is; `stop_reasons` request
   filters keep matching that native string
 
-A value that cannot be converted is passed through unchanged rather than dropped.
+A field that is not declared is passed through unchanged, so a debugger-specific
+field always reaches the caller. A declared field always carries its declared
+type: a payload value that contradicts the debugger's own grammar (a flag that is
+neither `y` nor `n`, a count that is not a number) fails the command rather than
+being converted to a plausible value.
 
 ### Direct Success Payloads
 

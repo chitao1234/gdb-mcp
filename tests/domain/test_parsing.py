@@ -31,7 +31,9 @@ def test_frame_info_reports_an_absent_frame_as_none() -> None:
     """A payload with no frame must not be indistinguishable from an empty frame."""
 
     assert frame_info_from_payload({}).frame is None
-    assert frame_info_from_payload({"frame": {}}).frame == {}
+    empty_frame = frame_info_from_payload({"frame": {}}).frame
+    assert empty_frame is not None
+    assert empty_frame.to_payload() == {}
 
 
 def test_as_record_list_keeps_only_mappings(caplog: pytest.LogCaptureFixture) -> None:

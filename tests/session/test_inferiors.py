@@ -33,16 +33,17 @@ def test_parses_connection_column() -> None:
 
     assert payload.count == 2
     assert payload.current_inferior_id == 1
-    first, second = (dict(record) for record in payload.inferiors)
-    assert first["inferior_id"] == 1
-    assert first["is_current"] is True
-    assert first["description"] == "process 4242"
-    assert first["connection"] == "1 (native)"
-    assert first["executable"] == "/tmp/app"
-    assert second["is_current"] is False
-    assert second["description"] == "<null>"
-    assert second["connection"] == "1 (native)"
-    assert "executable" not in second
+    first, second = payload.inferiors
+    assert first.inferior_id == 1
+    assert first.is_current is True
+    assert first.description == "process 4242"
+    assert first.connection == "1 (native)"
+    assert first.executable == "/tmp/app"
+    assert second.is_current is False
+    assert second.description == "<null>"
+    assert second.connection == "1 (native)"
+    assert second.executable is None
+    assert "executable" not in second.to_payload()
 
 
 def test_parses_executable_without_connection() -> None:
@@ -50,12 +51,13 @@ def test_parses_executable_without_connection() -> None:
         _LEGACY_EXEC_HEADER + "".join(_LEGACY_EXEC_ROWS), current_inferior_id=None
     )
 
-    first = dict(payload.inferiors[0])
-    assert first["inferior_id"] == 1
-    assert first["is_current"] is True
-    assert first["description"] == "process 1803825"
-    assert first["executable"] == "/tmp/app"
-    assert "connection" not in first
+    first = payload.inferiors[0]
+    assert first.inferior_id == 1
+    assert first.is_current is True
+    assert first.description == "process 1803825"
+    assert first.executable == "/tmp/app"
+    assert first.connection is None
+    assert "connection" not in first.to_payload()
 
 
 def test_parses_bare_header() -> None:
@@ -63,12 +65,12 @@ def test_parses_bare_header() -> None:
         _LEGACY_BARE_HEADER + "".join(_LEGACY_BARE_ROWS), current_inferior_id=None
     )
 
-    first = dict(payload.inferiors[0])
-    assert first["inferior_id"] == 1
-    assert first["is_current"] is True
-    assert first["description"] == "process 4242"
-    assert "connection" not in first
-    assert "executable" not in first
+    first = payload.inferiors[0]
+    assert first.inferior_id == 1
+    assert first.is_current is True
+    assert first.description == "process 4242"
+    assert "connection" not in first.to_payload()
+    assert "executable" not in first.to_payload()
 
 
 def test_parses_stripped_output() -> None:
@@ -78,17 +80,17 @@ def test_parses_stripped_output() -> None:
         (_MODERN_HEADER + "".join(_MODERN_ROWS)).strip(), current_inferior_id=None
     )
 
-    first = dict(payload.inferiors[0])
-    assert first["inferior_id"] == 1
-    assert first["is_current"] is True
-    assert first["executable"] == "/tmp/app"
+    first = payload.inferiors[0]
+    assert first.inferior_id == 1
+    assert first.is_current is True
+    assert first.executable == "/tmp/app"
 
 
 def test_parses_executable_containing_spaces() -> None:
     output = _MODERN_HEADER + "* 1    process 5         1 (native)           /opt/my app/bin \n"
 
-    first = dict(parse_inferiors_output(output, current_inferior_id=None).inferiors[0])
-    assert first["executable"] == "/opt/my app/bin"
+    first = parse_inferiors_output(output, current_inferior_id=None).inferiors[0]
+    assert first.executable == "/opt/my app/bin"
 
 
 def test_reports_known_current_when_no_marker() -> None:
@@ -97,7 +99,7 @@ def test_reports_known_current_when_no_marker() -> None:
     payload = parse_inferiors_output(output, current_inferior_id=7)
 
     assert payload.current_inferior_id == 7
-    assert payload.inferiors[0]["is_current"] is False
+    assert payload.inferiors[0].is_current is False
 
 
 def test_no_inferiors_outputs_empty_inventory() -> None:

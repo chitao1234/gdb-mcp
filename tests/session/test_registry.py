@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, Mock
 import pytest
 
 from gdb_mcp.domain import (
+    InferiorStateRecord,
     OperationError,
     OperationSuccess,
     SessionListInfo,
@@ -258,20 +259,17 @@ class TestSessionRegistry:
             last_failure_message=None,
         )
         session.runtime.inferiors_state_summary.return_value = [
-            {
-                "inferior_id": 1,
-                "is_current": True,
-                "execution_state": "paused",
-                "stop_reason": "breakpoint-hit",
-                "exit_code": None,
-            },
-            {
-                "inferior_id": 2,
-                "is_current": False,
-                "execution_state": "running",
-                "stop_reason": None,
-                "exit_code": None,
-            },
+            InferiorStateRecord(
+                inferior_id=1,
+                is_current=True,
+                execution_state="paused",
+                stop_reason="breakpoint-hit",
+            ),
+            InferiorStateRecord(
+                inferior_id=2,
+                is_current=False,
+                execution_state="running",
+            ),
         ]
         manager = SessionRegistry(session_factory=lambda: session)
 
@@ -291,8 +289,8 @@ class TestSessionRegistry:
         assert summary.current_inferior_id == 1
         assert summary.inferior_count == 2
         assert summary.inferior_states is not None
-        assert summary.inferior_states[0]["inferior_id"] == 1
-        assert summary.inferior_states[1]["execution_state"] == "running"
+        assert summary.inferior_states[0].inferior_id == 1
+        assert summary.inferior_states[1].execution_state == "running"
         assert summary.follow_fork_mode == "child"
         assert summary.detach_on_fork is False
 

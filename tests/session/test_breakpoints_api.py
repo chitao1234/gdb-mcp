@@ -34,7 +34,9 @@ class _StubBreakpointService(SessionBreakpointService):
 def test_insert_blocked_warning_omits_unknown_breakpoint_number() -> None:
     """A blocked insert whose created record lacks a number must not print None."""
 
-    service = _StubBreakpointService([{"original-location": "start", "type": "breakpoint"}])
+    service = _StubBreakpointService(
+        [BreakpointRecord.from_payload({"original-location": "start", "type": "breakpoint"})]
+    )
     error = OperationError(
         message="Cannot insert breakpoint 1.\nCannot access memory at address 0x0\n"
     )

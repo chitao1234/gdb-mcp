@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping
 
 from ..domain import (
     BreakpointInfo,
@@ -20,6 +21,7 @@ from ..domain import (
     payload_to_mapping,
     result_to_mapping,
 )
+from ..domain.parsing import as_int, as_optional_mapping
 from ..transport import extract_mi_result_payload, quote_mi_string
 from .command_runner import SessionCommandRunner
 from .constants import DEFAULT_TIMEOUT_SEC
@@ -468,7 +470,7 @@ class SessionBreakpointService:
 
         numbers: set[int] = set()
         for breakpoint_info in list_result.value.breakpoints:
-            breakpoint_type = str(breakpoint_info.get("type", "")).lower()
+            breakpoint_type = str(breakpoint_info.type or "").lower()
             if "catch" not in breakpoint_type:
                 continue
             number = self._extract_breakpoint_number(breakpoint_info)
@@ -512,38 +514,45 @@ class SessionBreakpointService:
 
         wanted = _normalize_location(location)
         for breakpoint_info in breakpoints:
-            stored = breakpoint_info.get("original-location")
+            stored = breakpoint_info.original_location
             if isinstance(stored, str) and _normalize_location(stored) == wanted:
                 return breakpoint_info
         return None
 
     @staticmethod
-    def _extract_breakpoint_number(payload: object) -> int | None:
-        """Extract a breakpoint number from a raw breakpoint-like payload."""
+    def _extract_breakpoint_number(
+        source: BreakpointRecord | Mapping[str, object],
+    ) -> int | None:
+        """Extract a breakpoint number from a record or a raw payload."""
 
-        raw_number = breakpoint_record(payload).get("number")
-        if isinstance(raw_number, int):
-            return raw_number
-        if isinstance(raw_number, str) and raw_number.isdigit():
-            return int(raw_number)
-        return None
+        raw_number = (
+            source.number
+            if isinstance(source, BreakpointRecord)
+            else breakpoint_record(source).number
+        )
+        return as_int(raw_number)
 
     @classmethod
-    def _extract_created_breakpoint_number(cls, payload: object) -> int | None:
-        """Extract the created breakpoint number from MI result payloads."""
+    def _extract_created_breakpoint_number(
+        cls,
+        payload: Mapping[str, object] | None,
+    ) -> int | None:
+        """Extract the created breakpoint number from an MI result payload."""
 
-        raw_mapping = breakpoint_record(payload)
-        number = cls._extract_breakpoint_number(raw_mapping)
+        if payload is None:
+            return None
+
+        number = cls._extract_breakpoint_number(payload)
         if number is not None:
             return number
 
-        if isinstance(payload, dict):
-            for key in ("wpt", "awpt", "hw-awpt", "hw-rwpt"):
-                watchpoint = payload.get(key)
-                if isinstance(watchpoint, dict):
-                    number = cls._extract_breakpoint_number(watchpoint)
-                    if number is not None:
-                        return number
+        for key in ("wpt", "awpt", "hw-awpt", "hw-rwpt"):
+            watchpoint = as_optional_mapping(payload.get(key))
+            if watchpoint is None:
+                continue
+            number = cls._extract_breakpoint_number(watchpoint)
+            if number is not None:
+                return number
 
         return None
 

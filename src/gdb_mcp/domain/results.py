@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, fields, is_dataclass
 from typing import Generic, TypeVar, cast
 
+from pydantic import BaseModel
+
 from .models import JsonObject, JsonValue, StructuredPayload
 
 PayloadT_co = TypeVar("PayloadT_co", covariant=True)
@@ -42,6 +44,10 @@ def payload_to_mapping(value: object) -> JsonValue:
 
     if is_dataclass(value) and not isinstance(value, type):
         return {info.name: payload_to_mapping(getattr(value, info.name)) for info in fields(value)}
+    if isinstance(value, BaseModel):
+        return payload_to_mapping(
+            value.model_dump(by_alias=True, exclude_unset=True, warnings=False)
+        )
     if isinstance(value, Mapping):
         payload: JsonObject = {}
         for key, item in value.items():

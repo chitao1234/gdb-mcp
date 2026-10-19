@@ -11,7 +11,7 @@ class MiNotifyRecord(TypedDict):
     """Normalized async notification record."""
 
     message: str | None
-    payload: object
+    payload: Mapping[str, object] | None
 
 
 @dataclass(slots=True)
@@ -21,7 +21,7 @@ class ParsedMiResponse:
     console: list[object] = field(default_factory=list)
     log: list[object] = field(default_factory=list)
     output: list[object] = field(default_factory=list)
-    result: object | None = None
+    result: Mapping[str, object] | None = None
     result_class: str | None = None
     notify: list[MiNotifyRecord] = field(default_factory=list)
 

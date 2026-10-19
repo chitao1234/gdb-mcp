@@ -45,7 +45,7 @@ def _handle_breakpoint_query(session: SessionService, args: BreakpointQueryArgs)
 
             filtered_breakpoints = []
             for breakpoint_info in result.value.breakpoints:
-                breakpoint_type = str(breakpoint_info.get("type", "")).lower()
+                breakpoint_type = str(breakpoint_info.type or "").lower()
                 breakpoint_kind = "code"
                 if "watch" in breakpoint_type:
                     breakpoint_kind = "watch"
@@ -55,7 +55,7 @@ def _handle_breakpoint_query(session: SessionService, args: BreakpointQueryArgs)
                 if kinds and breakpoint_kind not in kinds:
                     continue
 
-                is_enabled = breakpoint_info.get("enabled") is True
+                is_enabled = breakpoint_info.enabled is True
                 if enabled_filter is not None and is_enabled != enabled_filter:
                     continue
 

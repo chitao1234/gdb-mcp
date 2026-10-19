@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import cast
-
 from ...domain import (
     InferiorListInfo,
     InferiorRecord,
@@ -79,7 +77,7 @@ class InspectionInferiorState:
             (
                 record
                 for record in inventory_result.value.inferiors
-                if record.get("inferior_id") == inferior_id
+                if record.inferior_id == inferior_id
             ),
             None,
         )
@@ -108,15 +106,15 @@ class InspectionInferiorState:
     def _inferior_selection_info(record: InferiorRecord) -> InferiorSelectionInfo:
         """Convert one inferior record into a selection response."""
 
-        inferior_id = record.get("inferior_id", 0)
-        display = record.get("display")
-        description = record.get("description")
-        connection = record.get("connection")
-        executable = record.get("executable")
+        inferior_id = record.inferior_id if record.inferior_id is not None else 0
+        display = record.display
+        description = record.description
+        connection = record.connection
+        executable = record.executable
 
         return InferiorSelectionInfo(
             inferior_id=inferior_id,
-            is_current=bool(record.get("is_current", False)),
+            is_current=bool(record.is_current),
             display=display,
             description=description,
             connection=connection,
@@ -133,36 +131,34 @@ class InspectionInferiorState:
         """Attach runtime execution-state metadata to listed inferiors when known."""
 
         state_by_inferior = {
-            record["inferior_id"]: record
+            record.inferior_id: record
             for record in self._runtime.inferiors_state_summary()
-            if isinstance(record.get("inferior_id"), int)
+            if isinstance(record.inferior_id, int)
         }
 
         enriched: list[InferiorRecord] = []
         for inferior in inferiors:
-            inferior_id = inferior.get("inferior_id")
+            inferior_id = inferior.inferior_id
             if not isinstance(inferior_id, int):
-                enriched.append(cast(InferiorRecord, dict(inferior)))
+                enriched.append(inferior)
                 continue
 
             state_record = state_by_inferior.get(inferior_id)
             if state_record is None:
-                enriched.append(cast(InferiorRecord, dict(inferior)))
+                enriched.append(inferior)
                 continue
 
-            enriched_record = cast(InferiorRecord, dict(inferior))
-            execution_state = state_record.get("execution_state")
+            update: dict[str, object] = {}
+            execution_state = state_record.execution_state
             if isinstance(execution_state, str):
-                enriched_record["execution_state"] = execution_state
+                update["execution_state"] = execution_state
             stop_reason_value = (
-                str(state_record["stop_reason"])
-                if isinstance(state_record.get("stop_reason"), str)
-                else None
+                state_record.stop_reason if isinstance(state_record.stop_reason, str) else None
             )
-            enriched_record["stop_reason"] = stop_reason_value
-            enriched_record["stop_kind"] = stop_kind_from_reason(stop_reason_value)
-            exit_code = state_record.get("exit_code")
-            enriched_record["exit_code"] = int(exit_code) if isinstance(exit_code, int) else None
-            enriched.append(enriched_record)
+            update["stop_reason"] = stop_reason_value
+            update["stop_kind"] = stop_kind_from_reason(stop_reason_value)
+            exit_code = state_record.exit_code
+            update["exit_code"] = int(exit_code) if isinstance(exit_code, int) else None
+            enriched.append(inferior.model_copy(update=update))
 
         return enriched

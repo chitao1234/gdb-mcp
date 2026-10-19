@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from ...domain import (
     ExpressionValueInfo,
     MemoryBlockRecord,
@@ -10,7 +12,7 @@ from ...domain import (
     OperationSuccess,
     memory_block_records,
 )
-from ...domain.parsing import as_text
+from ...domain.parsing import as_record_list, as_text
 from ...transport import (
     build_evaluate_expression_command,
     build_read_memory_command,
@@ -26,23 +28,19 @@ from .base import (
 _FEATURE_READ_MEMORY_BYTES = "data-read-memory-bytes"
 
 
-def _legacy_memory_contents(payload: object) -> str:
+def _legacy_memory_contents(payload: Mapping[str, object] | None) -> str:
     """Flatten a `-data-read-memory` table into one hex string.
 
     That command performs a single read and marks every byte behind the first
     unreadable one `N/A`, so the readable prefix is all the data there is.
     """
 
-    if not isinstance(payload, dict):
+    if payload is None:
         return ""
-    rows = payload.get("memory")
-    if not isinstance(rows, list):
-        return ""
+    rows = as_record_list(payload.get("memory"))
 
     parts: list[str] = []
     for row in rows:
-        if not isinstance(row, dict):
-            continue
         values = row.get("data")
         if not isinstance(values, list):
             continue
@@ -54,18 +52,21 @@ def _legacy_memory_contents(payload: object) -> str:
     return "".join(parts)
 
 
-def _legacy_memory_block(payload: object, contents: str) -> MemoryBlockRecord:
+def _legacy_memory_block(
+    payload: Mapping[str, object] | None,
+    contents: str,
+) -> MemoryBlockRecord:
     """Build one bytes-style block from a `-data-read-memory` payload."""
 
     block: dict[str, object] = {"offset": "0x0", "contents": contents}
-    start = as_text(payload.get("addr")) if isinstance(payload, dict) else None
+    start = as_text(payload.get("addr")) if payload is not None else None
     if start is not None:
         block["begin"] = start
         try:
             block["end"] = hex(int(start, 16) + len(contents) // 2)
         except ValueError:
             pass
-    return block
+    return MemoryBlockRecord.from_payload(block)
 
 
 def _read_memory_warnings(info: MemoryReadInfo) -> tuple[str, ...]:
@@ -172,7 +173,7 @@ class InspectionMemory:
 
         payload = extract_mi_result_payload(command_result_payload(result))
         blocks = memory_block_records(payload)
-        captured_bytes = sum(len(as_text(block.get("contents")) or "") // 2 for block in blocks)
+        captured_bytes = sum(len(block.contents or "") // 2 for block in blocks)
         return OperationSuccess(
             MemoryReadInfo(
                 address=address,
@@ -233,7 +234,7 @@ class InspectionMemory:
         supported = False
         if isinstance(result, OperationSuccess):
             payload = extract_mi_result_payload(command_result_payload(result))
-            if isinstance(payload, dict):
+            if payload is not None:
                 features = payload.get("features")
                 if isinstance(features, list):
                     supported = _FEATURE_READ_MEMORY_BYTES in features

@@ -23,10 +23,19 @@ from gdb_mcp.domain import (
     ThreadListInfo,
     VariablesInfo,
 )
+from gdb_mcp.domain.adapters import (
+    frame_record,
+    memory_block_records,
+    register_records,
+    thread_records,
+    variable_records,
+)
 from gdb_mcp.session.capture import DEFAULT_CAPTURE_MEMORY_MAX_RANGE_BYTES
 from gdb_mcp.session.service import SessionService
 
-_FRAME = {"level": "0", "func": "main", "file": "app.c", "line": "10"}
+# The fixtures are the MI-shaped payloads a session produces; the adapters turn
+# them into the records a service hands back.
+_FRAME = frame_record({"level": "0", "func": "main", "file": "app.c", "line": "10"})
 
 
 def _stub_bundle_sections(
@@ -53,7 +62,7 @@ def _stub_bundle_sections(
         ),
         "get_threads": lambda: OperationSuccess(
             ThreadListInfo(
-                threads=[{"id": "1", "state": "stopped"}],
+                threads=thread_records({"threads": [{"id": "1", "state": "stopped"}]}),
                 current_thread_id="1",
                 count=1,
             )
@@ -64,11 +73,15 @@ def _stub_bundle_sections(
         "get_frame_info": lambda: OperationSuccess(FrameInfo(frame=_FRAME)),
         "get_variables": lambda thread_id=None, frame=0: OperationSuccess(
             VariablesInfo(
-                thread_id=thread_id, frame=frame, variables=[{"name": "value", "value": "5"}]
+                thread_id=thread_id,
+                frame=frame,
+                variables=variable_records({"variables": [{"name": "value", "value": "5"}]}),
             )
         ),
         "get_registers": lambda thread_id=None, frame=None: OperationSuccess(
-            RegistersInfo(registers=[{"number": "0", "value": "0x1"}])
+            RegistersInfo(
+                registers=register_records({"register-values": [{"number": "0", "value": "0x1"}]})
+            )
         ),
         "evaluate_expression": lambda expression, thread_id=None, frame=None: OperationSuccess(
             ExpressionValueInfo(expression=expression, value="5")
@@ -78,14 +91,18 @@ def _stub_bundle_sections(
                 address=address,
                 count=count,
                 offset=offset,
-                blocks=[
+                blocks=memory_block_records(
                     {
-                        "begin": "0x1000",
-                        "offset": "0x0",
-                        "end": "0x1004",
-                        "contents": "01020304",
+                        "memory": [
+                            {
+                                "begin": "0x1000",
+                                "offset": "0x0",
+                                "end": "0x1004",
+                                "contents": "01020304",
+                            }
+                        ]
                     }
-                ],
+                ),
                 block_count=1,
                 captured_bytes=4,
             )

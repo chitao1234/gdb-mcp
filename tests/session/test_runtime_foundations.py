@@ -83,11 +83,11 @@ class TestRuntimeFoundations:
 
         summaries = runtime.inferiors_state_summary()
         assert len(summaries) == 2
-        assert summaries[0]["inferior_id"] == 1
-        assert summaries[0]["execution_state"] == "paused"
-        assert summaries[1]["inferior_id"] == 2
-        assert summaries[1]["execution_state"] == "exited"
-        assert summaries[1]["is_current"] is True
+        assert summaries[0].inferior_id == 1
+        assert summaries[0].execution_state == "paused"
+        assert summaries[1].inferior_id == 2
+        assert summaries[1].execution_state == "exited"
+        assert summaries[1].is_current is True
 
     def test_update_inferior_inventory_reconciles_state_map(
         self, session_service: SessionService
@@ -105,8 +105,8 @@ class TestRuntimeFoundations:
 
         summaries = runtime.inferiors_state_summary()
         assert len(summaries) == 1
-        assert summaries[0]["inferior_id"] == 1
-        assert summaries[0]["execution_state"] == "paused"
+        assert summaries[0].inferior_id == 1
+        assert summaries[0].execution_state == "paused"
 
     def test_remove_inferior_reselects_remaining_state(
         self, session_service: SessionService
@@ -123,7 +123,7 @@ class TestRuntimeFoundations:
         assert runtime.current_inferior_id == 1
         assert runtime.execution_state == "running"
         summaries = runtime.inferiors_state_summary()
-        assert [record["inferior_id"] for record in summaries] == [1]
+        assert [record.inferior_id for record in summaries] == [1]
 
     def test_ensure_inferior_allocates_state_and_count(
         self, session_service: SessionService
@@ -136,7 +136,7 @@ class TestRuntimeFoundations:
         runtime.ensure_inferior(3)
 
         summaries = runtime.inferiors_state_summary()
-        assert [record["inferior_id"] for record in summaries] == [1, 3]
+        assert [record.inferior_id for record in summaries] == [1, 3]
         assert runtime.inferior_count == 2
         assert runtime.current_inferior_id == 1
 

@@ -13,7 +13,6 @@ from ...domain import (
     registers_info_from_payload,
     variables_info_from_payload,
 )
-from ...domain.parsing import as_int
 from ...transport import (
     extract_mi_result_payload,
 )
@@ -248,7 +247,7 @@ class InspectionVariables:
 
         filtered: list[RegisterRecord] = []
         for register in registers:
-            number = as_int(register.get("number"))
+            number = register.number
             name = (
                 register_names[number]
                 if number is not None and 0 <= number < len(register_names)

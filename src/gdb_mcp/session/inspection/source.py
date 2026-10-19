@@ -172,13 +172,13 @@ class InspectionSource:
         end_line = min(end_line, len(source_lines))
         lines: list[SourceLineRecord] = []
         for line_number in range(start_line, end_line + 1):
-            record: SourceLineRecord = {
+            payload: dict[str, object] = {
                 "line_number": line_number,
                 "text": source_lines[line_number - 1],
             }
             if current_line is not None and line_number == current_line:
-                record["is_current"] = True
-            lines.append(record)
+                payload["is_current"] = True
+            lines.append(SourceLineRecord.from_payload(payload))
 
         resolved_fullname = location.fullname or str(path.resolve())
         return _ResolvedSourceWindow(

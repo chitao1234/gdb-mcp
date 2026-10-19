@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import cast
 
 from ..domain import (
@@ -17,7 +17,8 @@ from ..domain import (
     StructuredPayload,
     payload_to_mapping,
 )
-from ..domain.parsing import as_int, as_optional_mapping, as_text_or_number
+from ..domain.adapters import frame_record
+from ..domain.parsing import as_int, as_mapping, as_optional_mapping, as_text_or_number
 from ..transport import ParsedMiResponse, is_cli_command, parse_mi_responses, wrap_cli_command
 from .constants import DEFAULT_TIMEOUT_SEC
 from .inferiors import inferior_ids, parse_inferiors_output
@@ -235,14 +236,14 @@ class SessionCommandRunner:
         stopped_inferior_id: int | None = None
         saw_stopped = False
         stop_event: StopEvent | None = None
-        stopped_payload: object = None
+        stopped_payload: Mapping[str, object] | None = None
         saw_inferior_topology_change = False
         stopped_thread_id: int | None = None
         stopped_frame_level: int | None = None
         for notify in parsed.notify:
             message = notify.get("message")
             payload = notify.get("payload")
-            payload_dict = payload if isinstance(payload, dict) else {}
+            payload_dict = as_mapping(payload)
 
             if message == "thread-group-added":
                 inferior_id = self._parse_inferior_id_from_thread_group(payload_dict.get("id"))
@@ -284,19 +285,19 @@ class SessionCommandRunner:
                 continue
 
             saw_stopped = True
-            stopped_payload = payload
-            if isinstance(payload, dict):
-                reason_value = payload.get("reason")
+            stopped_payload = as_optional_mapping(payload)
+            if stopped_payload is not None:
+                reason_value = stopped_payload.get("reason")
                 if isinstance(reason_value, str):
                     stopped_reason = reason_value
-                exit_code = self._parse_exit_code(payload.get("exit-code"))
+                exit_code = self._parse_exit_code(stopped_payload.get("exit-code"))
                 stopped_inferior_id = self._parse_inferior_id_from_thread_group(
-                    payload.get("thread-group")
+                    stopped_payload.get("thread-group")
                 )
-                frame_payload = payload.get("frame")
-                if isinstance(frame_payload, dict):
+                frame_payload = as_optional_mapping(stopped_payload.get("frame"))
+                if frame_payload is not None:
                     stopped_frame_level = as_int(frame_payload.get("level"))
-                stopped_thread_id = as_int(payload.get("thread-id"))
+                stopped_thread_id = as_int(stopped_payload.get("thread-id"))
 
         if saw_stopped and saw_inferior_topology_change:
             self._refresh_inferior_inventory_from_gdb()
@@ -497,7 +498,7 @@ class SessionCommandRunner:
     def _build_stop_event(
         self,
         command: str,
-        payload: object,
+        payload: Mapping[str, object] | None,
         stopped_reason: str | None,
         exit_code: int | None,
         inferior_id: int | None,
@@ -505,7 +506,7 @@ class SessionCommandRunner:
         """Build a structured stop event from one MI stopped notification."""
 
         payload_mapping: StructuredPayload = {}
-        if isinstance(payload, dict):
+        if payload is not None:
             payload_mapping = cast(StructuredPayload, payload_to_mapping(payload))
 
         thread_id = as_int(payload_mapping.get("thread-id"))
@@ -525,7 +526,7 @@ class SessionCommandRunner:
             command=command,
             inferior_id=inferior_id,
             thread_id=thread_id,
-            frame=frame,
+            frame=frame_record(frame) if frame is not None else None,
             signal_name=signal_name,
             signal_meaning=signal_meaning,
             breakpoint_number=breakpoint_number,

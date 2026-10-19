@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Literal, TypeAlias, TypedDict
+from typing import Literal, TypeAlias
 
+from .records import (
+    BreakpointRecord,
+    DisassemblyInstructionRecord,
+    FrameRecord,
+    InferiorRecord,
+    InferiorStateRecord,
+    MemoryBlockRecord,
+    RegisterRecord,
+    SourceLineRecord,
+    ThreadRecord,
+    VariableRecord,
+)
 from .stop_kinds import StopKind
 
 JsonScalar: TypeAlias = str | int | float | bool | None
@@ -28,69 +39,6 @@ CatchpointType: TypeAlias = Literal[
     "signal",
     "syscall",
 ]
-
-
-# Pass-through GDB/MI records are modeled as open mappings. GDB may add fields
-# (and uses hyphenated keys such as ``target-id``, ``exit-code``) that a closed
-# ``TypedDict`` cannot express, so these preserve whatever the target emits.
-# Reading a specific field goes through the typed accessors in ``domain.parsing``.
-FrameRecord: TypeAlias = Mapping[str, object]
-ThreadRecord: TypeAlias = Mapping[str, object]
-BreakpointRecord: TypeAlias = Mapping[str, object]
-VariableRecord: TypeAlias = Mapping[str, object]
-RegisterRecord: TypeAlias = Mapping[str, object]
-MemoryBlockRecord: TypeAlias = Mapping[str, object]
-
-
-# Constructed payloads that gdb-mcp builds itself keep closed ``TypedDict``
-# shapes so their field types stay checked; only the pass-through records above
-# are open mappings.
-class DisassemblyInstructionRecord(TypedDict, total=False):
-    """Structured disassembly record returned by GDB/MI."""
-
-    address: str
-    instruction: str
-    opcodes: str
-    function: str
-    offset: int
-    file: str
-    fullname: str
-    line: int
-    is_current: bool
-
-
-class SourceLineRecord(TypedDict, total=False):
-    """Structured source-context line record."""
-
-    line_number: int
-    text: str
-    is_current: bool
-
-
-class InferiorRecord(TypedDict, total=False):
-    """Structured inferior payload returned by GDB."""
-
-    inferior_id: int
-    is_current: bool
-    display: str
-    description: str
-    connection: str
-    executable: str
-    execution_state: str
-    stop_reason: str | None
-    stop_kind: StopKind | None
-    exit_code: int | None
-
-
-class InferiorStateRecord(TypedDict, total=False):
-    """Structured runtime execution-state summary for one inferior."""
-
-    inferior_id: int
-    is_current: bool
-    execution_state: ExecutionState
-    stop_reason: str | None
-    stop_kind: StopKind | None
-    exit_code: int | None
 
 
 @dataclass(slots=True, frozen=True)

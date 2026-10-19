@@ -19,6 +19,7 @@ from gdb_mcp.domain import (
     DisassemblyInfo,
     FrameInfo,
     InferiorListInfo,
+    InferiorRecord,
     InferiorSelectionInfo,
     MemoryCaptureRange,
     OperationError,
@@ -32,6 +33,7 @@ from gdb_mcp.domain import (
     ThreadSelectionInfo,
     VariablesInfo,
 )
+from gdb_mcp.domain.adapters import breakpoint_record, frame_record
 from gdb_mcp.mcp.handlers import TOOL_SPECS, dispatch_tool_call
 from gdb_mcp.mcp.schemas import build_tool_definitions
 from gdb_mcp.session.factory import create_default_session_service
@@ -735,7 +737,7 @@ class TestHandlerRouting:
 
         session = _session_double()
         session.select_frame.return_value = OperationSuccess(
-            FrameInfo(frame={"level": "2", "func": "worker"})
+            FrameInfo(frame=frame_record({"level": "2", "func": "worker"}))
         )
         manager = _manager_for(session)
 
@@ -777,7 +779,7 @@ class TestHandlerRouting:
 
         session = _session_double()
         session.get_frame_info.return_value = OperationSuccess(
-            FrameInfo(frame={"level": "1", "func": "worker"})
+            FrameInfo(frame=frame_record({"level": "1", "func": "worker"}))
         )
         manager = _manager_for(session)
 
@@ -922,7 +924,7 @@ class TestHandlerRouting:
 
         session = _session_double()
         session.get_breakpoint.return_value = OperationSuccess(
-            BreakpointInfo(breakpoint={"number": "4", "type": "breakpoint"})
+            BreakpointInfo(breakpoint=breakpoint_record({"number": "4", "type": "breakpoint"}))
         )
         manager = _manager_for(session)
 
@@ -941,8 +943,8 @@ class TestHandlerRouting:
         session.list_breakpoints.return_value = OperationSuccess(
             BreakpointListInfo(
                 breakpoints=[
-                    {"number": "1", "type": "breakpoint", "enabled": True},
-                    {"number": "2", "type": "watchpoint", "enabled": False},
+                    breakpoint_record({"number": "1", "type": "breakpoint", "enabled": "y"}),
+                    breakpoint_record({"number": "2", "type": "watchpoint", "enabled": "n"}),
                 ],
                 count=2,
             )
@@ -969,7 +971,11 @@ class TestHandlerRouting:
 
         session = _session_double()
         session.update_breakpoint.return_value = OperationSuccess(
-            BreakpointInfo(breakpoint={"number": "4", "type": "breakpoint", "exp": "count > 100"})
+            BreakpointInfo(
+                breakpoint=breakpoint_record(
+                    {"number": "4", "type": "breakpoint", "exp": "count > 100"}
+                )
+            )
         )
         manager = _manager_for(session)
 
@@ -997,8 +1003,12 @@ class TestHandlerRouting:
         session.list_inferiors.return_value = OperationSuccess(
             InferiorListInfo(
                 inferiors=[
-                    {"inferior_id": 1, "is_current": True, "display": "i1"},
-                    {"inferior_id": 2, "is_current": False, "display": "i2"},
+                    InferiorRecord.from_payload(
+                        {"inferior_id": 1, "is_current": True, "display": "i1"}
+                    ),
+                    InferiorRecord.from_payload(
+                        {"inferior_id": 2, "is_current": False, "display": "i2"}
+                    ),
                 ],
                 count=2,
                 current_inferior_id=1,
@@ -1042,7 +1052,7 @@ class TestHandlerRouting:
 
         session = _session_double()
         session.set_watchpoint.return_value = OperationSuccess(
-            BreakpointInfo(breakpoint={"number": "2", "type": "hw watchpoint"})
+            BreakpointInfo(breakpoint=breakpoint_record({"number": "2", "type": "hw watchpoint"}))
         )
         manager = _manager_for(session)
 
@@ -1086,7 +1096,7 @@ class TestHandlerRouting:
 
         session = _session_double()
         session.set_catchpoint.return_value = OperationSuccess(
-            BreakpointInfo(breakpoint={"number": "3", "type": "catchpoint"})
+            BreakpointInfo(breakpoint=breakpoint_record({"number": "3", "type": "catchpoint"}))
         )
         manager = _manager_for(session)
 
@@ -1232,7 +1242,7 @@ class TestHandlerRouting:
 
         session = _session_double()
         session.set_breakpoint.return_value = OperationSuccess(
-            BreakpointInfo(breakpoint={"number": 1, "location": "main"})
+            BreakpointInfo(breakpoint=breakpoint_record({"number": "1", "location": "main"}))
         )
         manager = _manager_for(session)
 
@@ -1257,7 +1267,9 @@ class TestHandlerRouting:
             session,
             "set_breakpoint",
             return_value=OperationSuccess(
-                BreakpointInfo(breakpoint={"number": "1", "original_location": "main"})
+                BreakpointInfo(
+                    breakpoint=breakpoint_record({"number": "1", "original-location": "main"})
+                )
             ),
         )
         _stub(session, "continue_execution", side_effect=_continue_side_effect(session))

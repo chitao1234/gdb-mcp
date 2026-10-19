@@ -30,8 +30,8 @@ def parse_inferiors_output(output: str, *, current_inferior_id: int | None) -> I
 
     resolved_current_inferior_id = current_inferior_id
     for record in records:
-        if record["is_current"]:
-            resolved_current_inferior_id = record["inferior_id"]
+        if record.is_current and record.inferior_id is not None:
+            resolved_current_inferior_id = record.inferior_id
 
     return InferiorListInfo(
         inferiors=records,
@@ -44,9 +44,7 @@ def inferior_ids(payload: InferiorListInfo) -> tuple[int, ...]:
     """Extract the numeric inferior identifiers from one inventory snapshot."""
 
     return tuple(
-        record["inferior_id"]
-        for record in payload.inferiors
-        if isinstance(record.get("inferior_id"), int)
+        record.inferior_id for record in payload.inferiors if isinstance(record.inferior_id, int)
     )
 
 
@@ -102,7 +100,7 @@ def _parse_rows_by_columns(lines: Iterable[str], offsets: dict[str, int]) -> lis
         if number_start is None:
             continue
 
-        record: InferiorRecord = {
+        record: dict[str, object] = {
             "inferior_id": int(
                 "".join(
                     char
@@ -133,7 +131,7 @@ def _parse_rows_by_columns(lines: Iterable[str], offsets: dict[str, int]) -> lis
             elif label == "Executable":
                 record["executable"] = value
 
-        records.append(record)
+        records.append(InferiorRecord.from_payload(record))
     return records
 
 
@@ -153,7 +151,7 @@ def _parse_rows_by_whitespace(lines: Iterable[str]) -> list[InferiorRecord]:
         columns = [
             part.strip() for part in _COLUMN_SPLIT_RE.split(match.group("columns")) if part.strip()
         ]
-        record: InferiorRecord = {
+        record: dict[str, object] = {
             "inferior_id": int(match.group("inferior_id")),
             "is_current": match.group("current") == "*",
             "display": match.group("columns").strip(),
@@ -168,5 +166,5 @@ def _parse_rows_by_whitespace(lines: Iterable[str]) -> list[InferiorRecord]:
         elif len(columns) >= 3:
             record["connection"] = columns[1]
             record["executable"] = columns[2]
-        records.append(record)
+        records.append(InferiorRecord.from_payload(record))
     return records

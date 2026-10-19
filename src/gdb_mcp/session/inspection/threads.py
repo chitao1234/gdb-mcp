@@ -157,7 +157,7 @@ class InspectionThreads:
             extract_mi_result_payload(command_result_payload(result))
         )
         frame_details = frame_info.frame
-        level = frame_details.get("level") if frame_details is not None else None
+        level = frame_details.level if frame_details is not None else None
         self._runtime.mark_frame_selected(as_int(level))
 
         if selection is not None:

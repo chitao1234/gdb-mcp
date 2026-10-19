@@ -706,7 +706,7 @@ class TestStructuredCodeInspectionApi:
         result = result_to_mapping(session.get_registers(register_names=["rip"]))
 
         assert result["status"] == "success"
-        assert mapping_list(result["registers"])[0]["number"] == "2"
+        assert mapping_list(result["registers"])[0]["number"] == 2
         written = controller.decoded_writes
         assert written[0].endswith("-data-list-register-names\n")
         assert written[1].endswith("-data-list-register-values x 2\n")
@@ -734,7 +734,7 @@ class TestStructuredCodeInspectionApi:
 
         assert result["status"] == "success"
         assert len(sequence(result["registers"])) == 1
-        assert mapping_list(result["registers"])[0]["number"] == "0"
+        assert mapping_list(result["registers"])[0]["number"] == 0
         written = controller.decoded_writes
         assert written[1].endswith("-data-list-register-names\n")
 
@@ -776,7 +776,7 @@ class TestStructuredCodeInspectionApi:
         result = result_to_mapping(session.get_registers(include_vector_registers=False))
 
         assert result["status"] == "success"
-        assert [record["number"] for record in mapping_list(result["registers"])] == ["5", "6"]
+        assert [record["number"] for record in mapping_list(result["registers"])] == [5, 6]
 
     def test_get_registers_keeps_mips_general_registers(
         self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
@@ -837,7 +837,7 @@ class TestStructuredCodeInspectionApi:
 
         assert result["status"] == "success"
         assert len(sequence(result["registers"])) == 1
-        assert mapping_list(result["registers"])[0]["number"] == "1"
+        assert mapping_list(result["registers"])[0]["number"] == 1
 
     def test_get_registers_applies_max_registers_limit(
         self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder

@@ -42,7 +42,7 @@ def _handle_inferior_query(session: SessionService, args: InferiorQueryArgs) -> 
                 (
                     inferior
                     for inferior in result.value.inferiors
-                    if inferior.get("inferior_id") == current_inferior_id
+                    if inferior.inferior_id == current_inferior_id
                 ),
                 None,
             )

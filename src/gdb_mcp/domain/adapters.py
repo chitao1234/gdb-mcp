@@ -1,6 +1,17 @@
-"""Helpers for converting raw GDB/MI payloads into typed domain records."""
+"""Helpers for converting raw GDB/MI payloads into typed domain records.
+
+Every record that leaves this module is a :class:`~gdb_mcp.domain.records.RecordModel`,
+built from the debugger's own payload. The payloads here are the mappings the
+transport already narrowed; ``None`` means the command reported nothing and is
+read as an empty payload. The adapters convert the spellings MI uses for flags
+and counters (``"y"``, ``"3"``) into the types this server publishes, so
+:meth:`RecordModel.from_payload` validates a record instead of accepting
+whatever arrived.
+"""
 
 from __future__ import annotations
+
+from collections.abc import Mapping
 
 from .models import (
     BacktraceInfo,
@@ -21,93 +32,113 @@ from .models import (
 from .parsing import as_mapping, as_optional_mapping, as_record_list, as_text
 
 
-def _as_int(value: object) -> int | None:
-    """Parse an MI numeric field, which MI always spells as a string."""
+def _flag(value: object) -> bool:
+    """Read an MI flag, which MI spells ``y``/``n``.
 
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
+    MI only ever emits those two, so anything else means GDB and this server
+    disagree about the payload. That is raised rather than read as ``False``,
+    which would turn a malformed breakpoint into a silently disabled one.
+    """
+
     text = as_text(value)
-    if text is None:
-        return None
-    try:
-        return int(text)
-    except ValueError:
-        return None
-
-
-def _as_bool(value: object) -> bool | None:
-    """Parse an MI flag, which MI spells ``y``/``n``."""
-
-    if isinstance(value, bool):
-        return value
-    text = as_text(value)
-    if text is None:
-        return None
-    lowered = text.strip().lower()
-    if lowered in {"y", "yes", "true", "1"}:
+    if text == "y":
         return True
-    if lowered in {"n", "no", "false", "0"}:
+    if text == "n":
         return False
-    return None
+    raise ValueError(f"MI flag must be 'y' or 'n', got {value!r}")
 
 
-def _canonical_breakpoint(record: BreakpointRecord) -> BreakpointRecord:
-    """Return a breakpoint record with canonical ``enabled`` and ``times``.
+def _count(value: object) -> int:
+    """Read an MI count, which MI spells as a decimal string.
+
+    A value that is not a number is a GDB/MI contract violation and is raised
+    here on purpose: silently recording ``None`` would hide the anomaly that the
+    declared type exists to catch.
+    """
+
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    text = as_text(value)
+    if text is None:
+        raise ValueError(f"MI count must be a number, got {type(value).__name__}")
+    return int(text)
+
+
+def _canonical_breakpoint(payload: Mapping[str, object]) -> BreakpointRecord:
+    """Build a breakpoint record with canonical ``enabled`` and ``times``.
 
     The published contract promises a boolean and an integer, so the MI strings
     ("y", "3") are converted here. A value that cannot be parsed is left as it
-    arrived instead of being dropped.
+    arrived rather than dropped.
     """
 
-    normalized = dict(record)
-    enabled = _as_bool(normalized.get("enabled"))
-    if enabled is not None:
-        normalized["enabled"] = enabled
-    times = _as_int(normalized.get("times"))
-    if times is not None:
-        normalized["times"] = times
-    return normalized
+    normalized = dict(payload)
+    if "enabled" in normalized:
+        normalized["enabled"] = _flag(normalized["enabled"])
+    if "times" in normalized:
+        normalized["times"] = _count(normalized["times"])
+    return BreakpointRecord.from_payload(normalized)
 
 
-def _canonical_frame(record: FrameRecord) -> FrameRecord:
-    """Return a frame record with a canonical integer ``level``."""
+def _canonical_frame(payload: Mapping[str, object]) -> FrameRecord:
+    """Build a frame record with a canonical integer ``level``."""
 
-    normalized = dict(record)
-    level = _as_int(normalized.get("level"))
-    if level is not None:
-        normalized["level"] = level
-    return normalized
+    normalized = dict(payload)
+    if "level" in normalized:
+        normalized["level"] = _count(normalized["level"])
+    return FrameRecord.from_payload(normalized)
 
 
-def string_field(payload: object, key: str) -> str | None:
+def _canonical_register(payload: Mapping[str, object]) -> RegisterRecord:
+    """Build a register record with a canonical integer ``number``.
+
+    The number indexes the register-name list, so it has to be an integer by the
+    time a record carries it.
+    """
+
+    normalized = dict(payload)
+    if "number" in normalized:
+        normalized["number"] = _count(normalized["number"])
+    return RegisterRecord.from_payload(normalized)
+
+
+def frame_record(payload: Mapping[str, object] | None) -> FrameRecord:
+    """Build one frame record with the canonical ``level``."""
+
+    return _canonical_frame(as_mapping(payload))
+
+
+def string_field(payload: Mapping[str, object] | None, key: str) -> str | None:
     """Return a string field from a raw payload mapping when available."""
 
     return as_text(as_mapping(payload).get(key))
 
 
-def thread_records(payload: object, key: str = "threads") -> list[ThreadRecord]:
-    """Normalize a thread-record list from a raw payload mapping."""
+def thread_records(
+    payload: Mapping[str, object] | None, key: str = "threads"
+) -> list[ThreadRecord]:
+    """Build thread records from a raw payload mapping."""
 
-    return as_record_list(as_mapping(payload).get(key))
+    return [
+        ThreadRecord.from_payload(record) for record in as_record_list(as_mapping(payload).get(key))
+    ]
 
 
-def frame_records(payload: object, key: str = "stack") -> list[FrameRecord]:
-    """Normalize a frame-record list from a raw payload mapping."""
+def frame_records(payload: Mapping[str, object] | None, key: str = "stack") -> list[FrameRecord]:
+    """Build frame records from a raw payload mapping."""
 
     return [_canonical_frame(record) for record in as_record_list(as_mapping(payload).get(key))]
 
 
-def breakpoint_record(payload: object) -> BreakpointRecord:
-    """Normalize a single breakpoint payload."""
+def breakpoint_record(payload: Mapping[str, object] | None) -> BreakpointRecord:
+    """Build a single breakpoint record."""
 
     raw_mapping = as_mapping(payload)
     return _canonical_breakpoint(as_mapping(raw_mapping.get("bkpt", raw_mapping)))
 
 
-def breakpoint_records(payload: object) -> list[BreakpointRecord]:
-    """Normalize a list of breakpoint payloads."""
+def breakpoint_records(payload: Mapping[str, object] | None) -> list[BreakpointRecord]:
+    """Build a list of breakpoint records."""
 
     breakpoint_table = as_mapping(as_mapping(payload).get("BreakpointTable"))
     return [
@@ -115,25 +146,41 @@ def breakpoint_records(payload: object) -> list[BreakpointRecord]:
     ]
 
 
-def variable_records(payload: object) -> list[VariableRecord]:
-    """Normalize a list of variable payloads."""
+def variable_records(payload: Mapping[str, object] | None) -> list[VariableRecord]:
+    """Build a list of variable records."""
 
-    return as_record_list(as_mapping(payload).get("variables"))
-
-
-def register_records(payload: object) -> list[RegisterRecord]:
-    """Normalize a list of register payloads."""
-
-    return as_record_list(as_mapping(payload).get("register-values"))
+    return [
+        VariableRecord.from_payload(record)
+        for record in as_record_list(as_mapping(payload).get("variables"))
+    ]
 
 
-def memory_block_records(payload: object) -> list[MemoryBlockRecord]:
-    """Normalize a list of memory blocks."""
+def register_records(payload: Mapping[str, object] | None) -> list[RegisterRecord]:
+    """Build a list of register records."""
 
-    return as_record_list(as_mapping(payload).get("memory"))
+    return [
+        _canonical_register(record)
+        for record in as_record_list(as_mapping(payload).get("register-values"))
+    ]
 
 
-def thread_list_info_from_payload(payload: object) -> ThreadListInfo:
+def memory_block_records(payload: Mapping[str, object] | None) -> list[MemoryBlockRecord]:
+    """Build a list of memory blocks."""
+
+    return [
+        MemoryBlockRecord.from_payload(record)
+        for record in as_record_list(as_mapping(payload).get("memory"))
+    ]
+
+
+def _optional_frame(payload: Mapping[str, object]) -> FrameRecord | None:
+    """Build the optional frame a selection payload carries."""
+
+    frame = as_optional_mapping(payload.get("frame"))
+    return None if frame is None else _canonical_frame(frame)
+
+
+def thread_list_info_from_payload(payload: Mapping[str, object] | None) -> ThreadListInfo:
     """Build a typed thread-list payload from raw MI data."""
 
     threads = thread_records(payload)
@@ -144,56 +191,57 @@ def thread_list_info_from_payload(payload: object) -> ThreadListInfo:
     )
 
 
-def thread_selection_info_from_payload(thread_id: int, payload: object) -> ThreadSelectionInfo:
+def thread_selection_info_from_payload(
+    thread_id: int, payload: Mapping[str, object] | None
+) -> ThreadSelectionInfo:
     """Build a typed thread-selection payload from raw MI data."""
 
-    frame = as_optional_mapping(as_mapping(payload).get("frame"))
+    raw_payload = as_mapping(payload)
     return ThreadSelectionInfo(
         thread_id=thread_id,
         new_thread_id=string_field(payload, "new-thread-id"),
-        frame=_canonical_frame(frame) if frame is not None else None,
+        frame=_optional_frame(raw_payload),
     )
 
 
-def backtrace_info_from_payload(thread_id: int | None, payload: object) -> BacktraceInfo:
+def backtrace_info_from_payload(
+    thread_id: int | None, payload: Mapping[str, object] | None
+) -> BacktraceInfo:
     """Build a typed backtrace payload from raw MI data."""
 
     frames = frame_records(payload)
     return BacktraceInfo(thread_id=thread_id, frames=frames, count=len(frames))
 
 
-def frame_info_from_payload(payload: object) -> FrameInfo:
+def frame_info_from_payload(payload: Mapping[str, object] | None) -> FrameInfo:
     """Build a typed current-frame payload from raw MI data."""
 
-    frame = as_optional_mapping(as_mapping(payload).get("frame"))
-    return FrameInfo(frame=_canonical_frame(frame) if frame is not None else None)
+    return FrameInfo(frame=_optional_frame(as_mapping(payload)))
 
 
-def frame_selection_info_from_payload(frame_number: int, payload: object) -> FrameSelectionInfo:
+def frame_selection_info_from_payload(
+    frame_number: int, payload: Mapping[str, object] | None
+) -> FrameSelectionInfo:
     """Build a typed frame-selection payload from raw MI data."""
 
-    frame = as_optional_mapping(as_mapping(payload).get("frame"))
-    return FrameSelectionInfo(
-        frame_number=frame_number,
-        frame=_canonical_frame(frame) if frame is not None else None,
-    )
+    return FrameSelectionInfo(frame_number=frame_number, frame=_optional_frame(as_mapping(payload)))
 
 
 def variables_info_from_payload(
-    thread_id: int | None, frame: int, payload: object
+    thread_id: int | None, frame: int, payload: Mapping[str, object] | None
 ) -> VariablesInfo:
     """Build a typed local-variable payload from raw MI data."""
 
     return VariablesInfo(thread_id=thread_id, frame=frame, variables=variable_records(payload))
 
 
-def registers_info_from_payload(payload: object) -> RegistersInfo:
+def registers_info_from_payload(payload: Mapping[str, object] | None) -> RegistersInfo:
     """Build a typed register payload from raw MI data."""
 
     return RegistersInfo(registers=register_records(payload))
 
 
-def breakpoint_list_info_from_payload(payload: object) -> BreakpointListInfo:
+def breakpoint_list_info_from_payload(payload: Mapping[str, object] | None) -> BreakpointListInfo:
     """Build a typed breakpoint-list payload from raw MI data."""
 
     breakpoints = breakpoint_records(payload)
