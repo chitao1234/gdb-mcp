@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import re
 
 from ...domain import (
     OperationError,
@@ -17,6 +17,33 @@ from .base import (
     _ResolvedSourceWindow,
     _SelectionSnapshot,
 )
+
+_LIST_LINE_RE = re.compile(r"^(?P<line>\d+)\t(?P<text>.*)$")
+
+# `CommandExecutionInfo.output` strips trailing whitespace, so a final blank
+# source line arrives without its tab ("12\t" becomes "12").
+_LIST_TRAILING_BLANK_RE = re.compile(r"^(?P<line>\d+)$")
+
+
+def _parse_list_output(output: str) -> list[tuple[int, str]]:
+    """Extract the numbered source lines from GDB's ``list`` output.
+
+    ``list`` prints one ``<line number>``-tab-``<text>`` record per source
+    line and can interleave unrelated console chatter (a ``list *address``
+    header, a missing-source warning, or a distro debuginfo prompt); records
+    that do not match that shape are ignored.
+    """
+
+    listed: list[tuple[int, str]] = []
+    for raw_line in output.split("\n"):
+        match = _LIST_LINE_RE.match(raw_line)
+        if match is not None:
+            listed.append((int(match.group("line")), match.group("text")))
+            continue
+        blank = _LIST_TRAILING_BLANK_RE.match(raw_line)
+        if blank is not None:
+            listed.append((int(blank.group("line")), ""))
+    return listed
 
 
 class InspectionSource:
@@ -144,17 +171,18 @@ class InspectionSource:
         context_before: int,
         context_after: int,
     ) -> _ResolvedSourceWindow | OperationError:
-        """Read one source window from disk for the resolved location."""
+        """List one source window through GDB for the resolved location.
 
-        file_selector = location.fullname or location.file
+        The text comes from GDB's own ``list`` so that path resolution
+        (``set substitute-path``, ``set directories``, the working directory,
+        a remote target) and line numbering stay GDB's, instead of being
+        re-implemented against the local filesystem.
+        """
+
+        file_selector = location.file or location.fullname
         if file_selector is None:
             return OperationError(message="Resolved source location has no file path")
 
-        path = Path(file_selector).expanduser()
-        if not path.exists():
-            return OperationError(message=f"Source file not found: {file_selector}")
-
-        source_lines = path.read_text().splitlines()
         if requested_start_line is not None and requested_end_line is not None:
             start_line = requested_start_line
             end_line = requested_end_line
@@ -166,25 +194,30 @@ class InspectionSource:
             start_line = max(1, current_line - context_before)
             end_line = current_line + context_after
 
-        if start_line > len(source_lines):
-            return OperationError(message=f"Source line {start_line} is outside {file_selector}")
+        result = self._context.command_runner.execute_command_result(
+            f"list {file_selector}:{start_line},{file_selector}:{end_line}",
+        )
+        if isinstance(result, OperationError):
+            return result
 
-        end_line = min(end_line, len(source_lines))
+        listed = _parse_list_output(result.value.output or "")
+        if not listed:
+            return OperationError(message=f"Source file not found: {file_selector}")
+
         lines: list[SourceLineRecord] = []
-        for line_number in range(start_line, end_line + 1):
-            payload: dict[str, object] = {
-                "line_number": line_number,
-                "text": source_lines[line_number - 1],
-            }
-            if current_line is not None and line_number == current_line:
-                payload["is_current"] = True
-            lines.append(SourceLineRecord.from_payload(payload))
+        for line_number, text in listed:
+            lines.append(
+                SourceLineRecord(
+                    line_number=line_number,
+                    text=text,
+                    is_current=current_line is not None and line_number == current_line,
+                )
+            )
 
-        resolved_fullname = location.fullname or str(path.resolve())
         return _ResolvedSourceWindow(
-            file=location.file or str(path),
-            fullname=resolved_fullname,
-            start_line=start_line,
-            end_line=end_line,
+            file=location.file or file_selector,
+            fullname=location.fullname or file_selector,
+            start_line=listed[0][0],
+            end_line=listed[-1][0],
             lines=lines,
         )
