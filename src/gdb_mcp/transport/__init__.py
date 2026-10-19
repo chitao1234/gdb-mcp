@@ -1,5 +1,14 @@
-"""Transport helpers for speaking GDB/MI."""
+"""Transport helpers for speaking GDB/MI and the Debug Adapter Protocol."""
 
+from .dap_client import (
+    DapClient,
+    DapStdioStream,
+    DapStream,
+    DapTcpStream,
+    DapTimeoutError,
+    DapTransportError,
+    dap_error_message,
+)
 from .external import (
     EndpointError,
     ExternalMiController,
@@ -21,6 +30,12 @@ from .mi_models import MiTransportResponse, ParsedMiResponse
 from .mi_parser import extract_mi_result_payload, parse_mi_responses
 
 __all__ = [
+    "DapClient",
+    "DapStdioStream",
+    "DapStream",
+    "DapTcpStream",
+    "DapTimeoutError",
+    "DapTransportError",
     "EndpointError",
     "ExternalMiController",
     "MiClient",
@@ -31,6 +46,7 @@ __all__ = [
     "build_exec_arguments_command",
     "build_read_memory_command",
     "create_external_controller",
+    "dap_error_message",
     "escape_mi_string",
     "extract_mi_result_payload",
     "is_cli_command",
