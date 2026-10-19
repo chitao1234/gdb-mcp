@@ -16,6 +16,15 @@ from .external import (
     create_external_controller,
     parse_mi_endpoint,
 )
+from .lldb_source import (
+    SourceListLine,
+    SourceListResult,
+    build_source_list_command,
+    count_for_window,
+    parse_source_list_output,
+    quote_lldb_argument,
+    select_window,
+)
 from .mi_client import MiClient
 from .mi_commands import (
     build_evaluate_expression_command,
@@ -42,9 +51,13 @@ __all__ = [
     "MiEndpoint",
     "MiTransportResponse",
     "ParsedMiResponse",
+    "SourceListLine",
+    "SourceListResult",
     "build_evaluate_expression_command",
     "build_exec_arguments_command",
     "build_read_memory_command",
+    "build_source_list_command",
+    "count_for_window",
     "create_external_controller",
     "dap_error_message",
     "escape_mi_string",
@@ -52,6 +65,9 @@ __all__ = [
     "is_cli_command",
     "parse_mi_endpoint",
     "parse_mi_responses",
+    "parse_source_list_output",
+    "quote_lldb_argument",
     "quote_mi_string",
+    "select_window",
     "wrap_cli_command",
 ]
