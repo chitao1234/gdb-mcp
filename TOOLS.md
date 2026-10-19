@@ -602,11 +602,19 @@ Read program state without using raw debugger commands.
 - `max_registers`
 - `value_format`
 
+### Memory Notes
+
+- `blocks` carries only the readable memory. A request that spans unreadable
+  memory comes back as several blocks, each with `begin`, `offset`, `end`, and
+  `contents`.
+- A read that returns fewer bytes than `count`, or more than one block, adds a
+  `warnings` entry: `Partial read: captured X of Y bytes` and
+  `Discontinuous read: N blocks returned`.
+
 ### Location Notes
 
 - `disassembly` accepts `function`, `address`, `address_range`, `file_line`, `file_range`, or `current`.
 - `source` accepts the same location union.
-
 ## `gdb_workflow_batch`
 
 Execute a structured sequence of session-scoped tools under one workflow lock.

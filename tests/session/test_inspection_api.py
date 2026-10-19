@@ -761,6 +761,7 @@ class TestStructuredCodeInspectionApi:
         assert result["offset"] == 1
         assert result["block_count"] == 1
         assert result["captured_bytes"] == 4
+        assert "warnings" not in result
         assert controller.decoded_writes[-1].endswith('-data-read-memory-bytes -o 1 "&value" 4\n')
 
     def test_read_memory_falls_back_without_bytes_command(
@@ -817,6 +818,8 @@ class TestStructuredCodeInspectionApi:
         assert result["status"] == "success"
         assert result["captured_bytes"] == 2
         assert mapping_list(result["blocks"])[0]["contents"] == "aabb"
+        warnings = [str(item) for item in sequence(result["warnings"])]
+        assert warnings == ["Partial read: captured 2 of 4 bytes"]
 
     def test_read_memory_capability_probe_is_cached(
         self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
@@ -834,6 +837,63 @@ class TestStructuredCodeInspectionApi:
 
         probes = [w for w in controller.decoded_writes if w.endswith("-list-features\n")]
         assert len(probes) == 1
+
+    def test_read_memory_warns_on_partial_read(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
+        """A short read should surface a partial-read warning instead of staying silent."""
+
+        session, _controller = scripted_running_session(
+            [mi_result({"features": ["data-read-memory-bytes"]})],
+            [mi_result({"memory": [{"begin": "0x1000", "end": "0x1002", "contents": "0102"}]})],
+        )
+
+        result = result_to_mapping(session.read_memory("&value", 4))
+
+        assert result["status"] == "success"
+        assert result["captured_bytes"] == 2
+        warnings = [str(item) for item in sequence(result["warnings"])]
+        assert warnings == ["Partial read: captured 2 of 4 bytes"]
+
+    def test_read_memory_warns_on_discontinuous_read(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
+        """A read split across an unreadable gap should warn about both gaps and shortage."""
+
+        session, _controller = scripted_running_session(
+            [mi_result({"features": ["data-read-memory-bytes"]})],
+            [
+                mi_result(
+                    {
+                        "memory": [
+                            {
+                                "begin": "0x1000",
+                                "offset": "0x0",
+                                "end": "0x1004",
+                                "contents": "01020304",
+                            },
+                            {
+                                "begin": "0x2000",
+                                "offset": "0x1004",
+                                "end": "0x2004",
+                                "contents": "05060708",
+                            },
+                        ]
+                    }
+                )
+            ],
+        )
+
+        result = result_to_mapping(session.read_memory("&buffer", 64))
+
+        assert result["status"] == "success"
+        assert result["block_count"] == 2
+        assert result["captured_bytes"] == 8
+        warnings = [str(item) for item in sequence(result["warnings"])]
+        assert warnings == [
+            "Discontinuous read: 2 blocks returned",
+            "Partial read: captured 8 of 64 bytes",
+        ]
 
     def test_get_variables_restores_selection_on_frame_switch_error(
         self,

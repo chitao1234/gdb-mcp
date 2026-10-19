@@ -68,6 +68,17 @@ def _legacy_memory_block(payload: object, contents: str) -> MemoryBlockRecord:
     return block
 
 
+def _read_memory_warnings(info: MemoryReadInfo) -> tuple[str, ...]:
+    """Warn when a read did not return every requested byte in one contiguous run."""
+
+    warnings: list[str] = []
+    if info.block_count > 1:
+        warnings.append(f"Discontinuous read: {info.block_count} blocks returned")
+    if info.captured_bytes < info.count:
+        warnings.append(f"Partial read: captured {info.captured_bytes} of {info.count} bytes")
+    return tuple(warnings)
+
+
 class InspectionMemory:
     """Expression evaluation and memory read methods."""
 
@@ -131,8 +142,16 @@ class InspectionMemory:
         """Read raw target memory bytes from one address expression."""
 
         if self._supports_read_memory_bytes():
-            return self._read_memory_bytes(address, count, offset=offset)
-        return self._read_memory_legacy(address, count, offset=offset)
+            result = self._read_memory_bytes(address, count, offset=offset)
+        else:
+            result = self._read_memory_legacy(address, count, offset=offset)
+        if isinstance(result, OperationError):
+            return result
+
+        warnings = _read_memory_warnings(result.value)
+        if warnings:
+            return OperationSuccess(result.value, warnings=warnings)
+        return result
 
     def _read_memory_bytes(
         self,
