@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -150,6 +152,60 @@ def test_source_and_disassembly_queries_v2(session_id: int, call_gdb_tool: CallG
     assert source["action"] == "source"
     assert integer(dig(source, "result", "count")) > 0
     assert any(line.get("is_current") for line in mapping_list(dig(source, "result", "lines")))
+
+
+@pytest.mark.integration
+def test_source_context_honours_substitute_path(
+    compile_program: CompileProgram,
+    start_session_payload: StartSessionResult,
+    call_gdb_tool: CallGdbTool,
+    stop_session: StopSession,
+    tmp_path: Path,
+) -> None:
+    """Source reads must follow GDB's path rewriting, not the raw DWARF path.
+
+    The build directory is moved after compiling, so the path recorded in the
+    debug info no longer exists on disk; only ``set substitute-path`` can
+    resolve it. Source context has to come from GDB, which applies that
+    rewriting, instead of being read from the recorded path directly.
+    """
+
+    program = compile_default_program(compile_program, filename="substitute_program.cpp")
+    build_dir = Path(program).parent
+    moved_dir = tmp_path / "moved-sources"
+    shutil.move(str(build_dir), str(moved_dir))
+    moved_program = str(moved_dir / Path(program).name)
+
+    started = start_session_payload(
+        moved_program,
+        gdb_args=["-ex", f"set substitute-path {build_dir} {moved_dir}"],
+    )
+    session_id = integer(started["session_id"])
+
+    try:
+        create_breakpoint(call_gdb_tool, session_id, "add")
+        run(call_gdb_tool, session_id)
+
+        source = call_gdb_tool(
+            "gdb_inspect_query",
+            {
+                "session_id": session_id,
+                "action": "source",
+                "query": {
+                    "location": {"kind": "function", "function": "add"},
+                    "context_before": 1,
+                    "context_after": 1,
+                },
+            },
+        )
+    finally:
+        stop_session(session_id)
+
+    assert source["status"] == "success", source
+    lines = mapping_list(dig(source, "result", "lines"))
+    current = [line for line in lines if line.get("is_current")]
+    assert current, lines
+    assert "int add(int a, int b)" in str(current[0]["text"])
 
 
 @pytest.mark.integration
