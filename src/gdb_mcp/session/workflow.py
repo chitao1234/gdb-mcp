@@ -104,6 +104,7 @@ class SessionWorkflowService:
                 failure_step_index=failure_step_index,
                 final_execution_state=self._runtime.execution_state,
                 final_stop_reason=self._runtime.stop_reason,
+                final_stop_kind=self._runtime.stop_kind,
                 last_stop_event=self._runtime.last_stop_event,
             )
         )

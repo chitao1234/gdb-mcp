@@ -6,6 +6,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Literal, TypeAlias, TypedDict
 
+from .stop_kinds import StopKind
+
 JsonScalar: TypeAlias = str | int | float | bool | None
 JsonObject: TypeAlias = dict[str, "JsonValue"]
 JsonArray: TypeAlias = list["JsonValue"]
@@ -76,6 +78,7 @@ class InferiorRecord(TypedDict, total=False):
     executable: str
     execution_state: str
     stop_reason: str | None
+    stop_kind: StopKind | None
     exit_code: int | None
 
 
@@ -86,6 +89,7 @@ class InferiorStateRecord(TypedDict, total=False):
     is_current: bool
     execution_state: ExecutionState
     stop_reason: str | None
+    stop_kind: StopKind | None
     exit_code: int | None
 
 
@@ -98,6 +102,7 @@ class SessionStatusSnapshot:
     has_controller: bool
     execution_state: ExecutionState = "unknown"
     stop_reason: str | None = None
+    stop_kind: StopKind | None = None
     exit_code: int | None = None
     current_inferior_id: int | None = None
     inferior_count: int | None = None
@@ -122,6 +127,7 @@ class SessionSummary:
     current_thread_id: int | None = None
     current_frame: int | None = None
     stop_reason: str | None = None
+    stop_kind: StopKind | None = None
     exit_code: int | None = None
     current_inferior_id: int | None = None
     inferior_count: int | None = None
@@ -151,6 +157,7 @@ class SessionStartInfo:
     target_loaded: bool = False
     execution_state: ExecutionState = "unknown"
     stop_reason: str | None = None
+    stop_kind: StopKind | None = None
     exit_code: int | None = None
     startup_output: str | None = None
     warnings: list[str] | None = None
@@ -191,6 +198,7 @@ class CommandTranscriptEntry:
     error: str | None = None
     execution_state: ExecutionState | None = None
     stop_reason: str | None = None
+    stop_kind: StopKind | None = None
     timestamp: float | None = None
 
 
@@ -220,6 +228,7 @@ class BatchExecutionInfo:
     failure_step_index: int | None = None
     final_execution_state: ExecutionState | None = None
     final_stop_reason: str | None = None
+    final_stop_kind: StopKind | None = None
     last_stop_event: StopEvent | None = None
 
 
@@ -246,6 +255,7 @@ class CaptureBundleInfo:
     failed_sections: list[str] | None = None
     execution_state: ExecutionState | None = None
     stop_reason: str | None = None
+    stop_kind: StopKind | None = None
     last_stop_event: StopEvent | None = None
 
 
@@ -257,6 +267,7 @@ class RunUntilFailureIterationInfo:
     status: str
     execution_state: ExecutionState | None = None
     stop_reason: str | None = None
+    stop_kind: StopKind | None = None
     exit_code: int | None = None
     matched_failure: bool = False
     trigger: str | None = None
@@ -275,6 +286,7 @@ class RunUntilFailureInfo:
     trigger: str | None = None
     execution_state: ExecutionState | None = None
     stop_reason: str | None = None
+    stop_kind: StopKind | None = None
     exit_code: int | None = None
     capture_bundle: CaptureBundleInfo | None = None
     capture_error: str | None = None
@@ -367,6 +379,7 @@ class WaitForStopInfo:
     source: str = "waited"
     execution_state: ExecutionState | None = None
     stop_reason: str | None = None
+    stop_kind: StopKind | None = None
     reason_filter: list[str] | None = None
     last_stop_event: StopEvent | None = None
 
@@ -381,6 +394,7 @@ class FinishInfo:
     frame: FrameRecord | None = None
     execution_state: ExecutionState | None = None
     stop_reason: str | None = None
+    stop_kind: StopKind | None = None
     last_stop_event: StopEvent | None = None
 
 

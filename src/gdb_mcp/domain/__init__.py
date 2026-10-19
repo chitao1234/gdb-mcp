@@ -76,8 +76,14 @@ from .results import (
     payload_to_mapping,
     result_to_mapping,
 )
+from .stop_kinds import (
+    STOP_KINDS,
+    StopKind,
+    stop_kind_from_reason,
+)
 
 __all__ = [
+    "STOP_KINDS",
     "BacktraceInfo",
     "BatchExecutionInfo",
     "BatchStepResult",
@@ -128,6 +134,7 @@ __all__ = [
     "SourceContextInfo",
     "SourceLineRecord",
     "StopEvent",
+    "StopKind",
     "StructuredPayload",
     "ThreadListInfo",
     "ThreadRecord",
@@ -145,6 +152,7 @@ __all__ = [
     "payload_to_mapping",
     "registers_info_from_payload",
     "result_to_mapping",
+    "stop_kind_from_reason",
     "thread_list_info_from_payload",
     "thread_selection_info_from_payload",
     "variables_info_from_payload",

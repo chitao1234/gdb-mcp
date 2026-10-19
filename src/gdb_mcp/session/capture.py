@@ -6,6 +6,7 @@ import json
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from ..domain import (
     CaptureArtifactInfo,
@@ -15,6 +16,7 @@ from ..domain import (
     OperationError,
     OperationResult,
     OperationSuccess,
+    StopKind,
     StructuredPayload,
     payload_to_mapping,
     result_to_mapping,
@@ -120,6 +122,11 @@ class SessionCaptureService:
             status_payload.payload,
             "stop_reason",
             self._runtime.stop_reason,
+        )
+        status_stop_kind = self._status_field(
+            status_payload.payload,
+            "stop_kind",
+            self._runtime.stop_kind,
         )
 
         stop_event_payload = self._write_payload_artifact(
@@ -269,6 +276,7 @@ class SessionCaptureService:
             "captured_at": self._runtime.time_module.time(),
             "execution_state": status_execution_state,
             "stop_reason": status_stop_reason,
+            "stop_kind": status_stop_kind,
             "last_stop_event": payload_to_mapping(self._runtime.last_stop_event),
             "requested_memory_ranges": payload_to_mapping(request.memory_ranges),
             "artifacts": payload_to_mapping(artifacts),
@@ -304,6 +312,7 @@ class SessionCaptureService:
                 failed_sections=sorted(set(failed_sections)) or None,
                 execution_state=status_execution_state,
                 stop_reason=status_stop_reason,
+                stop_kind=cast(StopKind, status_stop_kind),
                 last_stop_event=self._runtime.last_stop_event,
             ),
             warnings=warnings,

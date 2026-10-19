@@ -395,6 +395,7 @@ class SessionExecutionService:
                     status="success",
                     execution_state=self._runtime.execution_state,
                     stop_reason=self._runtime.stop_reason,
+                    stop_kind=self._runtime.stop_kind,
                     timestamp=self._runtime.time_module.time(),
                 )
             )
@@ -425,6 +426,7 @@ class SessionExecutionService:
                     error=str(result["error"]),
                     execution_state=self._runtime.execution_state,
                     stop_reason=self._runtime.stop_reason,
+                    stop_kind=self._runtime.stop_kind,
                     timestamp=self._runtime.time_module.time(),
                 )
             )
@@ -444,6 +446,7 @@ class SessionExecutionService:
                     error=f"Timeout waiting for stop after {timeout_sec}s",
                     execution_state=self._runtime.execution_state,
                     stop_reason=self._runtime.stop_reason,
+                    stop_kind=self._runtime.stop_kind,
                     timestamp=self._runtime.time_module.time(),
                 )
             )
@@ -472,6 +475,7 @@ class SessionExecutionService:
                 status="success",
                 execution_state=self._runtime.execution_state,
                 stop_reason=self._runtime.stop_reason,
+                stop_kind=self._runtime.stop_kind,
                 timestamp=self._runtime.time_module.time(),
             )
         )
@@ -556,6 +560,7 @@ class SessionExecutionService:
                 frame=frame,
                 execution_state=self._runtime.execution_state,
                 stop_reason=self._runtime.stop_reason,
+                stop_kind=self._runtime.stop_kind,
                 last_stop_event=self._runtime.last_stop_event,
             )
         )
@@ -593,6 +598,7 @@ class SessionExecutionService:
                     error=str(result["error"]),
                     execution_state=self._runtime.execution_state,
                     stop_reason=self._runtime.stop_reason,
+                    stop_kind=self._runtime.stop_kind,
                     timestamp=self._runtime.time_module.time(),
                 )
             )
@@ -615,6 +621,7 @@ class SessionExecutionService:
                     error="Interrupt sent but no stopped notification received",
                     execution_state=self._runtime.execution_state,
                     stop_reason=self._runtime.stop_reason,
+                    stop_kind=self._runtime.stop_kind,
                     timestamp=self._runtime.time_module.time(),
                 )
             )
@@ -636,6 +643,7 @@ class SessionExecutionService:
                 result_class=parsed.result_class,
                 execution_state=self._runtime.execution_state,
                 stop_reason=self._runtime.stop_reason,
+                stop_kind=self._runtime.stop_kind,
                 timestamp=self._runtime.time_module.time(),
             )
         )
@@ -670,6 +678,7 @@ class SessionExecutionService:
                     error=str(result["error"]),
                     execution_state=self._runtime.execution_state,
                     stop_reason=self._runtime.stop_reason,
+                    stop_kind=self._runtime.stop_kind,
                     timestamp=self._runtime.time_module.time(),
                 )
             )
@@ -688,6 +697,7 @@ class SessionExecutionService:
                     error=f"Timeout waiting for call to complete after {timeout_sec}s",
                     execution_state=self._runtime.execution_state,
                     stop_reason=self._runtime.stop_reason,
+                    stop_kind=self._runtime.stop_kind,
                     timestamp=self._runtime.time_module.time(),
                 )
             )
@@ -710,6 +720,7 @@ class SessionExecutionService:
                     error=parsed.error_message() or "GDB returned an error",
                     execution_state=self._runtime.execution_state,
                     stop_reason=self._runtime.stop_reason,
+                    stop_kind=self._runtime.stop_kind,
                     timestamp=self._runtime.time_module.time(),
                 )
             )
@@ -729,6 +740,7 @@ class SessionExecutionService:
                 result_class=parsed.result_class,
                 execution_state=self._runtime.execution_state,
                 stop_reason=self._runtime.stop_reason,
+                stop_kind=self._runtime.stop_kind,
                 timestamp=self._runtime.time_module.time(),
             )
         )

@@ -250,7 +250,7 @@ def _session_state_details(session: SessionService) -> StructuredPayload:
 
     runtime = getattr(session, "runtime", None)
     details: StructuredPayload = {}
-    for name in ("execution_state", "stop_reason"):
+    for name in ("execution_state", "stop_reason", "stop_kind"):
         value = getattr(runtime, name, None)
         if isinstance(value, str):
             details[name] = value

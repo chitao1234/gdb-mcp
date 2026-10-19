@@ -12,6 +12,8 @@ from ..domain import (
     FollowForkMode,
     InferiorStateRecord,
     StopEvent,
+    StopKind,
+    stop_kind_from_reason,
 )
 from ..transport import MiClient
 from ..transport.protocols import GdbControllerProtocol
@@ -94,6 +96,12 @@ class SessionRuntime:
         """Return whether a controller is currently attached."""
 
         return self.controller is not None
+
+    @property
+    def stop_kind(self) -> StopKind:
+        """Canonical kind of the current stop reason."""
+
+        return stop_kind_from_reason(self.stop_reason)
 
     def begin_startup(self, config: SessionConfig) -> None:
         """Record a startup attempt and reset transient state."""

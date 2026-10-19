@@ -558,6 +558,7 @@ class SessionCommandRunner:
                 error=error,
                 execution_state=self._runtime.execution_state,
                 stop_reason=self._runtime.stop_reason,
+                stop_kind=self._runtime.stop_kind,
                 timestamp=self._runtime.time_module.time(),
             )
         )

@@ -170,6 +170,11 @@ class RunUntilFailureService:
                                     if matched_info.status_snapshot is not None
                                     else None
                                 ),
+                                stop_kind=(
+                                    matched_info.status_snapshot.stop_kind
+                                    if matched_info.status_snapshot is not None
+                                    else None
+                                ),
                                 exit_code=(
                                     matched_info.status_snapshot.exit_code
                                     if matched_info.status_snapshot is not None
@@ -230,6 +235,7 @@ class RunUntilFailureService:
                         status=str(run_payload.get("status", "success")),
                         execution_state=status_snapshot.execution_state,
                         stop_reason=status_snapshot.stop_reason,
+                        stop_kind=status_snapshot.stop_kind,
                         exit_code=status_snapshot.exit_code,
                         matched_failure=matched,
                         trigger=trigger,
@@ -269,6 +275,9 @@ class RunUntilFailureService:
                         last_status_snapshot.stop_reason
                         if last_status_snapshot is not None
                         else None
+                    ),
+                    stop_kind=(
+                        last_status_snapshot.stop_kind if last_status_snapshot is not None else None
                     ),
                     exit_code=(
                         last_status_snapshot.exit_code if last_status_snapshot is not None else None

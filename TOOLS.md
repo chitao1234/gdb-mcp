@@ -47,6 +47,11 @@ debugger is behind the session:
 - `enabled` (breakpoints) is a boolean; GDB reports `y`/`n`
 - `times` (breakpoints) is an integer hit count; GDB reports a string
 - `level` (frames) is an integer; GDB reports a string
+- `stop_kind` accompanies every `stop_reason` (and `final_stop_kind` every
+  `final_stop_reason`) with the canonical meaning: `breakpoint`, `watchpoint`,
+  `step`, `signal`, `exception`, `exit`, `entry`, `pause`, or `unknown`. The
+  debugger's own `stop_reason` string is kept as-is; `stop_reasons` request
+  filters keep matching that native string
 
 A value that cannot be converted is passed through unchanged rather than dropped.
 

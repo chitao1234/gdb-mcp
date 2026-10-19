@@ -186,6 +186,15 @@ class TestLifecycleApi:
         assert "rr trace already owns the target" in text(result["message"]).lower()
         assert session_service.state.value == "failed"
 
+    def test_status_reports_the_canonical_stop_kind(self, session_service: SessionService) -> None:
+        """`stop_kind` carries the canonical meaning next to the debugger's reason."""
+
+        session_service.runtime.stop_reason = "breakpoint-hit"
+        assert result_to_mapping(session_service.get_status())["stop_kind"] == "breakpoint"
+
+        session_service.runtime.stop_reason = "watchpoint-trigger"
+        assert result_to_mapping(session_service.get_status())["stop_kind"] == "watchpoint"
+
     def test_start_session_rejects_unknown_debugger(self, session_service: SessionService) -> None:
         """An unimplemented backend is rejected before GDB is spawned."""
 
