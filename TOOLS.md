@@ -625,6 +625,20 @@ architecture cannot be inferred, only unambiguous vector names are removed.
 
 - `disassembly` accepts `function`, `address`, `address_range`, `file_line`, `file_range`, or `current`.
 - `source` accepts the same location union.
+
+### Source Notes
+
+- Source text is produced by GDB's own `list`, so the file is resolved with
+  GDB's settings. A path rewritten with `set substitute-path`, a directory
+  added with `set directories` or `--directory`, and the session's working
+  directory all apply exactly as they do for GDB itself.
+- `file_line` and `file_range` must therefore name a source file GDB knows
+  from the program's debug info; an unrelated path fails with
+  `No source file named <file>`.
+- The returned `text` is GDB's rendering of the line: control bytes appear in
+  caret notation (`^L` for a form feed, `^[` for escape) and bytes that are not
+  valid UTF-8 appear as octal escapes (`\377`).
+
 ## `gdb_workflow_batch`
 
 Execute a structured sequence of session-scoped tools under one workflow lock.
