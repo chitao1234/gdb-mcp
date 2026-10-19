@@ -55,9 +55,15 @@ class MemoryRangeArgsProtocol(Protocol):
 
 @runtime_checkable
 class ActionArgsProtocol(Protocol):
-    """Validated MCP argument models that expose an action selector."""
+    """Validated MCP argument models that expose an action selector.
 
-    action: object
+    The selector is read-only here on purpose: every action model narrows
+    ``action`` to its own literal, and a read-only property keeps that narrowing
+    assignable to this protocol.
+    """
+
+    @property
+    def action(self) -> str: ...
 
 
 SessionToolArgsT = TypeVar("SessionToolArgsT", bound=BaseModel)
@@ -174,7 +180,7 @@ def _unwrap_action_args(args: BaseModel) -> BaseModel:
     return args
 
 
-def _unsupported_action(scope: str, action_args: object) -> OperationError:
+def _unsupported_action(scope: str, action_args: BaseModel) -> OperationError:
     """Build the standard validation error for an unhandled action payload."""
 
     return OperationError(
@@ -212,7 +218,7 @@ def _wrap_action_result_for(validated_args: BaseModel, result: ToolResult) -> To
     """Wrap one raw tool result in the action envelope when the request has an action."""
 
     action_args = _unwrap_action_args(validated_args)
-    if isinstance(action_args, ActionArgsProtocol) and isinstance(action_args.action, str):
+    if isinstance(action_args, ActionArgsProtocol):
         return _wrap_action_result(action_args.action, result)
     return result
 
