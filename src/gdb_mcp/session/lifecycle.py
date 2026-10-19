@@ -288,6 +288,18 @@ class SessionLifecycleService:
                         "Failed to disable CLI line wrapping by default: " f"{width_result.message}"
                     )
 
+                # An externally started GDB on a pty still pages long CLI output,
+                # which stalls the `info files` probe until the pager prompt is
+                # answered.
+                pagination_result = self._command_runner.execute_command_result(
+                    "set pagination off",
+                    timeout_sec=DEFAULT_TIMEOUT_SEC,
+                )
+                if isinstance(pagination_result, OperationError):
+                    warnings.append(
+                        "Failed to disable pagination by default: " f"{pagination_result.message}"
+                    )
+
                 self._runtime.target_loaded = self._startup_target_loaded(
                     program=program,
                     core=core,

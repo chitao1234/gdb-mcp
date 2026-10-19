@@ -241,6 +241,7 @@ class TestLifecycleApi:
         assert start_session.executed == [
             "set confirm off",
             "set width 0",
+            "set pagination off",
             "set environment DEBUG_MODE 1",
             "set pagination off",
             "run",
@@ -405,7 +406,12 @@ class TestLifecycleApi:
 
         assert result["status"] == "success"
         assert result["target_loaded"] is True
-        assert start_session.executed == ["set confirm off", "set width 0", "source setup.gdb"]
+        assert start_session.executed == [
+            "set confirm off",
+            "set width 0",
+            "set pagination off",
+            "source setup.gdb",
+        ]
 
     def test_start_session_warns_when_target_loaded_refresh_fails(
         self,
@@ -421,6 +427,7 @@ class TestLifecycleApi:
             execute=[
                 command_result("set confirm off", output=""),
                 command_result("set width 0", output=""),
+                command_result("set pagination off", output=""),
                 OperationError(message="info files failed"),
             ],
         )
