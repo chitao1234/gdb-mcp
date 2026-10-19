@@ -276,6 +276,18 @@ class SessionLifecycleService:
                         f"{confirm_result.message}"
                     )
 
+                # Older GDB wraps CLI output at the terminal width (80 columns),
+                # which splits the messages this server parses; `set width 0`
+                # removes the limit so one reply stays one line.
+                width_result = self._command_runner.execute_command_result(
+                    "set width 0",
+                    timeout_sec=DEFAULT_TIMEOUT_SEC,
+                )
+                if isinstance(width_result, OperationError):
+                    warnings.append(
+                        "Failed to disable CLI line wrapping by default: " f"{width_result.message}"
+                    )
+
                 self._runtime.target_loaded = self._startup_target_loaded(
                     program=program,
                     core=core,

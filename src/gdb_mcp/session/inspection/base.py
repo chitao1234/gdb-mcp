@@ -57,7 +57,7 @@ class _ResolvedSourceWindow:
 
 _INFO_LINE_RE = re.compile(
     r'^Line (?P<line>\d+) of "(?P<file>.+)" starts at address '
-    r"(?P<start>0x[0-9a-fA-F]+)(?: <[^>]+>)? and ends at (?P<end>0x[0-9a-fA-F]+)",
+    r"(?P<start>0x[0-9a-fA-F]+)(?: <[^>]+>)?\s+and ends at (?P<end>0x[0-9a-fA-F]+)",
     re.MULTILINE,
 )
 

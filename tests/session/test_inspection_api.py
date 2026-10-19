@@ -467,6 +467,38 @@ class TestStructuredCodeInspectionApi:
         assert lines[1]["line_number"] == 2
         assert lines[1]["is_current"] is True
 
+    def test_get_source_context_resolves_wrapped_info_line(
+        self,
+        tmp_path: Path,
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_console: MiConsoleBuilder,
+        mi_result: MiRecordBuilder,
+    ) -> None:
+        """GDB before 8 wraps `info line` at the width; the resolver must still read it."""
+
+        source_file = tmp_path / "main.c"
+        source_file.write_text("int add(int a, int b) {\n    return a + b;\n}\n")
+
+        session, _controller = scripted_running_session(
+            [
+                mi_console(
+                    f'Line 1 of "{source_file}" starts at address 0x1129 <add>\n'
+                    "   and ends at 0x1133 <add+10>.\n"
+                ),
+                mi_result(),
+            ],
+        )
+
+        result = result_to_mapping(
+            session.get_source_context(function="add", context_before=0, context_after=0)
+        )
+
+        assert result["status"] == "success"
+        assert result["file"] == str(source_file)
+        assert result["function"] == "add"
+        assert result["line"] == 1
+        assert mapping_list(result["lines"])[0]["line_number"] == 1
+
     def test_get_source_context_with_thread_and_frame_restores_selection(
         self,
         scripted_running_session: ScriptedSessionBuilder,
