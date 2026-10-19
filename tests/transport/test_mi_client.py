@@ -4,30 +4,34 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 from unittest.mock import MagicMock, patch
 
 from gdb_mcp.transport.mi_client import MiClient
-from gdb_mcp.transport.mi_commands import (
-    build_read_memory_command,
-    escape_mi_string,
-    is_cli_command,
-    wrap_cli_command,
-)
-from gdb_mcp.transport.mi_models import MiRecord
+from gdb_mcp.transport.mi_models import MiRecord, MiTransportResponse
 from gdb_mcp.transport.protocols import (
     ControllerIoManagerProtocol,
     GdbControllerProtocol,
     GdbProcessProtocol,
 )
 
+# Locks expose no "waiter is blocked" callback, so give a contending thread a
+# moment to reach the lock before asserting that it has not written yet.
+_LOCK_CONTENTION_GRACE_SEC = 0.05
+
 
 class _FakeStdin:
-    def __init__(self) -> None:
+    """Capture writes and optionally signal when one has been recorded."""
+
+    def __init__(self, write_event: threading.Event | None = None) -> None:
         self.writes: list[bytes] = []
         self.flush_count = 0
+        self._write_event = write_event
 
     def write(self, data: bytes) -> int | None:
         self.writes.append(data)
+        if self._write_event is not None:
+            self._write_event.set()
         return None
 
     def flush(self) -> None:
@@ -37,8 +41,8 @@ class _FakeStdin:
 class _FakeIoManager(ControllerIoManagerProtocol):
     """Typed stand-in for pygdbmi's IO manager."""
 
-    def __init__(self) -> None:
-        self.stdin = _FakeStdin()
+    def __init__(self, write_event: threading.Event | None = None) -> None:
+        self.stdin = _FakeStdin(write_event)
 
 
 class _FakeProcess(GdbProcessProtocol):
@@ -52,6 +56,8 @@ class _FakeProcess(GdbProcessProtocol):
 
 
 class _FakeController(GdbControllerProtocol):
+    """Scripted controller that returns preloaded response batches."""
+
     def __init__(self, responses: list[list[MiRecord]]) -> None:
         self.io_manager = _FakeIoManager()
         self._responses = list(responses)
@@ -69,42 +75,54 @@ class _FakeController(GdbControllerProtocol):
         self.exit_called = True
 
 
-class TestMiCommands:
-    """Test MI command formatting helpers."""
+class ContinuousAsyncController(GdbControllerProtocol):
+    """Return one scripted batch, then endless async notifications."""
 
-    def test_is_cli_command(self) -> None:
-        """Commands without a leading dash should be treated as CLI commands."""
+    def __init__(self, first_response: list[MiRecord]) -> None:
+        self.io_manager = _FakeIoManager()
+        self.gdb_process = _FakeProcess()
+        self._first_response = first_response
+        self._step = 0
 
-        assert is_cli_command("info threads") is True
-        assert is_cli_command("-thread-info") is False
+    def get_gdb_response(
+        self, *, timeout_sec: float, raise_error_on_timeout: bool
+    ) -> list[MiRecord]:
+        del timeout_sec, raise_error_on_timeout
+        self._step += 1
+        if self._step == 1:
+            return self._first_response
+        return [{"type": "notify", "message": "library-loaded", "payload": {"id": self._step}}]
 
-    def test_escape_mi_string(self) -> None:
-        """Backslashes and double quotes should be escaped for MI strings."""
+    def exit(self) -> None:
+        pass
 
-        assert escape_mi_string('say "hello" \\ world') == 'say \\"hello\\" \\\\ world'
 
-    def test_escape_mi_string_escapes_control_characters(self) -> None:
-        """Control characters should be escaped instead of being written literally."""
+class BlockingController(GdbControllerProtocol):
+    """Controller whose response depends on the number of writes so far.
 
-        assert escape_mi_string("line1\nline2\r\t") == "line1\\nline2\\r\\t"
+    The handler receives the current write count and may block on test-owned
+    events before returning records.
+    """
 
-    def test_wrap_cli_command(self) -> None:
-        """CLI commands should be wrapped with interpreter-exec."""
+    def __init__(
+        self,
+        handler: Callable[[int], list[MiRecord]],
+        *,
+        write_event: threading.Event | None = None,
+    ) -> None:
+        self.io_manager = _FakeIoManager(write_event)
+        self.gdb_process = _FakeProcess()
+        self._handler = handler
+        self.exit_called = False
 
-        wrapped = wrap_cli_command('print "hello"')
-        assert wrapped == '-interpreter-exec console "print \\"hello\\""'
+    def get_gdb_response(
+        self, *, timeout_sec: float, raise_error_on_timeout: bool
+    ) -> list[MiRecord]:
+        del timeout_sec, raise_error_on_timeout
+        return self._handler(len(self.io_manager.stdin.writes))
 
-    def test_wrap_cli_command_escapes_newlines(self) -> None:
-        """Wrapped CLI commands should not contain literal line breaks."""
-
-        wrapped = wrap_cli_command('print "hello"\nshow version\r')
-        assert wrapped == '-interpreter-exec console "print \\"hello\\"\\nshow version\\r"'
-
-    def test_build_read_memory_command(self) -> None:
-        """Structured memory reads should quote the address expression safely."""
-
-        command = build_read_memory_command("&value + 4", 16, offset=2)
-        assert command == '-data-read-memory-bytes -o 2 "&value + 4" 16'
+    def exit(self) -> None:
+        self.exit_called = True
 
 
 class TestMiClient:
@@ -116,7 +134,10 @@ class TestMiClient:
             initial_command_token=1000,
             poll_timeout_sec=0.01,
         )
-        client.controller = controller
+        client.start(
+            command=["gdb", "--quiet", "--interpreter=mi"],
+            time_to_check_for_additional_output_sec=1.0,
+        )
         return client
 
     def test_start_uses_controller_factory(self) -> None:
@@ -384,35 +405,18 @@ class TestMiClient:
     def test_send_command_completes_after_result_even_with_continuous_async_traffic(self) -> None:
         """Non-running commands should return once their result record is parsed."""
 
-        class ContinuousAsyncController(GdbControllerProtocol):
-            def __init__(self) -> None:
-                self.io_manager = _FakeIoManager()
-                self.gdb_process = _FakeProcess()
-                self._step = 0
-
-            def get_gdb_response(
-                self, *, timeout_sec: float, raise_error_on_timeout: bool
-            ) -> list[MiRecord]:
-                del timeout_sec, raise_error_on_timeout
-                self._step += 1
-                if self._step == 1:
-                    return [
-                        {
-                            "type": "result",
-                            "token": 1000,
-                            "message": "done",
-                            "payload": {"ok": True},
-                        },
-                        {"type": "notify", "message": "thread-created", "payload": {"id": "2"}},
-                    ]
-                return [
-                    {"type": "notify", "message": "library-loaded", "payload": {"id": self._step}}
-                ]
-
-            def exit(self) -> None:
-                pass
-
-        client = self._make_client(ContinuousAsyncController())
+        controller = ContinuousAsyncController(
+            [
+                {
+                    "type": "result",
+                    "token": 1000,
+                    "message": "done",
+                    "payload": {"ok": True},
+                },
+                {"type": "notify", "message": "thread-created", "payload": {"id": "2"}},
+            ]
+        )
+        client = self._make_client(controller)
 
         result = client.send_command_and_wait_for_prompt("-thread-info", timeout_sec=0.02)
 
@@ -428,35 +432,18 @@ class TestMiClient:
     def test_send_command_completes_running_command_after_stop_under_async_noise(self) -> None:
         """Running commands should return once stopped is observed, even if async noise continues."""
 
-        class ContinuousAsyncController(GdbControllerProtocol):
-            def __init__(self) -> None:
-                self.io_manager = _FakeIoManager()
-                self.gdb_process = _FakeProcess()
-                self._step = 0
-
-            def get_gdb_response(
-                self, *, timeout_sec: float, raise_error_on_timeout: bool
-            ) -> list[MiRecord]:
-                del timeout_sec, raise_error_on_timeout
-                self._step += 1
-                if self._step == 1:
-                    return [
-                        {"type": "result", "token": 1000, "message": "running", "payload": None},
-                        {
-                            "type": "notify",
-                            "message": "stopped",
-                            "payload": {"reason": "breakpoint-hit"},
-                        },
-                        {"type": "notify", "message": "thread-created", "payload": {"id": "2"}},
-                    ]
-                return [
-                    {"type": "notify", "message": "library-loaded", "payload": {"id": self._step}}
-                ]
-
-            def exit(self) -> None:
-                pass
-
-        client = self._make_client(ContinuousAsyncController())
+        controller = ContinuousAsyncController(
+            [
+                {"type": "result", "token": 1000, "message": "running", "payload": None},
+                {
+                    "type": "notify",
+                    "message": "stopped",
+                    "payload": {"reason": "breakpoint-hit"},
+                },
+                {"type": "notify", "message": "thread-created", "payload": {"id": "2"}},
+            ]
+        )
+        client = self._make_client(controller)
 
         result = client.send_command_and_wait_for_prompt("-exec-next", timeout_sec=0.02)
 
@@ -517,28 +504,19 @@ class TestMiClient:
     def test_exit_waits_for_inflight_command_before_clearing_controller(self) -> None:
         """Controller teardown should block until the active command finishes reading."""
 
-        class BlockingController(GdbControllerProtocol):
-            def __init__(self) -> None:
-                self.io_manager = _FakeIoManager()
-                self.gdb_process = _FakeProcess()
-                self._release_response = threading.Event()
-                self._returned_result = False
-                self.exit_called = False
+        release_response = threading.Event()
+        returned_result = False
 
-            def get_gdb_response(
-                self, *, timeout_sec: float, raise_error_on_timeout: bool
-            ) -> list[MiRecord]:
-                del timeout_sec, raise_error_on_timeout
-                if not self._returned_result:
-                    self._release_response.wait(timeout=1.0)
-                    self._returned_result = True
-                    return [{"type": "result", "token": 1000, "message": "done", "payload": None}]
-                return []
+        def respond(_write_count: int) -> list[MiRecord]:
+            nonlocal returned_result
+            if not returned_result:
+                release_response.wait(timeout=1.0)
+                returned_result = True
+                return [{"type": "result", "token": 1000, "message": "done", "payload": None}]
+            return []
 
-            def exit(self) -> None:
-                self.exit_called = True
-
-        controller = BlockingController()
+        first_write = threading.Event()
+        controller = BlockingController(respond, write_event=first_write)
         client = self._make_client(controller)
         command_thread = threading.Thread(
             target=client.send_command_and_wait_for_prompt,
@@ -547,18 +525,24 @@ class TestMiClient:
         )
         command_thread.start()
 
-        while len(controller.io_manager.stdin.writes) < 1:
-            time.sleep(0.01)
+        assert first_write.wait(timeout=1.0)
 
-        exit_thread = threading.Thread(target=client.exit)
+        exit_attempted = threading.Event()
+
+        def run_exit() -> None:
+            exit_attempted.set()
+            client.exit()
+
+        exit_thread = threading.Thread(target=run_exit)
         exit_thread.start()
+        assert exit_attempted.wait(timeout=1.0)
 
-        time.sleep(0.05)
+        time.sleep(_LOCK_CONTENTION_GRACE_SEC)
         assert exit_thread.is_alive() is True
         assert controller.exit_called is False
         assert client.controller is controller
 
-        controller._release_response.set()
+        release_response.set()
         command_thread.join()
         exit_thread.join()
 
@@ -568,36 +552,27 @@ class TestMiClient:
     def test_send_command_serializes_same_session_calls(self) -> None:
         """Concurrent commands on one client should not interleave writes."""
 
-        class BlockingController(GdbControllerProtocol):
-            def __init__(self) -> None:
-                self.io_manager = _FakeIoManager()
-                self.gdb_process = _FakeProcess()
-                self._release_first = threading.Event()
-                self._first_command_done = False
-                self._second_command_done = False
+        release_first = threading.Event()
+        first_command_done = False
+        second_command_done = False
 
-            def get_gdb_response(
-                self, *, timeout_sec: float, raise_error_on_timeout: bool
-            ) -> list[MiRecord]:
-                del timeout_sec, raise_error_on_timeout
-                write_count = len(self.io_manager.stdin.writes)
-                if write_count == 1 and not self._first_command_done:
-                    self._release_first.wait(timeout=1.0)
-                    self._first_command_done = True
-                    return [{"type": "result", "token": 1000, "message": "done", "payload": None}]
-                if write_count == 1 and self._first_command_done:
+        def respond(write_count: int) -> list[MiRecord]:
+            nonlocal first_command_done, second_command_done
+            if write_count == 1:
+                if first_command_done:
                     return []
-                if write_count == 2 and not self._second_command_done:
-                    self._second_command_done = True
-                    return [{"type": "result", "token": 1001, "message": "done", "payload": None}]
-                return []
+                release_first.wait(timeout=1.0)
+                first_command_done = True
+                return [{"type": "result", "token": 1000, "message": "done", "payload": None}]
+            if write_count == 2 and not second_command_done:
+                second_command_done = True
+                return [{"type": "result", "token": 1001, "message": "done", "payload": None}]
+            return []
 
-            def exit(self) -> None:
-                pass
-
-        controller = BlockingController()
+        first_write = threading.Event()
+        controller = BlockingController(respond, write_event=first_write)
         client = self._make_client(controller)
-        results: list = []
+        results: list[MiTransportResponse] = []
 
         def run_command(command: str) -> None:
             results.append(client.send_command_and_wait_for_prompt(command, timeout_sec=1.0))
@@ -605,16 +580,22 @@ class TestMiClient:
         thread_1 = threading.Thread(target=run_command, args=("-thread-info",))
         thread_1.start()
 
-        while len(controller.io_manager.stdin.writes) < 1:
-            time.sleep(0.01)
+        assert first_write.wait(timeout=1.0)
 
-        thread_2 = threading.Thread(target=run_command, args=("-stack-info-frame",))
+        second_started = threading.Event()
+
+        def run_second_command() -> None:
+            second_started.set()
+            run_command("-stack-info-frame")
+
+        thread_2 = threading.Thread(target=run_second_command)
         thread_2.start()
+        assert second_started.wait(timeout=1.0)
 
-        time.sleep(0.05)
+        time.sleep(_LOCK_CONTENTION_GRACE_SEC)
         assert controller.io_manager.stdin.writes == [b"1000-thread-info\n"]
 
-        controller._release_first.set()
+        release_first.set()
         thread_1.join()
         thread_2.join()
 

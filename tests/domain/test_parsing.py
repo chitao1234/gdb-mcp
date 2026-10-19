@@ -1,5 +1,7 @@
 """Unit tests for the untrusted-payload narrowing helpers."""
 
+from __future__ import annotations
+
 import logging
 
 import pytest

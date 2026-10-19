@@ -1,5 +1,7 @@
 """Shared program sources for direct-v2 integration tests."""
 
+from __future__ import annotations
+
 TEST_CPP_PROGRAM = """
 #include <iostream>
 
@@ -99,32 +101,40 @@ int main(void) {
 }
 """
 
-TEST_PROGRAM_1 = """
-#include <stdio.h>
-
-int double_value(int x) {
-    return x * 2;
+RR_RECORDED_C_PROGRAM = """
+static int loop_three_times(void) {
+    int i = 0;
+    for (i = 0; i < 3; i++) {
+    }
+    return i;
 }
 
-int main() {
-    int num = 10;
-    int result = double_value(num);
-    printf("Result: %d\\n", result);
+int main(void) {
+    loop_three_times();
     return 0;
 }
 """
 
-TEST_PROGRAM_2 = """
+
+def _simple_program(function_name: str, multiplier: int, value: int) -> str:
+    """Build a small program whose only variation is a function and constant."""
+
+    return f"""
 #include <stdio.h>
 
-int triple_value(int x) {
-    return x * 3;
-}
+int {function_name}(int x) {{
+    return x * {multiplier};
+}}
 
-int main() {
-    int num = 7;
-    int result = triple_value(num);
+int main() {{
+    int num = {value};
+    int result = {function_name}(num);
     printf("Result: %d\\n", result);
     return 0;
-}
+}}
 """
+
+
+TEST_PROGRAM_1 = _simple_program("double_value", 2, 10)
+
+TEST_PROGRAM_2 = _simple_program("triple_value", 3, 7)

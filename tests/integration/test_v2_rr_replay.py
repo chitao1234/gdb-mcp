@@ -15,20 +15,12 @@ import pytest
 
 from tests.support import dig, integer, sequence, text
 
-from .conftest import CallGdbTool, StopSession
+from .conftest import CallGdbTool, StopSession, _compile
+from .program_sources import RR_RECORDED_C_PROGRAM
 
 pytestmark = pytest.mark.integration
 
 RR = shutil.which("rr")
-
-_RECORDED_PROGRAM = """
-int main(void) {
-    int i = 0;
-    for (i = 0; i < 3; i++) {
-    }
-    return 0;
-}
-"""
 
 
 def _rr_recording_blocker() -> str | None:
@@ -71,16 +63,12 @@ def rr_trace(tmp_path_factory: pytest.TempPathFactory) -> str:
     assert rr is not None  # _rr_recording_blocker() already skipped when it is missing
 
     workdir = tmp_path_factory.mktemp("rr-replay")
-    source = workdir / "rr_probe.c"
-    source.write_text(_RECORDED_PROGRAM)
-    binary = workdir / "rr_probe"
-    compiled = subprocess.run(
-        ["gcc", "-g", "-O0", "-o", str(binary), str(source)],
-        capture_output=True,
-        text=True,
-        check=False,
+    _, binary = _compile(
+        RR_RECORDED_C_PROGRAM,
+        "rr_probe.c",
+        "gcc",
+        directory=workdir,
     )
-    assert compiled.returncode == 0, compiled.stderr
 
     trace_dir = workdir / "trace"
     recorded = subprocess.run(
@@ -134,6 +122,21 @@ def test_rr_replay_session_supports_reverse_execution(
         )
         assert _frame_function(at_main) == "main"
 
+        stepped = call_gdb_tool(
+            "gdb_execution_manage",
+            {
+                "session_id": session_id,
+                "action": "step",
+                "execution": {"wait_until": "stop"},
+            },
+        )
+        assert stepped["status"] == "success", stepped
+
+        inside_loop = call_gdb_tool(
+            "gdb_context_query", {"session_id": session_id, "action": "frame", "query": {}}
+        )
+        assert _frame_function(inside_loop) == "loop_three_times"
+
         backward = call_gdb_tool(
             "gdb_execution_manage",
             {
@@ -147,7 +150,7 @@ def test_rr_replay_session_supports_reverse_execution(
         moved_back = call_gdb_tool(
             "gdb_context_query", {"session_id": session_id, "action": "frame", "query": {}}
         )
-        assert _frame_function(moved_back) != "main"
+        assert _frame_function(moved_back) == "main"
     finally:
         stop_session(session_id, ignore_errors=True)
 

@@ -1,6 +1,10 @@
 """Unit tests for SessionRegistry lifecycle behavior."""
 
+from __future__ import annotations
+
+import contextlib
 import threading
+from collections.abc import Callable
 from unittest.mock import MagicMock, Mock
 
 import pytest
@@ -61,6 +65,26 @@ def _publish_session(manager: SessionRegistry, session: Mock, *, program: str = 
     return session_id
 
 
+def _session_factory_from(
+    sessions: list[Mock], *, lock: threading.Lock | None = None
+) -> Callable[[], Mock]:
+    """Return a factory that hands out prebuilt sessions in order.
+
+    ``lock`` guards the shared cursor when the factory is called from racing
+    threads; single-threaded callers omit it.
+    """
+
+    index = {"value": 0}
+
+    def session_factory() -> Mock:
+        with lock if lock is not None else contextlib.nullcontext():
+            session = sessions[index["value"]]
+            index["value"] += 1
+            return session
+
+    return session_factory
+
+
 class TestSessionRegistry:
     """Test cases for the session registry."""
 
@@ -71,14 +95,7 @@ class TestSessionRegistry:
         for session in sessions:
             session.start.return_value = OperationSuccess(SessionStartInfo(message="started"))
 
-        index = {"value": 0}
-
-        def session_factory() -> Mock:
-            session = sessions[index["value"]]
-            index["value"] += 1
-            return session
-
-        manager = SessionRegistry(session_factory=session_factory)
+        manager = SessionRegistry(session_factory=_session_factory_from(sessions))
 
         session_id_1, result_1 = manager.start_session(program="/bin/ls")
         session_id_2, result_2 = manager.start_session(program="/bin/ls")
@@ -97,7 +114,6 @@ class TestSessionRegistry:
 
         session_id = _publish_session(manager, session)
 
-        assert manager.get_session(session_id) is session
         assert manager.get_session(session_id) is session
 
     def test_get_session_returns_none_for_invalid_id(self) -> None:
@@ -203,6 +219,8 @@ class TestSessionRegistry:
         assert result.details["live_session_ids"] == [first, second]
 
     def test_unknown_session_error_says_when_nothing_is_live(self) -> None:
+        """An empty registry should report that no live sessions are available."""
+
         manager = SessionRegistry(session_factory=lambda: _session_double())
 
         result = manager.resolve_session(404)
@@ -303,16 +321,9 @@ class TestSessionRegistry:
         for session in sessions:
             session.start.return_value = OperationSuccess(SessionStartInfo(message="started"))
 
-        index = {"value": 0}
         index_lock = threading.Lock()
 
-        def session_factory() -> Mock:
-            with index_lock:
-                session = sessions[index["value"]]
-                index["value"] += 1
-                return session
-
-        manager = SessionRegistry(session_factory=session_factory)
+        manager = SessionRegistry(session_factory=_session_factory_from(sessions, lock=index_lock))
         session_ids: list[int] = []
         session_ids_lock = threading.Lock()
 
@@ -372,14 +383,7 @@ class TestSessionRegistry:
             session.controller = object()
             session.stop.return_value = OperationSuccess(SessionMessage(message="stopped"))
 
-        index = {"value": 0}
-
-        def session_factory() -> Mock:
-            session = sessions[index["value"]]
-            index["value"] += 1
-            return session
-
-        manager = SessionRegistry(session_factory=session_factory)
+        manager = SessionRegistry(session_factory=_session_factory_from(sessions))
         session_id_1, result_1 = manager.start_session(program="/bin/ls")
         session_id_2, result_2 = manager.start_session(program="/bin/ls")
 

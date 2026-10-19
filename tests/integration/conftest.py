@@ -6,11 +6,12 @@ import asyncio
 import json
 import logging
 import shutil
+import signal
 import subprocess
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 import pytest
 from mcp.types import TextContent
@@ -19,6 +20,10 @@ from gdb_mcp.mcp.runtime import ServerRuntime, create_server_runtime
 from gdb_mcp.session.registry import SessionRegistry
 
 from ..support import integer, mapping
+from .program_sources import TEST_CPP_PROGRAM
+
+_PROCESS_TERMINATE_TIMEOUT_SEC = 5
+_PROCESS_KILL_TIMEOUT_SEC = 10
 
 
 class CallGdbTool(Protocol):
@@ -53,6 +58,8 @@ class CompileProgramWithCore(Protocol):
     ) -> tuple[str, str]: ...
 
 
+# StartSession and StartSessionResult share one signature and differ only in their
+# return annotation. They stay separate so each fixture keeps a precise return type.
 class StartSession(Protocol):
     """Start a GDB session and return its session ID."""
 
@@ -75,6 +82,95 @@ class StopSession(Protocol):
     def __call__(self, session_id: int, *, ignore_errors: bool = False) -> dict[str, object]: ...
 
 
+def terminate_process(process: subprocess.Popen[Any]) -> None:
+    """Terminate a child process, escalating to a kill if it does not exit."""
+
+    if process.poll() is not None:
+        return
+
+    process.send_signal(signal.SIGTERM)
+    try:
+        process.wait(timeout=_PROCESS_TERMINATE_TIMEOUT_SEC)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=_PROCESS_KILL_TIMEOUT_SEC)
+
+
+def status_query(call: CallGdbTool, session_id: int) -> dict[str, object]:
+    """Query one session's status through the direct-v2 envelope."""
+
+    return call(
+        "gdb_session_query",
+        {"session_id": session_id, "action": "status", "query": {}},
+    )
+
+
+def run(call: CallGdbTool, session_id: int, **execution: object) -> dict[str, object]:
+    """Run the target in one session with the given execution options."""
+
+    return call(
+        "gdb_execution_manage",
+        {"session_id": session_id, "action": "run", "execution": execution},
+    )
+
+
+def create_breakpoint(call: CallGdbTool, session_id: int, location: str) -> dict[str, object]:
+    """Create a code breakpoint at one source location."""
+
+    return call(
+        "gdb_breakpoint_manage",
+        {
+            "session_id": session_id,
+            "action": "create",
+            "breakpoint": {"kind": "code", "location": location},
+        },
+    )
+
+
+def compile_default_program(compile_program: CompileProgram, *, filename: str) -> str:
+    """Compile the shared C++ program under a caller-chosen filename."""
+
+    return compile_program(TEST_CPP_PROGRAM, filename=filename, compiler="g++")
+
+
+def _compile(
+    source: str,
+    filename: str,
+    compiler: str,
+    compiler_args: list[str] | None = None,
+    *,
+    directory: Path | None = None,
+    prefix: str = "gdb-mcp-tests-",
+) -> tuple[Path, Path]:
+    """Write one source file into a temporary directory and compile it.
+
+    Returns the directory holding the build artifacts and the executable path.
+    """
+
+    tmpdir = Path(tempfile.mkdtemp(prefix=prefix)) if directory is None else directory
+    source_file = tmpdir / filename
+    executable_file = tmpdir / Path(filename).stem
+    source_file.write_text(source)
+
+    compile_result = subprocess.run(
+        [
+            compiler,
+            *(compiler_args or ["-g", "-O0"]),
+            "-o",
+            str(executable_file),
+            str(source_file),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    if compile_result.returncode != 0:
+        pytest.fail(f"Failed to compile test program: {compile_result.stderr}")
+
+    return tmpdir, executable_file
+
+
 @pytest.fixture(scope="module")
 def integration_runtime(request: pytest.FixtureRequest) -> Iterator[ServerRuntime]:
     """Create an isolated MCP runtime and session registry for one test module."""
@@ -86,9 +182,8 @@ def integration_runtime(request: pytest.FixtureRequest) -> Iterator[ServerRuntim
         logger=logger,
     )
 
+    # Session cleanup happens after every test through _cleanup_sessions.
     yield runtime
-
-    runtime.shutdown_sessions()
 
 
 @pytest.fixture(scope="module")
@@ -126,10 +221,20 @@ def _cleanup_sessions(integration_runtime: ServerRuntime) -> Iterator[None]:
 
 
 @pytest.fixture
-def compile_program() -> Iterator[CompileProgram]:
-    """Compile one test program and clean up its temporary directory after the test."""
+def _tempdirs() -> Iterator[list[Path]]:
+    """Track temporary build directories and remove them after the test."""
 
     temp_dirs: list[Path] = []
+
+    yield temp_dirs
+
+    for tmpdir in temp_dirs:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.fixture
+def compile_program(_tempdirs: list[Path]) -> CompileProgram:
+    """Compile one test program and clean up its temporary directory after the test."""
 
     def build(
         source: str,
@@ -138,39 +243,15 @@ def compile_program() -> Iterator[CompileProgram]:
         compiler: str,
         compiler_args: list[str] | None = None,
     ) -> str:
-        tmpdir = Path(tempfile.mkdtemp(prefix="gdb-mcp-tests-"))
-        temp_dirs.append(tmpdir)
-
-        source_file = tmpdir / filename
-        executable_file = tmpdir / Path(filename).stem
-        source_file.write_text(source)
-
-        compile_result = subprocess.run(
-            [
-                compiler,
-                *(compiler_args or ["-g", "-O0"]),
-                "-o",
-                str(executable_file),
-                str(source_file),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        if compile_result.returncode != 0:
-            pytest.fail(f"Failed to compile test program: {compile_result.stderr}")
-
+        tmpdir, executable_file = _compile(source, filename, compiler, compiler_args)
+        _tempdirs.append(tmpdir)
         return str(executable_file)
 
-    yield build
-
-    for tmpdir in temp_dirs:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+    return build
 
 
 @pytest.fixture
-def compile_program_with_core() -> Iterator[CompileProgramWithCore]:
+def compile_program_with_core(_tempdirs: list[Path]) -> CompileProgramWithCore:
     """Compile a program, generate a core dump with GDB, and return both paths.
 
     The core is produced by running the program under GDB and calling
@@ -179,8 +260,6 @@ def compile_program_with_core() -> Iterator[CompileProgramWithCore]:
     cores entirely).
     """
 
-    temp_dirs: list[Path] = []
-
     def build(
         source: str,
         *,
@@ -188,28 +267,14 @@ def compile_program_with_core() -> Iterator[CompileProgramWithCore]:
         compiler: str,
         compiler_args: list[str] | None = None,
     ) -> tuple[str, str]:
-        tmpdir = Path(tempfile.mkdtemp(prefix="gdb-mcp-core-tests-"))
-        temp_dirs.append(tmpdir)
-
-        source_file = tmpdir / filename
-        executable_file = tmpdir / Path(filename).stem
-        source_file.write_text(source)
-
-        compile_result = subprocess.run(
-            [
-                compiler,
-                *(compiler_args or ["-g", "-O0"]),
-                "-o",
-                str(executable_file),
-                str(source_file),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
+        tmpdir, executable_file = _compile(
+            source,
+            filename,
+            compiler,
+            compiler_args,
+            prefix="gdb-mcp-core-tests-",
         )
-
-        if compile_result.returncode != 0:
-            pytest.fail(f"Failed to compile crashing test program: {compile_result.stderr}")
+        _tempdirs.append(tmpdir)
 
         core_file = tmpdir / "core"
         run_result = subprocess.run(
@@ -243,10 +308,7 @@ def compile_program_with_core() -> Iterator[CompileProgramWithCore]:
 
         return str(executable_file), str(core_file)
 
-    yield build
-
-    for tmpdir in temp_dirs:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+    return build
 
 
 @pytest.fixture
@@ -260,28 +322,7 @@ def default_init_commands() -> list[str]:
 
 
 @pytest.fixture
-def start_session(start_session_result: StartSessionResult) -> StartSession:
-    """Start a GDB session and return its session ID."""
-
-    def start(
-        program: str,
-        *,
-        init_commands: list[str] | None = None,
-        **kwargs: object,
-    ) -> int:
-        return integer(
-            start_session_result(
-                program,
-                init_commands=init_commands,
-                **kwargs,
-            )["session_id"]
-        )
-
-    return start
-
-
-@pytest.fixture
-def start_session_result(
+def start_session_payload(
     call_gdb_tool: CallGdbTool, default_init_commands: list[str]
 ) -> StartSessionResult:
     """Start a GDB session and return the full start payload."""
@@ -305,6 +346,41 @@ def start_session_result(
         return result
 
     return start
+
+
+@pytest.fixture
+def start_session_result(start_session_payload: StartSessionResult) -> StartSessionResult:
+    """Alias kept for integration modules outside the current refactor scope."""
+
+    return start_session_payload
+
+
+@pytest.fixture
+def start_session(start_session_payload: StartSessionResult) -> StartSession:
+    """Start a GDB session and return its session ID."""
+
+    def start(
+        program: str,
+        *,
+        init_commands: list[str] | None = None,
+        **kwargs: object,
+    ) -> int:
+        return integer(
+            start_session_payload(
+                program,
+                init_commands=init_commands,
+                **kwargs,
+            )["session_id"]
+        )
+
+    return start
+
+
+@pytest.fixture
+def session_id(compiled_program: str, start_session: StartSession) -> int:
+    """Start one integration session on the module's compiled program."""
+
+    return start_session(compiled_program)
 
 
 @pytest.fixture

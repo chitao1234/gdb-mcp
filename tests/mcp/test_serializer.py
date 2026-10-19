@@ -1,5 +1,7 @@
 """Unit tests for MCP serializer typed-result support."""
 
+from __future__ import annotations
+
 import json
 
 from mcp.types import CallToolResult, TextContent

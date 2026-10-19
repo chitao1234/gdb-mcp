@@ -4,14 +4,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tests.support import integer, text
 
-from .conftest import CallGdbTool, CompileProgram, StopSession
+from .conftest import CallGdbTool, CompileProgram, StartSessionResult, StopSession
 from .program_sources import TEST_CPP_PROGRAM
+
+pytestmark = pytest.mark.integration
 
 
 def test_gdb_args_reach_gdb_before_the_program_loads(
     compile_program: CompileProgram,
+    start_session_payload: StartSessionResult,
     call_gdb_tool: CallGdbTool,
     stop_session: StopSession,
     tmp_path: Path,
@@ -26,17 +31,15 @@ def test_gdb_args_reach_gdb_before_the_program_loads(
     script_dir = tmp_path / "pretty-printers"
     script_dir.mkdir()
 
-    started = call_gdb_tool(
-        "gdb_session_start",
-        {
-            "program": program,
-            "gdb_args": [
-                f"--directory={script_dir}",
-                "-iex",
-                "set print elements 4242",
-            ],
-        },
+    started = start_session_payload(
+        program,
+        gdb_args=[
+            f"--directory={script_dir}",
+            "-iex",
+            "set print elements 4242",
+        ],
     )
+    assert started["status"] == "success"
     session_id = integer(started["session_id"])
 
     try:
@@ -51,6 +54,5 @@ def test_gdb_args_reach_gdb_before_the_program_loads(
     finally:
         stop_session(session_id)
 
-    assert started["status"] == "success"
     assert "4242" in text(elements.get("output"))
     assert str(script_dir) in text(directories.get("output"))

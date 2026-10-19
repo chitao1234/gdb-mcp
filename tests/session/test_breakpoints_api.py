@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Protocol, cast
+from typing import cast
 
 from gdb_mcp.domain import (
     BreakpointListInfo,
@@ -14,28 +13,9 @@ from gdb_mcp.domain import (
 )
 from gdb_mcp.session.breakpoints import SessionBreakpointService, _insert_blocked_reason
 from gdb_mcp.session.command_runner import SessionCommandRunner
-from gdb_mcp.session.service import SessionService
 from tests.support import dig, mapping, mapping_list, sequence, text
 
-MiRecordBuilder = Callable[..., dict[str, object]]
-MiConsoleBuilder = Callable[[str], dict[str, object]]
-
-
-class _FakeStdinView(Protocol):
-    """Read-only view of the recording stdin double installed by conftest."""
-
-    writes: list[bytes]
-
-
-class _FakeIoManagerView(Protocol):
-    stdin: _FakeStdinView
-
-
-class _ControllerDouble(Protocol):
-    io_manager: _FakeIoManagerView
-
-
-ScriptedSessionBuilder = Callable[..., tuple[SessionService, _ControllerDouble]]
+from .conftest import MiConsoleBuilder, MiRecordBuilder, ScriptedSessionBuilder
 
 
 class _StubBreakpointService(SessionBreakpointService):
@@ -107,7 +87,7 @@ class TestBreakpointApi:
         assert result["status"] == "success"
         assert "breakpoint" in result
         assert dig(result, "breakpoint", "func") == "main"
-        assert controller.io_manager.stdin.writes[0].decode().endswith('-break-insert "main"\n')
+        assert controller.decoded_writes[0].endswith('-break-insert "main"\n')
 
     def test_set_breakpoint_with_condition(
         self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
@@ -125,7 +105,7 @@ class TestBreakpointApi:
         )
 
         assert result["status"] == "success"
-        command = controller.io_manager.stdin.writes[0].decode()
+        command = controller.decoded_writes[0]
         assert '-break-insert -t -c "x > 10" "foo.c:42"' in command
 
     def test_set_breakpoint_quotes_locations_with_spaces(
@@ -138,11 +118,7 @@ class TestBreakpointApi:
         result = result_to_mapping(session.set_breakpoint("/tmp/my source.c:12"))
 
         assert result["status"] == "success"
-        assert (
-            controller.io_manager.stdin.writes[0]
-            .decode()
-            .endswith('-break-insert "/tmp/my source.c:12"\n')
-        )
+        assert controller.decoded_writes[0].endswith('-break-insert "/tmp/my source.c:12"\n')
 
     def test_set_breakpoint_ends_option_parsing_for_objc_methods(
         self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
@@ -156,11 +132,7 @@ class TestBreakpointApi:
         result = result_to_mapping(session.set_breakpoint("-[Point sum]"))
 
         assert result["status"] == "success"
-        assert (
-            controller.io_manager.stdin.writes[0]
-            .decode()
-            .endswith('-break-insert -- "-[Point sum]"\n')
-        )
+        assert controller.decoded_writes[0].endswith('-break-insert -- "-[Point sum]"\n')
 
     def test_set_watchpoint_ends_option_parsing_for_negative_expressions(
         self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
@@ -185,7 +157,7 @@ class TestBreakpointApi:
         result = result_to_mapping(session.set_watchpoint("-x"))
 
         assert result["status"] == "success"
-        assert controller.io_manager.stdin.writes[0].decode().endswith('-break-watch -- "-x"\n')
+        assert controller.decoded_writes[0].endswith('-break-watch -- "-x"\n')
 
     def test_list_breakpoints(
         self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
@@ -212,7 +184,7 @@ class TestBreakpointApi:
         assert result["status"] == "success"
         assert result["count"] == 2
         assert len(sequence(result["breakpoints"])) == 2
-        assert controller.io_manager.stdin.writes[0].decode().endswith("-break-list\n")
+        assert controller.decoded_writes[0].endswith("-break-list\n")
 
     def test_set_watchpoint(
         self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
@@ -243,7 +215,7 @@ class TestBreakpointApi:
         assert result["status"] == "success"
         assert dig(result, "breakpoint", "number") == "2"
         assert dig(result, "breakpoint", "type") == "hw watchpoint"
-        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        written = controller.decoded_writes
         assert written[0].endswith('-break-watch -a "value"\n')
         assert written[1].endswith("-break-list\n")
 
@@ -252,7 +224,7 @@ class TestBreakpointApi:
     ) -> None:
         """Access watchpoints should accept the hw-awpt result payload shape."""
 
-        session, _controller = scripted_running_session(
+        session, _ = scripted_running_session(
             [mi_result({"hw-awpt": {"number": "2", "exp": "value"}})],
             [
                 mi_result(
@@ -294,7 +266,7 @@ class TestBreakpointApi:
         assert dig(result, "details", "created_breakpoint_number") == 2
         assert dig(result, "details", "create_payload") == {"wpt": {"number": "2", "exp": "value"}}
         assert dig(result, "details", "refresh_error", "message") == "break-list failed"
-        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        written = controller.decoded_writes
         assert written[0].endswith('-break-watch "value"\n')
         assert written[1].endswith("-break-list\n")
 
@@ -309,7 +281,7 @@ class TestBreakpointApi:
 
         assert result["status"] == "success"
         assert "Watchpoint 4 deleted" in text(result["message"])
-        assert controller.io_manager.stdin.writes[0].decode().endswith("-break-delete 4\n")
+        assert controller.decoded_writes[0].endswith("-break-delete 4\n")
 
     def test_set_catchpoint(
         self,
@@ -355,7 +327,7 @@ class TestBreakpointApi:
         assert result["status"] == "success"
         assert dig(result, "breakpoint", "number") == "3"
         assert dig(result, "breakpoint", "type") == "catchpoint"
-        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        written = controller.decoded_writes
         assert written[0].endswith("-break-list\n")
         assert written[1].endswith('-interpreter-exec console "tcatch fork"\n')
         assert written[2].endswith("-break-list\n")
@@ -403,7 +375,7 @@ class TestBreakpointApi:
 
         assert result["status"] == "success"
         assert dig(result, "breakpoint", "number") == "4"
-        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        written = controller.decoded_writes
         assert written[0].endswith("-break-list\n")
         assert written[1].endswith('-interpreter-exec console "tcatch throw"\n')
         assert written[2].endswith("-break-list\n")
@@ -460,7 +432,7 @@ class TestBreakpointApi:
                 "catch-type": "fork",
             }
         ]
-        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        written = controller.decoded_writes
         assert written[0].endswith("-break-list\n")
         assert written[1].endswith('-interpreter-exec console "catch fork"\n')
         assert written[2].endswith("-break-list\n")
@@ -510,7 +482,7 @@ class TestBreakpointApi:
         assert details["requested_location"] == "t.c:3"
         assert details["blocked_breakpoint_numbers"] == [1]
         assert mapping_list(details["blocked_breakpoints"])[0]["number"] == "1"
-        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        written = controller.decoded_writes
         assert written[0].endswith('-break-insert "t.c:3"\n')
         assert written[1].endswith("-break-list\n")
 
@@ -519,7 +491,7 @@ class TestBreakpointApi:
     ) -> None:
         """When GDB created the new breakpoint anyway, report success and warn about the blocker."""
 
-        session, _controller = scripted_running_session(
+        session, _ = scripted_running_session(
             [
                 mi_result(
                     {
@@ -570,7 +542,7 @@ class TestBreakpointApi:
     ) -> None:
         """A created breakpoint is found even if GDB stores a quoted location."""
 
-        session, _controller = scripted_running_session(
+        session, _ = scripted_running_session(
             [
                 mi_result(
                     {
@@ -615,7 +587,7 @@ class TestBreakpointApi:
     ) -> None:
         """When the requested breakpoint itself is the blocker, attribute the failure to it."""
 
-        session, _controller = scripted_running_session(
+        session, _ = scripted_running_session(
             [
                 mi_result(
                     {
@@ -669,5 +641,5 @@ class TestBreakpointApi:
         assert result["code"] == "error"
         assert result["message"] == 'No symbol "nope" in current context.'
         assert "blocked_breakpoint_numbers" not in mapping(result["details"])
-        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        written = controller.decoded_writes
         assert len(written) == 1

@@ -10,7 +10,9 @@ from pathlib import Path
 from typing import ClassVar, cast
 from unittest.mock import ANY, AsyncMock, MagicMock, Mock, patch
 
+import pytest
 import uvicorn
+from mcp.shared.memory import create_connected_server_and_client_session
 from mcp.types import CallToolResult, TextContent, Tool
 from starlette.applications import Starlette
 from starlette.responses import PlainTextResponse
@@ -26,13 +28,18 @@ from gdb_mcp.mcp.app import (
 )
 
 
+@pytest.fixture
+def http_app_doubles() -> tuple[Mock, Mock]:
+    """Provide a stand-in MCP app and shutdown callback for HTTP-app tests."""
+
+    return Mock(), Mock()
+
+
 class TestMcpAppToolRegistration:
     """Verify registered call tool handlers bypass the SDK schema gate."""
 
     def test_call_tool_skips_sdk_input_schema_validation(self) -> None:
         """Inputs valid for the typed models must reach the handler unchanged."""
-
-        from mcp.shared.memory import create_connected_server_and_client_session
 
         seen: list[object] = []
 
@@ -72,11 +79,11 @@ class TestStreamableHttpApp:
     def test_create_streamable_http_app_registers_route_and_shutdown(
         self,
         mock_session_manager_cls: MagicMock,
+        http_app_doubles: tuple[Mock, Mock],
     ) -> None:
         """The helper should build the route and wire shutdown cleanup into lifespan."""
 
-        mcp_app = Mock()
-        shutdown = Mock()
+        mcp_app, shutdown = http_app_doubles
         session_manager = Mock()
 
         @asynccontextmanager
@@ -112,11 +119,11 @@ class TestStreamableHttpApp:
     def test_create_streamable_http_app_forwards_requests_to_session_manager(
         self,
         mock_session_manager_cls: MagicMock,
+        http_app_doubles: tuple[Mock, Mock],
     ) -> None:
         """The created Starlette app should route requests through the session manager."""
 
-        mcp_app = Mock()
-        shutdown = Mock()
+        mcp_app, shutdown = http_app_doubles
 
         class FakeSessionManager:
             def __init__(self) -> None:
@@ -156,12 +163,12 @@ class TestStreamableHttpApp:
         mock_create_streamable_http_app: MagicMock,
         mock_config_cls: MagicMock,
         mock_server_cls: MagicMock,
+        http_app_doubles: tuple[Mock, Mock],
     ) -> None:
         """The helper should wrap the Starlette app in a uvicorn server."""
 
-        mcp_app = Mock()
+        mcp_app, shutdown = http_app_doubles
         starlette_app = Mock()
-        shutdown = Mock()
         uvicorn_server = Mock()
         uvicorn_server.serve = AsyncMock(return_value=None)
 
@@ -209,10 +216,11 @@ class TestStreamableHttpApp:
         mock_config_cls: MagicMock,
         mock_server_cls: MagicMock,
         mock_get_logger: MagicMock,
+        http_app_doubles: tuple[Mock, Mock],
     ) -> None:
         """The startup message should be logged once with the effective log level."""
 
-        mcp_app = Mock()
+        mcp_app, _shutdown = http_app_doubles
         app_logger = Mock()
         root_logger = Mock()
         root_logger.getEffectiveLevel.return_value = 20

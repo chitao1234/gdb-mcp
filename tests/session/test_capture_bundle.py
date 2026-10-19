@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,77 @@ from gdb_mcp.domain import (
 )
 from gdb_mcp.session.capture import DEFAULT_CAPTURE_MEMORY_MAX_RANGE_BYTES
 from gdb_mcp.session.service import SessionService
+
+_FRAME = {"level": "0", "func": "main", "file": "app.c", "line": "10"}
+
+
+def _stub_bundle_sections(
+    monkeypatch: pytest.MonkeyPatch,
+    session: SessionService,
+    **overrides: Callable[..., object],
+) -> None:
+    """Point the collaborators ``capture_bundle`` reads at canned results.
+
+    With no overrides this is the all-sections-succeed case; pass e.g.
+    ``get_threads=lambda: OperationError(message="thread failure")`` to make one
+    section fail.
+    """
+
+    defaults: dict[str, Callable[..., object]] = {
+        "get_status": lambda: OperationSuccess(
+            SessionStatusSnapshot(
+                is_running=True,
+                target_loaded=True,
+                has_controller=True,
+                execution_state="paused",
+                stop_reason="breakpoint-hit",
+            )
+        ),
+        "get_threads": lambda: OperationSuccess(
+            ThreadListInfo(
+                threads=[{"id": "1", "state": "stopped"}],
+                current_thread_id="1",
+                count=1,
+            )
+        ),
+        "get_backtrace": lambda thread_id=None, max_frames=100: OperationSuccess(
+            BacktraceInfo(thread_id=thread_id, frames=[_FRAME], count=1)
+        ),
+        "get_frame_info": lambda: OperationSuccess(FrameInfo(frame=_FRAME)),
+        "get_variables": lambda thread_id=None, frame=0: OperationSuccess(
+            VariablesInfo(
+                thread_id=thread_id, frame=frame, variables=[{"name": "value", "value": "5"}]
+            )
+        ),
+        "get_registers": lambda thread_id=None, frame=None: OperationSuccess(
+            RegistersInfo(registers=[{"number": "0", "value": "0x1"}])
+        ),
+        "evaluate_expression": lambda expression, thread_id=None, frame=None: OperationSuccess(
+            ExpressionValueInfo(expression=expression, value="5")
+        ),
+        "read_memory": lambda address, count, offset=0: OperationSuccess(
+            MemoryReadInfo(
+                address=address,
+                count=count,
+                offset=offset,
+                blocks=[
+                    {
+                        "begin": "0x1000",
+                        "offset": "0x0",
+                        "end": "0x1004",
+                        "contents": "01020304",
+                    }
+                ],
+                block_count=1,
+                captured_bytes=4,
+            )
+        ),
+    }
+    defaults.update(overrides)
+
+    for name, result in defaults.items():
+        owner = session._lifecycle if name == "get_status" else session._inspection
+        monkeypatch.setattr(owner, name, result)
 
 
 class TestCaptureBundle:
@@ -47,95 +119,7 @@ class TestCaptureBundle:
         session_service.runtime.record_command_transcript(
             CommandTranscriptEntry(command="-exec-run", status="success")
         )
-
-        monkeypatch.setattr(
-            session_service._lifecycle,
-            "get_status",
-            lambda: OperationSuccess(
-                SessionStatusSnapshot(
-                    is_running=True,
-                    target_loaded=True,
-                    has_controller=True,
-                    execution_state="paused",
-                    stop_reason="breakpoint-hit",
-                )
-            ),
-        )
-        monkeypatch.setattr(
-            session_service._inspection,
-            "get_threads",
-            lambda: OperationSuccess(
-                ThreadListInfo(
-                    threads=[{"id": "1", "state": "stopped"}],
-                    current_thread_id="1",
-                    count=1,
-                )
-            ),
-        )
-        monkeypatch.setattr(
-            session_service._inspection,
-            "get_backtrace",
-            lambda thread_id=None, max_frames=100: OperationSuccess(
-                BacktraceInfo(
-                    thread_id=thread_id,
-                    frames=[{"level": "0", "func": "main", "file": "app.c", "line": "10"}],
-                    count=1,
-                )
-            ),
-        )
-        monkeypatch.setattr(
-            session_service._inspection,
-            "get_frame_info",
-            lambda: OperationSuccess(
-                FrameInfo(frame={"level": "0", "func": "main", "file": "app.c", "line": "10"})
-            ),
-        )
-        monkeypatch.setattr(
-            session_service._inspection,
-            "get_variables",
-            lambda thread_id=None, frame=0: OperationSuccess(
-                VariablesInfo(
-                    thread_id=thread_id,
-                    frame=frame,
-                    variables=[{"name": "value", "value": "5"}],
-                )
-            ),
-        )
-        monkeypatch.setattr(
-            session_service._inspection,
-            "get_registers",
-            lambda thread_id=None, frame=None: OperationSuccess(
-                RegistersInfo(registers=[{"number": "0", "value": "0x1"}])
-            ),
-        )
-        monkeypatch.setattr(
-            session_service._inspection,
-            "evaluate_expression",
-            lambda expression, thread_id=None, frame=None: OperationSuccess(
-                ExpressionValueInfo(expression=expression, value="5")
-            ),
-        )
-        monkeypatch.setattr(
-            session_service._inspection,
-            "read_memory",
-            lambda address, count, offset=0: OperationSuccess(
-                MemoryReadInfo(
-                    address=address,
-                    count=count,
-                    offset=offset,
-                    blocks=[
-                        {
-                            "begin": "0x1000",
-                            "offset": "0x0",
-                            "end": "0x1004",
-                            "contents": "01020304",
-                        }
-                    ],
-                    block_count=1,
-                    captured_bytes=4,
-                )
-            ),
-        )
+        _stub_bundle_sections(monkeypatch, session_service)
 
         result = session_service.capture_bundle(
             output_dir=str(tmp_path),
@@ -156,12 +140,14 @@ class TestCaptureBundle:
         assert manifest["execution_state"] == "paused"
         assert manifest["last_stop_event"]["reason"] == "breakpoint-hit"
         artifact_names = {artifact["name"] for artifact in manifest["artifacts"]}
-        assert "session-status" in artifact_names
-        assert "threads" in artifact_names
-        assert "thread-backtraces" in artifact_names
-        assert "command-transcript" in artifact_names
-        assert "expressions" in artifact_names
-        assert "memory-ranges" in artifact_names
+        assert {
+            "session-status",
+            "threads",
+            "thread-backtraces",
+            "command-transcript",
+            "expressions",
+            "memory-ranges",
+        } <= artifact_names
 
         memory_ranges = json.loads((tmp_path / "bundle" / "memory-ranges.json").read_text())
         assert memory_ranges[0]["requested_range"]["name"] == "value-bytes"
@@ -172,32 +158,15 @@ class TestCaptureBundle:
     ) -> None:
         """Capture should still produce a bundle when some sections fail."""
 
-        monkeypatch.setattr(
-            session_service._lifecycle,
-            "get_status",
-            lambda: OperationSuccess(
-                SessionStatusSnapshot(is_running=True, target_loaded=True, has_controller=True)
+        _stub_bundle_sections(
+            monkeypatch,
+            session_service,
+            get_threads=lambda: OperationError(message="thread failure"),
+            get_frame_info=lambda: OperationError(message="frame failure"),
+            get_variables=lambda thread_id=None, frame=0: OperationError(message="vars failure"),
+            get_registers=lambda thread_id=None, frame=None: OperationError(
+                message="register failure"
             ),
-        )
-        monkeypatch.setattr(
-            session_service._inspection,
-            "get_threads",
-            lambda: OperationError(message="thread failure"),
-        )
-        monkeypatch.setattr(
-            session_service._inspection,
-            "get_frame_info",
-            lambda: OperationError(message="frame failure"),
-        )
-        monkeypatch.setattr(
-            session_service._inspection,
-            "get_variables",
-            lambda thread_id=None, frame=0: OperationError(message="vars failure"),
-        )
-        monkeypatch.setattr(
-            session_service._inspection,
-            "get_registers",
-            lambda thread_id=None, frame=None: OperationError(message="register failure"),
         )
 
         result = session_service.capture_bundle(

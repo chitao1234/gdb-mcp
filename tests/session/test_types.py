@@ -1,11 +1,15 @@
 """Tests for the new session config/state types."""
 
+from __future__ import annotations
+
 from unittest.mock import MagicMock, patch
 
 from gdb_mcp.domain import result_to_mapping
 from gdb_mcp.session.config import SessionConfig
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.state import SessionState
+
+from .conftest import PromptResponseBuilder
 
 
 class TestSessionConfig:
@@ -54,7 +58,9 @@ class TestSessionState:
 
     @patch("gdb_mcp.session.factory.GdbController")
     def test_start_success_sets_config_and_ready_state(
-        self, mock_controller_class: MagicMock
+        self,
+        mock_controller_class: MagicMock,
+        prompt_response: PromptResponseBuilder,
     ) -> None:
         """Successful startup should populate config and move to READY."""
 
@@ -64,11 +70,7 @@ class TestSessionState:
         with patch.object(
             session._command_runner,
             "send_command_and_wait_for_prompt",
-            return_value={
-                "command_responses": [{"type": "result", "message": "done", "token": 1000}],
-                "async_notifications": [],
-                "timed_out": False,
-            },
+            return_value=prompt_response(),
         ):
             result = result_to_mapping(session.start(program="/bin/ls", args=["-l"]))
 
@@ -86,6 +88,7 @@ class TestSessionState:
         mock_create_controller: MagicMock,
         mock_isdir: MagicMock,
         mock_chdir: MagicMock,
+        prompt_response: PromptResponseBuilder,
     ) -> None:
         """working_dir should be forwarded into process startup without chdir."""
 
@@ -95,11 +98,7 @@ class TestSessionState:
         with patch.object(
             session._command_runner,
             "send_command_and_wait_for_prompt",
-            return_value={
-                "command_responses": [{"type": "result", "message": "done", "token": 1000}],
-                "async_notifications": [],
-                "timed_out": False,
-            },
+            return_value=prompt_response(),
         ):
             result = result_to_mapping(session.start(program="/bin/ls", working_dir="/tmp/work"))
 

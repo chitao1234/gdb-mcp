@@ -9,6 +9,9 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
+from gdb_mcp import server
+from gdb_mcp.server import main, parse_server_config
+
 
 class TestServerEntrypoint:
     """Keep minimal coverage for the thin compatibility entrypoint."""
@@ -16,8 +19,6 @@ class TestServerEntrypoint:
     @patch("gdb_mcp.server.create_default_runtime")
     def test_main_defaults_to_stdio_transport(self, mock_create_default_runtime: MagicMock) -> None:
         """main() should keep stdio as the zero-argument default transport."""
-
-        from gdb_mcp.server import main
 
         runtime = Mock()
         runtime.run_stdio = AsyncMock(return_value=None)
@@ -35,8 +36,6 @@ class TestServerEntrypoint:
         self, mock_create_default_runtime: MagicMock
     ) -> None:
         """main() should route explicit HTTP transport flags to the HTTP runner."""
-
-        from gdb_mcp.server import main
 
         runtime = Mock()
         runtime.run_stdio = AsyncMock(return_value=None)
@@ -71,8 +70,6 @@ class TestServerEntrypoint:
     def test_parse_server_config_rejects_http_flags_for_stdio(self) -> None:
         """HTTP-only flags should be rejected when stdio remains selected."""
 
-        from gdb_mcp.server import parse_server_config
-
         with pytest.raises(SystemExit) as exc_info:
             parse_server_config(["--port", "9000"])
 
@@ -81,8 +78,6 @@ class TestServerEntrypoint:
     def test_parse_server_config_rejects_non_rooted_http_path(self) -> None:
         """HTTP paths should be validated before the runtime starts."""
 
-        from gdb_mcp.server import parse_server_config
-
         with pytest.raises(SystemExit) as exc_info:
             parse_server_config(["--transport", "streamable-http", "--path", "mcp"])
 
@@ -90,8 +85,6 @@ class TestServerEntrypoint:
 
     def test_parse_server_config_defaults_streamable_http_settings(self) -> None:
         """HTTP transport should normalize omitted host, port, and path values."""
-
-        from gdb_mcp.server import parse_server_config
 
         config = parse_server_config(["--transport", "streamable-http"])
 
@@ -103,8 +96,6 @@ class TestServerEntrypoint:
     def test_parse_server_config_preserves_explicit_port_zero(self) -> None:
         """A caller should be able to request an ephemeral HTTP port with --port 0."""
 
-        from gdb_mcp.server import parse_server_config
-
         config = parse_server_config(["--transport", "streamable-http", "--port", "0"])
 
         assert config.transport == "streamable-http"
@@ -114,8 +105,6 @@ class TestServerEntrypoint:
     def test_parse_server_config_rejects_invalid_http_ports(self, port: str) -> None:
         """HTTP port validation should reject values outside the valid TCP range."""
 
-        from gdb_mcp.server import parse_server_config
-
         with pytest.raises(SystemExit) as exc_info:
             parse_server_config(["--transport", "streamable-http", "--port", port])
 
@@ -123,8 +112,6 @@ class TestServerEntrypoint:
 
     def test_import_does_not_configure_logging(self) -> None:
         """Importing the compatibility module should not mutate host logging setup."""
-
-        from gdb_mcp import server
 
         with patch.object(logging, "basicConfig") as mock_basic_config:
             importlib.reload(server)
@@ -136,8 +123,6 @@ class TestServerEntrypoint:
         self, mock_create_default_runtime: MagicMock
     ) -> None:
         """Repeated main() calls should not keep a module-global runtime cache."""
-
-        from gdb_mcp.server import main
 
         runtime_one = Mock()
         runtime_one.run_stdio = AsyncMock(return_value=None)
@@ -166,8 +151,6 @@ class TestServerEntrypoint:
         mock_asyncio_run: MagicMock,
     ) -> None:
         """CLI startup should flag potentially stale build/lib shadow imports."""
-
-        from gdb_mcp import server
 
         mock_main.return_value = "main-coroutine"
 

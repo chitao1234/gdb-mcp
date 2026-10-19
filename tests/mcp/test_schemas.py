@@ -1,5 +1,7 @@
 """Unit tests for MCP schema models."""
 
+from __future__ import annotations
+
 import pytest
 from pydantic import ValidationError
 
@@ -26,12 +28,15 @@ from gdb_mcp.mcp.schemas import (
     build_tool_definitions,
 )
 
+SESSION_ID = 4
+"""Repeated session identifier used by the consolidated action-model tests."""
+
 
 class TestStartSessionArgs:
     """Test cases for StartSessionArgs model."""
 
     def test_minimal_args(self) -> None:
-        """Test creating StartSessionArgs with minimal arguments."""
+        """A bare StartSessionArgs leaves every optional field unset."""
         args = StartSessionArgs()
         assert args.program is None
         assert args.args is None
@@ -42,7 +47,7 @@ class TestStartSessionArgs:
         )  # Default to None, actual default determined by GDB_PATH env var or "gdb"
 
     def test_full_args(self) -> None:
-        """Test creating StartSessionArgs with all arguments."""
+        """Explicit startup arguments round-trip into the model."""
         args = StartSessionArgs(
             program="/bin/ls",
             args=["-la", "/tmp"],
@@ -110,7 +115,7 @@ class TestStartSessionArgs:
         assert "is a bare argument" in str(excinfo.value)
 
     def test_env_dict_validation(self) -> None:
-        """Test that env accepts dictionary of strings."""
+        """A string-to-string env mapping is preserved."""
         args = StartSessionArgs(program="/bin/ls", env={"VAR1": "value1", "VAR2": "value2"})
 
         assert args.env == {"VAR1": "value1", "VAR2": "value2"}
@@ -129,13 +134,12 @@ class TestExecuteCommandArgs:
     """Test cases for ExecuteCommandArgs model."""
 
     def test_command_required(self) -> None:
-        """Test that command is required."""
+        """A command request without command text is rejected."""
         with pytest.raises(ValidationError):
-            # Invalid on purpose: only the raw-payload path can express this.
             ExecuteCommandArgs.model_validate({})
 
     def test_command_arg(self) -> None:
-        """Test command argument."""
+        """Command text, session id, and timeout are stored as given."""
         args = ExecuteCommandArgs(session_id=1, command="info threads", timeout_sec=10)
         assert args.session_id == 1
         assert args.command == "info threads"
@@ -145,7 +149,6 @@ class TestExecuteCommandArgs:
         """Extra command fields should not be silently dropped."""
 
         with pytest.raises(ValidationError) as exc_info:
-            # Invalid on purpose: only the raw-payload path can express this.
             ExecuteCommandArgs.model_validate(
                 {"session_id": 1, "command": "info threads", "timeout_seconds": 10}
             )
@@ -206,7 +209,7 @@ class TestV2ActionArgs:
 
         args = BreakpointManageArgs.model_validate(
             {
-                "session_id": 4,
+                "session_id": SESSION_ID,
                 "action": "create",
                 "breakpoint": {
                     "kind": "watch",
@@ -226,7 +229,7 @@ class TestV2ActionArgs:
         with pytest.raises(ValidationError):
             BreakpointManageArgs.model_validate(
                 {
-                    "session_id": 4,
+                    "session_id": SESSION_ID,
                     "action": "update",
                     "breakpoint": {
                         "number": 2,
@@ -241,7 +244,7 @@ class TestV2ActionArgs:
         with pytest.raises(ValidationError):
             BreakpointManageArgs.model_validate(
                 {
-                    "session_id": 4,
+                    "session_id": SESSION_ID,
                     "action": "create",
                     "breakpoint": {
                         "kind": "catch",
@@ -256,7 +259,7 @@ class TestV2ActionArgs:
 
         args = BreakpointManageArgs.model_validate(
             {
-                "session_id": 4,
+                "session_id": SESSION_ID,
                 "action": "create",
                 "breakpoint": {
                     "kind": "catch",
@@ -296,7 +299,7 @@ class TestV2ActionArgs:
     def test_execution_run_accepts_omitted_execution_payload(self) -> None:
         """Run should default its flattened execution payload when omitted."""
 
-        args = ExecutionManageArgs.model_validate({"session_id": 4, "action": "run"})
+        args = ExecutionManageArgs.model_validate({"session_id": SESSION_ID, "action": "run"})
 
         execution = args.root.execution
         assert isinstance(execution, ExecutionRunPayload)
@@ -308,7 +311,7 @@ class TestV2ActionArgs:
         """Continue should accept a reverse direction flag."""
 
         args = ExecutionManageArgs.model_validate(
-            {"session_id": 4, "action": "continue", "execution": {"reverse": True}}
+            {"session_id": SESSION_ID, "action": "continue", "execution": {"reverse": True}}
         )
 
         execution = args.root.execution
@@ -320,7 +323,7 @@ class TestV2ActionArgs:
 
         with pytest.raises(ValidationError):
             ExecutionManageArgs.model_validate(
-                {"session_id": 4, "action": "run", "execution": {"reverse": True}}
+                {"session_id": SESSION_ID, "action": "run", "execution": {"reverse": True}}
             )
 
     def test_execution_continue_accepts_flattened_wait_fields(self) -> None:
@@ -328,7 +331,7 @@ class TestV2ActionArgs:
 
         args = ExecutionManageArgs.model_validate(
             {
-                "session_id": 4,
+                "session_id": SESSION_ID,
                 "action": "continue",
                 "execution": {"wait_until": "acknowledged", "timeout_sec": 5},
             }
@@ -342,7 +345,7 @@ class TestV2ActionArgs:
     def test_inferior_create_accepts_omitted_inferior_payload(self) -> None:
         """Inferior creation should default its payload when omitted."""
 
-        args = InferiorManageArgs.model_validate({"session_id": 4, "action": "create"})
+        args = InferiorManageArgs.model_validate({"session_id": SESSION_ID, "action": "create"})
 
         inferior = args.root.inferior
         assert isinstance(inferior, InferiorCreatePayload)
@@ -357,7 +360,6 @@ class TestAttachProcessArgs:
         """Attach requests should require a positive PID."""
 
         with pytest.raises(ValidationError):
-            # Invalid on purpose: only the raw-payload path can express this.
             AttachProcessArgs.model_validate({"session_id": 1})
 
     def test_attach_args(self) -> None:
@@ -411,7 +413,6 @@ class TestBatchArgs:
         """Batch step definitions should reject unexpected keys."""
 
         with pytest.raises(ValidationError) as exc_info:
-            # Invalid on purpose: only the raw-payload path can express this.
             BatchStepArgs.model_validate(
                 {"tool": "gdb_session_query", "arguments": {}, "unexpected": True}
             )
@@ -468,7 +469,6 @@ class TestCaptureBundleArgs:
         """Capture requests should reject unexpected keys."""
 
         with pytest.raises(ValidationError) as exc_info:
-            # Invalid on purpose: only the raw-payload path can express this.
             CaptureBundleArgs.model_validate({"session_id": 1, "output": "/tmp/out"})
 
         assert "output" in str(exc_info.value)
@@ -532,7 +532,6 @@ class TestRunUntilFailureArgs:
         """Campaign requests should reject unexpected top-level keys."""
 
         with pytest.raises(ValidationError) as exc_info:
-            # Invalid on purpose: only the raw-payload path can express this.
             RunUntilFailureArgs.model_validate({"iterations": 5})
 
         assert "iterations" in str(exc_info.value)
@@ -554,20 +553,19 @@ class TestCallFunctionArgs:
     """Test cases for CallFunctionArgs model."""
 
     def test_function_call_required(self) -> None:
-        """Test that function_call is required."""
+        """A call request without function_call is rejected."""
         with pytest.raises(ValidationError):
-            # Invalid on purpose: only the raw-payload path can express this.
             CallFunctionArgs.model_validate({})
 
     def test_function_call_arg(self) -> None:
-        """Test function_call argument."""
+        """Function call text, session id, and timeout are stored as given."""
         args = CallFunctionArgs(session_id=1, function_call='printf("hello")', timeout_sec=12)
         assert args.session_id == 1
         assert args.function_call == 'printf("hello")'
         assert args.timeout_sec == 12
 
     def test_function_call_with_args(self) -> None:
-        """Test function_call with multiple arguments."""
+        """A function call may contain its own comma-separated arguments."""
         args = CallFunctionArgs(session_id=2, function_call='snprintf(buf, 100, "%d", x)')
         assert args.session_id == 2
         assert args.function_call == 'snprintf(buf, 100, "%d", x)'

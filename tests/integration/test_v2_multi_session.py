@@ -6,7 +6,15 @@ import pytest
 
 from tests.support import dig, integer, mapping_list, text
 
-from .conftest import CallGdbTool, CompileProgram, StartSession, StopSession
+from .conftest import (
+    CallGdbTool,
+    CompileProgram,
+    StartSession,
+    StopSession,
+    create_breakpoint,
+    run,
+    status_query,
+)
 from .program_sources import TEST_PROGRAM_1, TEST_PROGRAM_2
 
 
@@ -54,14 +62,8 @@ def test_session_inventory_and_status_are_isolated_v2(
         }
         assert listed_ids == {session_id_1, session_id_2}
 
-        status_1 = call_gdb_tool(
-            "gdb_session_query",
-            {"session_id": session_id_1, "action": "status", "query": {}},
-        )
-        status_2 = call_gdb_tool(
-            "gdb_session_query",
-            {"session_id": session_id_2, "action": "status", "query": {}},
-        )
+        status_1 = status_query(call_gdb_tool, session_id_1)
+        status_2 = status_query(call_gdb_tool, session_id_2)
         assert dig(status_1, "result", "is_running") is True
         assert dig(status_2, "result", "is_running") is True
     finally:
@@ -82,14 +84,7 @@ def test_breakpoints_are_isolated_between_sessions_v2(
     session_id_1 = start_session(compiled_program_1)
     session_id_2 = start_session(compiled_program_2)
     try:
-        call_gdb_tool(
-            "gdb_breakpoint_manage",
-            {
-                "session_id": session_id_1,
-                "action": "create",
-                "breakpoint": {"kind": "code", "location": "main"},
-            },
-        )
+        create_breakpoint(call_gdb_tool, session_id_1, "main")
 
         listed_1 = call_gdb_tool(
             "gdb_breakpoint_query",
@@ -120,18 +115,8 @@ def test_execution_state_and_backtrace_are_isolated_v2(
     session_id_2 = start_session(compiled_program_2)
     try:
         for session_id in (session_id_1, session_id_2):
-            call_gdb_tool(
-                "gdb_breakpoint_manage",
-                {
-                    "session_id": session_id,
-                    "action": "create",
-                    "breakpoint": {"kind": "code", "location": "main"},
-                },
-            )
-            call_gdb_tool(
-                "gdb_execution_manage",
-                {"session_id": session_id, "action": "run", "execution": {}},
-            )
+            create_breakpoint(call_gdb_tool, session_id, "main")
+            run(call_gdb_tool, session_id)
 
         backtrace_1 = call_gdb_tool(
             "gdb_context_query",
@@ -161,22 +146,13 @@ def test_stop_one_session_does_not_affect_other_v2(
     session_id_1 = start_session(compiled_program_1)
     session_id_2 = start_session(compiled_program_2)
     try:
-        stop = call_gdb_tool(
-            "gdb_session_manage",
-            {"session_id": session_id_2, "action": "stop", "session": {}},
-        )
+        stop = stop_session(session_id_2)
         assert stop["status"] == "success"
 
-        status_1 = call_gdb_tool(
-            "gdb_session_query",
-            {"session_id": session_id_1, "action": "status", "query": {}},
-        )
+        status_1 = status_query(call_gdb_tool, session_id_1)
         assert status_1["status"] == "success"
 
-        status_2 = call_gdb_tool(
-            "gdb_session_query",
-            {"session_id": session_id_2, "action": "status", "query": {}},
-        )
+        status_2 = status_query(call_gdb_tool, session_id_2)
         assert status_2["status"] == "error"
     finally:
         stop_session(session_id_1, ignore_errors=True)

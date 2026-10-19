@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
 from typing import cast
 from unittest.mock import MagicMock, Mock, patch
 
@@ -11,14 +10,12 @@ from gdb_mcp.domain import (
     CommandExecutionInfo,
     OperationError,
     OperationResult,
-    OperationSuccess,
     result_to_mapping,
 )
 from gdb_mcp.session.service import SessionService
 from tests.support import sequence, text
 
-PromptResponseBuilder = Callable[..., dict[str, object]]
-CommandResultBuilder = Callable[..., OperationSuccess[CommandExecutionInfo]]
+from .conftest import CommandResultBuilder, StartHarness
 
 
 class TestLifecycleApi:
@@ -70,96 +67,37 @@ class TestLifecycleApi:
         assert result["status"] == "error"
         assert "already running" in text(result["message"]).lower()
 
-    @patch("gdb_mcp.session.factory.GdbController")
-    def test_start_session_basic(
-        self,
-        mock_controller_class: MagicMock,
-        session_service: SessionService,
-        prompt_response: PromptResponseBuilder,
-    ) -> None:
+    def test_start_session_basic(self, start_session: StartHarness) -> None:
         """Basic startup should attach a controller and expose program info."""
 
-        mock_controller_class.return_value = MagicMock()
-
-        with (
-            patch.object(
-                session_service._command_runner,
-                "send_command_and_wait_for_prompt",
-                return_value=prompt_response(
-                    command_responses=[
-                        {"type": "console", "payload": "Reading symbols from /bin/ls...\n"},
-                        {"type": "result", "message": "done", "token": 1000},
-                    ]
-                ),
-            ),
-            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
-        ):
-            result = result_to_mapping(session_service.start(program="/bin/ls"))
+        result = start_session(
+            program="/bin/ls",
+            console=["Reading symbols from /bin/ls...\n"],
+        )
 
         assert result["status"] == "success"
         assert result["program"] == "/bin/ls"
         assert result["target_loaded"] is True
         assert result["execution_state"] == "not_started"
-        assert session_service.is_running is True
+        assert start_session.service.is_running is True
 
-    @patch("gdb_mcp.session.factory.GdbController")
-    def test_start_session_with_custom_gdb_path(
-        self,
-        mock_controller_class: MagicMock,
-        session_service: SessionService,
-        prompt_response: PromptResponseBuilder,
-    ) -> None:
+    def test_start_session_with_custom_gdb_path(self, start_session: StartHarness) -> None:
         """Explicit gdb_path should be forwarded into process startup."""
 
-        mock_controller_class.return_value = MagicMock()
-
-        with (
-            patch.object(
-                session_service._command_runner,
-                "send_command_and_wait_for_prompt",
-                return_value=prompt_response(
-                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
-                ),
-            ),
-            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
-        ):
-            result = result_to_mapping(
-                session_service.start(program="/bin/ls", gdb_path="/usr/local/bin/gdb-custom")
-            )
-
-        call_args = mock_controller_class.call_args
-        command = call_args[1]["command"]
+        result = start_session(program="/bin/ls", gdb_path="/usr/local/bin/gdb-custom")
+        command = start_session.command_of()
 
         assert command[0] == "/usr/local/bin/gdb-custom"
         assert "--interpreter=mi" in command
         assert result["status"] == "success"
 
-    @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_with_program_and_core_uses_explicit_exec_and_core_flags(
-        self,
-        mock_controller_class: MagicMock,
-        session_service: SessionService,
-        prompt_response: PromptResponseBuilder,
+        self, start_session: StartHarness
     ) -> None:
         """Core-dump startup should use explicit GDB options instead of argv passthrough."""
 
-        mock_controller_class.return_value = MagicMock()
-
-        with (
-            patch.object(
-                session_service._command_runner,
-                "send_command_and_wait_for_prompt",
-                return_value=prompt_response(
-                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
-                ),
-            ),
-            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
-        ):
-            result = result_to_mapping(
-                session_service.start(program="/bin/ls", core="/tmp/core.123")
-            )
-
-        command = mock_controller_class.call_args[1]["command"]
+        result = start_session(program="/bin/ls", core="/tmp/core.123")
+        command = start_session.command_of()
 
         assert result["status"] == "success"
         assert result["execution_state"] == "paused"
@@ -167,30 +105,11 @@ class TestLifecycleApi:
         assert "--core=/tmp/core.123" in command
         assert "--args" not in command
 
-    @patch("gdb_mcp.session.factory.GdbController")
-    def test_start_session_with_rr_replay_spawns_rr(
-        self,
-        mock_controller_class: MagicMock,
-        session_service: SessionService,
-        prompt_response: PromptResponseBuilder,
-    ) -> None:
+    def test_start_session_with_rr_replay_spawns_rr(self, start_session: StartHarness) -> None:
         """An rr replay should start 'rr replay --interpreter=mi' on the trace."""
 
-        mock_controller_class.return_value = MagicMock()
-
-        with (
-            patch.object(
-                session_service._command_runner,
-                "send_command_and_wait_for_prompt",
-                return_value=prompt_response(
-                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
-                ),
-            ),
-            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
-        ):
-            result = result_to_mapping(session_service.start(rr_replay="/traces/app-0"))
-
-        command = mock_controller_class.call_args[1]["command"]
+        result = start_session(rr_replay="/traces/app-0")
+        command = start_session.command_of()
 
         assert result["status"] == "success"
         assert result["rr_replay"] == "/traces/app-0"
@@ -198,42 +117,18 @@ class TestLifecycleApi:
         assert command[-1] == "/traces/app-0"
         assert "-d" in command
 
-    @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_passes_gdb_args_before_the_program(
-        self,
-        mock_controller_class: MagicMock,
-        session_service: SessionService,
-        prompt_response: PromptResponseBuilder,
+        self, start_session: StartHarness
     ) -> None:
         """gdb_args must reach GDB's command line ahead of the program."""
 
-        mock_controller_class.return_value = MagicMock()
-
-        with (
-            patch.object(
-                session_service._command_runner,
-                "send_command_and_wait_for_prompt",
-                return_value=prompt_response(
-                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
-                ),
-            ),
-            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
-        ):
-            result = result_to_mapping(
-                session_service.start(
-                    program="/bin/ls",
-                    gdb_args=[
-                        "--directory=/tmp/pp",
-                        "-iex",
-                        "add-auto-load-safe-path /tmp/pp",
-                    ],
-                )
-            )
-
-        command = mock_controller_class.call_args[1]["command"]
+        result = start_session(
+            program="/bin/ls",
+            gdb_args=["--directory=/tmp/pp", "-iex", "add-auto-load-safe-path /tmp/pp"],
+        )
 
         assert result["status"] == "success"
-        assert command == [
+        assert start_session.command_of() == [
             "gdb",
             "--quiet",
             "--interpreter=mi",
@@ -243,98 +138,42 @@ class TestLifecycleApi:
             "/bin/ls",
         ]
 
-    @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_forwards_gdb_args_to_rr_replay(
-        self,
-        mock_controller_class: MagicMock,
-        session_service: SessionService,
-        prompt_response: PromptResponseBuilder,
+        self, start_session: StartHarness
     ) -> None:
         """rr replay receives gdb_args after '--', so its gdb gets them."""
 
-        mock_controller_class.return_value = MagicMock()
-
-        with (
-            patch.object(
-                session_service._command_runner,
-                "send_command_and_wait_for_prompt",
-                return_value=prompt_response(
-                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
-                ),
-            ),
-            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
-        ):
-            result = result_to_mapping(
-                session_service.start(
-                    rr_replay="/traces/app-0",
-                    gdb_args=["-iex", "set pagination off"],
-                )
-            )
-
-        command = mock_controller_class.call_args[1]["command"]
+        result = start_session(
+            rr_replay="/traces/app-0",
+            gdb_args=["-iex", "set pagination off"],
+        )
+        command = start_session.command_of()
 
         assert result["status"] == "success"
         assert command[:5] == ["rr", "replay", "--interpreter=mi", "-d", "gdb"]
         assert command[5:7] == ["/traces/app-0", "--"]
         assert command[7:] == ["-iex", "set pagination off"]
 
-    @patch("gdb_mcp.session.factory.GdbController")
     @patch.dict(os.environ, {"RR_PATH": "/opt/rr/bin/rr"})
-    def test_start_session_with_rr_replay_honors_rr_path(
-        self,
-        mock_controller_class: MagicMock,
-        session_service: SessionService,
-        prompt_response: PromptResponseBuilder,
-    ) -> None:
+    def test_start_session_with_rr_replay_honors_rr_path(self, start_session: StartHarness) -> None:
         """RR_PATH should choose the rr binary, like GDB_PATH chooses gdb."""
 
-        mock_controller_class.return_value = MagicMock()
+        start_session(rr_replay="/traces/app-0")
 
-        with (
-            patch.object(
-                session_service._command_runner,
-                "send_command_and_wait_for_prompt",
-                return_value=prompt_response(
-                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
-                ),
-            ),
-            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
-        ):
-            session_service.start(rr_replay="/traces/app-0")
+        assert start_session.command_of()[0] == "/opt/rr/bin/rr"
 
-        command = mock_controller_class.call_args[1]["command"]
-        assert command[0] == "/opt/rr/bin/rr"
-
-    @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_ignores_program_with_rr_replay(
-        self,
-        mock_controller_class: MagicMock,
-        session_service: SessionService,
-        prompt_response: PromptResponseBuilder,
+        self, start_session: StartHarness
     ) -> None:
         """An rr trace owns the target, so a program is ignored with a warning."""
 
-        mock_controller_class.return_value = MagicMock()
-
-        with (
-            patch.object(
-                session_service._command_runner,
-                "send_command_and_wait_for_prompt",
-                return_value=prompt_response(
-                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
-                ),
-            ),
-            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
-        ):
-            result = result_to_mapping(
-                session_service.start(rr_replay="/traces/app-0", program="/bin/ls")
-            )
+        result = start_session(rr_replay="/traces/app-0", program="/bin/ls")
 
         assert result["status"] == "success"
         assert result["program"] is None
         assert any("ignored" in text(warning).lower() for warning in sequence(result["warnings"]))
-        assert session_service.config is not None
-        assert session_service.config.program is None
+        assert start_session.service.config is not None
+        assert start_session.service.config.program is None
 
     def test_start_session_rejects_rr_replay_with_args(
         self, session_service: SessionService
@@ -347,272 +186,106 @@ class TestLifecycleApi:
         assert "rr trace already owns the target" in text(result["message"]).lower()
         assert session_service.state.value == "failed"
 
-    @patch("gdb_mcp.session.factory.GdbController")
     @patch.dict(os.environ, {"GDB_PATH": "/custom/path/to/gdb"})
-    def test_start_session_with_gdb_path_env_var(
-        self,
-        mock_controller_class: MagicMock,
-        session_service: SessionService,
-        prompt_response: PromptResponseBuilder,
-    ) -> None:
+    def test_start_session_with_gdb_path_env_var(self, start_session: StartHarness) -> None:
         """GDB_PATH should be used when gdb_path is not provided."""
 
-        mock_controller_class.return_value = MagicMock()
-
-        with (
-            patch.object(
-                session_service._command_runner,
-                "send_command_and_wait_for_prompt",
-                return_value=prompt_response(
-                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
-                ),
-            ),
-            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
-        ):
-            result = result_to_mapping(session_service.start(program="/bin/ls"))
-
-        call_args = mock_controller_class.call_args
-        command = call_args[1]["command"]
+        result = start_session(program="/bin/ls")
+        command = start_session.command_of()
 
         assert command[0] == "/custom/path/to/gdb"
         assert "--interpreter=mi" in command
         assert result["status"] == "success"
 
-    @patch("gdb_mcp.session.factory.GdbController")
     @patch.dict(os.environ, {"GDB_PATH": "/env/gdb"})
     def test_start_session_explicit_path_overrides_env_var(
-        self,
-        mock_controller_class: MagicMock,
-        session_service: SessionService,
-        prompt_response: PromptResponseBuilder,
+        self, start_session: StartHarness
     ) -> None:
         """An explicit gdb_path should override GDB_PATH."""
 
-        mock_controller_class.return_value = MagicMock()
-
-        with (
-            patch.object(
-                session_service._command_runner,
-                "send_command_and_wait_for_prompt",
-                return_value=prompt_response(
-                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
-                ),
-            ),
-            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
-        ):
-            result = result_to_mapping(
-                session_service.start(program="/bin/ls", gdb_path="/explicit/gdb")
-            )
-
-        call_args = mock_controller_class.call_args
-        command = call_args[1]["command"]
+        result = start_session(program="/bin/ls", gdb_path="/explicit/gdb")
+        command = start_session.command_of()
 
         assert command[0] == "/explicit/gdb"
         assert command[0] != "/env/gdb"
         assert result["status"] == "success"
 
-    @patch("gdb_mcp.session.factory.GdbController")
-    def test_start_session_with_env_variables(
-        self,
-        mock_controller_class: MagicMock,
-        session_service: SessionService,
-        prompt_response: PromptResponseBuilder,
-        command_result: CommandResultBuilder,
-    ) -> None:
+    def test_start_session_with_env_variables(self, start_session: StartHarness) -> None:
         """Environment variables should be translated into init commands."""
 
-        del mock_controller_class
-        env_commands: list[str] = []
+        result = start_session(
+            program="/bin/ls",
+            env={"DEBUG_MODE": "1", "LOG_LEVEL": "verbose"},
+        )
 
-        def mock_execute(command: str, **kwargs: object) -> OperationResult[CommandExecutionInfo]:
-            del kwargs
-            if "set environment" in command:
-                env_commands.append(command)
-            return command_result(command, output="")
-
-        with (
-            patch.object(
-                session_service._command_runner,
-                "send_command_and_wait_for_prompt",
-                return_value=prompt_response(
-                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
-                ),
-            ),
-            patch.object(
-                session_service._command_runner, "execute_command_result", side_effect=mock_execute
-            ),
-            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
-        ):
-            result = result_to_mapping(
-                session_service.start(
-                    program="/bin/ls",
-                    env={"DEBUG_MODE": "1", "LOG_LEVEL": "verbose"},
-                )
-            )
-
+        env_commands = [
+            command for command in start_session.executed if "set environment" in command
+        ]
         assert result["status"] == "success"
         assert len(env_commands) == 2
         assert any("DEBUG_MODE" in command for command in env_commands)
         assert any("LOG_LEVEL" in command for command in env_commands)
 
-    @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_applies_environment_before_init_commands(
-        self,
-        mock_controller_class: MagicMock,
-        session_service: SessionService,
-        prompt_response: PromptResponseBuilder,
-        command_result: CommandResultBuilder,
+        self, start_session: StartHarness
     ) -> None:
         """Inferior environment should be set before init commands can run the target."""
 
-        del mock_controller_class
-        executed_commands: list[str] = []
-
-        def mock_execute(command: str, **kwargs: object) -> OperationResult[CommandExecutionInfo]:
-            del kwargs
-            executed_commands.append(command)
-            return command_result(command, output="")
-
-        with (
-            patch.object(
-                session_service._command_runner,
-                "send_command_and_wait_for_prompt",
-                return_value=prompt_response(
-                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
-                ),
-            ),
-            patch.object(
-                session_service._command_runner, "execute_command_result", side_effect=mock_execute
-            ),
-            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
-        ):
-            result = result_to_mapping(
-                session_service.start(
-                    program="/bin/ls",
-                    env={"DEBUG_MODE": "1"},
-                    init_commands=["set pagination off", "run"],
-                )
-            )
+        result = start_session(
+            program="/bin/ls",
+            env={"DEBUG_MODE": "1"},
+            init_commands=["set pagination off", "run"],
+        )
 
         assert result["status"] == "success"
-        assert executed_commands == [
+        assert start_session.executed == [
             "set confirm off",
             "set environment DEBUG_MODE 1",
             "set pagination off",
             "run",
         ]
 
-    @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_passes_environment_values_verbatim(
-        self,
-        mock_controller_class: MagicMock,
-        session_service: SessionService,
-        prompt_response: PromptResponseBuilder,
-        command_result: CommandResultBuilder,
+        self, start_session: StartHarness
     ) -> None:
         """Environment values must reach GDB unchanged, with no extra escape layer."""
 
-        del mock_controller_class
-        executed_commands: list[str] = []
-
-        def mock_execute(command: str, **kwargs: object) -> OperationResult[CommandExecutionInfo]:
-            del kwargs
-            executed_commands.append(command)
-            return command_result(command, output="")
-
-        with (
-            patch.object(
-                session_service._command_runner,
-                "send_command_and_wait_for_prompt",
-                return_value=prompt_response(
-                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
-                ),
-            ),
-            patch.object(
-                session_service._command_runner, "execute_command_result", side_effect=mock_execute
-            ),
-            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
-        ):
-            result = result_to_mapping(
-                session_service.start(program="/bin/ls", env={"MSG": 'a\\b"c'})
-            )
+        result = start_session(program="/bin/ls", env={"MSG": 'a\\b"c'})
 
         assert result["status"] == "success"
-        assert 'set environment MSG a\\b"c' in executed_commands
+        assert 'set environment MSG a\\b"c' in start_session.executed
 
-    @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_rejects_environment_value_with_newline(
-        self,
-        mock_controller_class: MagicMock,
-        session_service: SessionService,
-        prompt_response: PromptResponseBuilder,
-        command_result: CommandResultBuilder,
+        self, start_session: StartHarness
     ) -> None:
         """A newline in an environment value would inject a command, so reject it."""
 
-        del mock_controller_class
-        executed_commands: list[str] = []
-
-        def mock_execute(command: str, **kwargs: object) -> OperationResult[CommandExecutionInfo]:
-            del kwargs
-            executed_commands.append(command)
-            return command_result(command, output="")
-
-        with (
-            patch.object(
-                session_service._command_runner,
-                "send_command_and_wait_for_prompt",
-                return_value=prompt_response(
-                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
-                ),
-            ),
-            patch.object(
-                session_service._command_runner, "execute_command_result", side_effect=mock_execute
-            ),
-            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
-        ):
-            result = result_to_mapping(
-                session_service.start(program="/bin/ls", env={"MSG": "line1\nline2"})
-            )
+        result = start_session(program="/bin/ls", env={"MSG": "line1\nline2"})
 
         assert result["status"] == "error"
         assert "must not contain newlines" in text(result["message"])
-        assert not any(command.startswith("set environment") for command in executed_commands)
+        assert not any(command.startswith("set environment") for command in start_session.executed)
 
-    @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_fails_when_env_setup_fails(
         self,
-        mock_controller_class: MagicMock,
-        session_service: SessionService,
-        prompt_response: PromptResponseBuilder,
+        start_session: StartHarness,
         command_result: CommandResultBuilder,
     ) -> None:
         """Environment setup failures should fail startup instead of reporting READY."""
 
-        del mock_controller_class
-
-        def mock_execute(command: str, **kwargs: object) -> OperationResult[CommandExecutionInfo]:
+        def fail_environment(
+            command: str, **kwargs: object
+        ) -> OperationResult[CommandExecutionInfo]:
             del kwargs
             if command.startswith("set environment "):
                 return OperationError(message="Permission denied for environment setup")
             return command_result(command, output="")
 
-        with (
-            patch.object(
-                session_service._command_runner,
-                "send_command_and_wait_for_prompt",
-                return_value=prompt_response(
-                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
-                ),
-            ),
-            patch.object(
-                session_service._command_runner, "execute_command_result", side_effect=mock_execute
-            ),
-            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
-        ):
-            result = result_to_mapping(
-                session_service.start(program="/bin/ls", env={"DEBUG_MODE": "1"})
-            )
+        result = start_session(
+            program="/bin/ls",
+            env={"DEBUG_MODE": "1"},
+            execute=fail_environment,
+        )
 
         assert result["status"] == "error"
         assert "environment" in text(result["message"]).lower()
@@ -635,32 +308,16 @@ class TestLifecycleApi:
         assert session_service.config.args == ("-l",)
         assert session_service.config.core == "/tmp/core.123"
 
-    @patch("gdb_mcp.session.factory.GdbController")
-    def test_start_session_detects_missing_debug_symbols(
-        self,
-        mock_controller_class: MagicMock,
-        session_service: SessionService,
-        prompt_response: PromptResponseBuilder,
-    ) -> None:
+    def test_start_session_detects_missing_debug_symbols(self, start_session: StartHarness) -> None:
         """Startup warnings should surface missing debug symbols."""
 
-        mock_controller_class.return_value = MagicMock()
-
-        with (
-            patch.object(
-                session_service._command_runner,
-                "send_command_and_wait_for_prompt",
-                return_value=prompt_response(
-                    command_responses=[
-                        {"type": "console", "payload": "Reading symbols from /bin/ls...\n"},
-                        {"type": "console", "payload": "(no debugging symbols found)...done.\n"},
-                        {"type": "result", "message": "done", "token": 1000},
-                    ]
-                ),
-            ),
-            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
-        ):
-            result = result_to_mapping(session_service.start(program="/bin/ls"))
+        result = start_session(
+            program="/bin/ls",
+            console=[
+                "Reading symbols from /bin/ls...\n",
+                "(no debugging symbols found)...done.\n",
+            ],
+        )
 
         assert result["status"] == "success"
         assert "warnings" in result
@@ -668,42 +325,25 @@ class TestLifecycleApi:
             "not compiled with -g" in text(warning) for warning in sequence(result["warnings"])
         )
 
-    @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_warns_when_gdb_declines_auto_load(
-        self,
-        mock_controller_class: MagicMock,
-        session_service: SessionService,
-        prompt_response: PromptResponseBuilder,
+        self, start_session: StartHarness
     ) -> None:
         """A refused auto-load script must reach warnings, not just startup output."""
 
-        mock_controller_class.return_value = MagicMock()
-
-        with (
-            patch.object(
-                session_service._command_runner,
-                "send_command_and_wait_for_prompt",
-                return_value=prompt_response(
-                    command_responses=[
-                        {"type": "console", "payload": "Reading symbols from /tmp/go-app...\n"},
-                        {
-                            "type": "console",
-                            "payload": (
-                                'warning: File "/usr/share/go-1.22/src/runtime/runtime-gdb.py"'
-                                " auto-loading has been declined by your `auto-load safe-path'"
-                                ' set to "$debugdir:$datadir/auto-load".\n'
-                                "To enable execution of this file add\n"
-                                "\tadd-auto-load-safe-path"
-                                " /usr/share/go-1.22/src/runtime/runtime-gdb.py\n"
-                            ),
-                        },
-                        {"type": "result", "message": "done", "token": 1000},
-                    ]
+        result = start_session(
+            program="/tmp/go-app",
+            console=[
+                "Reading symbols from /tmp/go-app...\n",
+                (
+                    'warning: File "/usr/share/go-1.22/src/runtime/runtime-gdb.py"'
+                    " auto-loading has been declined by your `auto-load safe-path'"
+                    ' set to "$debugdir:$datadir/auto-load".\n'
+                    "To enable execution of this file add\n"
+                    "\tadd-auto-load-safe-path"
+                    " /usr/share/go-1.22/src/runtime/runtime-gdb.py\n"
                 ),
-            ),
-            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
-        ):
-            result = result_to_mapping(session_service.start(program="/tmp/go-app"))
+            ],
+        )
 
         warnings = [text(warning) for warning in sequence(result["warnings"])]
 
@@ -711,37 +351,20 @@ class TestLifecycleApi:
         assert any("runtime-gdb.py" in warning for warning in warnings)
         assert any("init_commands run afterwards" in warning for warning in warnings)
 
-    @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_warns_when_auto_load_script_is_missing(
-        self,
-        mock_controller_class: MagicMock,
-        session_service: SessionService,
-        prompt_response: PromptResponseBuilder,
+        self, start_session: StartHarness
     ) -> None:
         """A script GDB cannot locate is also reported, naming the object file."""
 
-        mock_controller_class.return_value = MagicMock()
-
-        with (
-            patch.object(
-                session_service._command_runner,
-                "send_command_and_wait_for_prompt",
-                return_value=prompt_response(
-                    command_responses=[
-                        {
-                            "type": "console",
-                            "payload": (
-                                "warning: Missing auto-load script at offset 0 in section"
-                                " .debug_gdb_scripts\nof file /tmp/rust-app.\n"
-                            ),
-                        },
-                        {"type": "result", "message": "done", "token": 1000},
-                    ]
+        result = start_session(
+            program="/tmp/rust-app",
+            console=[
+                (
+                    "warning: Missing auto-load script at offset 0 in section"
+                    " .debug_gdb_scripts\nof file /tmp/rust-app.\n"
                 ),
-            ),
-            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
-        ):
-            result = result_to_mapping(session_service.start(program="/tmp/rust-app"))
+            ],
+        )
 
         warnings = [text(warning) for warning in sequence(result["warnings"])]
 
@@ -751,37 +374,20 @@ class TestLifecycleApi:
         )
         assert any("rust-gdb" in warning for warning in warnings)
 
-    @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_missing_program_leaves_target_unloaded(
-        self,
-        mock_controller_class: MagicMock,
-        session_service: SessionService,
-        prompt_response: PromptResponseBuilder,
+        self, start_session: StartHarness
     ) -> None:
         """Missing startup targets should not report target_loaded=true."""
 
-        mock_controller_class.return_value = MagicMock()
+        result = start_session(
+            program="/missing/app",
+            initial_output=[
+                {"type": "log", "payload": "/missing/app: No such file or directory.\n"}
+            ],
+            probe_target_loaded=False,
+        )
 
-        with (
-            patch.object(
-                session_service.runtime.transport,
-                "read_initial_output",
-                return_value=[
-                    {"type": "log", "payload": "/missing/app: No such file or directory.\n"}
-                ],
-            ),
-            patch.object(
-                session_service._command_runner,
-                "send_command_and_wait_for_prompt",
-                return_value=prompt_response(
-                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
-                ),
-            ),
-            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=False),
-        ):
-            result = result_to_mapping(session_service.start(program="/missing/app"))
-
-        status = result_to_mapping(session_service.get_status())
+        status = result_to_mapping(start_session.service.get_status())
 
         assert result["status"] == "success"
         assert result["target_loaded"] is False
@@ -789,82 +395,33 @@ class TestLifecycleApi:
         assert "Program file not found" in [text(item) for item in sequence(result["warnings"])]
         assert status["target_loaded"] is False
 
-    @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_refreshes_target_loaded_after_init_commands(
-        self,
-        mock_controller_class: MagicMock,
-        session_service: SessionService,
-        prompt_response: PromptResponseBuilder,
-        command_result: CommandResultBuilder,
+        self, start_session: StartHarness
     ) -> None:
         """Final startup target state should be refreshed from GDB after init commands."""
 
-        del mock_controller_class
-        executed_commands: list[str] = []
-
-        def mock_execute(command: str, **kwargs: object) -> OperationResult[CommandExecutionInfo]:
-            del kwargs
-            executed_commands.append(command)
-            return command_result(command, output="")
-
-        with (
-            patch.object(
-                session_service._command_runner,
-                "send_command_and_wait_for_prompt",
-                return_value=prompt_response(
-                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
-                ),
-            ),
-            patch.object(
-                session_service._command_runner, "execute_command_result", side_effect=mock_execute
-            ),
-            patch.object(session_service._lifecycle, "_probe_target_loaded", return_value=True),
-        ):
-            result = result_to_mapping(
-                session_service.start(
-                    init_commands=["source setup.gdb"],
-                )
-            )
+        result = start_session(init_commands=["source setup.gdb"])
 
         assert result["status"] == "success"
         assert result["target_loaded"] is True
-        assert executed_commands == ["set confirm off", "source setup.gdb"]
+        assert start_session.executed == ["set confirm off", "source setup.gdb"]
 
-    @patch("gdb_mcp.session.factory.GdbController")
     def test_start_session_warns_when_target_loaded_refresh_fails(
         self,
-        mock_controller_class: MagicMock,
-        session_service: SessionService,
-        prompt_response: PromptResponseBuilder,
+        start_session: StartHarness,
         command_result: CommandResultBuilder,
     ) -> None:
         """Startup should keep the last known target_loaded value but surface probe failure."""
 
-        mock_controller_class.return_value = MagicMock()
-
-        with (
-            patch.object(
-                session_service.runtime.transport,
-                "read_initial_output",
-                return_value=[{"type": "console", "payload": "Reading symbols from /bin/ls...\n"}],
-            ),
-            patch.object(
-                session_service._command_runner,
-                "send_command_and_wait_for_prompt",
-                return_value=prompt_response(
-                    command_responses=[{"type": "result", "message": "done", "token": 1000}]
-                ),
-            ),
-            patch.object(
-                session_service._command_runner,
-                "execute_command_result",
-                side_effect=[
-                    command_result("set confirm off", output=""),
-                    OperationError(message="info files failed"),
-                ],
-            ),
-        ):
-            result = result_to_mapping(session_service.start(program="/bin/ls"))
+        result = start_session(
+            program="/bin/ls",
+            initial_output=[{"type": "console", "payload": "Reading symbols from /bin/ls...\n"}],
+            probe_target_loaded=None,
+            execute=[
+                command_result("set confirm off", output=""),
+                OperationError(message="info files failed"),
+            ],
+        )
 
         assert result["status"] == "success"
         assert result["target_loaded"] is True

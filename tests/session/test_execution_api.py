@@ -3,35 +3,23 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Protocol, cast
+from typing import cast
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from gdb_mcp.domain import StopEvent, result_to_mapping
 from gdb_mcp.session.service import SessionService
 from gdb_mcp.transport.protocols import GdbControllerProtocol
 from tests.support import dig, mapping_list, text
 
-MiRecordBuilder = Callable[..., dict[str, object]]
-MiConsoleBuilder = Callable[[str], dict[str, object]]
-MiNotifyBuilder = Callable[..., dict[str, object]]
-PromptResponseBuilder = Callable[..., dict[str, object]]
-
-
-class _FakeStdinView(Protocol):
-    """Read-only view of the recording stdin double installed by conftest."""
-
-    writes: list[bytes]
-
-
-class _FakeIoManagerView(Protocol):
-    stdin: _FakeStdinView
-
-
-class _ControllerDouble(Protocol):
-    io_manager: _FakeIoManagerView
-
-
-ScriptedSessionBuilder = Callable[..., tuple[SessionService, _ControllerDouble]]
+from .conftest import (
+    MiConsoleBuilder,
+    MiNotifyBuilder,
+    MiRecordBuilder,
+    PromptResponseBuilder,
+    ScriptedSessionBuilder,
+)
 
 
 class TestExecutionApi:
@@ -94,7 +82,7 @@ class TestExecutionApi:
         assert transcript_entry.status == "success"
         assert transcript_entry.execution_state == "paused"
         assert transcript_entry.stop_reason == "breakpoint-hit"
-        assert controller.io_manager.stdin.writes[0].decode().endswith("-exec-continue\n")
+        assert controller.decoded_writes[0].endswith("-exec-continue\n")
 
     def test_continue_execution_returns_running_when_no_stop_before_timeout(
         self,
@@ -145,7 +133,7 @@ class TestExecutionApi:
     ) -> None:
         """Stopped notifications should populate stop-event inferior identity."""
 
-        session, _controller = scripted_running_session(
+        session, _ = scripted_running_session(
             [
                 mi_result(message="running"),
                 mi_notify(
@@ -182,7 +170,7 @@ class TestExecutionApi:
         scripted_running_session: ScriptedSessionBuilder,
         mi_result: MiRecordBuilder,
         mi_notify: MiNotifyBuilder,
-        mi_console: MiConsoleBuilder,
+        inferiors_console: Callable[..., list[dict[str, object]]],
     ) -> None:
         """Fork-driven inferior changes should refresh the selected inferior from GDB."""
 
@@ -199,12 +187,10 @@ class TestExecutionApi:
                 ),
                 mi_notify("thread-group-added", {"id": "i2"}),
             ],
-            [
-                mi_console("  Num  Description       Connection           Executable        \n"),
-                mi_console("  1    <null>                                 /tmp/app \n"),
-                mi_console("* 2    <null>                                 /tmp/app \n"),
-                mi_result(),
-            ],
+            inferiors_console(
+                "  1    <null>                                 /tmp/app ",
+                "* 2    <null>                                 /tmp/app ",
+            ),
         )
 
         result = result_to_mapping(session.continue_execution())
@@ -214,10 +200,8 @@ class TestExecutionApi:
         assert status["current_inferior_id"] == 2
         assert status["inferior_count"] == 2
         assert status["execution_state"] == "paused"
-        assert (
-            controller.io_manager.stdin.writes[-1]
-            .decode()
-            .endswith('-interpreter-exec console "info inferiors"\n')
+        assert controller.decoded_writes[-1].endswith(
+            '-interpreter-exec console "info inferiors"\n'
         )
 
     def test_continue_execution_attributes_stop_without_thread_group_after_fork_refresh(
@@ -225,11 +209,11 @@ class TestExecutionApi:
         scripted_running_session: ScriptedSessionBuilder,
         mi_result: MiRecordBuilder,
         mi_notify: MiNotifyBuilder,
-        mi_console: MiConsoleBuilder,
+        inferiors_console: Callable[..., list[dict[str, object]]],
     ) -> None:
         """Stopped notifications without thread-group should still identify the child inferior."""
 
-        session, _controller = scripted_running_session(
+        session, _ = scripted_running_session(
             [
                 mi_result(message="running"),
                 mi_notify(
@@ -241,12 +225,10 @@ class TestExecutionApi:
                 ),
                 mi_notify("thread-group-added", {"id": "i2"}),
             ],
-            [
-                mi_console("  Num  Description       Connection           Executable        \n"),
-                mi_console("  1    <null>                                 /tmp/app \n"),
-                mi_console("* 2    <null>                                 /tmp/app \n"),
-                mi_result(),
-            ],
+            inferiors_console(
+                "  1    <null>                                 /tmp/app ",
+                "* 2    <null>                                 /tmp/app ",
+            ),
         )
 
         result = result_to_mapping(session.continue_execution())
@@ -274,7 +256,7 @@ class TestExecutionApi:
     ) -> None:
         """Non-stop async thread-group exits should update per-inferior status."""
 
-        session, _controller = scripted_running_session(
+        session, _ = scripted_running_session(
             [
                 mi_notify("thread-group-started", {"id": "i2", "pid": "4321"}),
                 mi_notify("thread-group-exited", {"id": "i2", "exit-code": "03"}),
@@ -307,7 +289,7 @@ class TestExecutionApi:
     ) -> None:
         """Removing the selected inferior should select a remaining inferior deterministically."""
 
-        session, _controller = scripted_running_session(
+        session, _ = scripted_running_session(
             [
                 mi_notify("thread-group-removed", {"id": "i2"}),
                 mi_result(),
@@ -327,13 +309,19 @@ class TestExecutionApi:
         inferior_ids = [record["inferior_id"] for record in mapping_list(status["inferior_states"])]
         assert inferior_ids == [1]
 
-    def test_step(
+    @pytest.mark.parametrize(
+        ("operation", "expected_command"),
+        [("step", "-exec-step\n"), ("next", "-exec-next\n")],
+    )
+    def test_step_and_next_emit_their_exec_commands(
         self,
         scripted_running_session: ScriptedSessionBuilder,
         mi_result: MiRecordBuilder,
         mi_notify: MiNotifyBuilder,
+        operation: str,
+        expected_command: str,
     ) -> None:
-        """Step should emit the MI exec-step command."""
+        """Step and next should emit their respective MI execution commands."""
 
         session, controller = scripted_running_session(
             [
@@ -342,37 +330,17 @@ class TestExecutionApi:
             ]
         )
 
-        result = result_to_mapping(session.step())
+        result = result_to_mapping(getattr(session, operation)())
 
         assert result["status"] == "success"
-        assert controller.io_manager.stdin.writes[0].decode().endswith("-exec-step\n")
-
-    def test_next(
-        self,
-        scripted_running_session: ScriptedSessionBuilder,
-        mi_result: MiRecordBuilder,
-        mi_notify: MiNotifyBuilder,
-    ) -> None:
-        """Next should emit the MI exec-next command."""
-
-        session, controller = scripted_running_session(
-            [
-                mi_result(message="running"),
-                mi_notify("stopped", {"reason": "end-stepping-range"}),
-            ]
-        )
-
-        result = result_to_mapping(session.next())
-
-        assert result["status"] == "success"
-        assert controller.io_manager.stdin.writes[0].decode().endswith("-exec-next\n")
+        assert controller.decoded_writes[0].endswith(expected_command)
 
     def test_finish_surfaces_return_value_and_frame(
         self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
     ) -> None:
         """Finish should return structured caller-frame and return-value details."""
 
-        session, _controller = scripted_running_session(
+        session, _ = scripted_running_session(
             [
                 mi_result(
                     {
@@ -540,17 +508,14 @@ class TestExecutionApi:
 
         assert result["status"] == "success"
         assert "Thread 1" in text(result["output"])
-        assert (
-            '-interpreter-exec console "info threads"'
-            in controller.io_manager.stdin.writes[0].decode()
-        )
+        assert '-interpreter-exec console "info threads"' in controller.decoded_writes[0]
 
     def test_execute_command_accepts_timeout_override(
         self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
     ) -> None:
         """Command execution should pass the requested timeout through."""
 
-        session, _controller = scripted_running_session([mi_result()])
+        session, _ = scripted_running_session([mi_result()])
 
         with patch.object(session._command_runner, "execute_command_result") as mock_execute:
             mock_execute.return_value = object()
@@ -569,7 +534,7 @@ class TestExecutionApi:
 
         assert result["status"] == "success"
         assert "result" in result
-        assert controller.io_manager.stdin.writes[0].decode().endswith("-thread-info\n")
+        assert controller.decoded_writes[0].endswith("-thread-info\n")
 
     def test_execute_command_mi_error_result(
         self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
@@ -585,7 +550,7 @@ class TestExecutionApi:
         assert result["status"] == "error"
         assert dig(result, "details", "command") == "-thread-select 999"
         assert "Thread ID 999 not known" in text(result["message"])
-        assert controller.io_manager.stdin.writes[0].decode().endswith("-thread-select 999\n")
+        assert controller.decoded_writes[0].endswith("-thread-select 999\n")
 
     def test_execute_command_marks_dead_transport_inactive(
         self, running_session: SessionService
@@ -619,7 +584,7 @@ class TestExecutionApi:
         status = result_to_mapping(session.get_status())
         assert status["execution_state"] == "paused"
         assert status["stop_reason"] == "breakpoint-hit"
-        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        written = controller.decoded_writes
         assert written[-1].endswith("-exec-run\n")
 
     def test_run_with_args_preserves_argument_boundaries(
@@ -641,7 +606,7 @@ class TestExecutionApi:
         result = result_to_mapping(session.run(args=["--name", "hello world", 'quote"value']))
 
         assert result["status"] == "success"
-        written = [command.decode() for command in controller.io_manager.stdin.writes]
+        written = controller.decoded_writes
         assert '-exec-arguments "--name" "hello world" "quote\\"value"\n' in written[0]
         assert written[1].endswith("-exec-run\n")
 
@@ -652,7 +617,7 @@ class TestExecutionApi:
     ) -> None:
         """Non-blocking run should return success once execution is acknowledged as running."""
 
-        session, _controller = scripted_running_session([mi_result(message="running")])
+        session, _ = scripted_running_session([mi_result(message="running")])
 
         result = result_to_mapping(session.run(wait_for_stop=False, timeout_sec=1))
 
@@ -664,18 +629,16 @@ class TestExecutionApi:
         self,
         scripted_running_session: ScriptedSessionBuilder,
         mi_result: MiRecordBuilder,
-        mi_console: MiConsoleBuilder,
+        inferiors_console: Callable[..., list[dict[str, object]]],
     ) -> None:
         """Adding an inferior should refresh and return the structured inferior inventory."""
 
-        session, _controller = scripted_running_session(
+        session, _ = scripted_running_session(
             [mi_result({"inferior": "i2"})],
-            [
-                mi_console("  Num  Description       Connection           Executable        \n"),
-                mi_console("* 1    <null>                                 /tmp/app \n"),
-                mi_console("  2    <null>                                                   \n"),
-                mi_result(),
-            ],
+            inferiors_console(
+                "* 1    <null>                                 /tmp/app ",
+                "  2    <null>                                                   ",
+            ),
         )
 
         result = result_to_mapping(session.add_inferior())
@@ -688,17 +651,13 @@ class TestExecutionApi:
         self,
         scripted_running_session: ScriptedSessionBuilder,
         mi_result: MiRecordBuilder,
-        mi_console: MiConsoleBuilder,
+        inferiors_console: Callable[..., list[dict[str, object]]],
     ) -> None:
         """Removing an inferior should refresh the inventory and current selection."""
 
-        session, _controller = scripted_running_session(
+        session, _ = scripted_running_session(
             [mi_result()],
-            [
-                mi_console("  Num  Description       Connection           Executable        \n"),
-                mi_console("* 1    <null>                                 /tmp/app \n"),
-                mi_result(),
-            ],
+            inferiors_console("* 1    <null>                                 /tmp/app "),
         )
         session.runtime.update_inferior_inventory(
             current_inferior_id=2, count=2, inferior_ids=(1, 2)
@@ -712,22 +671,28 @@ class TestExecutionApi:
         assert result["current_inferior_id"] == 1
         assert result["inferior_count"] == 1
 
-    def test_run_parses_zero_padded_exit_code(
+    @pytest.mark.parametrize(
+        ("raw_exit_code", "expected_exit_code"),
+        [("07", 7), ("0x0A", 10)],
+    )
+    def test_run_parses_exit_code(
         self,
         scripted_running_session: ScriptedSessionBuilder,
         mi_result: MiRecordBuilder,
         mi_notify: MiNotifyBuilder,
+        raw_exit_code: str,
+        expected_exit_code: int,
     ) -> None:
-        """Exit-code parsing should preserve decimal values from zero-padded fields."""
+        """Exit-code parsing should normalize zero-padded decimal and hexadecimal values."""
 
-        session, _controller = scripted_running_session(
+        session, _ = scripted_running_session(
             [
                 mi_result(message="running"),
                 mi_notify(
                     "stopped",
                     {
                         "reason": "exited",
-                        "exit-code": "07",
+                        "exit-code": raw_exit_code,
                     },
                 ),
             ]
@@ -739,40 +704,9 @@ class TestExecutionApi:
         status = result_to_mapping(session.get_status())
         assert status["execution_state"] == "exited"
         assert status["stop_reason"] == "exited"
-        assert status["exit_code"] == 7
+        assert status["exit_code"] == expected_exit_code
         assert session.last_stop_event is not None
-        assert session.last_stop_event.exit_code == 7
-
-    def test_run_parses_hex_exit_code(
-        self,
-        scripted_running_session: ScriptedSessionBuilder,
-        mi_result: MiRecordBuilder,
-        mi_notify: MiNotifyBuilder,
-    ) -> None:
-        """Exit-code parsing should normalize hexadecimal payload values."""
-
-        session, _controller = scripted_running_session(
-            [
-                mi_result(message="running"),
-                mi_notify(
-                    "stopped",
-                    {
-                        "reason": "exited",
-                        "exit-code": "0x0A",
-                    },
-                ),
-            ]
-        )
-
-        result = result_to_mapping(session.run(timeout_sec=5))
-
-        assert result["status"] == "success"
-        status = result_to_mapping(session.get_status())
-        assert status["execution_state"] == "exited"
-        assert status["stop_reason"] == "exited"
-        assert status["exit_code"] == 10
-        assert session.last_stop_event is not None
-        assert session.last_stop_event.exit_code == 10
+        assert session.last_stop_event.exit_code == expected_exit_code
 
     def test_wait_for_stop_parses_hex_exit_code(self, running_session: SessionService) -> None:
         """wait_for_stop should propagate parsed hexadecimal exit-code fields."""
@@ -826,10 +760,7 @@ class TestExecutionApi:
         result = result_to_mapping(session.attach_process(pid=1234, timeout_sec=8))
 
         assert result["status"] == "success"
-        assert (
-            '-interpreter-exec console "attach 1234"'
-            in controller.io_manager.stdin.writes[0].decode()
-        )
+        assert '-interpreter-exec console "attach 1234"' in controller.decoded_writes[0]
         status = result_to_mapping(session.get_status())
         assert status["target_loaded"] is True
         assert status["execution_state"] == "paused"
@@ -842,7 +773,7 @@ class TestExecutionApi:
     ) -> None:
         """Attach should transition not_started state to paused after success."""
 
-        session, _controller = scripted_running_session(
+        session, _ = scripted_running_session(
             [
                 mi_console("Attaching to process 1234\n"),
                 mi_result(),
@@ -871,8 +802,7 @@ class TestExecutionApi:
         assert result["mode"] == "child"
         assert session.runtime.follow_fork_mode == "child"
         assert (
-            '-interpreter-exec console "set follow-fork-mode child"'
-            in controller.io_manager.stdin.writes[0].decode()
+            '-interpreter-exec console "set follow-fork-mode child"' in controller.decoded_writes[0]
         )
 
     def test_set_detach_on_fork(
@@ -887,10 +817,7 @@ class TestExecutionApi:
         assert result["status"] == "success"
         assert result["enabled"] is False
         assert session.runtime.detach_on_fork is False
-        assert (
-            '-interpreter-exec console "set detach-on-fork off"'
-            in controller.io_manager.stdin.writes[0].decode()
-        )
+        assert '-interpreter-exec console "set detach-on-fork off"' in controller.decoded_writes[0]
 
 
 class TestCallFunctionApi:
@@ -924,7 +851,7 @@ class TestCallFunctionApi:
         assert result["status"] == "success"
         assert result["function_call"] == 'strlen("hello")'
         assert "$1 = 5" in text(result["result"])
-        assert 'call strlen(\\"hello\\")' in controller.io_manager.stdin.writes[0].decode()
+        assert 'call strlen(\\"hello\\")' in controller.decoded_writes[0]
 
     def test_call_function_timeout(
         self, running_session: SessionService, prompt_response: PromptResponseBuilder

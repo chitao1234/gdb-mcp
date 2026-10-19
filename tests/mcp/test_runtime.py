@@ -1,13 +1,16 @@
 """Unit tests for the injected server runtime."""
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
 from unittest.mock import ANY, AsyncMock, MagicMock, Mock, patch
 
+import pytest
 from mcp.types import TextContent
 
-from gdb_mcp.domain import OperationSuccess, SessionMessage, SessionStatusSnapshot
+from gdb_mcp.domain import OperationSuccess, SessionStatusSnapshot
 from gdb_mcp.mcp.runtime import ServerRuntime, create_server_runtime
 
 
@@ -22,23 +25,33 @@ def _session_double() -> Mock:
     return session
 
 
+@pytest.fixture
+def runtime_with_manager() -> tuple[ServerRuntime, Mock]:
+    """Build a runtime wired to a fresh mock session manager."""
+
+    mock_manager = Mock()
+    mock_manager.shutdown_all.return_value = {}
+    runtime = create_server_runtime(
+        session_manager_provider=lambda: mock_manager,
+        logger=logging.getLogger("test-runtime"),
+    )
+    return runtime, mock_manager
+
+
 class TestServerRuntime:
     """Test runtime-level dependency injection."""
 
-    def test_runtime_dispatches_v2_status_query(self) -> None:
+    def test_runtime_dispatches_v2_status_query(
+        self, runtime_with_manager: tuple[ServerRuntime, Mock]
+    ) -> None:
         """The runtime should dispatch v2 status queries using the injected registry provider."""
 
-        mock_manager = Mock()
+        runtime, mock_manager = runtime_with_manager
         mock_session = _session_double()
         mock_session.get_status.return_value = OperationSuccess(
             SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=True)
         )
         mock_manager.resolve_session.return_value = mock_session
-
-        runtime = create_server_runtime(
-            session_manager_provider=lambda: mock_manager,
-            logger=logging.getLogger("test-runtime"),
-        )
 
         result = asyncio.run(
             runtime.call_tool(
@@ -56,32 +69,24 @@ class TestServerRuntime:
         mock_manager.resolve_session.assert_called_once_with(7)
         mock_session.get_status.assert_called_once()
 
-    def test_runtime_shutdown_uses_injected_session_manager(self) -> None:
+    def test_runtime_shutdown_uses_injected_session_manager(
+        self, runtime_with_manager: tuple[ServerRuntime, Mock]
+    ) -> None:
         """Shutdown should call through the injected registry provider."""
 
-        mock_manager = Mock()
-        mock_manager.shutdown_all.return_value = {
-            1: OperationSuccess(SessionMessage(message="stopped"))
-        }
-
-        runtime = create_server_runtime(
-            session_manager_provider=lambda: mock_manager,
-            logger=logging.getLogger("test-runtime"),
-        )
+        runtime, mock_manager = runtime_with_manager
 
         runtime.shutdown_sessions()
 
         mock_manager.shutdown_all.assert_called_once()
 
     @patch("gdb_mcp.mcp.runtime.run_stdio_app", new_callable=AsyncMock)
-    def test_run_stdio_delegates_to_stdio_helper(self, mock_run_stdio_app: AsyncMock) -> None:
+    def test_run_stdio_delegates_to_stdio_helper(
+        self, mock_run_stdio_app: AsyncMock, runtime_with_manager: tuple[ServerRuntime, Mock]
+    ) -> None:
         """The explicit stdio runner should delegate through the stdio helper."""
 
-        mock_manager = Mock()
-        runtime = create_server_runtime(
-            session_manager_provider=lambda: mock_manager,
-            logger=logging.getLogger("test-runtime"),
-        )
+        runtime, _mock_manager = runtime_with_manager
 
         asyncio.run(runtime.run_stdio())
 
@@ -95,14 +100,11 @@ class TestServerRuntime:
     def test_run_streamable_http_delegates_to_http_helper(
         self,
         mock_run_streamable_http_app: AsyncMock,
+        runtime_with_manager: tuple[ServerRuntime, Mock],
     ) -> None:
         """The explicit HTTP runner should delegate through the HTTP helper."""
 
-        mock_manager = Mock()
-        runtime = create_server_runtime(
-            session_manager_provider=lambda: mock_manager,
-            logger=logging.getLogger("test-runtime"),
-        )
+        runtime, _mock_manager = runtime_with_manager
 
         asyncio.run(
             runtime.run_streamable_http(
@@ -128,15 +130,14 @@ class TestServerRuntime:
     @patch("gdb_mcp.mcp.runtime.asyncio.run")
     @patch.object(ServerRuntime, "main", return_value="main-coroutine")
     def test_run_server_delegates_through_main(
-        self, mock_main: Mock, mock_asyncio_run: Mock
+        self,
+        mock_main: Mock,
+        mock_asyncio_run: Mock,
+        runtime_with_manager: tuple[ServerRuntime, Mock],
     ) -> None:
         """The synchronous entrypoint should keep main() as the compatibility alias."""
 
-        mock_manager = Mock()
-        runtime = create_server_runtime(
-            session_manager_provider=lambda: mock_manager,
-            logger=logging.getLogger("test-runtime"),
-        )
+        runtime, _mock_manager = runtime_with_manager
 
         runtime.run_server()
 

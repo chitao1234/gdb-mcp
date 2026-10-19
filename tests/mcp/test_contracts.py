@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import get_args, get_type_hints
+from typing import Any, cast, get_args, get_type_hints
 
 import pytest
 from pydantic import BaseModel
@@ -50,16 +50,28 @@ from gdb_mcp.mcp.schemas import (
 )
 
 
+def _field_schema(model: type[BaseModel], field_name: str) -> dict[str, Any]:
+    """Return the JSON Schema fragment for one model field."""
+
+    return cast("dict[str, Any]", model.model_json_schema()["properties"][field_name])
+
+
 def _enum_values(model: type[BaseModel], field_name: str) -> tuple[str, ...]:
-    return tuple(model.model_json_schema()["properties"][field_name]["enum"])
+    """Return the field's declared enum values as a tuple."""
+
+    return tuple(_field_schema(model, field_name)["enum"])
 
 
 def _const_value(model: type[BaseModel], field_name: str) -> str:
-    return str(model.model_json_schema()["properties"][field_name]["const"])
+    """Return the field's single const value as a string."""
+
+    return str(_field_schema(model, field_name)["const"])
 
 
 def _array_item_enum_values(model: type[BaseModel], field_name: str) -> tuple[str, ...]:
-    items = model.model_json_schema()["properties"][field_name]["items"]
+    """Return the enum values of an array field's item schema."""
+
+    items = _field_schema(model, field_name)["items"]
     return tuple(items["enum"])
 
 
@@ -113,6 +125,8 @@ def test_shared_single_value_public_contract_aliases_match_runtime_values(
     alias_name: str,
     value_name: str,
 ) -> None:
+    """Each single-value public alias must resolve to its shared runtime constant."""
+
     assert get_args(getattr(shared_contracts, alias_name)) == (
         getattr(shared_contracts, value_name),
     )
@@ -175,15 +189,21 @@ def test_validate_workflow_step_contract_matches_shared_public_rules(
     arguments: dict[str, object],
     expected: shared_contracts.WorkflowStepValidationIssue | None,
 ) -> None:
+    """Workflow-step validation must match the documented shared rules."""
+
     assert shared_contracts.validate_workflow_step_contract(tool_name, arguments) == expected
 
 
 def test_public_tool_names_match_all_runtime_registries() -> None:
+    """The published tool inventory must agree across client and MCP registries."""
+
     assert set(CLIENT_TOOL_SPECS) == set(PUBLIC_TOOL_NAMES)
     assert tuple(tool.name for tool in build_tool_definitions()) == PUBLIC_TOOL_NAMES
 
 
 def test_batch_step_tool_names_match_workflow_allowlists() -> None:
+    """Batch steps may name exactly the session tools except the batch tool itself."""
+
     expected_tools = set(SESSION_TOOL_SPECS) - {TOOL_WORKFLOW_BATCH}
     assert set(BATCH_STEP_TOOL_NAMES) == expected_tools
     assert set(BATCH_STEP_TOOL_MODELS) == expected_tools
@@ -192,12 +212,16 @@ def test_batch_step_tool_names_match_workflow_allowlists() -> None:
 
 
 def test_session_tool_specs_share_the_public_request_models() -> None:
+    """Session handler specs must reuse the shared public request models."""
+
     assert set(SESSION_TOOL_SPECS) <= set(TOOL_MODELS)
     for tool_name, spec in SESSION_TOOL_SPECS.items():
         assert spec.model is TOOL_MODELS[tool_name]
 
 
 def test_every_public_tool_has_one_dispatch_spec() -> None:
+    """Every public tool must map to exactly one dispatch spec with a valid scope."""
+
     assert set(TOOL_SPECS) == set(TOOL_MODELS)
     for tool_name, spec in TOOL_SPECS.items():
         assert spec.model is TOOL_MODELS[tool_name]
@@ -205,6 +229,8 @@ def test_every_public_tool_has_one_dispatch_spec() -> None:
 
 
 def test_batch_step_tool_alias_and_client_field_match_shared_contract() -> None:
+    """The batch-step alias and client field must share the same allowlist."""
+
     session_step_hints = get_type_hints(SessionStepInput)
 
     assert get_args(BatchStepToolName) == BATCH_STEP_TOOL_NAMES
@@ -212,6 +238,8 @@ def test_batch_step_tool_alias_and_client_field_match_shared_contract() -> None:
 
 
 def test_shared_schema_enums_match_contract_values() -> None:
+    """Published schema enums must equal the shared contract value sets."""
+
     assert _enum_values(InferiorFollowForkPayload, "mode") == INFERIOR_FOLLOW_FORK_MODES
     assert _enum_values(ExecutionControlPayload, "wait_until") == EXECUTION_WAIT_UNTIL_VALUES
     assert _enum_values(BreakpointWatchCreateArgs, "access") == BREAKPOINT_ACCESS_VALUES
@@ -223,6 +251,8 @@ def test_shared_schema_enums_match_contract_values() -> None:
 
 
 def test_shared_schema_const_fields_match_public_contract_values() -> None:
+    """Const schema fields must equal the shared contract constants."""
+
     assert _const_value(SessionQueryListAction, "action") == shared_contracts.ACTION_LIST
     assert _const_value(SessionQueryStatusAction, "action") == shared_contracts.ACTION_STATUS
     assert _const_value(ExecutionRunAction, "action") == shared_contracts.ACTION_RUN
@@ -233,6 +263,8 @@ def test_shared_schema_const_fields_match_public_contract_values() -> None:
 
 
 def test_cli_location_kind_choices_keep_public_hyphenated_form() -> None:
+    """CLI location-kind choices must keep the public hyphenated spelling."""
+
     assert CLI_LOCATION_KIND_CHOICES == (
         "current",
         "function",

@@ -29,6 +29,15 @@ _STARTUP_TIMEOUT_SEC = 30
 # a hung server never exits, it just fails later. CI runners share cores with
 # the rest of the suite, so a tight bound reports load as a hang.
 _SHUTDOWN_TIMEOUT_SEC = 60
+_KILL_TIMEOUT_SEC = 30
+
+
+def _kill_process(process: subprocess.Popen[str]) -> None:
+    """Kill the server if it is still running and reap it."""
+
+    if process.poll() is None:
+        process.kill()
+        process.wait(timeout=_KILL_TIMEOUT_SEC)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX signal semantics")
@@ -62,7 +71,7 @@ def test_stdio_server_exits_on_sigint_after_startup() -> None:
             process.wait(timeout=_SHUTDOWN_TIMEOUT_SEC)
         except subprocess.TimeoutExpired:
             process.kill()
-            _, stderr = process.communicate(timeout=30)
+            _, stderr = process.communicate(timeout=_KILL_TIMEOUT_SEC)
             pytest.fail(
                 f"server did not exit within {_SHUTDOWN_TIMEOUT_SEC}s of SIGINT; "
                 f"stderr:\n{stderr}"
@@ -70,6 +79,4 @@ def test_stdio_server_exits_on_sigint_after_startup() -> None:
 
         assert process.returncode == 130
     finally:
-        if process.poll() is None:
-            process.kill()
-            process.wait(timeout=30)
+        _kill_process(process)

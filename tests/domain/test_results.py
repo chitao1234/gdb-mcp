@@ -1,5 +1,7 @@
 """Unit tests for typed domain result helpers."""
 
+from __future__ import annotations
+
 import types
 from typing import cast
 

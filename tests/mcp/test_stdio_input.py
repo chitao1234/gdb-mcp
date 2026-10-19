@@ -4,14 +4,34 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Iterator
 
 import pytest
 
 from gdb_mcp.mcp.stdio_input import DaemonStdinLines
 
 
-def test_daemon_stdin_lines_decodes_lines_and_ends_on_eof() -> None:
+@pytest.fixture
+def pipe_fds() -> Iterator[tuple[int, int]]:
+    """Provide a connected ``(read, write)`` pipe closed after the test."""
+
     read_fd, write_fd = os.pipe()
+    try:
+        yield read_fd, write_fd
+    finally:
+        for fd in (read_fd, write_fd):
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+
+def test_daemon_stdin_lines_decodes_lines_and_ends_on_eof(
+    pipe_fds: tuple[int, int],
+) -> None:
+    """Lines are decoded until EOF, preserving the trailing newline."""
+
+    read_fd, write_fd = pipe_fds
     source = DaemonStdinLines(read_fd)
 
     async def collect() -> list[str]:
@@ -21,11 +41,12 @@ def test_daemon_stdin_lines_decodes_lines_and_ends_on_eof() -> None:
     os.close(write_fd)
 
     assert asyncio.run(asyncio.wait_for(collect(), timeout=5)) == ["one\n", "two"]
-    os.close(read_fd)
 
 
-def test_blocked_read_is_cancelled_promptly() -> None:
-    read_fd, write_fd = os.pipe()
+def test_blocked_read_is_cancelled_promptly(pipe_fds: tuple[int, int]) -> None:
+    """Cancelling a read blocked on the pipe must not leak the reader thread."""
+
+    read_fd, _write_fd = pipe_fds
     source = DaemonStdinLines(read_fd)
 
     async def scenario() -> None:
@@ -40,5 +61,3 @@ def test_blocked_read_is_cancelled_promptly() -> None:
             await asyncio.wait_for(pending, timeout=2)
 
     asyncio.run(scenario())
-    os.close(write_fd)
-    os.close(read_fd)

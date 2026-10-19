@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from gdb_mcp.domain import (
     CommandExecutionInfo,
@@ -13,22 +12,19 @@ from gdb_mcp.domain import (
 from gdb_mcp.session.service import SessionService
 from tests.support import dig, text
 
-PromptResponseBuilder = Callable[..., dict[str, object]]
-CommandResultBuilder = Callable[..., OperationSuccess[CommandExecutionInfo]]
+from .conftest import CommandResultBuilder, PromptResponseBuilder, StartHarness
 
 
 class TestSessionErrorPaths:
     """Test error and fatal-path behavior through the public API."""
 
-    @patch("gdb_mcp.session.factory.GdbController")
-    def test_start_session_exception(
-        self, mock_controller_class: MagicMock, session_service: SessionService
-    ) -> None:
+    def test_start_session_exception(self, start_session: StartHarness) -> None:
         """Startup exceptions should be surfaced as user-facing errors."""
 
-        mock_controller_class.side_effect = Exception("GDB not found")
-
-        result = result_to_mapping(session_service.start(program="/bin/ls"))
+        result = start_session(
+            program="/bin/ls",
+            controller_side_effect=Exception("GDB not found"),
+        )
 
         assert result["status"] == "error"
         assert "GDB not found" in text(result["message"])
@@ -131,28 +127,22 @@ class TestSessionErrorPaths:
         assert "fatal" in text(result["message"]).lower()
         assert result.get("fatal") is True
 
-    @patch("gdb_mcp.session.factory.GdbController")
     def test_fatal_error_during_initialization(
         self,
-        mock_controller_class: MagicMock,
-        session_service: SessionService,
+        start_session: StartHarness,
         prompt_response: PromptResponseBuilder,
     ) -> None:
         """Fatal initialization failures should clean up controller state."""
 
-        mock_controller_class.return_value = MagicMock()
-
-        with patch.object(
-            session_service._command_runner,
-            "send_command_and_wait_for_prompt",
-            return_value=prompt_response(
+        result = start_session(
+            program="/bin/ls",
+            prompt=prompt_response(
                 error="GDB internal fatal error: internal-error during initialization",
                 fatal=True,
             ),
-        ):
-            result = result_to_mapping(session_service.start(program="/bin/ls"))
+        )
 
         assert result["status"] == "error"
         assert "failed to initialize" in text(result["message"]).lower()
         assert result.get("fatal") is True
-        assert session_service.controller is None
+        assert start_session.service.controller is None

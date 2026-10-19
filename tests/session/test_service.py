@@ -1,12 +1,40 @@
 """Unit tests for the extracted SessionService layer."""
 
+from __future__ import annotations
+
 import threading
 import time
 from unittest.mock import MagicMock, patch
 
 from gdb_mcp.domain import OperationError, OperationSuccess, SessionStartInfo
-from gdb_mcp.session.service import SessionService, SessionState
-from gdb_mcp.transport.protocols import GdbControllerProtocol
+from gdb_mcp.session.protocols import OsModuleProtocol
+from gdb_mcp.session.service import SessionService
+from gdb_mcp.session.state import SessionState
+from gdb_mcp.transport.protocols import GdbControllerFactoryProtocol, GdbControllerProtocol
+
+from .conftest import PromptResponseBuilder
+
+
+def _os_module() -> MagicMock:
+    """Build an OS double whose gdb lookup resolves and whose cwd is not queried."""
+
+    fake_os = MagicMock()
+    fake_os.environ.get.return_value = "gdb"
+    return fake_os
+
+
+def _service(
+    *,
+    controller_factory: GdbControllerFactoryProtocol | None = None,
+    os_module: OsModuleProtocol | None = None,
+) -> SessionService:
+    """Build a SessionService with injected doubles instead of real dependencies."""
+
+    return SessionService(
+        controller_factory=controller_factory or MagicMock(),
+        os_module=os_module or _os_module(),
+        time_module=MagicMock(),
+    )
 
 
 class TestSessionService:
@@ -15,11 +43,7 @@ class TestSessionService:
     def test_initialization_uses_injected_dependencies(self) -> None:
         """SessionService should start with no controller and CREATED state."""
 
-        service = SessionService(
-            controller_factory=MagicMock(),
-            os_module=MagicMock(),
-            time_module=MagicMock(),
-        )
+        service = _service()
 
         assert service.controller is None
         assert service.state is SessionState.CREATED
@@ -29,28 +53,19 @@ class TestSessionService:
         assert service.command_transcript == ()
         assert service.runtime.workflow_lock is not None
 
-    def test_start_success_uses_injected_controller_factory(self) -> None:
+    def test_start_success_uses_injected_controller_factory(
+        self, prompt_response: PromptResponseBuilder
+    ) -> None:
         """Startup should use the injected controller factory rather than importing one directly."""
 
         controller_factory = MagicMock(return_value=MagicMock())
-        fake_os = MagicMock()
-        fake_os.environ.get.return_value = "gdb"
-
-        service = SessionService(
-            controller_factory=controller_factory,
-            os_module=fake_os,
-            time_module=MagicMock(),
-        )
+        service = _service(controller_factory=controller_factory)
 
         with (
             patch.object(
                 service._command_runner,
                 "send_command_and_wait_for_prompt",
-                return_value={
-                    "command_responses": [{"type": "result", "message": "done", "token": 1000}],
-                    "async_notifications": [],
-                    "timed_out": False,
-                },
+                return_value=prompt_response(),
             ),
             patch.object(service._lifecycle, "_probe_target_loaded", return_value=True),
         ):
@@ -67,29 +82,21 @@ class TestSessionService:
             time_to_check_for_additional_output_sec=1.0,
         )
 
-    def test_start_with_working_dir_uses_process_cwd_without_chdir(self) -> None:
+    def test_start_with_working_dir_uses_process_cwd_without_chdir(
+        self, prompt_response: PromptResponseBuilder
+    ) -> None:
         """working_dir should be forwarded into process startup instead of mutating global cwd."""
 
         controller_factory = MagicMock(return_value=MagicMock())
-        fake_os = MagicMock()
-        fake_os.environ.get.return_value = "gdb"
+        fake_os = _os_module()
         fake_os.path.isdir.return_value = True
-
-        service = SessionService(
-            controller_factory=controller_factory,
-            os_module=fake_os,
-            time_module=MagicMock(),
-        )
+        service = _service(controller_factory=controller_factory, os_module=fake_os)
 
         with (
             patch.object(
                 service._command_runner,
                 "send_command_and_wait_for_prompt",
-                return_value={
-                    "command_responses": [{"type": "result", "message": "done", "token": 1000}],
-                    "async_notifications": [],
-                    "timed_out": False,
-                },
+                return_value=prompt_response(),
             ),
             patch.object(service._lifecycle, "_probe_target_loaded", return_value=True),
         ):
@@ -116,17 +123,13 @@ class TestSessionService:
             nonlocal controller_factory_calls
             with controller_factory_lock:
                 controller_factory_calls += 1
+            # Widen the race window so a missing workflow lock would create two controllers.
             time.sleep(0.05)
             return MagicMock()
 
         fake_os = MagicMock()
         fake_os.environ.get.return_value = "gdb"
-
-        service = SessionService(
-            controller_factory=controller_factory,
-            os_module=fake_os,
-            time_module=MagicMock(),
-        )
+        service = _service(controller_factory=controller_factory, os_module=fake_os)
         results: list[OperationSuccess[SessionStartInfo] | OperationError] = []
 
         def run_start() -> None:

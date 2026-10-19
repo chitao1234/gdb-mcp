@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Callable
+from typing import Any, cast
 from unittest.mock import MagicMock, Mock
 
 import pytest
@@ -37,27 +39,94 @@ from gdb_mcp.session.registry import SessionRegistry
 from tests.support import dig, mapping, mapping_list, text
 
 
+def _workflow_lock() -> MagicMock:
+    """Create a context-manager double used as the session workflow lock."""
+
+    workflow_lock = MagicMock()
+    workflow_lock.__enter__.return_value = None
+    workflow_lock.__exit__.return_value = None
+    return workflow_lock
+
+
 def _session_double(**runtime_state: object) -> Mock:
     """Create a handler test double that satisfies the workflow-lock contract."""
 
     session = Mock()
-    workflow_lock = MagicMock()
-    workflow_lock.__enter__.return_value = None
-    workflow_lock.__exit__.return_value = None
-    session.runtime = Mock(workflow_lock=workflow_lock, **runtime_state)
+    session.runtime = Mock(workflow_lock=_workflow_lock(), **runtime_state)
     session.controller = None
     session.is_running = False
     return session
 
 
-def dispatch(name: str, arguments: object, session_manager: SessionRegistry) -> dict[str, object]:
+def _manager_for(session: object) -> Mock:
+    """Create a registry double that resolves every session ID to the session."""
+
+    manager = Mock()
+    manager.resolve_session.return_value = session
+    return manager
+
+
+def _stub(session: object, name: str, **kwargs: object) -> None:
+    """Install a Mock method on a test double without a method-assign ignore."""
+
+    setattr(session, name, Mock(**kwargs))
+
+
+def _failure_session(manager: Mock) -> Mock:
+    """Create a campaign session double and register it as the untracked session."""
+
+    session = _session_double()
+    session.start.return_value = OperationSuccess(SessionMessage(message="started"))
+    session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
+    session.get_status.return_value = OperationSuccess(
+        SessionStatusSnapshot(
+            is_running=True,
+            target_loaded=True,
+            has_controller=True,
+            execution_state="paused",
+            stop_reason="signal-received",
+        )
+    )
+    session.last_stop_event = StopEvent(execution_state="paused", reason="signal-received")
+    session.capture_bundle.return_value = OperationSuccess(SessionMessage(message="bundle"))
+    session.controller = object()
+    session.stop.return_value = OperationSuccess(SessionMessage(message="stopped"))
+    manager.create_untracked_session.return_value = session
+    return session
+
+
+def _continue_side_effect(
+    session: Mock,
+) -> Callable[..., OperationSuccess[CommandExecutionInfo]]:
+    """Build a continue stub that records a breakpoint stop on the session runtime."""
+
+    def continue_side_effect(
+        *, wait_for_stop: bool, timeout_sec: int, reverse: bool
+    ) -> OperationSuccess[CommandExecutionInfo]:
+        assert wait_for_stop is True
+        assert timeout_sec == 30
+        assert reverse is False
+        session.runtime.mark_inferior_paused("breakpoint-hit")
+        stop_event = StopEvent(
+            execution_state="paused",
+            reason="breakpoint-hit",
+            command="-exec-continue",
+            thread_id=2,
+        )
+        session.runtime.record_stop_event(stop_event)
+        return OperationSuccess(CommandExecutionInfo(command="-exec-continue"))
+
+    return continue_side_effect
+
+
+def dispatch(name: str, arguments: object, session_manager: object) -> dict[str, object]:
     """Call the structured MCP dispatcher and parse its JSON payload."""
 
     result = asyncio.run(
         dispatch_tool_call(
             name,
             arguments,
-            session_manager,
+            cast(SessionRegistry, session_manager),
             logger=logging.getLogger("test-mcp-handlers"),
         )
     )
@@ -197,12 +266,11 @@ class TestHandlerDispatch:
     def test_tool_with_valid_session_id_works(self) -> None:
         """Session-scoped tools should route to the retrieved session."""
 
-        manager = Mock()
         session = _session_double()
         session.get_status.return_value = OperationSuccess(
             SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=True)
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         result_data = dispatch(
             "gdb_session_query",
@@ -251,18 +319,21 @@ class TestHandlerDispatch:
         assert "closing" in text(result_data["message"])
 
 
-class TestSessionFailureContext:
-    """Session-scoped failures should carry the state the caller needs to recover."""
+class TestHandlerRouting:
+    """Test handler routing, argument validation, and session failure annotation."""
+
+    # Session-scoped failures should carry the state the caller needs to recover.
 
     def _dispatch_backtrace_failure(
         self, message: str, **runtime_state: object
     ) -> dict[str, object]:
+        """Dispatch a backtrace failure with the supplied runtime state."""
+
         session = _session_double(**runtime_state)
         session.get_backtrace.return_value = OperationError(
             message=message, details={"command": "-stack-list-frames 0 1"}
         )
-        manager = Mock()
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         return dispatch(
             "gdb_context_query",
@@ -271,6 +342,8 @@ class TestSessionFailureContext:
         )
 
     def test_failure_carries_session_state_and_specific_code(self) -> None:
+        """Failure details should include the session state behind the error code."""
+
         result_data = self._dispatch_backtrace_failure(
             "No registers.",
             execution_state="exited",
@@ -286,6 +359,8 @@ class TestSessionFailureContext:
         assert dig(result_data, "details", "exit_code") == 1
 
     def test_absent_state_is_omitted(self) -> None:
+        """Unavailable runtime state should not appear in failure details."""
+
         result_data = self._dispatch_backtrace_failure("No registers.", execution_state="paused")
 
         assert dig(result_data, "details", "execution_state") == "paused"
@@ -293,6 +368,8 @@ class TestSessionFailureContext:
         assert "stop_reason" not in mapping(result_data["details"])
 
     def test_unclassified_failure_keeps_the_generic_code(self) -> None:
+        """Unrecognized failure messages should keep the generic error code."""
+
         result_data = self._dispatch_backtrace_failure(
             "something inexplicable", execution_state="paused"
         )
@@ -324,15 +401,18 @@ class TestSessionFailureContext:
     def test_failure_messages_map_to_branchable_codes(
         self, message: str, expected_code: str
     ) -> None:
+        """Recognized GDB messages should map to branchable failure codes."""
+
         result_data = self._dispatch_backtrace_failure(message)
 
         assert result_data["code"] == expected_code
 
     def test_successful_results_are_not_annotated(self) -> None:
+        """Successful results should not receive failure-state annotations."""
+
         session = _session_double(execution_state="paused")
         session.get_backtrace.return_value = OperationSuccess({"thread_id": 1, "frames": []})
-        manager = Mock()
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         result_data = dispatch(
             "gdb_context_query",
@@ -415,12 +495,11 @@ class TestSessionFailureContext:
     def test_execute_command_routes_to_correct_session(self) -> None:
         """Execute-command requests should forward the command payload."""
 
-        manager = Mock()
         session = _session_double()
         session.execute_command.return_value = OperationSuccess(
             CommandExecutionInfo(command="info threads", output="Thread info")
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_execute_command",
@@ -434,10 +513,9 @@ class TestSessionFailureContext:
     def test_execution_manage_run_routes_wait_policy(self) -> None:
         """Execution manage run should translate wait policy into session arguments."""
 
-        manager = Mock()
         session = _session_double()
         session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_execution_manage",
@@ -463,10 +541,9 @@ class TestSessionFailureContext:
     def test_execution_run_accepts_omitted_execution_payload(self) -> None:
         """Run should work without an explicit execution payload."""
 
-        manager = Mock()
         session = _session_double()
         session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_execution_manage",
@@ -479,10 +556,9 @@ class TestSessionFailureContext:
     def test_run_accepts_shell_style_string_args(self) -> None:
         """String-form run args should be shell-split before forwarding."""
 
-        manager = Mock()
         session = _session_double()
         session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_execution_manage",
@@ -506,10 +582,9 @@ class TestSessionFailureContext:
     def test_add_inferior_routes_to_correct_session(self) -> None:
         """Inferior creation requests should forward executable and selection policy."""
 
-        manager = Mock()
         session = _session_double()
         session.add_inferior.return_value = OperationSuccess({"inferior_id": 2})
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_inferior_manage",
@@ -529,10 +604,9 @@ class TestSessionFailureContext:
     def test_add_inferior_accepts_omitted_inferior_payload(self) -> None:
         """Inferior creation should work without an explicit inferior payload."""
 
-        manager = Mock()
         session = _session_double()
         session.add_inferior.return_value = OperationSuccess({"inferior_id": 2})
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_inferior_manage",
@@ -545,10 +619,9 @@ class TestSessionFailureContext:
     def test_remove_inferior_routes_to_correct_session(self) -> None:
         """Inferior removal requests should forward the normalized inferior ID."""
 
-        manager = Mock()
         session = _session_double()
         session.remove_inferior.return_value = OperationSuccess({"inferior_id": 2})
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_inferior_manage",
@@ -561,10 +634,9 @@ class TestSessionFailureContext:
     def test_execution_manage_continue_routes_ack_mode(self) -> None:
         """Execution manage continue should translate wait policy into session arguments."""
 
-        manager = Mock()
         session = _session_double()
         session.continue_execution.return_value = OperationSuccess({"command": "-exec-continue"})
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_execution_manage",
@@ -585,10 +657,9 @@ class TestSessionFailureContext:
     def test_execution_manage_reverse_direction_reaches_the_session(self) -> None:
         """A reverse request should be forwarded as reverse execution."""
 
-        manager = Mock()
         session = _session_double()
         session.step.return_value = OperationSuccess({"command": "-exec-step --reverse"})
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_execution_manage",
@@ -605,10 +676,9 @@ class TestSessionFailureContext:
     def test_finish_routes_to_execution_service(self) -> None:
         """Finish requests should forward timeout to the session execution API."""
 
-        manager = Mock()
         session = _session_double()
         session.finish.return_value = OperationSuccess({"message": "finished"})
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_execution_manage",
@@ -625,12 +695,11 @@ class TestSessionFailureContext:
     def test_attach_process_routes_to_correct_session(self) -> None:
         """Attach requests should forward pid and timeout."""
 
-        manager = Mock()
         session = _session_double()
         session.attach_process.return_value = OperationSuccess(
             CommandExecutionInfo(command="attach 42")
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_attach_process",
@@ -644,10 +713,9 @@ class TestSessionFailureContext:
     def test_context_manage_select_thread_routes_to_service(self) -> None:
         """Context manage should route thread selection through the session service."""
 
-        manager = Mock()
         session = _session_double()
         session.select_thread.return_value = OperationSuccess(ThreadSelectionInfo(thread_id=7))
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_context_manage",
@@ -664,12 +732,11 @@ class TestSessionFailureContext:
     def test_context_manage_select_frame_routes_to_service(self) -> None:
         """Context manage should route frame selection through the session service."""
 
-        manager = Mock()
         session = _session_double()
         session.select_frame.return_value = OperationSuccess(
             FrameInfo(frame={"level": "2", "func": "worker"})
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_context_manage",
@@ -686,12 +753,11 @@ class TestSessionFailureContext:
     def test_context_query_threads_routes_to_service(self) -> None:
         """Context query threads should route through the session service."""
 
-        manager = Mock()
         session = _session_double()
         session.get_threads.return_value = OperationSuccess(
             {"threads": [{"id": "1"}], "current_thread_id": "1", "count": 1}
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_context_query",
@@ -708,12 +774,11 @@ class TestSessionFailureContext:
     def test_context_query_frame_routes_with_thread_and_frame_override(self) -> None:
         """Context query frame should route optional thread/frame overrides."""
 
-        manager = Mock()
         session = _session_double()
         session.get_frame_info.return_value = OperationSuccess(
             FrameInfo(frame={"level": "1", "func": "worker"})
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_context_query",
@@ -730,7 +795,6 @@ class TestSessionFailureContext:
     def test_inspect_query_disassembly_routes_location_union(self) -> None:
         """Inspect query disassembly should route location unions into service kwargs."""
 
-        manager = Mock()
         session = _session_double()
         session.disassemble.return_value = OperationSuccess(
             DisassemblyInfo(
@@ -748,7 +812,7 @@ class TestSessionFailureContext:
                 count=0,
             )
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_inspect_query",
@@ -780,12 +844,11 @@ class TestSessionFailureContext:
     def test_inspect_query_variables_routes_context_selector(self) -> None:
         """Inspect query variables should route optional context selection."""
 
-        manager = Mock()
         session = _session_double()
         session.get_variables.return_value = OperationSuccess(
             VariablesInfo(thread_id=3, frame=1, variables=[])
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_inspect_query",
@@ -802,7 +865,6 @@ class TestSessionFailureContext:
     def test_inspect_query_source_routes_file_range(self) -> None:
         """Inspect query source should route file-range selectors."""
 
-        manager = Mock()
         session = _session_double()
         session.get_source_context.return_value = OperationSuccess(
             SourceContextInfo(
@@ -820,7 +882,7 @@ class TestSessionFailureContext:
                 count=0,
             )
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_inspect_query",
@@ -857,12 +919,11 @@ class TestSessionFailureContext:
     def test_breakpoint_query_get_routes_to_service(self) -> None:
         """Breakpoint query get should route through the breakpoint service."""
 
-        manager = Mock()
         session = _session_double()
         session.get_breakpoint.return_value = OperationSuccess(
             BreakpointInfo(breakpoint={"number": "4", "type": "breakpoint"})
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_breakpoint_query",
@@ -875,7 +936,6 @@ class TestSessionFailureContext:
     def test_breakpoint_query_list_routes_enabled_filter(self) -> None:
         """Breakpoint query list should apply the enabled-state filter after listing."""
 
-        manager = Mock()
         session = _session_double()
         session.list_breakpoints.return_value = OperationSuccess(
             BreakpointListInfo(
@@ -886,7 +946,7 @@ class TestSessionFailureContext:
                 count=2,
             )
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         result_data = dispatch(
             "gdb_breakpoint_query",
@@ -906,12 +966,11 @@ class TestSessionFailureContext:
     def test_breakpoint_manage_update_routes_changes(self) -> None:
         """Breakpoint manage update should route condition changes."""
 
-        manager = Mock()
         session = _session_double()
         session.update_breakpoint.return_value = OperationSuccess(
             BreakpointInfo(breakpoint={"number": "4", "type": "breakpoint", "exp": "count > 100"})
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_breakpoint_manage",
@@ -933,7 +992,6 @@ class TestSessionFailureContext:
     def test_inferior_query_current_returns_current_inferior(self) -> None:
         """Inferior query current should unwrap the selected inferior from inventory."""
 
-        manager = Mock()
         session = _session_double()
         session.list_inferiors.return_value = OperationSuccess(
             InferiorListInfo(
@@ -945,7 +1003,7 @@ class TestSessionFailureContext:
                 current_inferior_id=1,
             )
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         result_data = dispatch(
             "gdb_inferior_query",
@@ -960,12 +1018,11 @@ class TestSessionFailureContext:
     def test_inferior_manage_select_routes_to_service(self) -> None:
         """Inferior manage select should route through the session service."""
 
-        manager = Mock()
         session = _session_double()
         session.select_inferior.return_value = OperationSuccess(
             InferiorSelectionInfo(inferior_id=2, is_current=True)
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_inferior_manage",
@@ -982,12 +1039,11 @@ class TestSessionFailureContext:
     def test_set_watchpoint_routes_to_correct_session(self) -> None:
         """Watchpoint requests should forward expression and access mode."""
 
-        manager = Mock()
         session = _session_double()
         session.set_watchpoint.return_value = OperationSuccess(
             BreakpointInfo(breakpoint={"number": "2", "type": "hw watchpoint"})
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_breakpoint_manage",
@@ -1009,12 +1065,11 @@ class TestSessionFailureContext:
     def test_delete_watchpoint_routes_to_correct_session(self) -> None:
         """Watchpoint deletion should forward the shared breakpoint number."""
 
-        manager = Mock()
         session = _session_double()
         session.delete_breakpoint.return_value = OperationSuccess(
             SessionMessage(message="Breakpoint 2 deleted")
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_breakpoint_manage",
@@ -1028,12 +1083,11 @@ class TestSessionFailureContext:
     def test_set_catchpoint_routes_to_correct_session(self) -> None:
         """Catchpoint requests should forward kind, argument, and temporary flag."""
 
-        manager = Mock()
         session = _session_double()
         session.set_catchpoint.return_value = OperationSuccess(
             BreakpointInfo(breakpoint={"number": "3", "type": "catchpoint"})
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_breakpoint_manage",
@@ -1060,10 +1114,9 @@ class TestSessionFailureContext:
     def test_wait_for_stop_routes_to_correct_session(self) -> None:
         """Wait requests should forward timeout and optional reason filters."""
 
-        manager = Mock()
         session = _session_double()
         session.wait_for_stop.return_value = OperationSuccess({"matched": True})
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_execution_manage",
@@ -1084,10 +1137,9 @@ class TestSessionFailureContext:
     def test_read_memory_routes_to_correct_session(self) -> None:
         """Memory read requests should forward address, count, and offset."""
 
-        manager = Mock()
         session = _session_double()
         session.read_memory.return_value = OperationSuccess({"captured_bytes": 4})
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_inspect_query",
@@ -1105,10 +1157,9 @@ class TestSessionFailureContext:
     def test_list_inferiors_routes_to_correct_session(self) -> None:
         """Inferior inventory requests should route to the resolved session."""
 
-        manager = Mock()
         session = _session_double()
         session.list_inferiors.return_value = OperationSuccess({"count": 1, "inferiors": []})
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_inferior_query",
@@ -1122,10 +1173,9 @@ class TestSessionFailureContext:
     def test_select_inferior_routes_to_correct_session(self) -> None:
         """Inferior selection should forward the requested inferior ID."""
 
-        manager = Mock()
         session = _session_double()
         session.select_inferior.return_value = OperationSuccess({"inferior_id": 2})
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_inferior_manage",
@@ -1139,10 +1189,9 @@ class TestSessionFailureContext:
     def test_set_follow_fork_mode_routes_to_correct_session(self) -> None:
         """Follow-fork-mode requests should forward the selected mode."""
 
-        manager = Mock()
         session = _session_double()
         session.set_follow_fork_mode.return_value = OperationSuccess({"mode": "child"})
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_inferior_manage",
@@ -1160,10 +1209,9 @@ class TestSessionFailureContext:
     def test_set_detach_on_fork_routes_to_correct_session(self) -> None:
         """Detach-on-fork requests should forward the selected boolean value."""
 
-        manager = Mock()
         session = _session_double()
         session.set_detach_on_fork.return_value = OperationSuccess({"enabled": False})
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_inferior_manage",
@@ -1181,12 +1229,11 @@ class TestSessionFailureContext:
     def test_set_breakpoint_routes_to_correct_session(self) -> None:
         """Breakpoint requests should be routed to the resolved session."""
 
-        manager = Mock()
         session = _session_double()
         session.set_breakpoint.return_value = OperationSuccess(
             BreakpointInfo(breakpoint={"number": 1, "location": "main"})
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_breakpoint_manage",
@@ -1204,34 +1251,16 @@ class TestSessionFailureContext:
     def test_workflow_batch_routes_validated_steps_and_captures_stop_event(self) -> None:
         """Workflow batch requests should execute validated session steps atomically."""
 
-        manager = Mock()
-        session = create_default_session_service()
-        session.set_breakpoint = Mock(  # type: ignore[method-assign]  # test double
+        session: Any = create_default_session_service()
+        _stub(
+            session,
+            "set_breakpoint",
             return_value=OperationSuccess(
                 BreakpointInfo(breakpoint={"number": "1", "original_location": "main"})
-            )
+            ),
         )
-
-        def continue_side_effect(
-            *, wait_for_stop: bool, timeout_sec: int, reverse: bool
-        ) -> OperationSuccess[CommandExecutionInfo]:
-            assert wait_for_stop is True
-            assert timeout_sec == 30
-            assert reverse is False
-            session.runtime.mark_inferior_paused("breakpoint-hit")
-            stop_event = StopEvent(
-                execution_state="paused",
-                reason="breakpoint-hit",
-                command="-exec-continue",
-                thread_id=2,
-            )
-            session.runtime.record_stop_event(stop_event)
-            return OperationSuccess(CommandExecutionInfo(command="-exec-continue"))
-
-        session.continue_execution = Mock(  # type: ignore[method-assign]  # test double
-            side_effect=continue_side_effect
-        )
-        manager.resolve_session.return_value = session
+        _stub(session, "continue_execution", side_effect=_continue_side_effect(session))
+        manager = _manager_for(session)
 
         result_data = dispatch(
             "gdb_workflow_batch",
@@ -1282,17 +1311,20 @@ class TestSessionFailureContext:
     def test_workflow_batch_stops_on_first_error_by_default(self) -> None:
         """Fail-fast workflow batches should stop before executing later steps."""
 
-        manager = Mock()
-        session = create_default_session_service()
-        session.execute_command = Mock(  # type: ignore[method-assign]  # test double
-            return_value=OperationError(message="boom", details={"command": "info threads"})
+        session: Any = create_default_session_service()
+        _stub(
+            session,
+            "execute_command",
+            return_value=OperationError(message="boom", details={"command": "info threads"}),
         )
-        session.get_status = Mock(  # type: ignore[method-assign]  # test double
+        _stub(
+            session,
+            "get_status",
             return_value=OperationSuccess(
                 SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=False)
-            )
+            ),
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         result_data = dispatch(
             "gdb_workflow_batch",
@@ -1324,12 +1356,13 @@ class TestSessionFailureContext:
     def test_workflow_batch_accepts_string_step_shorthand(self) -> None:
         """Workflow batch requests should allow shorthand step strings."""
 
-        manager = Mock()
-        session = create_default_session_service()
-        session.capture_bundle = Mock(  # type: ignore[method-assign]  # test double
-            return_value=OperationSuccess(SessionMessage(message="bundle written"))
+        session: Any = create_default_session_service()
+        _stub(
+            session,
+            "capture_bundle",
+            return_value=OperationSuccess(SessionMessage(message="bundle written")),
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         result_data = dispatch(
             "gdb_workflow_batch",
@@ -1348,16 +1381,13 @@ class TestSessionFailureContext:
     def test_session_tool_dispatch_uses_workflow_lock(self) -> None:
         """Session-scoped tools should serialize through the workflow lock."""
 
-        manager = Mock()
         session = _session_double()
-        workflow_lock = MagicMock()
-        workflow_lock.__enter__.return_value = None
-        workflow_lock.__exit__.return_value = None
+        workflow_lock = _workflow_lock()
         session.runtime = Mock(workflow_lock=workflow_lock)
         session.get_status.return_value = OperationSuccess(
             SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=True)
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_session_query",
@@ -1371,9 +1401,8 @@ class TestSessionFailureContext:
     def test_workflow_batch_rejects_step_level_session_id(self) -> None:
         """Workflow batch steps should inherit session_id from the batch envelope only."""
 
-        manager = Mock()
         session = create_default_session_service()
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         result_data = dispatch(
             "gdb_workflow_batch",
@@ -1395,9 +1424,8 @@ class TestSessionFailureContext:
     def test_workflow_batch_rejects_session_query_list_step(self) -> None:
         """Workflow batch should reject the global session inventory action inside steps."""
 
-        manager = Mock()
         session = create_default_session_service()
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         result_data = dispatch(
             "gdb_workflow_batch",
@@ -1421,12 +1449,11 @@ class TestSessionFailureContext:
     def test_capture_bundle_routes_to_session(self) -> None:
         """Capture requests should forward the bundle options to the resolved session."""
 
-        manager = Mock()
         session = _session_double()
         session.capture_bundle.return_value = OperationSuccess(
             SessionMessage(message="bundle written")
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_capture_bundle",
@@ -1464,12 +1491,11 @@ class TestSessionFailureContext:
     def test_capture_bundle_accepts_memory_range_shorthand(self) -> None:
         """Capture requests should parse shorthand memory-range strings."""
 
-        manager = Mock()
         session = _session_double()
         session.capture_bundle.return_value = OperationSuccess(
             SessionMessage(message="bundle written")
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_capture_bundle",
@@ -1489,23 +1515,7 @@ class TestSessionFailureContext:
         """Campaign capture settings should forward explicit memory ranges to bundle capture."""
 
         manager = Mock()
-        session = _session_double()
-        session.start.return_value = OperationSuccess(SessionMessage(message="started"))
-        session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
-        session.get_status.return_value = OperationSuccess(
-            SessionStatusSnapshot(
-                is_running=True,
-                target_loaded=True,
-                has_controller=True,
-                execution_state="paused",
-                stop_reason="signal-received",
-            )
-        )
-        session.last_stop_event = StopEvent(execution_state="paused", reason="signal-received")
-        session.capture_bundle.return_value = OperationSuccess(SessionMessage(message="bundle"))
-        session.controller = object()
-        session.stop.return_value = OperationSuccess(SessionMessage(message="stopped"))
-        manager.create_untracked_session.return_value = session
+        session = _failure_session(manager)
 
         dispatch(
             "gdb_run_until_failure",
@@ -1528,23 +1538,7 @@ class TestSessionFailureContext:
         """Campaign capture should accept bundle_name alias for deterministic naming."""
 
         manager = Mock()
-        session = _session_double()
-        session.start.return_value = OperationSuccess(SessionMessage(message="started"))
-        session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
-        session.get_status.return_value = OperationSuccess(
-            SessionStatusSnapshot(
-                is_running=True,
-                target_loaded=True,
-                has_controller=True,
-                execution_state="paused",
-                stop_reason="signal-received",
-            )
-        )
-        session.last_stop_event = StopEvent(execution_state="paused", reason="signal-received")
-        session.capture_bundle.return_value = OperationSuccess(SessionMessage(message="bundle"))
-        session.controller = object()
-        session.stop.return_value = OperationSuccess(SessionMessage(message="stopped"))
-        manager.create_untracked_session.return_value = session
+        session = _failure_session(manager)
 
         dispatch(
             "gdb_run_until_failure",
@@ -1565,23 +1559,7 @@ class TestSessionFailureContext:
         """Campaign requests should create fresh untracked sessions and return campaign data."""
 
         manager = Mock()
-        session = _session_double()
-        session.start.return_value = OperationSuccess(SessionMessage(message="started"))
-        session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
-        session.get_status.return_value = OperationSuccess(
-            SessionStatusSnapshot(
-                is_running=True,
-                target_loaded=True,
-                has_controller=True,
-                execution_state="paused",
-                stop_reason="signal-received",
-            )
-        )
-        session.last_stop_event = StopEvent(execution_state="paused", reason="signal-received")
-        session.capture_bundle.return_value = OperationSuccess(SessionMessage(message="bundle"))
-        session.controller = object()
-        session.stop.return_value = OperationSuccess(SessionMessage(message="stopped"))
-        manager.create_untracked_session.return_value = session
+        session = _failure_session(manager)
 
         result_data = dispatch(
             "gdb_run_until_failure",
@@ -1651,96 +1629,48 @@ class TestSessionFailureContext:
         assert dig(result_1, "result", "is_running") is False
         assert dig(result_2, "result", "is_running") is True
 
-    def test_evaluate_expression_routes_thread_and_frame_overrides(self) -> None:
-        """Expression requests should forward optional context overrides."""
+    @pytest.mark.parametrize(("thread_id", "frame"), [(2, 1), ("2", "1")])
+    def test_evaluate_expression_routes_thread_and_frame_overrides(
+        self, thread_id: int | str, frame: int | str
+    ) -> None:
+        """Expression requests should forward numeric and numeric-string overrides."""
 
-        manager = Mock()
         session = _session_double()
         session.evaluate_expression.return_value = OperationSuccess(
             CommandExecutionInfo(command="-data-evaluate-expression")
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_inspect_query",
             {
                 "session_id": 1,
                 "action": "evaluate",
-                "query": {"expression": "x", "context": {"thread_id": 2, "frame": 1}},
+                "query": {"expression": "x", "context": {"thread_id": thread_id, "frame": frame}},
             },
             manager,
         )
 
         session.evaluate_expression.assert_called_once_with("x", thread_id=2, frame=1)
 
-    def test_evaluate_expression_accepts_numeric_string_overrides(self) -> None:
-        """Expression context overrides should accept numeric-string values."""
+    @pytest.mark.parametrize(("thread_id", "frame"), [(2, 3), ("2", "3")])
+    def test_get_registers_routes_thread_and_frame_overrides(
+        self, thread_id: int | str, frame: int | str
+    ) -> None:
+        """Register requests should forward numeric and numeric-string overrides."""
 
-        manager = Mock()
-        session = _session_double()
-        session.evaluate_expression.return_value = OperationSuccess(
-            CommandExecutionInfo(command="-data-evaluate-expression")
-        )
-        manager.resolve_session.return_value = session
-
-        dispatch(
-            "gdb_inspect_query",
-            {
-                "session_id": 1,
-                "action": "evaluate",
-                "query": {"expression": "x", "context": {"thread_id": "2", "frame": "1"}},
-            },
-            manager,
-        )
-
-        session.evaluate_expression.assert_called_once_with("x", thread_id=2, frame=1)
-
-    def test_get_registers_routes_thread_and_frame_overrides(self) -> None:
-        """Register requests should forward optional context overrides."""
-
-        manager = Mock()
         session = _session_double()
         session.get_registers.return_value = OperationSuccess(
             CommandExecutionInfo(command="-data-list-register-values x")
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_inspect_query",
             {
                 "session_id": 1,
                 "action": "registers",
-                "query": {"context": {"thread_id": 2, "frame": 3}},
-            },
-            manager,
-        )
-
-        session.get_registers.assert_called_once_with(
-            thread_id=2,
-            frame=3,
-            register_numbers=None,
-            register_names=None,
-            include_vector_registers=True,
-            max_registers=None,
-            value_format="hex",
-        )
-
-    def test_get_registers_accepts_numeric_string_overrides(self) -> None:
-        """Register context overrides should accept numeric-string values."""
-
-        manager = Mock()
-        session = _session_double()
-        session.get_registers.return_value = OperationSuccess(
-            CommandExecutionInfo(command="-data-list-register-values x")
-        )
-        manager.resolve_session.return_value = session
-
-        dispatch(
-            "gdb_inspect_query",
-            {
-                "session_id": 1,
-                "action": "registers",
-                "query": {"context": {"thread_id": "2", "frame": "3"}},
+                "query": {"context": {"thread_id": thread_id, "frame": frame}},
             },
             manager,
         )
@@ -1758,12 +1688,11 @@ class TestSessionFailureContext:
     def test_get_registers_routes_filter_and_format_options(self) -> None:
         """Register requests should forward selector and rendering options."""
 
-        manager = Mock()
         session = _session_double()
         session.get_registers.return_value = OperationSuccess(
             CommandExecutionInfo(command="-data-list-register-values N")
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_inspect_query",
@@ -1794,12 +1723,11 @@ class TestSessionFailureContext:
     def test_get_backtrace_accepts_numeric_string_thread_id(self) -> None:
         """Backtrace requests should accept numeric-string thread IDs."""
 
-        manager = Mock()
         session = _session_double()
         session.get_backtrace.return_value = OperationSuccess(
             CommandExecutionInfo(command="-stack-list-frames")
         )
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_context_query",
@@ -1816,10 +1744,9 @@ class TestSessionFailureContext:
     def test_disassemble_routes_normalized_selectors(self) -> None:
         """Disassembly requests should forward normalized selector values."""
 
-        manager = Mock()
         session = _session_double()
         session.disassemble.return_value = OperationSuccess({"count": 0, "instructions": []})
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_inspect_query",
@@ -1852,10 +1779,9 @@ class TestSessionFailureContext:
     def test_get_variables_accepts_numeric_string_context(self) -> None:
         """Variable requests should accept numeric-string thread/frame selectors."""
 
-        manager = Mock()
         session = _session_double()
         session.get_variables.return_value = OperationSuccess({"variables": []})
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_inspect_query",
@@ -1872,10 +1798,9 @@ class TestSessionFailureContext:
     def test_get_source_context_routes_normalized_selectors(self) -> None:
         """Source-context requests should forward normalized selector values."""
 
-        manager = Mock()
         session = _session_double()
         session.get_source_context.return_value = OperationSuccess({"count": 0, "lines": []})
-        manager.resolve_session.return_value = session
+        manager = _manager_for(session)
 
         dispatch(
             "gdb_inspect_query",

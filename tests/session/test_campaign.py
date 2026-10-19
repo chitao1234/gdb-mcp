@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 from gdb_mcp.domain import (
     BatchExecutionInfo,
@@ -24,40 +24,58 @@ from gdb_mcp.session.campaign import (
 from gdb_mcp.session.workflow import BatchStepTemplate
 
 
+def _fake_session(
+    *,
+    status: SessionStatusSnapshot | None = None,
+    stop_event: StopEvent | None = None,
+    capture: OperationSuccess[CaptureBundleInfo] | None = None,
+) -> Mock:
+    """Build a session double with the surface the campaign runner drives."""
+
+    session = Mock()
+    session.start.return_value = OperationSuccess(SessionStartInfo(message="started"))
+    session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
+    if status is not None:
+        session.get_status.return_value = OperationSuccess(status)
+    session.last_stop_event = stop_event
+    if capture is not None:
+        session.capture_bundle.return_value = capture
+    session.controller = object()
+    session.stop.return_value = OperationSuccess(SessionMessage(message="stopped"))
+    session.runtime.workflow_lock = MagicMock()
+    return session
+
+
+def _bundle() -> OperationSuccess[CaptureBundleInfo]:
+    return OperationSuccess(
+        CaptureBundleInfo(
+            message="bundle",
+            bundle_dir="/tmp/bundle",
+            bundle_name="bundle",
+            manifest_path="/tmp/bundle/manifest.json",
+            artifacts=[],
+            artifact_count=0,
+        )
+    )
+
+
 class TestRunUntilFailureService:
     """Test campaign loop behavior independently of the MCP handler layer."""
 
     def test_matches_default_signal_stop_and_captures_bundle(self) -> None:
         """Signal stops should match the default failure criteria and trigger capture."""
 
-        session = Mock()
-        session.start.return_value = OperationSuccess(SessionStartInfo(message="started"))
-        session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
-        session.get_status.return_value = OperationSuccess(
-            SessionStatusSnapshot(
+        session = _fake_session(
+            status=SessionStatusSnapshot(
                 is_running=True,
                 target_loaded=True,
                 has_controller=True,
                 execution_state="paused",
                 stop_reason="signal-received",
-            )
+            ),
+            stop_event=StopEvent(execution_state="paused", reason="signal-received"),
+            capture=_bundle(),
         )
-        session.last_stop_event = StopEvent(execution_state="paused", reason="signal-received")
-        session.capture_bundle.return_value = OperationSuccess(
-            CaptureBundleInfo(
-                message="bundle",
-                bundle_dir="/tmp/bundle",
-                bundle_name="bundle",
-                manifest_path="/tmp/bundle/manifest.json",
-                artifacts=[],
-                artifact_count=0,
-            )
-        )
-        session.controller = object()
-        session.stop.return_value = OperationSuccess(SessionMessage(message="stopped"))
-        session.runtime.workflow_lock = Mock()
-        session.runtime.workflow_lock.__enter__ = Mock(return_value=None)
-        session.runtime.workflow_lock.__exit__ = Mock(return_value=None)
 
         service = RunUntilFailureService(lambda: session)
         result = service.run_until_failure(
@@ -88,53 +106,21 @@ class TestRunUntilFailureService:
     def test_returns_success_when_no_failure_matches(self) -> None:
         """Campaigns should complete cleanly when no predicate matches."""
 
-        session_1 = Mock()
-        session_1.start.return_value = OperationSuccess(SessionStartInfo(message="started"))
-        session_1.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
-        session_1.get_status.return_value = OperationSuccess(
-            SessionStatusSnapshot(
-                is_running=True,
-                target_loaded=True,
-                has_controller=True,
-                execution_state="exited",
-                stop_reason="exited-normally",
-                exit_code=0,
-            )
+        exited = SessionStatusSnapshot(
+            is_running=True,
+            target_loaded=True,
+            has_controller=True,
+            execution_state="exited",
+            stop_reason="exited-normally",
+            exit_code=0,
         )
-        session_1.last_stop_event = StopEvent(
+        stop_event = StopEvent(
             execution_state="exited",
             reason="exited-normally",
             exit_code=0,
         )
-        session_1.controller = object()
-        session_1.stop.return_value = OperationSuccess(SessionMessage(message="stopped"))
-        session_1.runtime.workflow_lock = Mock()
-        session_1.runtime.workflow_lock.__enter__ = Mock(return_value=None)
-        session_1.runtime.workflow_lock.__exit__ = Mock(return_value=None)
-
-        session_2 = Mock()
-        session_2.start.return_value = OperationSuccess(SessionStartInfo(message="started"))
-        session_2.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
-        session_2.get_status.return_value = OperationSuccess(
-            SessionStatusSnapshot(
-                is_running=True,
-                target_loaded=True,
-                has_controller=True,
-                execution_state="exited",
-                stop_reason="exited-normally",
-                exit_code=0,
-            )
-        )
-        session_2.last_stop_event = StopEvent(
-            execution_state="exited",
-            reason="exited-normally",
-            exit_code=0,
-        )
-        session_2.controller = object()
-        session_2.stop.return_value = OperationSuccess(SessionMessage(message="stopped"))
-        session_2.runtime.workflow_lock = Mock()
-        session_2.runtime.workflow_lock.__enter__ = Mock(return_value=None)
-        session_2.runtime.workflow_lock.__exit__ = Mock(return_value=None)
+        session_1 = _fake_session(status=exited, stop_event=stop_event)
+        session_2 = _fake_session(status=exited, stop_event=stop_event)
 
         service = RunUntilFailureService(Mock(side_effect=[session_1, session_2]))
         result = service.run_until_failure(
@@ -158,8 +144,14 @@ class TestRunUntilFailureService:
     def test_setup_batch_failure_stops_before_run(self) -> None:
         """Setup-step failures should stop the campaign before gdb_run executes."""
 
-        session = Mock()
-        session.start.return_value = OperationSuccess(SessionStartInfo(message="started"))
+        session = _fake_session(
+            status=SessionStatusSnapshot(
+                is_running=True,
+                target_loaded=True,
+                has_controller=True,
+                execution_state="not_started",
+            ),
+        )
         session.execute_batch_templates.return_value = OperationSuccess(
             BatchExecutionInfo(
                 steps=[],
@@ -170,20 +162,6 @@ class TestRunUntilFailureService:
                 failure_step_index=0,
             )
         )
-        session.get_status.return_value = OperationSuccess(
-            SessionStatusSnapshot(
-                is_running=True,
-                target_loaded=True,
-                has_controller=True,
-                execution_state="not_started",
-            )
-        )
-        session.last_stop_event = None
-        session.controller = object()
-        session.stop.return_value = OperationSuccess(SessionMessage(message="stopped"))
-        session.runtime.workflow_lock = Mock()
-        session.runtime.workflow_lock.__enter__ = Mock(return_value=None)
-        session.runtime.workflow_lock.__exit__ = Mock(return_value=None)
 
         service = RunUntilFailureService(lambda: session)
         result = service.run_until_failure(

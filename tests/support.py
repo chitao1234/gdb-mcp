@@ -51,13 +51,6 @@ def integer(value: object) -> int:
     return value
 
 
-def flag(value: object) -> bool:
-    """Return a JSON boolean."""
-
-    assert isinstance(value, bool), f"expected a boolean, got {type(value).__name__}"
-    return value
-
-
 def dig(value: object, *keys: str) -> object:
     """Walk nested objects, reporting the key that was missing."""
 

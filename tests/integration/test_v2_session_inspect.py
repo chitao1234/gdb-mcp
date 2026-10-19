@@ -13,14 +13,17 @@ from .conftest import (
     CallGdbTool,
     CompileProgram,
     CompileProgramWithCore,
-    StartSession,
     StartSessionResult,
     StopSession,
+    compile_default_program,
+    create_breakpoint,
+    run,
+    status_query,
+    terminate_process,
 )
 from .program_sources import (
     ATTACHABLE_C_PROGRAM,
     CRASHING_C_PROGRAM,
-    TEST_CPP_PROGRAM,
 )
 
 
@@ -28,18 +31,7 @@ from .program_sources import (
 def compiled_program(compile_program: CompileProgram) -> str:
     """Compile the shared C++ program used by inspect-oriented integration tests."""
 
-    return compile_program(
-        TEST_CPP_PROGRAM,
-        filename="inspect_program.cpp",
-        compiler="g++",
-    )
-
-
-@pytest.fixture
-def session_id(compiled_program: str, start_session: StartSession) -> int:
-    """Start one integration session and return its ID."""
-
-    return start_session(compiled_program)
+    return compile_default_program(compile_program, filename="inspect_program.cpp")
 
 
 @pytest.fixture
@@ -70,18 +62,8 @@ def attachable_program(compile_program: CompileProgram) -> str:
 def test_context_and_inspect_queries_v2(session_id: int, call_gdb_tool: CallGdbTool) -> None:
     """Representative context and inspect queries should use the v2 envelopes."""
 
-    call_gdb_tool(
-        "gdb_breakpoint_manage",
-        {
-            "session_id": session_id,
-            "action": "create",
-            "breakpoint": {"kind": "code", "location": "add"},
-        },
-    )
-    call_gdb_tool(
-        "gdb_execution_manage",
-        {"session_id": session_id, "action": "run", "execution": {}},
-    )
+    create_breakpoint(call_gdb_tool, session_id, "add")
+    run(call_gdb_tool, session_id)
 
     threads = call_gdb_tool(
         "gdb_context_query",
@@ -132,18 +114,8 @@ def test_context_and_inspect_queries_v2(session_id: int, call_gdb_tool: CallGdbT
 def test_source_and_disassembly_queries_v2(session_id: int, call_gdb_tool: CallGdbTool) -> None:
     """Source and disassembly queries should use the location union directly."""
 
-    call_gdb_tool(
-        "gdb_breakpoint_manage",
-        {
-            "session_id": session_id,
-            "action": "create",
-            "breakpoint": {"kind": "code", "location": "add"},
-        },
-    )
-    call_gdb_tool(
-        "gdb_execution_manage",
-        {"session_id": session_id, "action": "run", "execution": {}},
-    )
+    create_breakpoint(call_gdb_tool, session_id, "add")
+    run(call_gdb_tool, session_id)
 
     disassembly = call_gdb_tool(
         "gdb_inspect_query",
@@ -187,18 +159,8 @@ def test_disassembly_fallback_without_a_option_v2(
 
     monkeypatch.setattr(InspectionDisassembly, "_supports_disassemble_a", lambda self: False)
 
-    call_gdb_tool(
-        "gdb_breakpoint_manage",
-        {
-            "session_id": session_id,
-            "action": "create",
-            "breakpoint": {"kind": "code", "location": "add"},
-        },
-    )
-    call_gdb_tool(
-        "gdb_execution_manage",
-        {"session_id": session_id, "action": "run", "execution": {}},
-    )
+    create_breakpoint(call_gdb_tool, session_id, "add")
+    run(call_gdb_tool, session_id)
 
     disassembly = call_gdb_tool(
         "gdb_inspect_query",
@@ -221,18 +183,8 @@ def test_disassembly_fallback_without_a_option_v2(
 def test_memory_query_v2(session_id: int, call_gdb_tool: CallGdbTool) -> None:
     """Memory inspection should remain available through gdb_inspect_query."""
 
-    call_gdb_tool(
-        "gdb_breakpoint_manage",
-        {
-            "session_id": session_id,
-            "action": "create",
-            "breakpoint": {"kind": "code", "location": "main"},
-        },
-    )
-    call_gdb_tool(
-        "gdb_execution_manage",
-        {"session_id": session_id, "action": "run", "execution": {}},
-    )
+    create_breakpoint(call_gdb_tool, session_id, "main")
+    run(call_gdb_tool, session_id)
 
     memory = call_gdb_tool(
         "gdb_inspect_query",
@@ -245,14 +197,13 @@ def test_memory_query_v2(session_id: int, call_gdb_tool: CallGdbTool) -> None:
 
 @pytest.mark.integration
 def test_startup_missing_program_reports_target_not_loaded_v2(
-    compiled_program: str, call_gdb_tool: CallGdbTool, stop_session: StopSession
+    compiled_program: str,
+    start_session_payload: StartSessionResult,
+    stop_session: StopSession,
 ) -> None:
     """A missing program should open a session but report no loaded target."""
 
-    result = call_gdb_tool(
-        "gdb_session_start",
-        {"program": f"{compiled_program}.missing", "init_commands": []},
-    )
+    result = start_session_payload(f"{compiled_program}.missing", init_commands=[])
     assert result["status"] == "success"
     assert result["target_loaded"] is False
 
@@ -262,14 +213,13 @@ def test_startup_missing_program_reports_target_not_loaded_v2(
 
 @pytest.mark.integration
 def test_startup_existing_program_reports_target_loaded_v2(
-    compiled_program: str, call_gdb_tool: CallGdbTool, stop_session: StopSession
+    compiled_program: str,
+    start_session_payload: StartSessionResult,
+    stop_session: StopSession,
 ) -> None:
     """Loading an existing executable should report the target as loaded."""
 
-    result = call_gdb_tool(
-        "gdb_session_start",
-        {"program": compiled_program, "init_commands": []},
-    )
+    result = start_session_payload(compiled_program, init_commands=[])
     assert result["status"] == "success"
     assert result["target_loaded"] is True
 
@@ -280,16 +230,13 @@ def test_startup_existing_program_reports_target_loaded_v2(
 @pytest.mark.integration
 def test_startup_program_with_core_reports_target_loaded_v2(
     compiled_program_and_core: tuple[str, str],
-    call_gdb_tool: CallGdbTool,
+    start_session_payload: StartSessionResult,
     stop_session: StopSession,
 ) -> None:
     """Loading an executable together with its core should report a target."""
 
     program, core = compiled_program_and_core
-    result = call_gdb_tool(
-        "gdb_session_start",
-        {"program": program, "core": core, "init_commands": []},
-    )
+    result = start_session_payload(program, core=core, init_commands=[])
     assert result["status"] == "success"
     assert result["target_loaded"] is True
 
@@ -316,27 +263,14 @@ def test_get_status_reports_exited_state_after_continue_v2(
 ) -> None:
     """Status should update through the v2 query envelope after continue completes."""
 
-    call_gdb_tool(
-        "gdb_breakpoint_manage",
-        {
-            "session_id": session_id,
-            "action": "create",
-            "breakpoint": {"kind": "code", "location": "main"},
-        },
-    )
-    call_gdb_tool(
-        "gdb_execution_manage",
-        {"session_id": session_id, "action": "run", "execution": {}},
-    )
+    create_breakpoint(call_gdb_tool, session_id, "main")
+    run(call_gdb_tool, session_id)
     call_gdb_tool(
         "gdb_execution_manage",
         {"session_id": session_id, "action": "continue", "execution": {}},
     )
 
-    status = call_gdb_tool(
-        "gdb_session_query",
-        {"session_id": session_id, "action": "status", "query": {}},
-    )
+    status = status_query(call_gdb_tool, session_id)
     assert status["status"] == "success"
     assert dig(status, "result", "execution_state") in {"paused", "exited"}
 
@@ -344,7 +278,7 @@ def test_get_status_reports_exited_state_after_continue_v2(
 @pytest.mark.integration
 def test_attach_process_v2(
     attachable_program: str,
-    start_session_result: StartSessionResult,
+    start_session_payload: StartSessionResult,
     stop_session: StopSession,
     call_gdb_tool: CallGdbTool,
 ) -> None:
@@ -353,7 +287,7 @@ def test_attach_process_v2(
     process = subprocess.Popen([attachable_program])
     session_id: int | None = None
     try:
-        start = start_session_result(attachable_program)
+        start = start_session_payload(attachable_program)
         session_id = integer(start["session_id"])
 
         attach = call_gdb_tool(
@@ -362,15 +296,10 @@ def test_attach_process_v2(
         )
         assert attach["status"] == "success", attach
 
-        status = call_gdb_tool(
-            "gdb_session_query",
-            {"session_id": session_id, "action": "status", "query": {}},
-        )
+        status = status_query(call_gdb_tool, session_id)
         assert status["status"] == "success"
         assert dig(status, "result", "execution_state") == "paused"
     finally:
         if session_id is not None:
             stop_session(session_id, ignore_errors=True)
-        if process.poll() is None:
-            process.terminate()
-            process.wait(timeout=10)
+        terminate_process(process)

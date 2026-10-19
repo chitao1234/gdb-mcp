@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
+import contextlib
 import re
-from collections.abc import Callable
-from unittest.mock import MagicMock
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
+from typing import cast
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gdb_mcp.domain import CommandExecutionInfo, OperationSuccess, StructuredPayload
+from gdb_mcp.domain import (
+    CommandExecutionInfo,
+    OperationResult,
+    OperationSuccess,
+    StructuredPayload,
+    result_to_mapping,
+)
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.service import SessionService
 from gdb_mcp.transport.mi_models import MiRecord
@@ -16,6 +25,23 @@ from gdb_mcp.transport.protocols import (
     ControllerIoManagerProtocol,
     GdbProcessProtocol,
 )
+
+MiRecordBuilder = Callable[..., dict[str, object]]
+MiConsoleBuilder = Callable[[str], dict[str, object]]
+MiNotifyBuilder = Callable[..., dict[str, object]]
+PromptResponseBuilder = Callable[..., dict[str, object]]
+CommandResultBuilder = Callable[..., OperationSuccess[CommandExecutionInfo]]
+ScriptedSessionBuilder = Callable[..., tuple[SessionService, "ScriptedController"]]
+
+
+@dataclass(frozen=True)
+class _RecordBuilders:
+    """The record builders a :class:`StartHarness` needs, passed as one bundle."""
+
+    prompt_response: PromptResponseBuilder
+    command_result: CommandResultBuilder
+    mi_result: MiRecordBuilder
+    mi_console: MiConsoleBuilder
 
 
 @pytest.fixture
@@ -58,6 +84,12 @@ class ScriptedController:
         self.gdb_process: GdbProcessProtocol | None = MagicMock()
         self.exit_called = False
 
+    @property
+    def decoded_writes(self) -> list[str]:
+        """The commands written to the fake stdin, decoded for readable assertions."""
+
+        return [data.decode() for data in self._stdin.writes]
+
     def _current_token(self) -> int | None:
         if not self._stdin.writes:
             return None
@@ -99,7 +131,7 @@ class ScriptedController:
 
 
 @pytest.fixture
-def mi_result() -> Callable[..., dict[str, object]]:
+def mi_result() -> MiRecordBuilder:
     """Build one MI result record."""
 
     def build(
@@ -113,7 +145,7 @@ def mi_result() -> Callable[..., dict[str, object]]:
 
 
 @pytest.fixture
-def mi_console() -> Callable[[str], dict[str, object]]:
+def mi_console() -> MiConsoleBuilder:
     """Build one MI console stream record."""
 
     def build(payload: str) -> dict[str, object]:
@@ -123,7 +155,7 @@ def mi_console() -> Callable[[str], dict[str, object]]:
 
 
 @pytest.fixture
-def mi_notify() -> Callable[..., dict[str, object]]:
+def mi_notify() -> MiNotifyBuilder:
     """Build one MI async notification record."""
 
     def build(message: str, payload: dict[str, object] | None = None) -> dict[str, object]:
@@ -135,7 +167,7 @@ def mi_notify() -> Callable[..., dict[str, object]]:
 @pytest.fixture
 def scripted_running_session(
     session_service: SessionService,
-) -> Callable[..., tuple[SessionService, ScriptedController]]:
+) -> ScriptedSessionBuilder:
     """Create a running session backed by a scripted controller."""
 
     def build(
@@ -150,7 +182,7 @@ def scripted_running_session(
 
 
 @pytest.fixture
-def command_result() -> Callable[..., OperationSuccess[CommandExecutionInfo]]:
+def command_result() -> CommandResultBuilder:
     """Build a typed command-execution result for session-layer mocks."""
 
     def build(
@@ -165,7 +197,7 @@ def command_result() -> Callable[..., OperationSuccess[CommandExecutionInfo]]:
 
 
 @pytest.fixture
-def prompt_response() -> Callable[..., dict[str, object]]:
+def prompt_response() -> PromptResponseBuilder:
     """Build a normalized transport response payload for prompt waits."""
 
     def build(
@@ -188,3 +220,163 @@ def prompt_response() -> Callable[..., dict[str, object]]:
         return response
 
     return build
+
+
+@pytest.fixture
+def inferiors_console(
+    mi_console: MiConsoleBuilder, mi_result: MiRecordBuilder
+) -> Callable[..., list[dict[str, object]]]:
+    """Build the ``info inferiors`` console batch from one string per row.
+
+    Each row must be the raw fixed-width line GDB prints, for example
+    ``"* 2    <null>                                 /tmp/app "``.
+    """
+
+    header = "  Num  Description       Connection           Executable        \n"
+
+    def build(*rows: str) -> list[dict[str, object]]:
+        return [mi_console(header), *(mi_console(f"{row}\n") for row in rows), mi_result()]
+
+    return build
+
+
+@dataclass
+class StartHarness:
+    """Drive ``SessionService.start()`` with its collaborators stubbed out.
+
+    Calling the harness runs one ``start()`` with GDB controller creation, the
+    command/prompt round trip, the CLI-command path, and the target-loaded probe
+    replaced by doubles. ``executed`` records the CLI commands start() ran and
+    ``controller_factory`` exposes the patched ``GdbController`` for command
+    assertions.
+    """
+
+    service: SessionService
+    controller_factory: MagicMock
+    maker: _RecordBuilders
+    executed: list[str] = field(default_factory=list)
+
+    def __call__(
+        self,
+        *,
+        console: Sequence[str] = (),
+        prompt: dict[str, object] | None = None,
+        initial_output: list[dict[str, object]] | None = None,
+        probe_target_loaded: bool | None = True,
+        execute: (
+            Callable[..., OperationResult[CommandExecutionInfo]]
+            | list[OperationResult[CommandExecutionInfo]]
+            | None
+        ) = None,
+        controller_side_effect: BaseException | None = None,
+        program: str | None = None,
+        args: list[str] | None = None,
+        init_commands: list[str] | None = None,
+        env: dict[str, str] | None = None,
+        gdb_path: str | None = None,
+        gdb_args: list[str] | None = None,
+        working_dir: str | None = None,
+        core: str | None = None,
+        endpoint: str | None = None,
+        rr_replay: str | None = None,
+    ) -> StructuredPayload:
+        """Run one ``start()`` and return its serialized result payload."""
+
+        if controller_side_effect is not None:
+            self.controller_factory.side_effect = controller_side_effect
+
+        response = prompt if prompt is not None else self._prompt_response(console)
+        side_effect = execute if execute is not None else self._record_execute
+
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(
+                patch.object(
+                    self.service._command_runner,
+                    "send_command_and_wait_for_prompt",
+                    return_value=response,
+                )
+            )
+            stack.enter_context(
+                patch.object(
+                    self.service._command_runner,
+                    "execute_command_result",
+                    side_effect=side_effect,
+                )
+            )
+            if probe_target_loaded is not None:
+                stack.enter_context(
+                    patch.object(
+                        self.service._lifecycle,
+                        "_probe_target_loaded",
+                        return_value=probe_target_loaded,
+                    )
+                )
+            if initial_output is not None:
+                stack.enter_context(
+                    patch.object(
+                        self.service.runtime.transport,
+                        "read_initial_output",
+                        return_value=initial_output,
+                    )
+                )
+            return result_to_mapping(
+                self.service.start(
+                    program=program,
+                    args=args,
+                    init_commands=init_commands,
+                    env=env,
+                    gdb_path=gdb_path,
+                    gdb_args=gdb_args,
+                    working_dir=working_dir,
+                    core=core,
+                    endpoint=endpoint,
+                    rr_replay=rr_replay,
+                )
+            )
+
+    def _prompt_response(self, console: Sequence[str]) -> dict[str, object]:
+        return self.maker.prompt_response(
+            command_responses=[
+                *(self.maker.mi_console(payload) for payload in console),
+                self.maker.mi_result(),
+            ]
+        )
+
+    def _record_execute(
+        self, command: str, **kwargs: object
+    ) -> OperationSuccess[CommandExecutionInfo]:
+        del kwargs
+        self.executed.append(command)
+        return self.maker.command_result(command, output="")
+
+    def command_of(self) -> list[str]:
+        """The GDB command line the controller factory was called with."""
+
+        call = self.controller_factory.call_args
+        assert call is not None, "the factory was never called"
+        return cast(list[str], call.kwargs["command"])
+
+
+@pytest.fixture
+def start_session(
+    monkeypatch: pytest.MonkeyPatch,
+    session_service: SessionService,
+    prompt_response: PromptResponseBuilder,
+    command_result: CommandResultBuilder,
+    mi_result: MiRecordBuilder,
+    mi_console: MiConsoleBuilder,
+) -> StartHarness:
+    """Patch GDB controller creation and expose a :class:`StartHarness`."""
+
+    harness = StartHarness(
+        service=session_service,
+        controller_factory=MagicMock(),
+        maker=_RecordBuilders(
+            prompt_response=prompt_response,
+            command_result=command_result,
+            mi_result=mi_result,
+            mi_console=mi_console,
+        ),
+    )
+    monkeypatch.setattr("gdb_mcp.session.factory.GdbController", harness.controller_factory)
+    return harness

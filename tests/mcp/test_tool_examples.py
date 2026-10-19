@@ -20,6 +20,9 @@ from gdb_mcp.mcp.schemas import (
 )
 from gdb_mcp.mcp.tool_examples import TOOL_EXAMPLES
 
+# Kept hand-written rather than derived from ``TOOL_MODELS`` so that
+# ``test_examples_cover_known_tools`` still fails when an example set is added
+# without a matching model; the two registries are expected to agree.
 _MODELS: dict[str, type[BaseModel]] = {
     "gdb_session_connect": ConnectSessionArgs,
     "gdb_session_query": SessionQueryArgs,
@@ -32,13 +35,21 @@ _MODELS: dict[str, type[BaseModel]] = {
     "gdb_run_until_failure": RunUntilFailureArgs,
 }
 
+_SCHEMAS: dict[str, dict[str, object]] = {
+    tool.name: tool.inputSchema for tool in build_tool_definitions()
+}
+
 
 def test_examples_cover_known_tools() -> None:
+    """Every published example set should have a registered request model."""
+
     assert set(TOOL_EXAMPLES) == set(_MODELS)
 
 
 @pytest.mark.parametrize("tool_name", sorted(TOOL_EXAMPLES))
 def test_examples_validate_against_request_models(tool_name: str) -> None:
+    """Each example should deserialize into its typed request model."""
+
     model = _MODELS[tool_name]
 
     for example in TOOL_EXAMPLES[tool_name]:
@@ -47,14 +58,16 @@ def test_examples_validate_against_request_models(tool_name: str) -> None:
 
 @pytest.mark.parametrize("tool_name", sorted(TOOL_EXAMPLES))
 def test_examples_validate_against_published_schemas(tool_name: str) -> None:
-    schema = {tool.name: tool.inputSchema for tool in build_tool_definitions()}[tool_name]
+    """Each example should validate against the published JSON Schema."""
+
+    schema = _SCHEMAS[tool_name]
 
     for example in TOOL_EXAMPLES[tool_name]:
         jsonschema.validate(instance=example, schema=schema)
 
 
 def test_examples_are_published_in_tool_schemas() -> None:
-    schemas = {tool.name: tool.inputSchema for tool in build_tool_definitions()}
+    """Every example should be attached to its tool's published schema."""
 
     for tool_name, examples in TOOL_EXAMPLES.items():
-        assert schemas[tool_name]["examples"] == [dict(example) for example in examples]
+        assert _SCHEMAS[tool_name]["examples"] == [dict(example) for example in examples]

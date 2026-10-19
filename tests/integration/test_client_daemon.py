@@ -5,14 +5,28 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from collections.abc import Iterator
+from contextlib import AbstractContextManager, contextmanager
 from io import StringIO
 from pathlib import Path
+from typing import Protocol
 
 import pytest
 
 from gdb_mcp.client.cli import main
 from gdb_mcp.client.daemon import _process_alive, daemon_paths, stop_daemon
 from tests.support import integer, mapping
+
+DAEMON_LIFECYCLE_IDLE_SEC = "120"
+DAEMON_IDLE_EXIT_SEC = "2"
+DAEMON_STOP_TIMEOUT_SEC = 10
+DAEMON_IDLE_TIMEOUT_SEC = 30
+
+
+class DaemonEnvironment(Protocol):
+    """Configure the daemon for one test and guarantee it is stopped."""
+
+    def __call__(self, *, idle_sec: str) -> AbstractContextManager[None]: ...
 
 
 def _cookie(root: Path) -> dict[str, object]:
@@ -28,13 +42,28 @@ def _wait_for_exit(pid: int, timeout: float) -> bool:
     return False
 
 
-@pytest.mark.integration
-def test_cli_daemon_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("GDB_MCP_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("GDB_MCP_DAEMON_IDLE_SEC", "120")
-    monkeypatch.chdir(tmp_path)
+@pytest.fixture
+def daemon_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> DaemonEnvironment:
+    """Run the daemon against ``tmp_path`` and stop it after the test."""
 
-    try:
+    @contextmanager
+    def environment(*, idle_sec: str) -> Iterator[None]:
+        monkeypatch.setenv("GDB_MCP_STATE_DIR", str(tmp_path / "state"))
+        monkeypatch.setenv("GDB_MCP_DAEMON_IDLE_SEC", idle_sec)
+        monkeypatch.chdir(tmp_path)
+        try:
+            yield
+        finally:
+            asyncio.run(stop_daemon(force=True))
+
+    return environment
+
+
+@pytest.mark.integration
+def test_cli_daemon_lifecycle(daemon_environment: DaemonEnvironment, tmp_path: Path) -> None:
+    """The CLI reuses one spawned daemon until it is explicitly stopped."""
+
+    with daemon_environment(idle_sec=DAEMON_LIFECYCLE_IDLE_SEC):
         stdout = StringIO()
         assert asyncio.run(main(["status"], stdout=stdout)) == 0
         cookie = _cookie(tmp_path)
@@ -51,22 +80,16 @@ def test_cli_daemon_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
         assert "running" in status.getvalue()
 
         assert asyncio.run(main(["daemon", "stop"], stdout=StringIO())) == 0
-        assert _wait_for_exit(integer(cookie["pid"]), 10)
+        assert _wait_for_exit(integer(cookie["pid"]), DAEMON_STOP_TIMEOUT_SEC)
         assert not daemon_paths(tmp_path).cookie.exists()
-    finally:
-        asyncio.run(stop_daemon(force=True))
 
 
 @pytest.mark.integration
-def test_daemon_exits_when_idle(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("GDB_MCP_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("GDB_MCP_DAEMON_IDLE_SEC", "2")
-    monkeypatch.chdir(tmp_path)
+def test_daemon_exits_when_idle(daemon_environment: DaemonEnvironment, tmp_path: Path) -> None:
+    """An idle daemon shuts itself down after the configured timeout."""
 
-    try:
+    with daemon_environment(idle_sec=DAEMON_IDLE_EXIT_SEC):
         assert asyncio.run(main(["status"], stdout=StringIO())) == 0
         pid = integer(_cookie(tmp_path)["pid"])
 
-        assert _wait_for_exit(pid, 30)
-    finally:
-        asyncio.run(stop_daemon(force=True))
+        assert _wait_for_exit(pid, DAEMON_IDLE_TIMEOUT_SEC)

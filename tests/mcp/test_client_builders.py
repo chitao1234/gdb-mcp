@@ -42,6 +42,8 @@ from gdb_mcp.client.inputs import (
 
 
 def test_parse_session_start_input_from_namespace() -> None:
+    """Namespace fields are converted into the typed session-start input."""
+
     namespace = argparse.Namespace(
         program="/bin/true",
         args=["--mode", "fast"],
@@ -68,6 +70,8 @@ def test_parse_session_start_input_from_namespace() -> None:
 
 
 def test_build_session_start_payload_from_typed_input() -> None:
+    """The typed input drops empty optional fields from the wire payload."""
+
     typed_input = SessionStartInput(
         program="/bin/true",
         args=("--mode", "fast"),
@@ -89,6 +93,8 @@ def test_build_session_start_payload_from_typed_input() -> None:
 
 
 def test_parse_session_query_input_from_namespace() -> None:
+    """The namespace action and session id map onto the typed query input."""
+
     namespace = argparse.Namespace(action="status", session_id=7)
 
     assert parse_session_query_input(namespace) == SessionQueryInput(
@@ -98,6 +104,8 @@ def test_parse_session_query_input_from_namespace() -> None:
 
 
 def test_parse_session_query_input_without_session_id_argument() -> None:
+    """A missing session id stays ``None`` for list queries."""
+
     namespace = argparse.Namespace(action="list", session_id=None)
 
     assert parse_session_query_input(namespace) == SessionQueryInput(
@@ -107,6 +115,8 @@ def test_parse_session_query_input_without_session_id_argument() -> None:
 
 
 def test_build_session_query_payload_from_typed_input() -> None:
+    """The session query payload mirrors the typed fields."""
+
     typed_input = SessionQueryInput(action="status", session_id=7)
 
     assert build_session_query_payload(typed_input) == {
@@ -116,6 +126,8 @@ def test_build_session_query_payload_from_typed_input() -> None:
 
 
 def test_build_inferior_manage_create_payload() -> None:
+    """A create action nests the inferior fields expected by the tool."""
+
     typed_input = InferiorManageInput(
         action="create",
         session_id=7,
@@ -137,6 +149,8 @@ def test_build_inferior_manage_create_payload() -> None:
 
 
 def test_build_inferior_manage_detach_on_fork_defaults_enabled() -> None:
+    """Detach-on-fork defaults to enabled when no value is supplied."""
+
     typed_input = InferiorManageInput(
         action="set_detach_on_fork",
         session_id=7,
@@ -155,6 +169,8 @@ def test_build_inferior_manage_detach_on_fork_defaults_enabled() -> None:
 
 
 def test_build_execution_manage_payload_includes_reverse() -> None:
+    """An explicit reverse flag is carried into the execution block."""
+
     typed_input = ExecutionManageInput(
         action="step",
         session_id=7,
@@ -173,6 +189,8 @@ def test_build_execution_manage_payload_includes_reverse() -> None:
 
 
 def test_build_session_start_payload_includes_gdb_args() -> None:
+    """Extra GDB arguments are forwarded under ``gdb_args``."""
+
     typed_input = SessionStartInput(
         program="/bin/true",
         args=(),
@@ -192,6 +210,8 @@ def test_build_session_start_payload_includes_gdb_args() -> None:
 
 
 def test_build_session_start_payload_includes_rr_replay() -> None:
+    """A replay trace becomes the only field in the payload."""
+
     typed_input = SessionStartInput(
         program=None,
         args=(),
@@ -208,6 +228,8 @@ def test_build_session_start_payload_includes_rr_replay() -> None:
 
 
 def test_build_execution_manage_run_payload() -> None:
+    """A run action groups its arguments and stop condition."""
+
     typed_input = ExecutionManageInput(
         action="run",
         session_id=7,
@@ -230,6 +252,8 @@ def test_build_execution_manage_run_payload() -> None:
 
 
 def test_build_execution_manage_wait_for_stop_preserves_explicit_zero_timeout() -> None:
+    """A zero timeout is meaningful and must not be dropped."""
+
     typed_input = ExecutionManageInput(
         action="wait_for_stop",
         session_id=7,
@@ -248,6 +272,8 @@ def test_build_execution_manage_wait_for_stop_preserves_explicit_zero_timeout() 
 
 
 def test_build_context_query_backtrace_payload() -> None:
+    """Backtrace filters are nested under the query block."""
+
     typed_input = ContextQueryInput(
         action="backtrace",
         session_id=7,
@@ -264,6 +290,8 @@ def test_build_context_query_backtrace_payload() -> None:
 
 
 def test_build_breakpoint_query_filtered_list_payload() -> None:
+    """A false ``enabled`` filter is preserved rather than treated as absent."""
+
     typed_input = BreakpointQueryInput(
         action="list",
         session_id=7,
@@ -280,6 +308,8 @@ def test_build_breakpoint_query_filtered_list_payload() -> None:
 
 
 def test_build_breakpoint_manage_create_payload() -> None:
+    """A create action nests the breakpoint definition."""
+
     typed_input = BreakpointManageInput(
         action="create",
         session_id=7,
@@ -306,6 +336,8 @@ def test_build_breakpoint_manage_create_payload() -> None:
 
 
 def test_build_inspect_source_payload() -> None:
+    """Source inspection preserves the location and context window."""
+
     typed_input = InspectQueryInput(
         action="source",
         session_id=7,
@@ -339,6 +371,8 @@ def test_build_inspect_source_payload() -> None:
 
 
 def test_build_workflow_batch_payload_from_typed_steps() -> None:
+    """Typed steps are serialized into the batch wire format."""
+
     typed_input = WorkflowBatchInput(
         session_id=7,
         steps=(
@@ -366,8 +400,10 @@ def test_build_workflow_batch_payload_from_typed_steps() -> None:
     }
 
 
-def test_build_run_until_failure_payload_from_typed_input() -> None:
-    typed_input = RunUntilFailureInput(
+def _run_until_failure_input() -> RunUntilFailureInput:
+    """Build a fully populated campaign input for the payload test."""
+
+    return RunUntilFailureInput(
         startup_program="/bin/true",
         startup_args=(),
         startup_init_commands=("set pagination off",),
@@ -401,32 +437,50 @@ def test_build_run_until_failure_payload_from_typed_input() -> None:
         capture_include_stop_history=True,
     )
 
-    assert build_run_until_failure_payload(typed_input) == {
-        "startup": {
-            "program": "/bin/true",
-            "init_commands": ["set pagination off"],
-        },
-        "setup_steps": [],
-        "run_timeout_sec": 15,
-        "max_iterations": 2,
-        "failure": {
-            "failure_on_error": True,
-            "failure_on_timeout": True,
-            "stop_reasons": ["signal-received"],
-            "execution_states": [],
-            "exit_codes": [],
-        },
-        "capture": {
-            "enabled": True,
-            "expressions": ["errno"],
-            "memory_ranges": ["&errno:8"],
-            "max_frames": 100,
-            "include_threads": True,
-            "include_backtraces": True,
-            "include_frame": True,
-            "include_variables": True,
-            "include_registers": True,
-            "include_transcript": True,
-            "include_stop_history": True,
-        },
+
+def test_build_run_until_failure_payload_from_typed_input() -> None:
+    """Every campaign section is emitted in the expected nested shape."""
+
+    payload = build_run_until_failure_payload(_run_until_failure_input())
+
+    assert set(payload) == {
+        "startup",
+        "setup_steps",
+        "run_timeout_sec",
+        "max_iterations",
+        "failure",
+        "capture",
+    }
+
+    # Startup process and campaign loop.
+    assert payload["startup"] == {
+        "program": "/bin/true",
+        "init_commands": ["set pagination off"],
+    }
+    assert payload["setup_steps"] == []
+    assert payload["run_timeout_sec"] == 15
+    assert payload["max_iterations"] == 2
+
+    # Failure matching criteria.
+    assert payload["failure"] == {
+        "failure_on_error": True,
+        "failure_on_timeout": True,
+        "stop_reasons": ["signal-received"],
+        "execution_states": [],
+        "exit_codes": [],
+    }
+
+    # Capture bundle contents.
+    assert payload["capture"] == {
+        "enabled": True,
+        "expressions": ["errno"],
+        "memory_ranges": ["&errno:8"],
+        "max_frames": 100,
+        "include_threads": True,
+        "include_backtraces": True,
+        "include_frame": True,
+        "include_variables": True,
+        "include_registers": True,
+        "include_transcript": True,
+        "include_stop_history": True,
     }

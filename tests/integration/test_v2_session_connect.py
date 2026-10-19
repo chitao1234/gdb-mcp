@@ -4,14 +4,19 @@ from __future__ import annotations
 
 import os
 import pty
-import signal
 import subprocess
 
 import pytest
 
 from tests.support import dig, integer
 
-from .conftest import CallGdbTool, CompileProgram
+from .conftest import (
+    CallGdbTool,
+    CompileProgram,
+    StopSession,
+    create_breakpoint,
+    terminate_process,
+)
 
 _CONNECT_C_PROGRAM = """
 #include <stdio.h>
@@ -27,7 +32,9 @@ int main(void) {
 
 @pytest.mark.integration
 def test_connect_to_externally_started_gdb_over_pty(
-    compile_program: CompileProgram, call_gdb_tool: CallGdbTool
+    compile_program: CompileProgram,
+    call_gdb_tool: CallGdbTool,
+    stop_session: StopSession,
 ) -> None:
     """gdb-mcp should attach to a gdb that another process started on a pty."""
 
@@ -60,29 +67,14 @@ def test_connect_to_externally_started_gdb_over_pty(
         assert start["target_loaded"] is True
         session_id = integer(start["session_id"])
 
-        breakpoint = call_gdb_tool(
-            "gdb_breakpoint_manage",
-            {
-                "session_id": session_id,
-                "action": "create",
-                "breakpoint": {"kind": "code", "location": "main"},
-            },
-        )
+        breakpoint = create_breakpoint(call_gdb_tool, session_id, "main")
         assert breakpoint["status"] == "success", breakpoint
         assert dig(breakpoint, "result", "breakpoint", "func") == "main"
 
-        stopped = call_gdb_tool(
-            "gdb_session_manage",
-            {"session_id": session_id, "action": "stop", "session": {}},
-        )
+        stopped = stop_session(session_id)
         assert stopped["status"] == "success", stopped
 
         # Stopping gdb-mcp's session must only detach, not kill the external gdb.
         assert process.poll() is None
     finally:
-        if process.poll() is None:
-            process.send_signal(signal.SIGTERM)
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
+        terminate_process(process)
