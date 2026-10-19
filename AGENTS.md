@@ -60,8 +60,11 @@ version and documents the one deliberate ignore.
 in the same commit (`uv lock`). The lock is a convenience, not a requirement:
 `pip install -e ".[dev]"` and `pipx install .` stay supported, and CI uses pip.
 
-Commit one logical change at a time. For small edits run the narrowest relevant
-tests and say what you skipped. Do not revert unrelated local changes.
+Every commit must be focused on exactly one logical change. Do not bundle
+unrelated edits together: a behavior fix, a test change, and a docs tweak each
+belong in their own commit so they can be reviewed and reverted separately.
+This is mandatory. For small edits run the narrowest relevant tests and say
+what you skipped. Do not revert unrelated local changes.
 
 ## Docs
 
