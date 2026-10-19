@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from gdb_mcp.session.execution import SessionExecutionService
 from tests.support import dig, integer, mapping_list, text
 
 from .conftest import (
@@ -377,3 +378,30 @@ def test_inferior_and_fork_controls_v2(session_id: int, call_gdb_tool: CallGdbTo
         {"session_id": session_id, "action": "remove", "inferior": {"inferior_id": inferior_id}},
     )
     assert remove["status"] == "success"
+
+
+@pytest.mark.integration
+def test_inferior_create_falls_back_to_cli_v2(
+    session_id: int, call_gdb_tool: CallGdbTool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The CLI `add-inferior` fallback should create an inferior on a real GDB."""
+
+    monkeypatch.setattr(
+        SessionExecutionService,
+        "_create_inferior",
+        lambda self: self._create_inferior_legacy(),
+    )
+
+    create = call_gdb_tool(
+        "gdb_inferior_manage",
+        {"session_id": session_id, "action": "create", "inferior": {"make_current": False}},
+    )
+    assert create["status"] == "success", create
+    assert integer(dig(create, "result", "inferior_id")) >= 2
+
+    listed = call_gdb_tool(
+        "gdb_inferior_query",
+        {"session_id": session_id, "action": "list", "query": {}},
+    )
+    assert listed["status"] == "success"
+    assert integer(dig(listed, "result", "count")) >= 2

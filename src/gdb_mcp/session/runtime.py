@@ -63,6 +63,9 @@ class SessionRuntime:
     # Whether this GDB supports `-data-read-memory-bytes` (GDB >= 7.3), probed on
     # the first memory read.
     read_memory_bytes_supported: bool | None = None
+    # Whether this GDB supports the `-add-inferior`/`-remove-inferior` MI commands
+    # (GDB >= 7.2). GDB 7.1 has only the CLI forms, which are used as a fallback.
+    inferior_mi_supported: bool | None = None
     artifact_root: str | None = None
     last_stop_event: StopEvent | None = None
     stop_history: list[StopEvent] = field(default_factory=list)
@@ -124,6 +127,7 @@ class SessionRuntime:
         self.detach_on_fork = None
         self.disassemble_a_supported = None
         self.read_memory_bytes_supported = None
+        self.inferior_mi_supported = None
 
     def mark_ready(self) -> None:
         """Mark the session as ready for requests."""

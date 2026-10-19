@@ -671,6 +671,63 @@ class TestExecutionApi:
         assert result["current_inferior_id"] == 1
         assert result["inferior_count"] == 1
 
+    def test_add_inferior_falls_back_to_cli(
+        self,
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_result: MiRecordBuilder,
+        inferiors_console: Callable[..., list[dict[str, object]]],
+    ) -> None:
+        """GDB without MI `-add-inferior` (7.1) should create one through the CLI."""
+
+        session, controller = scripted_running_session(
+            [mi_result({"msg": "Undefined MI command: -add-inferior"}, message="error")],
+            [mi_result()],
+            inferiors_console(
+                "* 1    <null>                                 /tmp/app ",
+                "  2    <null>                                                   ",
+            ),
+            inferiors_console(
+                "* 1    <null>                                 /tmp/app ",
+                "  2    <null>                                                   ",
+            ),
+        )
+
+        result = result_to_mapping(session.add_inferior())
+
+        assert result["status"] == "success"
+        assert result["inferior_id"] == 2
+        assert result["inferior_count"] == 2
+        written = [command for command in controller.decoded_writes]
+        assert any(command.endswith("-add-inferior\n") for command in written)
+        assert any('console "add-inferior"' in command for command in written)
+
+    def test_remove_inferior_falls_back_to_cli(
+        self,
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_result: MiRecordBuilder,
+        inferiors_console: Callable[..., list[dict[str, object]]],
+    ) -> None:
+        """GDB without MI `-remove-inferior` (7.1) should remove through the CLI."""
+
+        session, controller = scripted_running_session(
+            [mi_result({"msg": "Undefined MI command: -remove-inferior"}, message="error")],
+            [mi_result()],
+            inferiors_console("* 1    <null>                                 /tmp/app "),
+        )
+        session.runtime.update_inferior_inventory(
+            current_inferior_id=2, count=2, inferior_ids=(1, 2)
+        )
+        session.runtime.mark_inferior_selected(2)
+
+        result = result_to_mapping(session.remove_inferior(2))
+
+        assert result["status"] == "success"
+        assert result["inferior_id"] == 2
+        assert result["current_inferior_id"] == 1
+        written = [command for command in controller.decoded_writes]
+        assert any(command.endswith("-remove-inferior i2\n") for command in written)
+        assert any('console "remove-inferior 2"' in command for command in written)
+
     @pytest.mark.parametrize(
         ("raw_exit_code", "expected_exit_code"),
         [("07", 7), ("0x0A", 10)],

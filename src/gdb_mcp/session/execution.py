@@ -57,6 +57,16 @@ def _exec_command(base: str, *, reverse: bool) -> str:
     return f"{base} --reverse" if reverse else base
 
 
+def _is_undefined_mi_command(message: str) -> bool:
+    """Return whether an error says this GDB has no such MI command.
+
+    GDB 7.2 added `-add-inferior`/`-remove-inferior`; older releases answer with
+    ``Undefined MI command: <name>``, which is the signal to use the CLI forms.
+    """
+
+    return "undefined mi command" in message.lower()
+
+
 class SessionExecutionService:
     """Execution and command-control operations."""
 
@@ -103,19 +113,9 @@ class SessionExecutionService:
     ) -> OperationSuccess[InferiorAddInfo] | OperationError:
         """Create a new inferior and return the refreshed inventory summary."""
 
-        add_result = self._command_runner.execute_command_result(
-            "-add-inferior",
-            timeout_sec=DEFAULT_TIMEOUT_SEC,
-        )
-        if isinstance(add_result, OperationError):
-            return add_result
-
-        payload = extract_mi_result_payload(command_result_payload(add_result))
-        payload_mapping = payload if isinstance(payload, dict) else {}
-        inferior_token = payload_mapping.get("inferior")
-        inferior_id = self._command_runner.parse_inferior_id_from_thread_group(inferior_token)
-        if inferior_id is None:
-            return OperationError(message="GDB returned no inferior identifier for -add-inferior")
+        inferior_id = self._create_inferior()
+        if isinstance(inferior_id, OperationError):
+            return inferior_id
 
         previous_inferior_id = self._runtime.current_inferior_id
         self._runtime.ensure_inferior(inferior_id)
@@ -189,17 +189,93 @@ class SessionExecutionService:
             )
         )
 
+    def _create_inferior(self) -> int | OperationError:
+        """Create one inferior and return its id.
+
+        Uses `-add-inferior` when this GDB has it (7.2+) and falls back to the
+        CLI `add-inferior` on GDB 7.1, which only has the command-line form.
+        """
+
+        if self._runtime.inferior_mi_supported is not False:
+            result = self._command_runner.execute_command_result(
+                "-add-inferior",
+                timeout_sec=DEFAULT_TIMEOUT_SEC,
+            )
+            if not isinstance(result, OperationError):
+                self._runtime.inferior_mi_supported = True
+                payload = extract_mi_result_payload(command_result_payload(result))
+                inferior_token = payload.get("inferior") if isinstance(payload, dict) else None
+                inferior_id = self._command_runner.parse_inferior_id_from_thread_group(
+                    inferior_token
+                )
+                if inferior_id is None:
+                    return OperationError(
+                        message="GDB returned no inferior identifier for -add-inferior"
+                    )
+                return inferior_id
+            if not _is_undefined_mi_command(result.message):
+                return result
+            self._runtime.inferior_mi_supported = False
+
+        return self._create_inferior_legacy()
+
+    def _create_inferior_legacy(self) -> int | OperationError:
+        """Create an inferior through the CLI `add-inferior` (GDB 7.1).
+
+        The CLI does not report the new inferior's number, so diff the inventory
+        around the command to find it.
+        """
+
+        known_ids = set(self._runtime.inferior_states)
+        result = self._command_runner.execute_command_result(
+            "add-inferior",
+            timeout_sec=DEFAULT_TIMEOUT_SEC,
+        )
+        if isinstance(result, OperationError):
+            return result
+
+        inventory_result = self._refresh_inferior_inventory()
+        if isinstance(inventory_result, OperationError):
+            return inventory_result
+
+        created = [
+            inferior_id
+            for inferior_id in inferior_ids(inventory_result.value)
+            if inferior_id not in known_ids
+        ]
+        if not created:
+            return OperationError(message="GDB added no new inferior")
+        return max(created)
+
     def remove_inferior(
         self, inferior_id: int
     ) -> OperationSuccess[InferiorRemoveInfo] | OperationError:
         """Remove one inferior and return the refreshed inventory summary."""
 
-        result = self._command_runner.execute_command_result(
-            f"-remove-inferior i{inferior_id}",
+        if self._runtime.inferior_mi_supported is not False:
+            result = self._command_runner.execute_command_result(
+                f"-remove-inferior i{inferior_id}",
+                timeout_sec=DEFAULT_TIMEOUT_SEC,
+            )
+            if not isinstance(result, OperationError):
+                self._runtime.inferior_mi_supported = True
+                return self._finish_remove_inferior(inferior_id)
+            if not _is_undefined_mi_command(result.message):
+                return result
+            self._runtime.inferior_mi_supported = False
+
+        legacy_result = self._command_runner.execute_command_result(
+            f"remove-inferior {inferior_id}",
             timeout_sec=DEFAULT_TIMEOUT_SEC,
         )
-        if isinstance(result, OperationError):
-            return result
+        if isinstance(legacy_result, OperationError):
+            return legacy_result
+        return self._finish_remove_inferior(inferior_id)
+
+    def _finish_remove_inferior(
+        self, inferior_id: int
+    ) -> OperationSuccess[InferiorRemoveInfo] | OperationError:
+        """Refresh the inventory and report one removed inferior."""
 
         inventory_result = self._refresh_inferior_inventory()
         if isinstance(inventory_result, OperationError):
