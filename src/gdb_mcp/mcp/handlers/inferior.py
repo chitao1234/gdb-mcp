@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ...domain import (
+    InferiorCurrentInfo,
     OperationError,
     OperationSuccess,
 )
@@ -52,7 +53,7 @@ def _handle_inferior_query(session: SessionService, args: InferiorQueryArgs) -> 
                     code="not_found",
                     details={"current_inferior_id": current_inferior_id},
                 )
-            return OperationSuccess({"inferior": current_inferior})
+            return OperationSuccess(InferiorCurrentInfo(inferior=current_inferior))
     return _unsupported_action("inferior query action", action_args)
 
 

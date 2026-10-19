@@ -47,6 +47,7 @@ from .inferior import (
     InferiorQueryArgs,
 )
 from .inspect import InspectQueryArgs
+from .outputs import public_output_schema
 from .session import (
     SessionManageArgs,
     SessionQueryArgs,
@@ -89,6 +90,7 @@ def build_tool_definitions() -> list[Tool]:
                 "for symbols to resolve correctly. "
                 "Returns a session_id integer that must be passed to all other GDB tools."
             ),
+            outputSchema=public_output_schema(TOOL_SESSION_START),
             inputSchema=public_input_schema(StartSessionArgs),
         ),
         Tool(
@@ -100,6 +102,7 @@ def build_tool_definitions() -> list[Tool]:
                 "the target and the gdb process; stopping the session only detaches from it. "
                 "Returns a session_id integer that must be passed to all other GDB tools."
             ),
+            outputSchema=public_output_schema(TOOL_SESSION_CONNECT),
             inputSchema=public_input_schema(
                 ConnectSessionArgs,
                 examples=TOOL_EXAMPLES[TOOL_SESSION_CONNECT],
@@ -111,6 +114,7 @@ def build_tool_definitions() -> list[Tool]:
                 "Query session inventory or inspect one live session. "
                 "Use action='list' to enumerate active sessions or action='status' to inspect one session."
             ),
+            outputSchema=public_output_schema(TOOL_SESSION_QUERY),
             inputSchema=public_input_schema(
                 SessionQueryArgs,
                 examples=TOOL_EXAMPLES[TOOL_SESSION_QUERY],
@@ -119,6 +123,7 @@ def build_tool_definitions() -> list[Tool]:
         Tool(
             name=TOOL_SESSION_MANAGE,
             description="Mutate session lifecycle state, such as stopping one live session.",
+            outputSchema=public_output_schema(TOOL_SESSION_MANAGE),
             inputSchema=public_input_schema(SessionManageArgs),
         ),
         Tool(
@@ -126,6 +131,7 @@ def build_tool_definitions() -> list[Tool]:
             description=(
                 "Query inferior inventory or the currently selected inferior inside one live session."
             ),
+            outputSchema=public_output_schema(TOOL_INFERIOR_QUERY),
             inputSchema=public_input_schema(InferiorQueryArgs),
         ),
         Tool(
@@ -133,6 +139,7 @@ def build_tool_definitions() -> list[Tool]:
             description=(
                 "Create, remove, select, or reconfigure inferiors and fork-follow settings."
             ),
+            outputSchema=public_output_schema(TOOL_INFERIOR_MANAGE),
             inputSchema=public_input_schema(
                 InferiorManageArgs,
                 examples=TOOL_EXAMPLES[TOOL_INFERIOR_MANAGE],
@@ -146,6 +153,7 @@ def build_tool_definitions() -> list[Tool]:
                 "accept 'reverse: true' to run backwards on a target that supports it "
                 "(an 'rr replay' session, or gdb's record mode)."
             ),
+            outputSchema=public_output_schema(TOOL_EXECUTION_MANAGE),
             inputSchema=public_input_schema(
                 ExecutionManageArgs,
                 examples=TOOL_EXAMPLES[TOOL_EXECUTION_MANAGE],
@@ -154,6 +162,7 @@ def build_tool_definitions() -> list[Tool]:
         Tool(
             name=TOOL_BREAKPOINT_QUERY,
             description="List breakpoints or fetch one breakpoint record by number.",
+            outputSchema=public_output_schema(TOOL_BREAKPOINT_QUERY),
             inputSchema=public_input_schema(BreakpointQueryArgs),
         ),
         Tool(
@@ -162,6 +171,7 @@ def build_tool_definitions() -> list[Tool]:
                 "Create, delete, enable, disable, or update code breakpoints, watchpoints, "
                 "and catchpoints through one action-based tool."
             ),
+            outputSchema=public_output_schema(TOOL_BREAKPOINT_MANAGE),
             inputSchema=public_input_schema(
                 BreakpointManageArgs,
                 examples=TOOL_EXAMPLES[TOOL_BREAKPOINT_MANAGE],
@@ -170,11 +180,13 @@ def build_tool_definitions() -> list[Tool]:
         Tool(
             name=TOOL_CONTEXT_QUERY,
             description="List threads or inspect backtraces and frame information.",
+            outputSchema=public_output_schema(TOOL_CONTEXT_QUERY),
             inputSchema=public_input_schema(ContextQueryArgs),
         ),
         Tool(
             name=TOOL_CONTEXT_MANAGE,
             description="Select the current thread or frame in one live session.",
+            outputSchema=public_output_schema(TOOL_CONTEXT_MANAGE),
             inputSchema=public_input_schema(ContextManageArgs),
         ),
         Tool(
@@ -183,6 +195,7 @@ def build_tool_definitions() -> list[Tool]:
                 "Evaluate expressions and inspect variables, registers, memory, source context, "
                 "or disassembly without using raw debugger commands."
             ),
+            outputSchema=public_output_schema(TOOL_INSPECT_QUERY),
             inputSchema=public_input_schema(
                 InspectQueryArgs,
                 examples=TOOL_EXAMPLES[TOOL_INSPECT_QUERY],
@@ -195,6 +208,7 @@ def build_tool_definitions() -> list[Tool]:
                 "Each step names an existing tool plus tool-specific arguments excluding "
                 "session_id, which is inherited from the enclosing batch request."
             ),
+            outputSchema=public_output_schema(TOOL_WORKFLOW_BATCH),
             inputSchema=public_input_schema(
                 BatchArgs,
                 examples=TOOL_EXAMPLES[TOOL_WORKFLOW_BATCH],
@@ -210,6 +224,7 @@ def build_tool_definitions() -> list[Tool]:
                 "expression evaluations, and any explicitly requested memory ranges. "
                 "Use output_dir and bundle_name when you need deterministic artifact paths."
             ),
+            outputSchema=public_output_schema(TOOL_CAPTURE_BUNDLE),
             inputSchema=public_input_schema(
                 CaptureBundleArgs,
                 examples=TOOL_EXAMPLES[TOOL_CAPTURE_BUNDLE],
@@ -226,6 +241,7 @@ def build_tool_definitions() -> list[Tool]:
                 "disk and return the bundle metadata, including any explicitly requested memory "
                 "ranges."
             ),
+            outputSchema=public_output_schema(TOOL_RUN_UNTIL_FAILURE),
             inputSchema=public_input_schema(
                 RunUntilFailureArgs,
                 examples=TOOL_EXAMPLES[TOOL_RUN_UNTIL_FAILURE],
@@ -247,6 +263,7 @@ def build_tool_definitions() -> list[Tool]:
                 "'list main', 'disassemble func'. "
                 "Requires session_id parameter (obtained from gdb_session_start)."
             ),
+            outputSchema=public_output_schema(TOOL_EXECUTE_COMMAND),
             inputSchema=public_input_schema(ExecuteCommandArgs),
         ),
         Tool(
@@ -258,6 +275,7 @@ def build_tool_definitions() -> list[Tool]:
                 "On success, the attached process is typically paused and inspectable. "
                 "Requires session_id parameter (obtained from gdb_session_start)."
             ),
+            outputSchema=public_output_schema(TOOL_ATTACH_PROCESS),
             inputSchema=public_input_schema(AttachProcessArgs),
         ),
         Tool(
@@ -275,6 +293,7 @@ def build_tool_definitions() -> list[Tool]:
                 "Examples: 'printf(\"debug: x=%d\\n\", x)', 'my_cleanup_func()', 'strlen(str)'. "
                 "Requires session_id parameter (obtained from gdb_session_start)."
             ),
+            outputSchema=public_output_schema(TOOL_CALL_FUNCTION),
             inputSchema=public_input_schema(CallFunctionArgs),
         ),
     ]

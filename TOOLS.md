@@ -155,6 +155,17 @@ A tagged union keeps one alternative per value, so each alternative states its o
 Requests are validated against the typed request models rather than by re-validating the published schema, so the schema stays a descriptive client contract while the models remain authoritative.
 High-complexity tools also publish request `examples` inside their `inputSchema`.
 
+### Published Output Schemas
+
+Every tool also publishes an `outputSchema` describing the `structuredContent` of its result. It is generated from the payload type the session layer returns and normalized the same way as an input schema, so it follows the code instead of a hand-kept copy:
+
+- the schema offers one alternative per success action plus one for the error envelope, each stating its own `required` fields — an action-scoped tool nests its payload under `result`, a dedicated tool publishes its payload fields next to the envelope;
+- a field that can be `null` in a result keeps its `null` alternative, because a result really carries `null` where a request only omits the field;
+- a field carrying arbitrary debugger data (an MI result payload) refers to a recursive definition, since the payload really is arbitrary JSON;
+- a success alternative always allows additional fields, so a debugger-specific field is never rejected.
+
+Clients that validate structured output (the MCP Python SDK does) therefore accept every payload this server can produce.
+
 ### Action-Scoped Payloads
 
 Action families use one nested payload object per domain:

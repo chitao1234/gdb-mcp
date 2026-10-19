@@ -26,6 +26,7 @@ from gdb_mcp.domain import (
     OperationSuccess,
     SessionListInfo,
     SessionMessage,
+    SessionStartInfo,
     SessionStatusSnapshot,
     SessionSummary,
     SourceContextInfo,
@@ -146,7 +147,7 @@ class TestHandlerDispatch:
         manager = Mock()
         manager.start_session.return_value = (
             42,
-            OperationSuccess(SessionMessage(message="Session started")),
+            OperationSuccess(SessionStartInfo(message="Session started")),
         )
 
         result_data = dispatch("gdb_session_start", {}, manager)
@@ -203,7 +204,7 @@ class TestHandlerDispatch:
         manager = Mock()
         manager.start_session.return_value = (
             11,
-            OperationSuccess(SessionMessage(message="GDB session started")),
+            OperationSuccess(SessionStartInfo(message="GDB session started")),
         )
 
         result_data = dispatch(

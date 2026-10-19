@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ... import contracts as shared_contracts
 from ...domain import (
+    BreakpointListInfo,
     OperationError,
     OperationSuccess,
 )
@@ -62,10 +63,10 @@ def _handle_breakpoint_query(session: SessionService, args: BreakpointQueryArgs)
                 filtered_breakpoints.append(breakpoint_info)
 
             return OperationSuccess(
-                {
-                    "breakpoints": filtered_breakpoints,
-                    "count": len(filtered_breakpoints),
-                }
+                BreakpointListInfo(
+                    breakpoints=filtered_breakpoints,
+                    count=len(filtered_breakpoints),
+                )
             )
         case BreakpointQueryGetAction():
             return session.get_breakpoint(action_args.query.number)

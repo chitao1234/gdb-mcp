@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal, TypeAlias
 
+from typing_extensions import TypeAliasType
+
 from .records import (
     BreakpointRecord,
     DisassemblyInstructionRecord,
@@ -20,9 +22,13 @@ from .records import (
 from .stop_kinds import StopKind
 
 JsonScalar: TypeAlias = str | int | float | bool | None
-JsonObject: TypeAlias = dict[str, "JsonValue"]
-JsonArray: TypeAlias = list["JsonValue"]
-JsonValue: TypeAlias = JsonScalar | JsonObject | JsonArray
+# A debugger payload is arbitrary JSON, and JSON nests by nature. It is spelled
+# with an explicit alias because that is the only form pydantic can build a JSON
+# Schema from on this project's Python floor: the implicit `dict[str, "JsonValue"]`
+# spelling makes schema generation recurse until it fails.
+JsonValue = TypeAliasType("JsonValue", "JsonScalar | dict[str, JsonValue] | list[JsonValue]")
+JsonObject = TypeAliasType("JsonObject", "dict[str, JsonValue]")
+JsonArray = TypeAliasType("JsonArray", "list[JsonValue]")
 StructuredPayload: TypeAlias = JsonObject
 FollowForkMode: TypeAlias = Literal["parent", "child"]
 WatchpointAccessType: TypeAlias = Literal["write", "read", "access"]
@@ -57,6 +63,13 @@ class SessionStatusSnapshot:
     inferior_states: list[InferiorStateRecord] | None = None
     follow_fork_mode: FollowForkMode | None = None
     detach_on_fork: bool | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class InferiorCurrentInfo:
+    """The currently selected inferior."""
+
+    inferior: InferiorRecord
 
 
 @dataclass(slots=True, frozen=True)
@@ -99,7 +112,8 @@ class SessionListInfo:
 class SessionStartInfo:
     """Structured result for a successful session start."""
 
-    message: str
+    session_id: int | None = None
+    message: str = ""
     program: str | None = None
     core: str | None = None
     target_loaded: bool = False
@@ -369,7 +383,7 @@ class MessageResult:
 
     message: str
     result: StructuredPayload
-    status: str = "success"
+    status: Literal["success", "warning"] = "success"
 
 
 @dataclass(slots=True, frozen=True)

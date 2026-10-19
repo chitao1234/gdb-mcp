@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from ...contracts import (
     TOOL_SESSION_QUERY,
 )
 from ...domain import (
     OperationError,
     OperationSuccess,
-    payload_to_mapping,
+    SessionStartInfo,
 )
 from ...session.locking import session_workflow_context
 from ...session.registry import SessionRegistry
@@ -31,17 +33,15 @@ from .common import (
 
 
 def _publish_session_result(session_id: int | None, result: ToolResult) -> ToolResult:
-    """Inject the allocated session id into a successful session-start payload."""
+    """Record the allocated session id in a successful session-start payload."""
 
     if session_id is None or not isinstance(result, OperationSuccess):
         return result
 
-    payload = payload_to_mapping(result.value)
-    if not isinstance(payload, dict):
+    payload = result.value
+    if not isinstance(payload, SessionStartInfo):
         return OperationError(message="Internal error: session start payload must be an object")
-    payload = dict(payload)
-    payload["session_id"] = session_id
-    return OperationSuccess(payload)
+    return OperationSuccess(replace(payload, session_id=session_id))
 
 
 def _handle_start_session(
