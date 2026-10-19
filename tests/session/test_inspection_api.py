@@ -14,14 +14,15 @@ from .conftest import MiConsoleBuilder, MiRecordBuilder, ScriptedSessionBuilder
 
 def _context_override_batches(
     mi_result: MiRecordBuilder,
-    *payloads: dict[str, object],
+    *payloads: dict[str, object] | list[dict[str, object]],
     frame_error: str | None = None,
 ) -> list[list[dict[str, object]]]:
     """Build the temporary thread/frame override batches for one operation.
 
-    ``payloads`` are the operation-specific result records emitted while the
-    override is active. Pass ``frame_error`` to model a failed temporary frame
-    switch, which stops the operation before any payload is produced.
+    ``payloads`` are the operation-specific records emitted while the override
+    is active; pass one record or a whole batch of them. Pass ``frame_error``
+    to model a failed temporary frame switch, which stops the operation before
+    any payload is produced.
     """
 
     switch_frame = (
@@ -29,12 +30,15 @@ def _context_override_batches(
         if frame_error is not None
         else [mi_result()]
     )
+    payload_batches = [
+        list(payload) if isinstance(payload, list) else [payload] for payload in payloads
+    ]
     return [
         [mi_result({"threads": [{"id": "1"}, {"id": "2"}], "current-thread-id": "1"})],
         [mi_result({"frame": {"level": "0", "func": "main"}})],
         [mi_result()],
         switch_frame,
-        *([payload] for payload in payloads),
+        *payload_batches,
         [mi_result()],
         [mi_result()],
     ]
@@ -443,15 +447,25 @@ class TestStructuredCodeInspectionApi:
         assert sum(1 for command in written if command.endswith("-list-features\n")) == 1
 
     def test_get_source_context_file_line_selector(
-        self, tmp_path: Path, session_service: SessionService
+        self,
+        tmp_path: Path,
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_console: MiConsoleBuilder,
+        mi_result: MiRecordBuilder,
     ) -> None:
         """Source-context reads should return a bounded structured file window."""
 
         source_file = tmp_path / "main.c"
-        source_file.write_text("int main() {\n    return 0;\n}\n")
+        session, controller = scripted_running_session(
+            [
+                mi_console("1\tint main() {\n"),
+                mi_console("2\t    return 0;\n"),
+                mi_result(),
+            ],
+        )
 
         result = result_to_mapping(
-            session_service.get_source_context(
+            session.get_source_context(
                 file=str(source_file),
                 line=2,
                 context_before=1,
@@ -466,6 +480,7 @@ class TestStructuredCodeInspectionApi:
         lines = mapping_list(result["lines"])
         assert lines[1]["line_number"] == 2
         assert lines[1]["is_current"] is True
+        assert f"list {source_file}:1,{source_file}:2" in "".join(controller.decoded_writes)
 
     def test_get_source_context_resolves_wrapped_info_line(
         self,
@@ -477,14 +492,16 @@ class TestStructuredCodeInspectionApi:
         """GDB before 8 wraps `info line` at the width; the resolver must still read it."""
 
         source_file = tmp_path / "main.c"
-        source_file.write_text("int add(int a, int b) {\n    return a + b;\n}\n")
-
-        session, _controller = scripted_running_session(
+        session, controller = scripted_running_session(
             [
                 mi_console(
                     f'Line 1 of "{source_file}" starts at address 0x1129 <add>\n'
                     "   and ends at 0x1133 <add+10>.\n"
                 ),
+                mi_result(),
+            ],
+            [
+                mi_console("1\tint add(int a, int b) {\n"),
                 mi_result(),
             ],
         )
@@ -498,17 +515,18 @@ class TestStructuredCodeInspectionApi:
         assert result["function"] == "add"
         assert result["line"] == 1
         assert mapping_list(result["lines"])[0]["line_number"] == 1
+        assert f"list {source_file}:1,{source_file}:1" in "".join(controller.decoded_writes)
 
     def test_get_source_context_with_thread_and_frame_restores_selection(
         self,
         scripted_running_session: ScriptedSessionBuilder,
+        mi_console: MiConsoleBuilder,
         mi_result: MiRecordBuilder,
         tmp_path: Path,
     ) -> None:
         """Source-context overrides should restore the original thread/frame selection."""
 
         source_file = tmp_path / "worker.c"
-        source_file.write_text("int worker() {\n    return 1;\n}\n")
         session, controller = scripted_running_session(
             *_context_override_batches(
                 mi_result,
@@ -523,6 +541,12 @@ class TestStructuredCodeInspectionApi:
                         }
                     }
                 ),
+                [
+                    mi_console("1\tint worker() {\n"),
+                    mi_console("2\t    return 1;\n"),
+                    mi_console("3\t}\n"),
+                    mi_result(),
+                ],
             )
         )
 
