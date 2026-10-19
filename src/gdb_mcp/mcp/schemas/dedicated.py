@@ -83,8 +83,9 @@ class StartSessionArgs(StrictArgsModel):
     debugger: DebuggerName = Field(
         DEBUGGER_GDB,
         description=(
-            "Debugger backend to drive. Only 'gdb' is implemented today; further "
-            "backends reuse the same tool surface."
+            "Debugger backend to drive: 'gdb' (GDB/MI) or 'lldb' (lldb-dap over the "
+            "Debug Adapter Protocol). Both reuse the same tool surface; operations a "
+            "backend cannot perform answer with code='unsupported_operation'."
         ),
     )
     args: list[str] | str | None = Field(

@@ -271,12 +271,25 @@ class DapClient:
         sequence = self._send(command, arguments)
         return self._await_response(sequence, timeout_sec or self._default_timeout_sec)
 
+    def next_event(self, *, timeout_sec: float | None = None) -> Mapping[str, Any] | None:
+        """Return the next queued event of any kind, or ``None`` on timeout."""
+
+        timeout = self._default_timeout_sec if timeout_sec is None else timeout_sec
+        deadline = time.monotonic() + timeout
+        while not self._events:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            self._receive_one(deadline)
+        return self._events.popleft()
+
     def wait_for_event(
         self, name: str, *, timeout_sec: float | None = None
     ) -> Mapping[str, Any] | None:
         """Return the next event called ``name``, or ``None`` on timeout."""
 
-        deadline = time.monotonic() + (timeout_sec or self._default_timeout_sec)
+        timeout = self._default_timeout_sec if timeout_sec is None else timeout_sec
+        deadline = time.monotonic() + timeout
         while True:
             for event in list(self._events):
                 if event.get("event") == name:

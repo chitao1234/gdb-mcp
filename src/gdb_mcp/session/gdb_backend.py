@@ -103,12 +103,12 @@ class GdbMiBackend:
         args: list[str] | None = None,
         init_commands: list[str] | None = None,
         env: dict[str, str] | None = None,
-        gdb_path: str | None = None,
-        gdb_args: list[str] | None = None,
+        debugger_path: str | None = None,
+        debugger_args: list[str] | None = None,
         working_dir: str | None = None,
         core: str | None = None,
         endpoint: str | None = None,
-        rr_replay: str | None = None,
+        replay: str | None = None,
     ) -> OperationSuccess[SessionStartInfo] | OperationError:
         """Delegate session startup to the lifecycle service."""
 
@@ -118,12 +118,12 @@ class GdbMiBackend:
             args=args,
             init_commands=init_commands,
             env=env,
-            gdb_path=gdb_path,
-            gdb_args=gdb_args,
+            debugger_path=debugger_path,
+            debugger_args=debugger_args,
             working_dir=working_dir,
             core=core,
             endpoint=endpoint,
-            rr_replay=rr_replay,
+            replay=replay,
         )
 
     def stop(self) -> OperationSuccess[SessionMessage] | OperationError:

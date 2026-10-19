@@ -138,12 +138,12 @@ class DebuggerBackend(Protocol):
         args: list[str] | None = None,
         init_commands: list[str] | None = None,
         env: dict[str, str] | None = None,
-        gdb_path: str | None = None,
-        gdb_args: list[str] | None = None,
+        debugger_path: str | None = None,
+        debugger_args: list[str] | None = None,
         working_dir: str | None = None,
         core: str | None = None,
         endpoint: str | None = None,
-        rr_replay: str | None = None,
+        replay: str | None = None,
     ) -> OperationSuccess[SessionStartInfo] | OperationError: ...
 
     def stop(self) -> OperationSuccess[SessionMessage] | OperationError: ...

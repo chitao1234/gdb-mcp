@@ -162,12 +162,12 @@ class SessionService:
             args=args,
             init_commands=init_commands,
             env=env,
-            gdb_path=gdb_path,
-            gdb_args=gdb_args,
+            debugger_path=gdb_path,
+            debugger_args=gdb_args,
             working_dir=working_dir,
             core=core,
             endpoint=endpoint,
-            rr_replay=rr_replay,
+            replay=rr_replay,
         )
 
     def stop(self) -> OperationSuccess[SessionMessage] | OperationError:

@@ -266,9 +266,9 @@ Dedicated startup tool. This is not action-based.
 ### Request Fields
 
 - `program`: optional executable path
-- `debugger`: backend to drive, default `gdb`. Only `gdb` is implemented today; the
-  value is validated against the implemented set, and further backends reuse the same
-  tool surface.
+- `debugger`: backend to drive, default `gdb`; `lldb` drives `lldb-dap` over the
+  Debug Adapter Protocol. The value is validated against the implemented set, and a
+  backend that cannot perform an operation answers with `code="unsupported_operation"`.
 - `args`: optional argv override as `list[str]` or shell-style string
 - `core`: optional core-dump path
 - `init_commands`: optional list of GDB commands to run after environment setup
@@ -340,6 +340,30 @@ wrapper such as `rust-gdb` achieves the same by injecting those options.
   ]
 }
 ```
+
+## LLDB Sessions
+
+`gdb_session_start` with `debugger="lldb"` drives LLDB through `lldb-dap` over the
+Debug Adapter Protocol instead of GDB/MI. The tool surface is the same; what
+differs is what the backend can do and how a session begins.
+
+- The adapter is resolved from `gdb_path`, then `LLDB_DAP_PATH`, then `lldb-dap`
+  on `PATH`.
+- DAP has no "load without running" request, so the program is launched with
+  `stopOnEntry` and the session begins paused at `stop_kind="entry"`. `run` then
+  continues from there instead of starting the program.
+- `core`, `endpoint`, and `rr_replay` are refused with
+  `code="unsupported_operation"` before an adapter is spawned.
+- Watchpoints, catchpoints, inferior management, fork settings, reverse
+  execution, memory reads, disassembly, and source windows have no request the
+  adapter advertises; they answer with `code="unsupported_operation"`. The command
+  escape hatch (`gdb_execute_command`) runs the LLDB equivalent and returns its
+  text, for example `memory read -c 8 -s 1 -f x <address>`, `disassemble -c 4 -n
+  <function>`, `source list -f <file> -l <line>`, or `watchpoint set variable
+  <name>`.
+- Breakpoints accept `function` or `file:line` locations (addresses are refused);
+  DAP reports no inventory, so `gdb_breakpoint_query` lists what this session set,
+  including a `condition` and the `enabled` state the backend tracks.
 
 ## `gdb_session_connect`
 

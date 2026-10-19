@@ -36,7 +36,7 @@ def _configure_session_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--debugger",
         choices=list(DEBUGGER_NAMES),
-        help="Debugger backend to drive (only 'gdb' is implemented today)",
+        help="Debugger backend to drive: gdb or lldb",
     )
     parser.add_argument("--arg", dest="args", action="append", default=[])
     parser.add_argument("--init-command", dest="init_commands", action="append", default=[])

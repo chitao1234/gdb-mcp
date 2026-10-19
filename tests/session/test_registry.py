@@ -68,7 +68,7 @@ def _publish_session(manager: SessionRegistry, session: Mock, *, program: str = 
 
 def _session_factory_from(
     sessions: list[Mock], *, lock: threading.Lock | None = None
-) -> Callable[[], Mock]:
+) -> Callable[[str], Mock]:
     """Return a factory that hands out prebuilt sessions in order.
 
     ``lock`` guards the shared cursor when the factory is called from racing
@@ -77,7 +77,7 @@ def _session_factory_from(
 
     index = {"value": 0}
 
-    def session_factory() -> Mock:
+    def session_factory(_debugger: str = "gdb") -> Mock:
         with lock if lock is not None else contextlib.nullcontext():
             session = sessions[index["value"]]
             index["value"] += 1
@@ -111,7 +111,7 @@ class TestSessionRegistry:
         """get_session should return the exact published session object."""
 
         session = _session_double()
-        manager = SessionRegistry(session_factory=lambda: session)
+        manager = SessionRegistry(session_factory=lambda _debugger: session)
 
         session_id = _publish_session(manager, session)
 
@@ -121,7 +121,7 @@ class TestSessionRegistry:
         """Test that get_session returns None for non-existent session IDs."""
 
         session = _session_double()
-        manager = SessionRegistry(session_factory=lambda: session)
+        manager = SessionRegistry(session_factory=lambda _debugger: session)
 
         assert manager.get_session(999) is None
         assert manager.get_session(0) is None
@@ -134,7 +134,7 @@ class TestSessionRegistry:
         """close_session should stop and remove active sessions atomically."""
 
         session = _session_double()
-        manager = SessionRegistry(session_factory=lambda: session)
+        manager = SessionRegistry(session_factory=lambda _debugger: session)
 
         session_id = _publish_session(manager, session)
         session.has_controller = True
@@ -150,7 +150,7 @@ class TestSessionRegistry:
         """Failed close operations should retain registry ownership for retry/inspection."""
 
         session = _session_double()
-        manager = SessionRegistry(session_factory=lambda: session)
+        manager = SessionRegistry(session_factory=lambda _debugger: session)
 
         session_id = _publish_session(manager, session)
         session.has_controller = True
@@ -166,7 +166,7 @@ class TestSessionRegistry:
         """close_session should not silently drop a logically running session."""
 
         session = _session_double()
-        manager = SessionRegistry(session_factory=lambda: session)
+        manager = SessionRegistry(session_factory=lambda _debugger: session)
 
         session_id = _publish_session(manager, session)
         session.has_controller = False
@@ -184,7 +184,7 @@ class TestSessionRegistry:
         """Closing sessions should reject new command resolution with a clear error."""
 
         session = _session_double()
-        manager = SessionRegistry(session_factory=lambda: session)
+        manager = SessionRegistry(session_factory=lambda _debugger: session)
         session_id = _publish_session(manager, session)
 
         manager._closing_sessions.add(session_id)
@@ -197,7 +197,7 @@ class TestSessionRegistry:
     def test_resolve_session_reports_an_unknown_id_with_its_own_code(self) -> None:
         """An unknown id should be distinguishable from other session failures."""
 
-        manager = SessionRegistry(session_factory=lambda: _session_double())
+        manager = SessionRegistry(session_factory=lambda _debugger: _session_double())
 
         result = manager.resolve_session(404)
 
@@ -209,7 +209,7 @@ class TestSessionRegistry:
         """The error should name the sessions a caller can switch to."""
 
         session = _session_double()
-        manager = SessionRegistry(session_factory=lambda: session)
+        manager = SessionRegistry(session_factory=lambda _debugger: session)
         first = _publish_session(manager, session)
         second = _publish_session(manager, session)
 
@@ -222,7 +222,7 @@ class TestSessionRegistry:
     def test_unknown_session_error_says_when_nothing_is_live(self) -> None:
         """An empty registry should report that no live sessions are available."""
 
-        manager = SessionRegistry(session_factory=lambda: _session_double())
+        manager = SessionRegistry(session_factory=lambda _debugger: _session_double())
 
         result = manager.resolve_session(404)
 
@@ -271,7 +271,7 @@ class TestSessionRegistry:
                 execution_state="running",
             ),
         ]
-        manager = SessionRegistry(session_factory=lambda: session)
+        manager = SessionRegistry(session_factory=lambda _debugger: session)
 
         session_id = _publish_session(manager, session)
         result = manager.list_sessions()
@@ -298,7 +298,7 @@ class TestSessionRegistry:
         """Dead failed sessions should be removable without another stop attempt."""
 
         session = _session_double()
-        manager = SessionRegistry(session_factory=lambda: session)
+        manager = SessionRegistry(session_factory=lambda _debugger: session)
 
         session_id = _publish_session(manager, session)
         session.has_controller = False
@@ -350,7 +350,7 @@ class TestSessionRegistry:
 
         session = _session_double()
         session.start.return_value = OperationError(message="boom")
-        manager = SessionRegistry(session_factory=lambda: session)
+        manager = SessionRegistry(session_factory=lambda _debugger: session)
 
         session_id, result = manager.start_session(program="/bin/ls")
 
@@ -364,7 +364,7 @@ class TestSessionRegistry:
 
         session = _session_double()
         session.start.return_value = OperationSuccess(SessionStartInfo(message="started"))
-        manager = SessionRegistry(session_factory=lambda: session)
+        manager = SessionRegistry(session_factory=lambda _debugger: session)
 
         session_id, result = manager.start_session(program="/bin/ls")
 
@@ -401,7 +401,7 @@ class TestSessionRegistry:
         """Shutdown should not try to stop sessions whose transport has already died."""
 
         session = _session_double()
-        manager = SessionRegistry(session_factory=lambda: session)
+        manager = SessionRegistry(session_factory=lambda _debugger: session)
 
         session_id = _publish_session(manager, session)
         session.has_controller = False
@@ -427,7 +427,7 @@ class TestSessionRegistry:
 
         monkeypatch.setattr(registry_module, "_SHUTDOWN_TIMEOUT_SEC", 0.1)
         session = _session_double()
-        manager = SessionRegistry(session_factory=lambda: session)
+        manager = SessionRegistry(session_factory=lambda _debugger: session)
         session_id = _publish_session(manager, session)
         session.has_controller = True
         release = threading.Event()

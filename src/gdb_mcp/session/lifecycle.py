@@ -120,12 +120,12 @@ class SessionLifecycleService:
         args: list[str] | None = None,
         init_commands: list[str] | None = None,
         env: dict[str, str] | None = None,
-        gdb_path: str | None = None,
-        gdb_args: list[str] | None = None,
+        debugger_path: str | None = None,
+        debugger_args: list[str] | None = None,
         working_dir: str | None = None,
         core: str | None = None,
         endpoint: str | None = None,
-        rr_replay: str | None = None,
+        replay: str | None = None,
     ) -> OperationSuccess[SessionStartInfo] | OperationError:
         """Start a new GDB session.
 
@@ -139,14 +139,14 @@ class SessionLifecycleService:
             if self._runtime.has_controller:
                 return OperationError(message="Session already running. Stop it first.")
 
-            if gdb_path is None:
-                gdb_path = self._runtime.os_module.environ.get("GDB_PATH", "gdb")
+            if debugger_path is None:
+                debugger_path = self._runtime.os_module.environ.get("GDB_PATH", "gdb")
 
             if debugger is None:
                 debugger = DEBUGGER_GDB
 
             startup_warnings: list[str] = []
-            if rr_replay and program:
+            if replay and program:
                 startup_warnings.append(
                     f"Program '{program}' was ignored: the rr trace already owns the target."
                 )
@@ -158,12 +158,12 @@ class SessionLifecycleService:
                 args=args,
                 init_commands=init_commands,
                 env=env,
-                gdb_path=gdb_path,
-                gdb_args=gdb_args,
+                gdb_path=debugger_path,
+                gdb_args=debugger_args,
                 working_dir=working_dir,
                 core=core,
                 endpoint=endpoint,
-                rr_replay=rr_replay,
+                rr_replay=replay,
             )
             self._runtime.begin_startup(config)
 
@@ -173,8 +173,12 @@ class SessionLifecycleService:
                     message = f"Unsupported debugger {debugger!r}: supported values are {supported}"
                     self._runtime.mark_failed(message)
                     return OperationError(message=message, code="unsupported_combination")
+                if debugger != DEBUGGER_GDB:
+                    message = f"This session drives gdb, not {debugger!r}"
+                    self._runtime.mark_failed(message)
+                    return OperationError(message=message, code="unsupported_operation")
 
-                if rr_replay and (args or core):
+                if replay and (args or core):
                     message = (
                         "An rr trace already owns the target; do not also pass args or core "
                         "when replaying a recording."
@@ -182,7 +186,7 @@ class SessionLifecycleService:
                     self._runtime.mark_failed(message)
                     return OperationError(message=message)
 
-                if rr_replay and endpoint:
+                if replay and endpoint:
                     message = (
                         "An rr replay starts its own debugger; do not also pass endpoint, "
                         "which expects an externally started GDB/MI stream."
@@ -228,13 +232,13 @@ class SessionLifecycleService:
                     self._mirror_controller()
                 else:
                     gdb_command = self._build_start_command(
-                        gdb_path=gdb_path,
+                        gdb_path=debugger_path,
                         program=program,
                         args=args,
                         core=core,
-                        rr_replay=rr_replay,
+                        rr_replay=replay,
                         rr_path=self._runtime.os_module.environ.get("RR_PATH", "rr"),
-                        gdb_args=gdb_args,
+                        gdb_args=debugger_args,
                     )
                     self._transport.start(
                         command=gdb_command,
@@ -424,7 +428,7 @@ class SessionLifecycleService:
                         env_output=env_output or None,
                         init_output=init_output or None,
                         endpoint=endpoint,
-                        rr_replay=rr_replay,
+                        rr_replay=replay,
                     )
                 )
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable
 
+from ..contracts import DEBUGGER_GDB
 from ..domain import (
     OperationError,
     OperationSuccess,
@@ -30,7 +31,7 @@ class SessionRegistry:
     available for ephemeral flows that should never publish a tracked session.
     """
 
-    def __init__(self, session_factory: Callable[[], SessionService] | None = None):
+    def __init__(self, session_factory: Callable[[str], SessionService] | None = None):
         if session_factory is None:
             session_factory = create_default_session_service
         self._session_factory = session_factory
@@ -53,10 +54,10 @@ class SessionRegistry:
             self._next_session_id += 1
             return session_id
 
-    def create_untracked_session(self) -> SessionService:
+    def create_untracked_session(self, debugger: str = DEBUGGER_GDB) -> SessionService:
         """Create a fresh session without publishing it in the registry."""
 
-        return self._session_factory()
+        return self._session_factory(debugger)
 
     def start_session(
         self,
@@ -81,7 +82,7 @@ class SessionRegistry:
         """
 
         session_id = self._allocate_session_id()
-        session = self._session_factory()
+        session = self._session_factory(debugger or DEBUGGER_GDB)
         result = session.start(
             program=program,
             debugger=debugger,

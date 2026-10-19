@@ -123,9 +123,9 @@ class TestStartSessionArgs:
         """The published enum only lists backends this server implements."""
 
         with pytest.raises(ValidationError) as excinfo:
-            StartSessionArgs(program="/bin/ls", debugger="lldb")
+            StartSessionArgs(program="/bin/ls", debugger="delvey")
 
-        assert "lldb" in str(excinfo.value)
+        assert "delvey" in str(excinfo.value)
 
     def test_env_dict_validation(self) -> None:
         """A string-to-string env mapping is preserved."""
