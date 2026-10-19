@@ -13,7 +13,7 @@ from gdb_mcp.domain import (
     result_to_mapping,
 )
 from gdb_mcp.session.service import SessionService
-from tests.support import sequence, text
+from tests.support import gdb_backend, sequence, text
 
 from .conftest import CommandResultBuilder, StartHarness
 
@@ -38,7 +38,9 @@ class TestLifecycleApi:
     ) -> None:
         """Status should reconcile against a dead GDB child process."""
 
-        with patch.object(running_session._command_runner, "is_gdb_alive", return_value=False):
+        with patch.object(
+            gdb_backend(running_session)._command_runner, "is_gdb_alive", return_value=False
+        ):
             status = result_to_mapping(running_session.get_status())
 
         assert status["status"] == "success"
@@ -46,7 +48,7 @@ class TestLifecycleApi:
         assert status["target_loaded"] is False
         assert status["has_controller"] is False
         assert status["execution_state"] == "unknown"
-        assert running_session.controller is None
+        assert running_session.has_controller is False
         assert running_session.state.value == "failed"
 
     def test_stop_no_session(self, session_service: SessionService) -> None:
@@ -474,7 +476,7 @@ class TestLifecycleApi:
         result = result_to_mapping(running_session.stop())
 
         assert result["status"] == "success"
-        assert running_session.controller is None
+        assert running_session.has_controller is False
         assert running_session.is_running is False
 
     def test_stop_failure_marks_session_failed_and_not_running(
@@ -483,13 +485,15 @@ class TestLifecycleApi:
         """Shutdown failures should not leave the session marked as running."""
 
         # running_session installs a MagicMock controller (see conftest).
-        cast(MagicMock, running_session.controller).exit.side_effect = RuntimeError("exit failed")
+        cast(MagicMock, running_session.runtime.controller).exit.side_effect = RuntimeError(
+            "exit failed"
+        )
 
         result = result_to_mapping(running_session.stop())
 
         assert result["status"] == "error"
         assert "exit failed" in text(result["message"])
-        assert running_session.controller is None
+        assert running_session.has_controller is False
         assert running_session.is_running is False
         assert running_session.state.value == "failed"
         assert running_session.runtime.last_failure_message is not None

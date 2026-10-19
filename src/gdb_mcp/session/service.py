@@ -1,4 +1,10 @@
-"""Session service composition root."""
+"""The tool-facing session service.
+
+Orchestrates one debugger session on top of a :class:`DebuggerBackend`: it owns
+the service-level features (batches, capture bundles, the campaign entry point)
+and the state a caller reads, while every debugger operation is delegated to the
+backend that implements it.
+"""
 
 from __future__ import annotations
 
@@ -45,66 +51,34 @@ from ..domain import (
     WaitForStopInfo,
     WatchpointAccessType,
 )
-from ..transport import MiClient
-from ..transport.protocols import GdbControllerFactoryProtocol, GdbControllerProtocol
-from .breakpoints import SessionBreakpointService
+from .backends import BackendCapabilities, DebuggerBackend
 from .capture import SessionCaptureService
-from .command_runner import SessionCommandRunner
 from .config import SessionConfig
-from .constants import (
-    DEFAULT_TIMEOUT_SEC,
-    INITIAL_COMMAND_TOKEN,
-    POLL_TIMEOUT_SEC,
-)
-from .execution import SessionExecutionService
-from .inspection import SessionInspectionService
-from .lifecycle import SessionLifecycleService
-from .protocols import OsModuleProtocol, TimeModuleProtocol
+from .constants import DEFAULT_TIMEOUT_SEC
 from .runtime import SessionRuntime
 from .state import SessionState
 from .workflow import BatchStepInvocation, BatchStepTemplate, SessionWorkflowService
 
 
 class SessionService:
-    """
-    Orchestrates one debugger session on top of the transport layer.
+    """Orchestrates one debugger session on top of a debugger backend."""
 
-    The public API remains on this class, while focused collaborators own the
-    lifecycle, execution, breakpoint, and inspection behavior.
-    """
-
-    def __init__(
-        self,
-        *,
-        controller_factory: GdbControllerFactoryProtocol,
-        os_module: OsModuleProtocol,
-        time_module: TimeModuleProtocol,
-        initial_command_token: int = INITIAL_COMMAND_TOKEN,
-        poll_timeout_sec: float = POLL_TIMEOUT_SEC,
-    ):
-        transport = MiClient(
-            controller_factory=controller_factory,
-            initial_command_token=initial_command_token,
-            poll_timeout_sec=poll_timeout_sec,
-        )
-        self.runtime = SessionRuntime(
-            transport=transport,
-            os_module=os_module,
-            time_module=time_module,
-        )
-        self._command_runner = SessionCommandRunner(self.runtime)
-        self._lifecycle = SessionLifecycleService(self.runtime, self._command_runner)
-        self._execution = SessionExecutionService(self.runtime, self._command_runner)
-        self._breakpoints = SessionBreakpointService(self._command_runner)
-        self._inspection = SessionInspectionService(self.runtime, self._command_runner)
-        self._capture = SessionCaptureService(self.runtime, self._lifecycle, self._inspection)
-        self._workflow = SessionWorkflowService(self.runtime)
+    def __init__(self, *, backend: DebuggerBackend) -> None:
+        self._backend = backend
+        self._workflow = SessionWorkflowService(backend.runtime)
+        self._capture = SessionCaptureService(backend)
 
     @property
-    def controller(self) -> GdbControllerProtocol | None:
-        """Expose the underlying controller for orchestration and tests."""
+    def backend(self) -> DebuggerBackend:
+        """Expose the debugger backend this session drives."""
 
-        return self.runtime.controller
+        return self._backend
+
+    @property
+    def runtime(self) -> SessionRuntime:
+        """Expose the mutable session state the backend keeps up to date."""
+
+        return self._backend.runtime
 
     @property
     def state(self) -> SessionState:
@@ -117,6 +91,18 @@ class SessionService:
         """Expose the normalized session configuration."""
 
         return self.runtime.config
+
+    @property
+    def has_controller(self) -> bool:
+        """Expose whether a debugger process or stream is attached."""
+
+        return self.runtime.has_controller
+
+    @property
+    def capabilities(self) -> BackendCapabilities:
+        """Expose what the backend can do."""
+
+        return self._backend.capabilities
 
     @property
     def is_running(self) -> bool:
@@ -168,9 +154,9 @@ class SessionService:
         endpoint: str | None = None,
         rr_replay: str | None = None,
     ) -> OperationSuccess[SessionStartInfo] | OperationError:
-        """Delegate session startup to the lifecycle service."""
+        """Delegate session startup to the debugger backend."""
 
-        return self._lifecycle.start(
+        return self._backend.start(
             program=program,
             debugger=debugger,
             args=args,
@@ -185,21 +171,21 @@ class SessionService:
         )
 
     def stop(self) -> OperationSuccess[SessionMessage] | OperationError:
-        """Delegate session shutdown to the lifecycle service."""
+        """Delegate session shutdown to the debugger backend."""
 
-        return self._lifecycle.stop()
+        return self._backend.stop()
 
     def get_status(self) -> OperationSuccess[SessionStatusSnapshot]:
-        """Delegate status inspection to the lifecycle service."""
+        """Delegate status inspection to the debugger backend."""
 
-        return self._lifecycle.get_status()
+        return self._backend.get_status()
 
     def execute_command(
         self, command: str, timeout_sec: int = DEFAULT_TIMEOUT_SEC
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
-        """Delegate command execution to the execution service."""
+        """Delegate command execution to the debugger backend."""
 
-        return self._execution.execute_command(command, timeout_sec)
+        return self._backend.execute_command(command=command, timeout_sec=timeout_sec)
 
     def run(
         self,
@@ -207,58 +193,44 @@ class SessionService:
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
         wait_for_stop: bool = True,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
-        """Delegate target start to the execution service."""
+        """Delegate target start to the debugger backend."""
 
-        return self._execution.run(
-            args=args,
-            timeout_sec=timeout_sec,
-            wait_for_stop=wait_for_stop,
-        )
+        return self._backend.run(args=args, timeout_sec=timeout_sec, wait_for_stop=wait_for_stop)
 
     def add_inferior(
-        self,
-        *,
-        executable: str | None = None,
-        make_current: bool = False,
+        self, *, executable: str | None = None, make_current: bool = False
     ) -> OperationSuccess[InferiorAddInfo] | OperationError:
-        """Delegate inferior creation to the execution service."""
+        """Delegate inferior creation to the debugger backend."""
 
-        return self._execution.add_inferior(
-            executable=executable,
-            make_current=make_current,
-        )
+        return self._backend.add_inferior(executable=executable, make_current=make_current)
 
     def remove_inferior(
         self, inferior_id: int
     ) -> OperationSuccess[InferiorRemoveInfo] | OperationError:
-        """Delegate inferior removal to the execution service."""
+        """Delegate inferior removal to the debugger backend."""
 
-        return self._execution.remove_inferior(inferior_id)
+        return self._backend.remove_inferior(inferior_id=inferior_id)
 
     def attach_process(
-        self,
-        pid: int,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        self, pid: int, timeout_sec: int = DEFAULT_TIMEOUT_SEC
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
-        """Delegate process attach to the execution service."""
+        """Delegate process attach to the debugger backend."""
 
-        return self._execution.attach_process(pid=pid, timeout_sec=timeout_sec)
+        return self._backend.attach_process(pid=pid, timeout_sec=timeout_sec)
 
     def set_follow_fork_mode(
-        self,
-        mode: FollowForkMode,
+        self, mode: FollowForkMode
     ) -> OperationSuccess[FollowForkModeInfo] | OperationError:
         """Delegate follow-fork-mode changes to the execution service."""
 
-        return self._execution.set_follow_fork_mode(mode)
+        return self._backend.set_follow_fork_mode(mode=mode)
 
     def set_detach_on_fork(
-        self,
-        enabled: bool,
+        self, enabled: bool
     ) -> OperationSuccess[DetachOnForkInfo] | OperationError:
         """Delegate detach-on-fork changes to the execution service."""
 
-        return self._execution.set_detach_on_fork(enabled)
+        return self._backend.set_detach_on_fork(enabled=enabled)
 
     def continue_execution(
         self,
@@ -267,26 +239,18 @@ class SessionService:
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
-        """Delegate continue to the execution service."""
+        """Delegate continue to the debugger backend."""
 
-        return self._execution.continue_execution(
-            wait_for_stop=wait_for_stop,
-            timeout_sec=timeout_sec,
-            reverse=reverse,
+        return self._backend.continue_execution(
+            wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
         )
 
     def wait_for_stop(
-        self,
-        *,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
-        stop_reasons: tuple[str, ...] = (),
+        self, *, timeout_sec: int = DEFAULT_TIMEOUT_SEC, stop_reasons: tuple[str, ...] = ()
     ) -> OperationSuccess[WaitForStopInfo] | OperationError:
-        """Delegate stop waiting to the execution service."""
+        """Delegate stop waiting to the debugger backend."""
 
-        return self._execution.wait_for_stop(
-            timeout_sec=timeout_sec,
-            stop_reasons=stop_reasons,
-        )
+        return self._backend.wait_for_stop(timeout_sec=timeout_sec, stop_reasons=stop_reasons)
 
     def step(
         self,
@@ -297,10 +261,8 @@ class SessionService:
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate single-step to the execution service."""
 
-        return self._execution.step(
-            wait_for_stop=wait_for_stop,
-            timeout_sec=timeout_sec,
-            reverse=reverse,
+        return self._backend.step(
+            wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
         )
 
     def next(
@@ -312,10 +274,8 @@ class SessionService:
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate next/step-over to the execution service."""
 
-        return self._execution.next(
-            wait_for_stop=wait_for_stop,
-            timeout_sec=timeout_sec,
-            reverse=reverse,
+        return self._backend.next(
+            wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
         )
 
     def finish(
@@ -327,23 +287,231 @@ class SessionService:
     ) -> OperationSuccess[FinishInfo] | OperationError:
         """Delegate finish/step-out to the execution service."""
 
-        return self._execution.finish(
-            timeout_sec=timeout_sec,
-            reverse=reverse,
-            wait_for_stop=wait_for_stop,
+        return self._backend.finish(
+            timeout_sec=timeout_sec, wait_for_stop=wait_for_stop, reverse=reverse
         )
 
     def interrupt(self) -> OperationSuccess[MessageResult] | OperationError:
-        """Delegate interrupt to the execution service."""
+        """Delegate interrupt to the debugger backend."""
 
-        return self._execution.interrupt()
+        return self._backend.interrupt()
 
     def call_function(
         self, function_call: str, timeout_sec: int = DEFAULT_TIMEOUT_SEC
     ) -> OperationSuccess[FunctionCallInfo] | OperationError:
-        """Delegate function call execution to the execution service."""
+        """Delegate function call execution to the debugger backend."""
 
-        return self._execution.call_function(function_call, timeout_sec)
+        return self._backend.call_function(function_call=function_call, timeout_sec=timeout_sec)
+
+    def get_threads(self) -> OperationSuccess[ThreadListInfo] | OperationError:
+        """Delegate thread inspection to the debugger backend."""
+
+        return self._backend.get_threads()
+
+    def list_inferiors(self) -> OperationSuccess[InferiorListInfo] | OperationError:
+        """Delegate inferior inventory inspection to the debugger backend."""
+
+        return self._backend.list_inferiors()
+
+    def select_inferior(
+        self, inferior_id: int
+    ) -> OperationSuccess[InferiorSelectionInfo] | OperationError:
+        """Delegate inferior selection to the debugger backend."""
+
+        return self._backend.select_inferior(inferior_id=inferior_id)
+
+    def select_thread(
+        self, thread_id: int
+    ) -> OperationSuccess[ThreadSelectionInfo] | OperationError:
+        """Delegate thread selection to the debugger backend."""
+
+        return self._backend.select_thread(thread_id=thread_id)
+
+    def get_backtrace(
+        self, thread_id: int | None = None, max_frames: int = 100
+    ) -> OperationSuccess[BacktraceInfo] | OperationError:
+        """Delegate backtrace retrieval to the debugger backend."""
+
+        return self._backend.get_backtrace(thread_id=thread_id, max_frames=max_frames)
+
+    def get_frame_info(
+        self, *, thread_id: int | None = None, frame: int | None = None
+    ) -> OperationSuccess[FrameInfo] | OperationError:
+        """Delegate current-frame inspection to the inspection service."""
+
+        return self._backend.get_frame_info(thread_id=thread_id, frame=frame)
+
+    def disassemble(
+        self,
+        *,
+        thread_id: int | None = None,
+        frame: int | None = None,
+        function: str | None = None,
+        address: str | None = None,
+        start_address: str | None = None,
+        end_address: str | None = None,
+        file: str | None = None,
+        line: int | None = None,
+        instruction_count: int = 32,
+        mode: Literal["assembly", "mixed"] = "mixed",
+    ) -> OperationSuccess[DisassemblyInfo] | OperationError:
+        """Delegate structured disassembly to the debugger backend."""
+
+        return self._backend.disassemble(
+            thread_id=thread_id,
+            frame=frame,
+            function=function,
+            address=address,
+            start_address=start_address,
+            end_address=end_address,
+            file=file,
+            line=line,
+            instruction_count=instruction_count,
+            mode=mode,
+        )
+
+    def select_frame(
+        self, frame_number: int
+    ) -> OperationSuccess[FrameSelectionInfo] | OperationError:
+        """Delegate frame selection to the debugger backend."""
+
+        return self._backend.select_frame(frame_number=frame_number)
+
+    def evaluate_expression(
+        self, expression: str, thread_id: int | None = None, frame: int | None = None
+    ) -> OperationSuccess[ExpressionValueInfo] | OperationError:
+        """Delegate expression evaluation to the debugger backend."""
+
+        return self._backend.evaluate_expression(
+            expression=expression, thread_id=thread_id, frame=frame
+        )
+
+    def read_memory(
+        self, address: str, count: int, *, offset: int = 0
+    ) -> OperationSuccess[MemoryReadInfo] | OperationError:
+        """Delegate memory reads to the debugger backend."""
+
+        return self._backend.read_memory(address=address, count=count, offset=offset)
+
+    def get_variables(
+        self, thread_id: int | None = None, frame: int = 0
+    ) -> OperationSuccess[VariablesInfo] | OperationError:
+        """Delegate local-variable inspection to the inspection service."""
+
+        return self._backend.get_variables(thread_id=thread_id, frame=frame)
+
+    def get_source_context(
+        self,
+        *,
+        thread_id: int | None = None,
+        frame: int | None = None,
+        function: str | None = None,
+        address: str | None = None,
+        file: str | None = None,
+        line: int | None = None,
+        start_line: int | None = None,
+        end_line: int | None = None,
+        context_before: int = 5,
+        context_after: int = 5,
+    ) -> OperationSuccess[SourceContextInfo] | OperationError:
+        """Delegate structured source-context retrieval to the inspection service."""
+
+        return self._backend.get_source_context(
+            thread_id=thread_id,
+            frame=frame,
+            function=function,
+            address=address,
+            file=file,
+            line=line,
+            start_line=start_line,
+            end_line=end_line,
+            context_before=context_before,
+            context_after=context_after,
+        )
+
+    def get_registers(
+        self,
+        thread_id: int | None = None,
+        frame: int | None = None,
+        register_numbers: list[int] | None = None,
+        register_names: list[str] | None = None,
+        include_vector_registers: bool = True,
+        max_registers: int | None = None,
+        value_format: Literal["hex", "natural"] = "hex",
+    ) -> OperationSuccess[RegistersInfo] | OperationError:
+        """Delegate register inspection to the debugger backend."""
+
+        return self._backend.get_registers(
+            thread_id=thread_id,
+            frame=frame,
+            register_numbers=register_numbers,
+            register_names=register_names,
+            include_vector_registers=include_vector_registers,
+            max_registers=max_registers,
+            value_format=value_format,
+        )
+
+    def set_breakpoint(
+        self, location: str, condition: str | None = None, temporary: bool = False
+    ) -> OperationSuccess[BreakpointInfo] | OperationError:
+        """Delegate breakpoint creation to the debugger backend."""
+
+        return self._backend.set_breakpoint(
+            location=location, condition=condition, temporary=temporary
+        )
+
+    def set_watchpoint(
+        self, expression: str, *, access: WatchpointAccessType = "write"
+    ) -> OperationSuccess[BreakpointInfo] | OperationError:
+        """Delegate watchpoint creation to the debugger backend."""
+
+        return self._backend.set_watchpoint(expression=expression, access=access)
+
+    def delete_watchpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
+        """Delegate watchpoint deletion to the debugger backend."""
+
+        return self._backend.delete_watchpoint(number=number)
+
+    def set_catchpoint(
+        self, kind: CatchpointType, *, argument: str | None = None, temporary: bool = False
+    ) -> OperationSuccess[BreakpointInfo] | OperationError:
+        """Delegate catchpoint creation to the debugger backend."""
+
+        return self._backend.set_catchpoint(kind=kind, argument=argument, temporary=temporary)
+
+    def list_breakpoints(self) -> OperationSuccess[BreakpointListInfo] | OperationError:
+        """Delegate breakpoint listing to the debugger backend."""
+
+        return self._backend.list_breakpoints()
+
+    def get_breakpoint(self, number: int) -> OperationSuccess[BreakpointInfo] | OperationError:
+        """Delegate breakpoint lookup to the debugger backend."""
+
+        return self._backend.get_breakpoint(number=number)
+
+    def delete_breakpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
+        """Delegate breakpoint deletion to the debugger backend."""
+
+        return self._backend.delete_breakpoint(number=number)
+
+    def enable_breakpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
+        """Delegate breakpoint enabling to the debugger backend."""
+
+        return self._backend.enable_breakpoint(number=number)
+
+    def disable_breakpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
+        """Delegate breakpoint disabling to the debugger backend."""
+
+        return self._backend.disable_breakpoint(number=number)
+
+    def update_breakpoint(
+        self, number: int, *, condition: str | None = None, clear_condition: bool = False
+    ) -> OperationSuccess[BreakpointInfo] | OperationError:
+        """Delegate breakpoint updates to the debugger backend."""
+
+        return self._backend.update_breakpoint(
+            number=number, condition=condition, clear_condition=clear_condition
+        )
 
     def execute_batch(
         self,
@@ -411,236 +579,3 @@ class SessionService:
                 include_transcript=include_transcript,
                 include_stop_history=include_stop_history,
             )
-
-    def get_threads(self) -> OperationSuccess[ThreadListInfo] | OperationError:
-        """Delegate thread inspection to the inspection service."""
-
-        return self._inspection.get_threads()
-
-    def list_inferiors(self) -> OperationSuccess[InferiorListInfo] | OperationError:
-        """Delegate inferior inventory inspection to the inspection service."""
-
-        return self._inspection.list_inferiors()
-
-    def select_inferior(
-        self, inferior_id: int
-    ) -> OperationSuccess[InferiorSelectionInfo] | OperationError:
-        """Delegate inferior selection to the inspection service."""
-
-        return self._inspection.select_inferior(inferior_id)
-
-    def select_thread(
-        self, thread_id: int
-    ) -> OperationSuccess[ThreadSelectionInfo] | OperationError:
-        """Delegate thread selection to the inspection service."""
-
-        return self._inspection.select_thread(thread_id)
-
-    def get_backtrace(
-        self, thread_id: int | None = None, max_frames: int = 100
-    ) -> OperationSuccess[BacktraceInfo] | OperationError:
-        """Delegate backtrace retrieval to the inspection service."""
-
-        return self._inspection.get_backtrace(thread_id, max_frames)
-
-    def get_frame_info(
-        self,
-        *,
-        thread_id: int | None = None,
-        frame: int | None = None,
-    ) -> OperationSuccess[FrameInfo] | OperationError:
-        """Delegate current-frame inspection to the inspection service."""
-
-        return self._inspection.get_frame_info(thread_id=thread_id, frame=frame)
-
-    def disassemble(
-        self,
-        *,
-        thread_id: int | None = None,
-        frame: int | None = None,
-        function: str | None = None,
-        address: str | None = None,
-        start_address: str | None = None,
-        end_address: str | None = None,
-        file: str | None = None,
-        line: int | None = None,
-        instruction_count: int = 32,
-        mode: Literal["assembly", "mixed"] = "mixed",
-    ) -> OperationSuccess[DisassemblyInfo] | OperationError:
-        """Delegate structured disassembly to the inspection service."""
-
-        return self._inspection.disassemble(
-            thread_id=thread_id,
-            frame=frame,
-            function=function,
-            address=address,
-            start_address=start_address,
-            end_address=end_address,
-            file=file,
-            line=line,
-            instruction_count=instruction_count,
-            mode=mode,
-        )
-
-    def select_frame(
-        self, frame_number: int
-    ) -> OperationSuccess[FrameSelectionInfo] | OperationError:
-        """Delegate frame selection to the inspection service."""
-
-        return self._inspection.select_frame(frame_number)
-
-    def evaluate_expression(
-        self,
-        expression: str,
-        thread_id: int | None = None,
-        frame: int | None = None,
-    ) -> OperationSuccess[ExpressionValueInfo] | OperationError:
-        """Delegate expression evaluation to the inspection service."""
-
-        return self._inspection.evaluate_expression(expression, thread_id=thread_id, frame=frame)
-
-    def read_memory(
-        self,
-        address: str,
-        count: int,
-        *,
-        offset: int = 0,
-    ) -> OperationSuccess[MemoryReadInfo] | OperationError:
-        """Delegate memory reads to the inspection service."""
-
-        return self._inspection.read_memory(address, count, offset=offset)
-
-    def get_variables(
-        self, thread_id: int | None = None, frame: int = 0
-    ) -> OperationSuccess[VariablesInfo] | OperationError:
-        """Delegate local-variable inspection to the inspection service."""
-
-        return self._inspection.get_variables(thread_id, frame)
-
-    def get_source_context(
-        self,
-        *,
-        thread_id: int | None = None,
-        frame: int | None = None,
-        function: str | None = None,
-        address: str | None = None,
-        file: str | None = None,
-        line: int | None = None,
-        start_line: int | None = None,
-        end_line: int | None = None,
-        context_before: int = 5,
-        context_after: int = 5,
-    ) -> OperationSuccess[SourceContextInfo] | OperationError:
-        """Delegate structured source-context retrieval to the inspection service."""
-
-        return self._inspection.get_source_context(
-            thread_id=thread_id,
-            frame=frame,
-            function=function,
-            address=address,
-            file=file,
-            line=line,
-            start_line=start_line,
-            end_line=end_line,
-            context_before=context_before,
-            context_after=context_after,
-        )
-
-    def get_registers(
-        self,
-        thread_id: int | None = None,
-        frame: int | None = None,
-        register_numbers: list[int] | None = None,
-        register_names: list[str] | None = None,
-        include_vector_registers: bool = True,
-        max_registers: int | None = None,
-        value_format: Literal["hex", "natural"] = "hex",
-    ) -> OperationSuccess[RegistersInfo] | OperationError:
-        """Delegate register inspection to the inspection service."""
-
-        return self._inspection.get_registers(
-            thread_id=thread_id,
-            frame=frame,
-            register_numbers=register_numbers,
-            register_names=register_names,
-            include_vector_registers=include_vector_registers,
-            max_registers=max_registers,
-            value_format=value_format,
-        )
-
-    def set_breakpoint(
-        self, location: str, condition: str | None = None, temporary: bool = False
-    ) -> OperationSuccess[BreakpointInfo] | OperationError:
-        """Delegate breakpoint creation to the breakpoint service."""
-
-        return self._breakpoints.set_breakpoint(location, condition, temporary)
-
-    def set_watchpoint(
-        self,
-        expression: str,
-        *,
-        access: WatchpointAccessType = "write",
-    ) -> OperationSuccess[BreakpointInfo] | OperationError:
-        """Delegate watchpoint creation to the breakpoint service."""
-
-        return self._breakpoints.set_watchpoint(expression, access=access)
-
-    def delete_watchpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
-        """Delegate watchpoint deletion to the breakpoint service."""
-
-        return self._breakpoints.delete_watchpoint(number)
-
-    def set_catchpoint(
-        self,
-        kind: CatchpointType,
-        *,
-        argument: str | None = None,
-        temporary: bool = False,
-    ) -> OperationSuccess[BreakpointInfo] | OperationError:
-        """Delegate catchpoint creation to the breakpoint service."""
-
-        return self._breakpoints.set_catchpoint(
-            kind,
-            argument=argument,
-            temporary=temporary,
-        )
-
-    def list_breakpoints(self) -> OperationSuccess[BreakpointListInfo] | OperationError:
-        """Delegate breakpoint listing to the breakpoint service."""
-
-        return self._breakpoints.list_breakpoints()
-
-    def get_breakpoint(self, number: int) -> OperationSuccess[BreakpointInfo] | OperationError:
-        """Delegate breakpoint lookup to the breakpoint service."""
-
-        return self._breakpoints.get_breakpoint(number)
-
-    def delete_breakpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
-        """Delegate breakpoint deletion to the breakpoint service."""
-
-        return self._breakpoints.delete_breakpoint(number)
-
-    def enable_breakpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
-        """Delegate breakpoint enabling to the breakpoint service."""
-
-        return self._breakpoints.enable_breakpoint(number)
-
-    def disable_breakpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
-        """Delegate breakpoint disabling to the breakpoint service."""
-
-        return self._breakpoints.disable_breakpoint(number)
-
-    def update_breakpoint(
-        self,
-        number: int,
-        *,
-        condition: str | None = None,
-        clear_condition: bool = False,
-    ) -> OperationSuccess[BreakpointInfo] | OperationError:
-        """Delegate breakpoint updates to the breakpoint service."""
-
-        return self._breakpoints.update_breakpoint(
-            number,
-            condition=condition,
-            clear_condition=clear_condition,
-        )

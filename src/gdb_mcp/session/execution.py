@@ -26,6 +26,7 @@ from ..domain import (
     WaitForStopInfo,
 )
 from ..transport import (
+    MiClient,
     build_exec_arguments_command,
     extract_mi_result_payload,
     parse_mi_responses,
@@ -70,9 +71,15 @@ def _is_undefined_mi_command(message: str) -> bool:
 class SessionExecutionService:
     """Execution and command-control operations."""
 
-    def __init__(self, runtime: SessionRuntime, command_runner: SessionCommandRunner):
+    def __init__(
+        self,
+        runtime: SessionRuntime,
+        command_runner: SessionCommandRunner,
+        transport: MiClient,
+    ):
         self._runtime = runtime
         self._command_runner = command_runner
+        self._transport = transport
 
     def execute_command(
         self, command: str, timeout_sec: int = DEFAULT_TIMEOUT_SEC
@@ -575,7 +582,7 @@ class SessionExecutionService:
             self._command_runner.handle_dead_transport(message)
             return OperationError(message=message)
 
-        controller = self._runtime.controller
+        controller = self._transport.controller
         if controller is None:
             return OperationError(message="No active GDB session")
 

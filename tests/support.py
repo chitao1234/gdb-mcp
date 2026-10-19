@@ -8,9 +8,12 @@ assertion explicit: they fail with the value that was wrong instead of passing
 
 from __future__ import annotations
 
-from typing import TypeVar
+from typing import TypeVar, cast
 
 from gdb_mcp.domain import OperationError, OperationResult, OperationSuccess
+from gdb_mcp.session.gdb_backend import GdbMiBackend
+from gdb_mcp.session.service import SessionService
+from gdb_mcp.transport.protocols import GdbControllerProtocol
 
 PayloadT = TypeVar("PayloadT")
 
@@ -91,3 +94,22 @@ def unsupported_schema_keys(node: object, path: str = "$") -> list[str]:
         for index, value in enumerate(node):
             hits.extend(unsupported_schema_keys(value, f"{path}[{index}]"))
     return hits
+
+
+def gdb_backend(service: SessionService) -> GdbMiBackend:
+    """Return the GDB backend behind a default session service.
+
+    Tests that patch a command runner or a lifecycle probe are exercising the GDB
+    backend, so they reach it through this helper instead of the service facade.
+    """
+
+    backend = service.backend
+    assert isinstance(backend, GdbMiBackend), type(backend).__name__
+    return backend
+
+
+def attach_controller(service: SessionService, controller: object) -> None:
+    """Attach a controller double, as a started GDB backend would."""
+
+    gdb_backend(service).transport.controller = cast("GdbControllerProtocol", controller)
+    service.runtime.controller = controller

@@ -14,7 +14,9 @@ the same tools and can keep one server per project running in the background.
   `handlers/` dispatch and handlers (`TOOL_SPECS` is the wiring), `serializer.py`
   response envelope, `schema_normalizer.py` schema flattening.
 - `src/gdb_mcp/session/` — `registry.py` session ids and lifecycle, `service.py`
-  facade over collaborators that share one `SessionRuntime`.
+  the tool-facing facade, `backends.py` the `DebuggerBackend` protocol and
+  operation vocabulary, `gdb_backend.py` the GDB/MI implementation over a shared
+  `SessionRuntime`, and the per-area collaborators that backend composes.
 - `src/gdb_mcp/transport/` — the GDB/MI client and externally owned streams.
 - `src/gdb_mcp/client/` — `cli.py`, per-family `specs/`, `runtime.py` transport,
   `daemon.py` per-project background server.

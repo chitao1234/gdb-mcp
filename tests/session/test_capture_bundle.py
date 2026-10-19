@@ -32,6 +32,7 @@ from gdb_mcp.domain.adapters import (
 )
 from gdb_mcp.session.capture import DEFAULT_CAPTURE_MEMORY_MAX_RANGE_BYTES
 from gdb_mcp.session.service import SessionService
+from tests.support import gdb_backend
 
 # The fixtures are the MI-shaped payloads a session produces; the adapters turn
 # them into the records a service hands back.
@@ -111,8 +112,7 @@ def _stub_bundle_sections(
     defaults.update(overrides)
 
     for name, result in defaults.items():
-        owner = session._lifecycle if name == "get_status" else session._inspection
-        monkeypatch.setattr(owner, name, result)
+        monkeypatch.setattr(gdb_backend(session), name, result)
 
 
 class TestCaptureBundle:

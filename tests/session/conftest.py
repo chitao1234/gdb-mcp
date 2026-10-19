@@ -25,6 +25,7 @@ from gdb_mcp.transport.protocols import (
     ControllerIoManagerProtocol,
     GdbProcessProtocol,
 )
+from tests.support import attach_controller, gdb_backend
 
 MiRecordBuilder = Callable[..., dict[str, object]]
 MiConsoleBuilder = Callable[[str], dict[str, object]]
@@ -55,7 +56,7 @@ def session_service() -> SessionService:
 def running_session(session_service: SessionService) -> SessionService:
     """Create a session with a controller attached and marked running."""
 
-    session_service.runtime.controller = MagicMock()
+    attach_controller(session_service, MagicMock())
     session_service.runtime.mark_ready()
     return session_service
 
@@ -174,7 +175,7 @@ def scripted_running_session(
         *response_batches: list[dict[str, object]]
     ) -> tuple[SessionService, ScriptedController]:
         controller = ScriptedController(list(response_batches))
-        session_service.runtime.controller = controller
+        attach_controller(session_service, controller)
         session_service.runtime.mark_ready()
         return session_service, controller
 
@@ -292,14 +293,14 @@ class StartHarness:
         with contextlib.ExitStack() as stack:
             stack.enter_context(
                 patch.object(
-                    self.service._command_runner,
+                    gdb_backend(self.service)._command_runner,
                     "send_command_and_wait_for_prompt",
                     return_value=response,
                 )
             )
             stack.enter_context(
                 patch.object(
-                    self.service._command_runner,
+                    gdb_backend(self.service)._command_runner,
                     "execute_command_result",
                     side_effect=side_effect,
                 )
@@ -307,7 +308,7 @@ class StartHarness:
             if probe_target_loaded is not None:
                 stack.enter_context(
                     patch.object(
-                        self.service._lifecycle,
+                        gdb_backend(self.service)._lifecycle,
                         "_probe_target_loaded",
                         return_value=probe_target_loaded,
                     )
@@ -315,7 +316,7 @@ class StartHarness:
             if initial_output is not None:
                 stack.enter_context(
                     patch.object(
-                        self.service.runtime.transport,
+                        gdb_backend(self.service).transport,
                         "read_initial_output",
                         return_value=initial_output,
                     )

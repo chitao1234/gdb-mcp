@@ -15,8 +15,6 @@ from ..domain import (
     StopKind,
     stop_kind_from_reason,
 )
-from ..transport import MiClient
-from ..transport.protocols import GdbControllerProtocol
 from .config import SessionConfig
 from .constants import DEFAULT_COMMAND_TRANSCRIPT_LIMIT, DEFAULT_STOP_HISTORY_LIMIT
 from .protocols import LockProtocol, OsModuleProtocol, TimeModuleProtocol
@@ -38,9 +36,11 @@ class InferiorRuntimeState:
 class SessionRuntime:
     """Single source of truth for session lifecycle and transport state."""
 
-    transport: MiClient
     os_module: OsModuleProtocol
     time_module: TimeModuleProtocol
+    # Handle of the attached debugger process or stream, kept by the backend so
+    # lifecycle checks and the published status share one answer.
+    controller: object | None = None
     lifecycle_lock: LockProtocol = field(default_factory=threading.RLock, repr=False)
     workflow_lock: LockProtocol = field(default_factory=threading.RLock, repr=False)
     config: SessionConfig | None = None
@@ -80,20 +80,8 @@ class SessionRuntime:
     _state_lock: LockProtocol = field(default_factory=threading.RLock, repr=False, compare=False)
 
     @property
-    def controller(self) -> GdbControllerProtocol | None:
-        """Expose the transport controller for compatibility and tests."""
-
-        return self.transport.controller
-
-    @controller.setter
-    def controller(self, value: GdbControllerProtocol | None) -> None:
-        """Replace the underlying transport controller."""
-
-        self.transport.controller = value
-
-    @property
     def has_controller(self) -> bool:
-        """Return whether a controller is currently attached."""
+        """Return whether a debugger process or stream is attached."""
 
         return self.controller is not None
 

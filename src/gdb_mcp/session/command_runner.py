@@ -19,7 +19,13 @@ from ..domain import (
 )
 from ..domain.adapters import frame_record
 from ..domain.parsing import as_int, as_mapping, as_optional_mapping, as_text_or_number
-from ..transport import ParsedMiResponse, is_cli_command, parse_mi_responses, wrap_cli_command
+from ..transport import (
+    MiClient,
+    ParsedMiResponse,
+    is_cli_command,
+    parse_mi_responses,
+    wrap_cli_command,
+)
 from .constants import DEFAULT_TIMEOUT_SEC
 from .inferiors import inferior_ids, parse_inferiors_output
 from .runtime import SessionRuntime
@@ -30,22 +36,21 @@ logger = logging.getLogger(__name__)
 class SessionCommandRunner:
     """Own command sending, liveness checks, and result normalization."""
 
-    def __init__(self, runtime: SessionRuntime):
+    def __init__(self, runtime: SessionRuntime, transport: MiClient):
         self._runtime = runtime
+        self._transport = transport
 
     def is_gdb_alive(self) -> bool:
         """Check if the GDB process is still running."""
 
-        return self._runtime.transport.is_alive()
+        return self._transport.is_alive()
 
     def send_command_and_wait_for_prompt(
         self, command: str, timeout_sec: float = DEFAULT_TIMEOUT_SEC
     ) -> dict[str, object]:
         """Send a command through transport and update fatal session state."""
 
-        result = self._runtime.transport.send_command_and_wait_for_prompt(
-            command, timeout_sec=timeout_sec
-        )
+        result = self._transport.send_command_and_wait_for_prompt(command, timeout_sec=timeout_sec)
 
         if result.fatal:
             failure_message = result.error or "GDB transport failed"
@@ -61,7 +66,7 @@ class SessionCommandRunner:
     ) -> dict[str, object]:
         """Interrupt the inferior while reusing transport serialization rules."""
 
-        result = self._runtime.transport.interrupt_and_wait_for_stop(
+        result = self._transport.interrupt_and_wait_for_stop(
             send_interrupt=send_interrupt,
             timeout_sec=timeout_sec,
         )
@@ -75,7 +80,7 @@ class SessionCommandRunner:
     def wait_for_stop(self, timeout_sec: float) -> dict[str, object]:
         """Wait for a stopped notification without sending a debugger command."""
 
-        result = self._runtime.transport.wait_for_stop(timeout_sec=timeout_sec)
+        result = self._transport.wait_for_stop(timeout_sec=timeout_sec)
 
         if result.fatal:
             failure_message = result.error or "GDB transport failed"

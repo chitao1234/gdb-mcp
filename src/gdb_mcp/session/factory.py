@@ -15,6 +15,7 @@ from .constants import (
     INITIAL_COMMAND_TOKEN,
     POLL_TIMEOUT_SEC,
 )
+from .gdb_backend import GdbMiBackend
 from .protocols import OsModuleProtocol, TimeModuleProtocol
 from .service import SessionService
 
@@ -120,9 +121,11 @@ def create_default_session_service() -> SessionService:
     """Create the standard SessionService used by the registry and server."""
 
     return SessionService(
-        controller_factory=cast(GdbControllerFactoryProtocol, create_gdb_controller),
-        os_module=cast(OsModuleProtocol, os),
-        time_module=cast(TimeModuleProtocol, time),
-        initial_command_token=INITIAL_COMMAND_TOKEN,
-        poll_timeout_sec=POLL_TIMEOUT_SEC,
+        backend=GdbMiBackend(
+            controller_factory=cast(GdbControllerFactoryProtocol, create_gdb_controller),
+            os_module=cast(OsModuleProtocol, os),
+            time_module=cast(TimeModuleProtocol, time),
+            initial_command_token=INITIAL_COMMAND_TOKEN,
+            poll_timeout_sec=POLL_TIMEOUT_SEC,
+        )
     )

@@ -56,7 +56,7 @@ def _session_double(**runtime_state: object) -> Mock:
 
     session = Mock()
     session.runtime = Mock(workflow_lock=_workflow_lock(), **runtime_state)
-    session.controller = None
+    session.has_controller = False
     session.is_running = False
     return session
 
@@ -92,7 +92,7 @@ def _failure_session(manager: Mock) -> Mock:
     )
     session.last_stop_event = StopEvent(execution_state="paused", reason="signal-received")
     session.capture_bundle.return_value = OperationSuccess(SessionMessage(message="bundle"))
-    session.controller = object()
+    session.has_controller = True
     session.stop.return_value = OperationSuccess(SessionMessage(message="stopped"))
     manager.create_untracked_session.return_value = session
     return session

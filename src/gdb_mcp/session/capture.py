@@ -22,9 +22,7 @@ from ..domain import (
     result_to_mapping,
 )
 from ..domain.parsing import as_execution_state, as_text
-from .inspection import SessionInspectionService
-from .lifecycle import SessionLifecycleService
-from .runtime import SessionRuntime
+from .backends import DebuggerBackend
 
 DEFAULT_CAPTURE_MEMORY_MAX_RANGE_BYTES = 4 * 1024
 DEFAULT_CAPTURE_MEMORY_MAX_TOTAL_BYTES = 64 * 1024
@@ -51,15 +49,9 @@ class CaptureBundleRequest:
 class SessionCaptureService:
     """Capture structured session state into deterministic on-disk artifacts."""
 
-    def __init__(
-        self,
-        runtime: SessionRuntime,
-        lifecycle: SessionLifecycleService,
-        inspection: SessionInspectionService,
-    ):
-        self._runtime = runtime
-        self._lifecycle = lifecycle
-        self._inspection = inspection
+    def __init__(self, backend: DebuggerBackend):
+        self._backend = backend
+        self._runtime = backend.runtime
 
     def capture_bundle(
         self,
@@ -108,7 +100,7 @@ class SessionCaptureService:
         artifacts: list[CaptureArtifactInfo] = []
         failed_sections: list[str] = []
 
-        status_result = self._lifecycle.get_status()
+        status_result = self._backend.get_status()
         status_payload = self._write_result_artifact(bundle_dir, "session-status", status_result)
         artifacts.append(status_payload.artifact)
         if status_payload.artifact.status == "error":
@@ -154,7 +146,7 @@ class SessionCaptureService:
 
         thread_ids: list[int] = []
         if request.include_threads or request.include_backtraces:
-            threads_result = self._inspection.get_threads()
+            threads_result = self._backend.get_threads()
             threads_capture = self._write_result_artifact(bundle_dir, "threads", threads_result)
             artifacts.append(threads_capture.artifact)
             if threads_capture.artifact.status == "error":
@@ -178,7 +170,7 @@ class SessionCaptureService:
                 failed_sections.append("thread-backtraces")
             else:
                 for thread_id in thread_ids:
-                    backtrace_result = self._inspection.get_backtrace(
+                    backtrace_result = self._backend.get_backtrace(
                         thread_id=thread_id,
                         max_frames=request.max_frames,
                     )
@@ -198,14 +190,14 @@ class SessionCaptureService:
         )
 
         if request.include_frame:
-            frame_result = self._inspection.get_frame_info()
+            frame_result = self._backend.get_frame_info()
             frame_capture = self._write_result_artifact(bundle_dir, "current-frame", frame_result)
             artifacts.append(frame_capture.artifact)
             if frame_capture.artifact.status == "error":
                 failed_sections.append("current-frame")
 
         if request.include_variables:
-            variables_result = self._inspection.get_variables(
+            variables_result = self._backend.get_variables(
                 thread_id=current_thread_id,
                 frame=current_frame,
             )
@@ -219,7 +211,7 @@ class SessionCaptureService:
                 failed_sections.append("current-variables")
 
         if request.include_registers:
-            registers_result = self._inspection.get_registers(
+            registers_result = self._backend.get_registers(
                 thread_id=current_thread_id,
                 frame=self._runtime.current_frame,
             )
@@ -235,7 +227,7 @@ class SessionCaptureService:
         if request.expressions:
             expression_payloads: list[StructuredPayload] = []
             for expression in request.expressions:
-                expression_result = self._inspection.evaluate_expression(
+                expression_result = self._backend.evaluate_expression(
                     expression,
                     thread_id=current_thread_id,
                     frame=self._runtime.current_frame,
@@ -253,7 +245,7 @@ class SessionCaptureService:
         if request.memory_ranges:
             memory_range_payloads: list[StructuredPayload] = []
             for memory_range in request.memory_ranges:
-                memory_result = self._inspection.read_memory(
+                memory_result = self._backend.read_memory(
                     memory_range.address,
                     memory_range.count,
                     offset=memory_range.offset,

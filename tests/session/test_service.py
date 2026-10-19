@@ -7,10 +7,12 @@ import time
 from unittest.mock import MagicMock, patch
 
 from gdb_mcp.domain import OperationError, OperationSuccess, SessionStartInfo
+from gdb_mcp.session.gdb_backend import GdbMiBackend
 from gdb_mcp.session.protocols import OsModuleProtocol
 from gdb_mcp.session.service import SessionService
 from gdb_mcp.session.state import SessionState
 from gdb_mcp.transport.protocols import GdbControllerFactoryProtocol, GdbControllerProtocol
+from tests.support import gdb_backend
 
 from .conftest import PromptResponseBuilder
 
@@ -31,9 +33,11 @@ def _service(
     """Build a SessionService with injected doubles instead of real dependencies."""
 
     return SessionService(
-        controller_factory=controller_factory or MagicMock(),
-        os_module=os_module or _os_module(),
-        time_module=MagicMock(),
+        backend=GdbMiBackend(
+            controller_factory=controller_factory or MagicMock(),
+            os_module=os_module or _os_module(),
+            time_module=MagicMock(),
+        )
     )
 
 
@@ -45,7 +49,7 @@ class TestSessionService:
 
         service = _service()
 
-        assert service.controller is None
+        assert service.has_controller is False
         assert service.state is SessionState.CREATED
         assert service.config is None
         assert service.last_stop_event is None
@@ -63,11 +67,13 @@ class TestSessionService:
 
         with (
             patch.object(
-                service._command_runner,
+                gdb_backend(service)._command_runner,
                 "send_command_and_wait_for_prompt",
                 return_value=prompt_response(),
             ),
-            patch.object(service._lifecycle, "_probe_target_loaded", return_value=True),
+            patch.object(
+                gdb_backend(service)._lifecycle, "_probe_target_loaded", return_value=True
+            ),
         ):
             result = service.start(program="/bin/ls")
 
@@ -94,11 +100,13 @@ class TestSessionService:
 
         with (
             patch.object(
-                service._command_runner,
+                gdb_backend(service)._command_runner,
                 "send_command_and_wait_for_prompt",
                 return_value=prompt_response(),
             ),
-            patch.object(service._lifecycle, "_probe_target_loaded", return_value=True),
+            patch.object(
+                gdb_backend(service)._lifecycle, "_probe_target_loaded", return_value=True
+            ),
         ):
             result = service.start(program="/bin/ls", working_dir="/tmp/work")
 
@@ -137,7 +145,7 @@ class TestSessionService:
             results.append(service.start(program="/bin/ls"))
 
         with patch.object(
-            service._command_runner,
+            gdb_backend(service)._command_runner,
             "send_command_and_wait_for_prompt",
             return_value={
                 "command_responses": [{"type": "result", "message": "done", "token": 1000}],
@@ -147,7 +155,9 @@ class TestSessionService:
         ):
             thread_1 = threading.Thread(target=run_start)
             thread_2 = threading.Thread(target=run_start)
-            with patch.object(service._lifecycle, "_probe_target_loaded", return_value=True):
+            with patch.object(
+                gdb_backend(service)._lifecycle, "_probe_target_loaded", return_value=True
+            ):
                 thread_1.start()
                 thread_2.start()
                 start_barrier.wait()

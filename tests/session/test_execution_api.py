@@ -10,8 +10,7 @@ import pytest
 
 from gdb_mcp.domain import StopEvent, result_to_mapping
 from gdb_mcp.session.service import SessionService
-from gdb_mcp.transport.protocols import GdbControllerProtocol
-from tests.support import dig, mapping_list, text
+from tests.support import attach_controller, dig, gdb_backend, mapping_list, text
 
 from .conftest import (
     MiConsoleBuilder,
@@ -93,7 +92,7 @@ class TestExecutionApi:
         """Continue should return a running success when no stop arrives before timeout."""
 
         with patch.object(
-            running_session._command_runner,
+            gdb_backend(running_session)._command_runner,
             "send_command_and_wait_for_prompt",
             return_value=prompt_response(
                 command_responses=[mi_result(message="running")],
@@ -364,9 +363,9 @@ class TestExecutionApi:
     ) -> None:
         """Waiting on an already paused inferior should return the current stop state."""
 
-        # Any non-None controller marks the session as having one; this path only
-        # reads the already-recorded stop event and never calls the controller.
-        session_service.runtime.controller = cast(GdbControllerProtocol, object())
+        # Any controller marks the session as having one; this path only reads the
+        # already-recorded stop event and never talks to the controller.
+        attach_controller(session_service, MagicMock())
         session_service.runtime.mark_ready()
         session_service.runtime.mark_inferior_paused("breakpoint-hit")
         session_service.runtime.record_stop_event(
@@ -389,7 +388,7 @@ class TestExecutionApi:
 
         running_session.runtime.mark_inferior_running()
         with patch.object(
-            running_session._command_runner,
+            gdb_backend(running_session)._command_runner,
             "wait_for_stop",
             return_value={
                 "command_responses": [
@@ -424,7 +423,7 @@ class TestExecutionApi:
 
         running_session.runtime.mark_inferior_running()
         with patch.object(
-            running_session._command_runner,
+            gdb_backend(running_session)._command_runner,
             "wait_for_stop",
             return_value={"command_responses": [], "timed_out": True},
         ):
@@ -447,7 +446,7 @@ class TestExecutionApi:
         """Interrupt should report success when a stopped notification arrives."""
 
         # running_session installs a MagicMock controller (see conftest).
-        controller = cast(MagicMock, running_session.controller)
+        controller = cast(MagicMock, running_session.runtime.controller)
         controller.gdb_process.pid = 12345
         controller.get_gdb_response.return_value = [
             {"type": "notify", "message": "stopped", "payload": {"reason": "signal-received"}}
@@ -476,7 +475,7 @@ class TestExecutionApi:
         """Interrupt should warn when no stopped notification is received."""
 
         # running_session installs a MagicMock controller (see conftest).
-        controller = cast(MagicMock, running_session.controller)
+        controller = cast(MagicMock, running_session.runtime.controller)
         controller.gdb_process.pid = 12345
         controller.get_gdb_response.return_value = []
 
@@ -517,7 +516,9 @@ class TestExecutionApi:
 
         session, _ = scripted_running_session([mi_result()])
 
-        with patch.object(session._command_runner, "execute_command_result") as mock_execute:
+        with patch.object(
+            gdb_backend(session)._command_runner, "execute_command_result"
+        ) as mock_execute:
             mock_execute.return_value = object()
             session.execute_command("info threads", timeout_sec=9)
 
@@ -557,12 +558,14 @@ class TestExecutionApi:
     ) -> None:
         """Dead GDB children should transition the session out of running state."""
 
-        with patch.object(running_session._command_runner, "is_gdb_alive", return_value=False):
+        with patch.object(
+            gdb_backend(running_session)._command_runner, "is_gdb_alive", return_value=False
+        ):
             result = result_to_mapping(running_session.execute_command("info threads"))
 
         assert result["status"] == "error"
         assert "session is no longer active" in text(result["message"])
-        assert running_session.controller is None
+        assert running_session.has_controller is False
         assert running_session.is_running is False
         assert running_session.target_loaded is False
 
@@ -770,7 +773,7 @@ class TestExecutionApi:
 
         running_session.runtime.mark_inferior_running()
         with patch.object(
-            running_session._command_runner,
+            gdb_backend(running_session)._command_runner,
             "wait_for_stop",
             return_value={
                 "command_responses": [
@@ -916,7 +919,7 @@ class TestCallFunctionApi:
         """Function calls should report timeout failures."""
 
         with patch.object(
-            running_session._command_runner,
+            gdb_backend(running_session)._command_runner,
             "send_command_and_wait_for_prompt",
             return_value=prompt_response(timed_out=True),
         ):
@@ -929,7 +932,7 @@ class TestCallFunctionApi:
         """Function calls should pass through the requested timeout."""
 
         with patch.object(
-            running_session._command_runner, "send_command_and_wait_for_prompt"
+            gdb_backend(running_session)._command_runner, "send_command_and_wait_for_prompt"
         ) as mock_send:
             mock_send.return_value = {
                 "command_responses": [],
@@ -949,7 +952,7 @@ class TestCallFunctionApi:
         """Transport-level call failures should surface their message."""
 
         with patch.object(
-            running_session._command_runner,
+            gdb_backend(running_session)._command_runner,
             "send_command_and_wait_for_prompt",
             return_value=prompt_response(error="No symbol table loaded"),
         ):
@@ -963,9 +966,11 @@ class TestCallFunctionApi:
     ) -> None:
         """Dead GDB children should invalidate later function calls too."""
 
-        with patch.object(running_session._command_runner, "is_gdb_alive", return_value=False):
+        with patch.object(
+            gdb_backend(running_session)._command_runner, "is_gdb_alive", return_value=False
+        ):
             result = result_to_mapping(running_session.call_function("some_func()"))
 
         assert result["status"] == "error"
         assert "session is no longer active" in text(result["message"])
-        assert running_session.controller is None
+        assert running_session.has_controller is False

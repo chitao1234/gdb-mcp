@@ -8,6 +8,7 @@ from gdb_mcp.domain import result_to_mapping
 from gdb_mcp.session.config import SessionConfig
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.state import SessionState
+from tests.support import gdb_backend
 
 from .conftest import PromptResponseBuilder
 
@@ -68,7 +69,7 @@ class TestSessionState:
         session = create_default_session_service()
 
         with patch.object(
-            session._command_runner,
+            gdb_backend(session)._command_runner,
             "send_command_and_wait_for_prompt",
             return_value=prompt_response(),
         ):
@@ -96,7 +97,7 @@ class TestSessionState:
         session = create_default_session_service()
 
         with patch.object(
-            session._command_runner,
+            gdb_backend(session)._command_runner,
             "send_command_and_wait_for_prompt",
             return_value=prompt_response(),
         ):

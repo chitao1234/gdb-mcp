@@ -46,7 +46,7 @@ def _session_double() -> Mock:
         last_failure_message=None,
     )
     session.runtime.inferiors_state_summary.return_value = []
-    session.controller = None
+    session.has_controller = False
     session.is_running = False
     session.state = SessionState.CREATED
     session.config = None
@@ -137,7 +137,7 @@ class TestSessionRegistry:
         manager = SessionRegistry(session_factory=lambda: session)
 
         session_id = _publish_session(manager, session)
-        session.controller = object()
+        session.has_controller = True
         session.stop.return_value = OperationSuccess(SessionMessage(message="stopped"))
 
         result = manager.close_session(session_id)
@@ -153,7 +153,7 @@ class TestSessionRegistry:
         manager = SessionRegistry(session_factory=lambda: session)
 
         session_id = _publish_session(manager, session)
-        session.controller = object()
+        session.has_controller = True
         session.stop.return_value = OperationError(message="stop failed")
 
         result = manager.close_session(session_id)
@@ -169,7 +169,7 @@ class TestSessionRegistry:
         manager = SessionRegistry(session_factory=lambda: session)
 
         session_id = _publish_session(manager, session)
-        session.controller = None
+        session.has_controller = False
         session.is_running = True
 
         result = manager.close_session(session_id)
@@ -301,7 +301,7 @@ class TestSessionRegistry:
         manager = SessionRegistry(session_factory=lambda: session)
 
         session_id = _publish_session(manager, session)
-        session.controller = None
+        session.has_controller = False
         session.is_running = False
         session.state = SessionState.FAILED
 
@@ -378,7 +378,7 @@ class TestSessionRegistry:
         sessions = [_session_double(), _session_double()]
         for session in sessions:
             session.start.return_value = OperationSuccess(SessionStartInfo(message="started"))
-            session.controller = object()
+            session.has_controller = True
             session.stop.return_value = OperationSuccess(SessionMessage(message="stopped"))
 
         manager = SessionRegistry(session_factory=_session_factory_from(sessions))
@@ -404,7 +404,7 @@ class TestSessionRegistry:
         manager = SessionRegistry(session_factory=lambda: session)
 
         session_id = _publish_session(manager, session)
-        session.controller = None
+        session.has_controller = False
         session.is_running = False
         session.state = SessionState.FAILED
 
@@ -429,7 +429,7 @@ class TestSessionRegistry:
         session = _session_double()
         manager = SessionRegistry(session_factory=lambda: session)
         session_id = _publish_session(manager, session)
-        session.controller = object()
+        session.has_controller = True
         release = threading.Event()
 
         def hang() -> OperationSuccess[SessionMessage]:

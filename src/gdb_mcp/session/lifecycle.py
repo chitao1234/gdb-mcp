@@ -19,6 +19,7 @@ from ..domain import (
 )
 from ..transport import (
     EndpointError,
+    MiClient,
     ParsedMiResponse,
     create_external_controller,
     parse_mi_responses,
@@ -102,9 +103,15 @@ def _environment_validation_error(var_name: str, var_value: str) -> str | None:
 class SessionLifecycleService:
     """Lifecycle orchestration backed by explicit runtime state."""
 
-    def __init__(self, runtime: SessionRuntime, command_runner: SessionCommandRunner):
+    def __init__(
+        self,
+        runtime: SessionRuntime,
+        command_runner: SessionCommandRunner,
+        transport: MiClient,
+    ):
         self._runtime = runtime
         self._command_runner = command_runner
+        self._transport = transport
 
     def start(
         self,
@@ -217,7 +224,8 @@ class SessionLifecycleService:
                         endpoint,
                         time_to_check_for_additional_output_sec=1.0,
                     )
-                    self._runtime.transport.adopt_controller(external_controller)
+                    self._transport.adopt_controller(external_controller)
+                    self._mirror_controller()
                 else:
                     gdb_command = self._build_start_command(
                         gdb_path=gdb_path,
@@ -228,15 +236,14 @@ class SessionLifecycleService:
                         rr_path=self._runtime.os_module.environ.get("RR_PATH", "rr"),
                         gdb_args=gdb_args,
                     )
-                    self._runtime.transport.start(
+                    self._transport.start(
                         command=gdb_command,
                         time_to_check_for_additional_output_sec=1.0,
                         cwd=working_dir,
                     )
+                    self._mirror_controller()
 
-                initial_startup_responses = self._runtime.transport.read_initial_output(
-                    timeout_sec=1.0
-                )
+                initial_startup_responses = self._transport.read_initial_output(timeout_sec=1.0)
 
                 logger.debug("Waiting for GDB initialization to complete...")
                 ready_check = self._command_runner.send_command_and_wait_for_prompt(
@@ -248,9 +255,11 @@ class SessionLifecycleService:
                     logger.error("GDB failed to initialize: %s", error_msg)
                     if self._runtime.has_controller:
                         try:
-                            self._runtime.transport.exit()
+                            self._transport.exit()
                         except Exception as exc:  # pragma: no cover - best effort
                             logger.debug("Ignoring failure while aborting GDB: %s", exc)
+                        finally:
+                            self._mirror_controller()
                     message = f"GDB failed to initialize: {error_msg}"
                     self._runtime.mark_failed(message)
                     return OperationError(
@@ -436,15 +445,16 @@ class SessionLifecycleService:
                 return OperationError(message="No active session")
 
             try:
-                self._runtime.transport.exit()
-                self._runtime.mark_stopped()
-
-                return OperationSuccess(SessionMessage(message="GDB session stopped"))
-
+                self._transport.exit()
             except Exception as exc:
+                self._mirror_controller()
                 logger.error("Failed to stop GDB session: %s", exc)
                 self._runtime.mark_failed(f"Failed to stop GDB session: {exc}")
                 return OperationError(message=str(exc))
+
+            self._mirror_controller()
+            self._runtime.mark_stopped()
+            return OperationSuccess(SessionMessage(message="GDB session stopped"))
 
     def get_status(self) -> OperationSuccess[SessionStatusSnapshot]:
         """Get the current status of the GDB session."""
@@ -474,10 +484,17 @@ class SessionLifecycleService:
 
         if self._runtime.has_controller:
             try:
-                self._runtime.transport.exit()
+                self._transport.exit()
             except Exception as exc:  # pragma: no cover - best effort
                 logger.debug("Ignoring failure while cleaning up a failed start: %s", exc)
+            finally:
+                self._mirror_controller()
         self._runtime.mark_failed(message)
+
+    def _mirror_controller(self) -> None:
+        """Publish the transport's controller on the shared runtime state."""
+
+        self._runtime.controller = self._transport.controller
 
     @staticmethod
     def _build_start_command(

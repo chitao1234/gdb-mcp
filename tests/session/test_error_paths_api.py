@@ -10,7 +10,7 @@ from gdb_mcp.domain import (
     result_to_mapping,
 )
 from gdb_mcp.session.service import SessionService
-from tests.support import dig, text
+from tests.support import dig, gdb_backend, text
 
 from .conftest import CommandResultBuilder, PromptResponseBuilder, StartHarness
 
@@ -35,7 +35,7 @@ class TestSessionErrorPaths:
         """Transport errors during command execution should surface clearly."""
 
         with patch.object(
-            running_session._command_runner,
+            gdb_backend(running_session)._command_runner,
             "send_command_and_wait_for_prompt",
             return_value=prompt_response(error="Timeout"),
         ):
@@ -50,7 +50,7 @@ class TestSessionErrorPaths:
         """MI error result records should not be flattened into success."""
 
         with patch.object(
-            running_session._command_runner,
+            gdb_backend(running_session)._command_runner,
             "send_command_and_wait_for_prompt",
             return_value=prompt_response(
                 command_responses=[
@@ -79,7 +79,9 @@ class TestSessionErrorPaths:
             return command_result(command, result={"result": None})
 
         with patch.object(
-            running_session._command_runner, "execute_command_result", side_effect=mock_execute
+            gdb_backend(running_session)._command_runner,
+            "execute_command_result",
+            side_effect=mock_execute,
         ):
             result = result_to_mapping(running_session.set_breakpoint("main"))
 
@@ -92,7 +94,7 @@ class TestSessionErrorPaths:
         """Fatal transport responses should propagate the fatal flag."""
 
         with patch.object(
-            running_session._command_runner,
+            gdb_backend(running_session)._command_runner,
             "send_command_and_wait_for_prompt",
             return_value=prompt_response(
                 error="GDB internal fatal error: internal-error: assertion failed",
@@ -111,7 +113,7 @@ class TestSessionErrorPaths:
         """The alternate fatal-error message format should also propagate fatality."""
 
         with patch.object(
-            running_session._command_runner,
+            gdb_backend(running_session)._command_runner,
             "send_command_and_wait_for_prompt",
             return_value=prompt_response(
                 error=(
@@ -145,4 +147,4 @@ class TestSessionErrorPaths:
         assert result["status"] == "error"
         assert "failed to initialize" in text(result["message"]).lower()
         assert result.get("fatal") is True
-        assert start_session.service.controller is None
+        assert start_session.service.has_controller is False

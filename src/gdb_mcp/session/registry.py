@@ -219,7 +219,7 @@ class SessionRegistry:
         if session is None:
             return self._unknown_session_error(session_id)
 
-        if session.controller is None:
+        if not session.has_controller:
             if session.is_running:
                 with self._lock:
                     self._closing_sessions.discard(session_id)
@@ -279,7 +279,7 @@ class SessionRegistry:
     ) -> OperationSuccess[SessionMessage] | OperationError:
         """Stop one session with a timeout so a hung GDB cannot block shutdown."""
 
-        if session.controller is None:
+        if not session.has_controller:
             return OperationSuccess(SessionMessage(message="Session removed"))
 
         outcome: list[OperationSuccess[SessionMessage] | OperationError] = []

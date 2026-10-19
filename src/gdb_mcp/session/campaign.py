@@ -394,7 +394,7 @@ class RunUntilFailureService:
     def _cleanup_session(session: SessionService) -> None:
         """Best-effort cleanup for one temporary session."""
 
-        if session.controller is None:
+        if not session.has_controller:
             return
         with session_workflow_context(session):
             try:
