@@ -48,6 +48,10 @@ debugger is behind the session:
 - `times` (breakpoints) is an integer hit count; GDB reports a string
 - `level` (frames) is an integer; GDB reports a string
 - `number` (registers) is an integer index; GDB reports a string
+- `is_current` (source lines, disassembly instructions, inferiors) is a boolean;
+  it is derived by this server rather than reported by the debugger, so a line,
+  instruction, or inferior that is not the current one says `false` instead of
+  omitting the field
 - `stop_kind` accompanies every `stop_reason` (and `final_stop_kind` every
   `final_stop_reason`) with the canonical meaning: `breakpoint`, `watchpoint`,
   `step`, `signal`, `exception`, `exit`, `entry`, `pause`, or `unknown`. The

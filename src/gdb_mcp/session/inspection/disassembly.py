@@ -357,8 +357,9 @@ class InspectionDisassembly:
             record["fullname"] = fullname
         if line is not None:
             record["line"] = line
-        if current_address is not None and self._addresses_equal(address, current_address):
-            record["is_current"] = True
+        record["is_current"] = current_address is not None and self._addresses_equal(
+            address, current_address
+        )
         return DisassemblyInstructionRecord.from_payload(record)
 
     @staticmethod

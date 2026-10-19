@@ -110,7 +110,7 @@ class SourceLineRecord(RecordModel):
 
     line_number: int | None = None
     text: str | None = None
-    is_current: bool | None = None
+    is_current: bool = False
 
 
 class DisassemblyInstructionRecord(RecordModel):
@@ -124,7 +124,7 @@ class DisassemblyInstructionRecord(RecordModel):
     file: str | None = None
     fullname: str | None = None
     line: int | None = None
-    is_current: bool | None = None
+    is_current: bool = False
 
 
 class InferiorRecord(RecordModel):
