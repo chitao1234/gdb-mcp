@@ -21,10 +21,10 @@ def build_validation_error(
 ) -> OperationError:
     """Translate one Pydantic failure into an actionable ``validation_error``.
 
-    Error locations inside discriminated unions contain the chosen tag (for
-    example ``('create', 'breakpoint', 'code', 'location')``). The published
-    flattened schema is used to strip those tags so clients see stable
-    property paths such as ``breakpoint.location``.
+    Error locations inside tagged unions contain the chosen tag (for example
+    ``('create', 'breakpoint', 'code', 'location')``). The published schema is
+    used to strip those tags so clients see stable property paths such as
+    ``breakpoint.location``.
     """
 
     schema: object = public_input_schema(model) if model is not None else {}
@@ -56,26 +56,30 @@ def _clean_location(
 ) -> tuple[list[str], list[tuple[tuple[str, ...], str, str]]]:
     """Return the public property path plus union tags dropped on the way."""
 
+    root = _as_mapping(schema)
     path: list[str] = []
     tags: list[tuple[tuple[str, ...], str, str]] = []
-    node = schema
+    node: Mapping[str, object] = root
 
     for segment in loc:
         if isinstance(segment, int):
             if path:
                 path[-1] = f"{path[-1]}[{segment}]"
-            node = node.get("items", {}) if isinstance(node, dict) else {}
+            node = _deref(root, node.get("items"))
             continue
         if not isinstance(segment, str):
             continue
-        properties = node.get("properties") if isinstance(node, dict) else None
-        if isinstance(properties, dict) and segment in properties:
+        node = _deref(root, node)
+        properties = node.get("properties")
+        if isinstance(properties, Mapping) and segment in properties:
             path.append(segment)
-            node = properties[segment]
+            node = _as_mapping(properties[segment])
             continue
-        tag_property = _matching_tag_property(node, segment)
-        if tag_property is not None:
+        tag = _matching_tag(root, node, segment)
+        if tag is not None:
+            tag_property, alternative = tag
             tags.append((tuple(path), tag_property, segment))
+            node = alternative
             continue
         path.append(segment)
         node = {}
@@ -83,20 +87,48 @@ def _clean_location(
     return path, tags
 
 
-def _matching_tag_property(node: object, segment: str) -> str | None:
-    """Return the discriminator property whose enum contains this loc segment."""
+def _as_mapping(value: object) -> Mapping[str, object]:
+    """Return a schema node as a mapping, or an empty one."""
 
-    if not isinstance(node, dict):
+    return value if isinstance(value, Mapping) else {}
+
+
+def _deref(root: Mapping[str, object], node: object) -> Mapping[str, object]:
+    """Follow one ``$ref`` inside the schema document."""
+
+    current = _as_mapping(node)
+    ref = current.get("$ref")
+    if isinstance(ref, str):
+        defs = root.get("$defs")
+        if isinstance(defs, Mapping):
+            target = defs.get(ref.rsplit("/", 1)[-1])
+            if isinstance(target, Mapping):
+                return target
+    return current
+
+
+def _matching_tag(
+    root: Mapping[str, object],
+    node: Mapping[str, object],
+    segment: str,
+) -> tuple[str, Mapping[str, object]] | None:
+    """Return the tag property and the alternative one loc segment selects."""
+
+    alternatives = node.get("anyOf")
+    if not isinstance(alternatives, list):
         return None
-    properties = node.get("properties")
-    if not isinstance(properties, dict):
-        return None
-    for name in _TAG_PROPERTY_NAMES:
-        prop = properties.get(name)
-        if isinstance(prop, dict):
+    for alternative in alternatives:
+        resolved = _deref(root, alternative)
+        for name in _TAG_PROPERTY_NAMES:
+            properties = resolved.get("properties")
+            if not isinstance(properties, Mapping):
+                continue
+            prop = properties.get(name)
+            if not isinstance(prop, Mapping):
+                continue
             enum = prop.get("enum")
             if isinstance(enum, list) and segment in enum:
-                return name
+                return name, resolved
     return None
 
 

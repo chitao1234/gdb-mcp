@@ -73,3 +73,21 @@ def failed(result: OperationResult[object]) -> OperationError:
 
     assert isinstance(result, OperationError), result
     return result
+
+
+_UNSUPPORTED_SCHEMA_KEYS = ("oneOf", "allOf", "discriminator")
+
+
+def unsupported_schema_keys(node: object, path: str = "$") -> list[str]:
+    """Return every JSON-Schema construct a published schema may not contain."""
+
+    hits: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in _UNSUPPORTED_SCHEMA_KEYS:
+                hits.append(f"{path}.{key}")
+            hits.extend(unsupported_schema_keys(value, f"{path}.{key}"))
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            hits.extend(unsupported_schema_keys(value, f"{path}[{index}]"))
+    return hits

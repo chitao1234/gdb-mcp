@@ -29,10 +29,9 @@ the same tools and can keep one server per project running in the background.
   `OperationSuccess` / `OperationError`.
 - Never duplicate a tool name or action literal; import it from `contracts.py`.
   `tests/mcp/test_contracts.py` asserts the registries agree.
-- Published schemas are combinator-free by policy: no `oneOf`, `anyOf`, `$ref`,
-  `$defs`, or `discriminator`. Flattening must preserve semantics, so per-variant
-  requirements become `Conditional requirements:` text and per-discriminator
-  fields become `Accepted fields depend on ...:` notes.
+- Published schemas may use `anyOf`, `$ref`, and `$defs`, but not `oneOf`,
+  `allOf`, or `discriminator`. Union alternatives stay explicit, so each one
+  states its own `required` fields; `const` is spelled as a single-value `enum`.
 - Every result carries the same envelope both as `structuredContent` and as text
   in `content[0].text`, with `isError` taken from the result type.
 - Errors keep `status`, `code`, `message`; validation errors add

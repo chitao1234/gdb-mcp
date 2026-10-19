@@ -38,6 +38,8 @@ Set `GDB_MCP_SERVER_URL` to avoid repeating `--server-url`. `--payload-json '<js
 
 Every tool result carries the same payload twice: as `structuredContent` (structured tool output) and as serialized JSON in `content[0].text` (for clients that only read text). Both are always the envelope described below.
 
+`status` is `success` for a completed call, `warning` for a call that completed but could not confirm its effect (an interrupt with no stop notification), and `error` for a failure.
+
 ### Canonical Payload Fields
 
 Records keep whatever fields the debugger reported and add a small set that is
@@ -148,8 +150,8 @@ Every session-scoped tool takes a `session_id` returned by `gdb_session_start`.
 
 ### Published Tool Schemas
 
-Published tool input schemas are flattened for broad MCP client compatibility: they contain no `oneOf`, `anyOf`, `allOf`, `$ref`, or `$defs` constructs.
-Each action-scoped payload is advertised as one object whose discriminator (`action`, `kind`) is an `enum` of the accepted values, requirements that only apply to some values are spelled out in the schema description under `Conditional requirements:`, and a payload whose accepted fields differ per value lists them under `Accepted fields depend on <discriminator>:`.
+Published schemas may use `anyOf`, `$ref`, and `$defs`, but never `oneOf`, `allOf`, or OpenAPI's `discriminator`.
+A tagged union keeps one alternative per value, so each alternative states its own `required` fields instead of being merged into one object whose conditional rules would have to be described in prose; `const` is spelled as a single-value `enum`.
 Requests are validated against the typed request models rather than by re-validating the published schema, so the schema stays a descriptive client contract while the models remain authoritative.
 High-complexity tools also publish request `examples` inside their `inputSchema`.
 
