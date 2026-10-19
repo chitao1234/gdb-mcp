@@ -695,7 +695,7 @@ class TestStructuredCodeInspectionApi:
                     }
                 )
             ],
-            [mi_result({"register-names": ["rax", "xmm0"]})],
+            [mi_result({"register-names": ["rax"] + [""] * 16 + ["xmm0"]})],
         )
 
         result = result_to_mapping(session.get_registers(include_vector_registers=False))
@@ -704,7 +704,108 @@ class TestStructuredCodeInspectionApi:
         assert len(sequence(result["registers"])) == 1
         assert mapping_list(result["registers"])[0]["number"] == "0"
         written = controller.decoded_writes
-        assert written[1].endswith("-data-list-register-names 0 17\n")
+        assert written[1].endswith("-data-list-register-names\n")
+
+    def test_get_registers_keeps_riscv_integer_s_registers(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
+        """RISC-V integer s0 must survive vector filtering while v0 is removed."""
+
+        session, _ = scripted_running_session(
+            [
+                mi_result(
+                    {
+                        "register-values": [
+                            {"number": "5", "value": "0x1"},
+                            {"number": "6", "value": "0x2"},
+                            {"number": "7", "value": "0x3"},
+                        ]
+                    }
+                )
+            ],
+            [
+                mi_result(
+                    {
+                        "register-names": [
+                            "zero",
+                            "ra",
+                            "sp",
+                            "gp",
+                            "tp",
+                            "a0",
+                            "s0",
+                            "v0",
+                        ]
+                    }
+                )
+            ],
+        )
+
+        result = result_to_mapping(session.get_registers(include_vector_registers=False))
+
+        assert result["status"] == "success"
+        assert [record["number"] for record in mapping_list(result["registers"])] == ["5", "6"]
+
+    def test_get_registers_keeps_mips_general_registers(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
+        """MIPS v0/s0 are integer registers and must survive vector filtering."""
+
+        session, _ = scripted_running_session(
+            [
+                mi_result(
+                    {
+                        "register-values": [
+                            {"number": "2", "value": "0x1"},
+                            {"number": "4", "value": "0x2"},
+                            {"number": "7", "value": "0x3"},
+                        ]
+                    }
+                )
+            ],
+            [
+                mi_result(
+                    {
+                        "register-names": [
+                            "zero",
+                            "at",
+                            "v0",
+                            "v1",
+                            "s0",
+                            "lo",
+                            "hi",
+                            "f0",
+                        ]
+                    }
+                )
+            ],
+        )
+
+        result = result_to_mapping(session.get_registers(include_vector_registers=False))
+
+        assert result["status"] == "success"
+        assert len(sequence(result["registers"])) == 3
+
+    def test_get_registers_explicit_names_bypass_vector_filter(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
+        """An explicitly requested register is returned even when it is a vector register."""
+
+        session, _ = scripted_running_session(
+            [mi_result({"register-names": ["rax", "xmm0"]})],
+            [mi_result({"register-values": [{"number": "1", "value": "0x1"}]})],
+        )
+
+        result = result_to_mapping(
+            session.get_registers(
+                register_names=["xmm0"],
+                include_vector_registers=False,
+            )
+        )
+
+        assert result["status"] == "success"
+        assert len(sequence(result["registers"])) == 1
+        assert mapping_list(result["registers"])[0]["number"] == "1"
 
     def test_get_registers_applies_max_registers_limit(
         self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder

@@ -19,9 +19,11 @@ from ...transport import (
 )
 from ..constants import DEFAULT_TIMEOUT_SEC
 from ..result_utils import command_result_payload
-from .base import (
-    _VECTOR_REGISTER_NAME_RE,
-    InspectionContext,
+from .base import InspectionContext
+from .register_classes import (
+    RegisterFamily,
+    guess_register_family,
+    is_vector_register,
 )
 
 
@@ -82,6 +84,7 @@ class InspectionVariables:
         value_format: Literal["hex", "natural"] = "hex",
     ) -> OperationSuccess[RegistersInfo] | OperationError:
         """Get register values for current frame."""
+        explicit_selector = bool(register_numbers or register_names)
         selection = (
             self._context.capture_selection()
             if thread_id is not None or frame is not None
@@ -132,19 +135,20 @@ class InspectionVariables:
         )
         filtered_registers = payload.registers
 
-        if not include_vector_registers:
-            name_map_result = self._load_register_name_map(filtered_registers)
-            if isinstance(name_map_result, OperationError):
+        if not include_vector_registers and not explicit_selector:
+            register_names_result = self._load_all_register_names()
+            if isinstance(register_names_result, OperationError):
                 if selection is not None:
                     restore_error = self._context.restore_selection_if_changed(
                         selection, selection_changed
                     )
                     if restore_error is not None:
                         return restore_error
-                return name_map_result
+                return register_names_result
             filtered_registers = self._filter_vector_registers(
                 filtered_registers,
-                name_map=name_map_result,
+                register_names=register_names_result,
+                family=guess_register_family(register_names_result),
             )
 
         if max_registers is not None:
@@ -200,6 +204,20 @@ class InspectionVariables:
     def _register_name_to_number_index(self) -> dict[str, int] | OperationError:
         """Build a name-to-number index from `-data-list-register-names` output."""
 
+        names_result = self._load_all_register_names()
+        if isinstance(names_result, OperationError):
+            return names_result
+
+        index: dict[str, int] = {}
+        for number, name in enumerate(names_result):
+            if not name:
+                continue
+            index[name] = number
+        return index
+
+    def _load_all_register_names(self) -> list[str] | OperationError:
+        """Load every register name, indexed by register number."""
+
         result = self._command_runner.execute_command_result(
             "-data-list-register-names",
             timeout_sec=DEFAULT_TIMEOUT_SEC,
@@ -217,73 +235,26 @@ class InspectionVariables:
                 message="GDB did not return register names in the expected format"
             )
 
-        index: dict[str, int] = {}
-        for number, raw_name in enumerate(raw_names):
-            if not isinstance(raw_name, str):
-                continue
-            name = raw_name.strip()
-            if not name:
-                continue
-            index[name] = number
-        return index
-
-    def _load_register_name_map(
-        self,
-        registers: list[RegisterRecord],
-    ) -> dict[int, str] | OperationError:
-        """Load register names for one returned register set."""
-
-        numbers: list[int] = []
-        for register in registers:
-            raw_number = register.get("number")
-            number = as_int(raw_number)
-            if number is None:
-                continue
-            numbers.append(number)
-
-        if not numbers:
-            return {}
-
-        command = "-data-list-register-names " + " ".join(str(number) for number in numbers)
-        result = self._command_runner.execute_command_result(
-            command,
-            timeout_sec=DEFAULT_TIMEOUT_SEC,
-        )
-        if isinstance(result, OperationError):
-            return result
-
-        payload = extract_mi_result_payload(command_result_payload(result))
-        if not isinstance(payload, dict):
-            return OperationError(message="GDB returned malformed register-name payload")
-
-        raw_names = payload.get("register-names")
-        if not isinstance(raw_names, list):
-            return OperationError(
-                message="GDB did not return register names in the expected format"
-            )
-
-        mapping: dict[int, str] = {}
-        for index, raw_name in enumerate(raw_names):
-            if index >= len(numbers):
-                break
-            if isinstance(raw_name, str):
-                mapping[numbers[index]] = raw_name.strip()
-        return mapping
+        return [raw_name.strip() if isinstance(raw_name, str) else "" for raw_name in raw_names]
 
     def _filter_vector_registers(
         self,
         registers: list[RegisterRecord],
         *,
-        name_map: dict[int, str],
+        register_names: list[str],
+        family: RegisterFamily | None,
     ) -> list[RegisterRecord]:
         """Return register records with vector/SIMD names omitted."""
 
         filtered: list[RegisterRecord] = []
         for register in registers:
-            raw_number = register.get("number")
-            number = as_int(raw_number)
-            name = name_map.get(number, "") if number is not None else ""
-            if name and _VECTOR_REGISTER_NAME_RE.match(name):
+            number = as_int(register.get("number"))
+            name = (
+                register_names[number]
+                if number is not None and 0 <= number < len(register_names)
+                else ""
+            )
+            if name and is_vector_register(family, name):
                 continue
             filtered.append(register)
         return filtered

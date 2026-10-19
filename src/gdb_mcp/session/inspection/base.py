@@ -62,12 +62,6 @@ _INFO_LINE_RE = re.compile(
 )
 
 
-_VECTOR_REGISTER_NAME_RE = re.compile(
-    r"^(?:xmm[0-9]+|ymm[0-9]+|zmm[0-9]+|mm[0-9]+|st(?:\([0-9]+\)|[0-9]+)?|k[0-9]+|v[0-9]+|q[0-9]+|d[0-9]+|s[0-9]+)$",
-    re.IGNORECASE,
-)
-
-
 logger = logging.getLogger(__name__)
 
 
