@@ -9,6 +9,7 @@ from pydantic import (
     field_validator,
 )
 
+from ...contracts import DEBUGGER_GDB, DebuggerName
 from .common import (
     SessionId,
     StrictArgsModel,
@@ -79,6 +80,13 @@ def _gdb_args_problems(values: Sequence[str]) -> list[str]:
 
 class StartSessionArgs(StrictArgsModel):
     program: str | None = Field(None, description="Path to executable to debug")
+    debugger: DebuggerName = Field(
+        DEBUGGER_GDB,
+        description=(
+            "Debugger backend to drive. Only 'gdb' is implemented today; further "
+            "backends reuse the same tool surface."
+        ),
+    )
     args: list[str] | str | None = Field(
         None,
         description=(

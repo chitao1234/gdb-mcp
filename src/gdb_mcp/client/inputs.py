@@ -31,6 +31,7 @@ class SessionStartInput:
     """Parsed input for ``gdb_session_start``."""
 
     program: str | None
+    debugger: str | None
     args: tuple[str, ...]
     init_commands: tuple[str, ...]
     env: dict[str, str] | None

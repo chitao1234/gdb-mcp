@@ -114,6 +114,19 @@ class TestStartSessionArgs:
 
         assert "is a bare argument" in str(excinfo.value)
 
+    def test_debugger_defaults_to_gdb(self) -> None:
+        """A startup request drives GDB unless it says otherwise."""
+
+        assert StartSessionArgs(program="/bin/ls").debugger == "gdb"
+
+    def test_debugger_rejects_an_unimplemented_backend(self) -> None:
+        """The published enum only lists backends this server implements."""
+
+        with pytest.raises(ValidationError) as excinfo:
+            StartSessionArgs(program="/bin/ls", debugger="lldb")
+
+        assert "lldb" in str(excinfo.value)
+
     def test_env_dict_validation(self) -> None:
         """A string-to-string env mapping is preserved."""
         args = StartSessionArgs(program="/bin/ls", env={"VAR1": "value1", "VAR2": "value2"})

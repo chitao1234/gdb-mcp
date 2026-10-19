@@ -157,6 +157,7 @@ class SessionService:
     def start(
         self,
         program: str | None = None,
+        debugger: str | None = None,
         args: list[str] | None = None,
         init_commands: list[str] | None = None,
         env: dict[str, str] | None = None,
@@ -171,6 +172,7 @@ class SessionService:
 
         return self._lifecycle.start(
             program=program,
+            debugger=debugger,
             args=args,
             init_commands=init_commands,
             env=env,

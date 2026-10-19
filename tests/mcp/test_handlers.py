@@ -170,6 +170,7 @@ class TestHandlerDispatch:
 
         manager.start_session.assert_called_once_with(
             program="/bin/echo",
+            debugger="gdb",
             args=["--flag", "hello world"],
             init_commands=None,
             env=None,

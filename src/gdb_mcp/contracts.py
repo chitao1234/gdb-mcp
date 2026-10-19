@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal, TypeAlias, get_args
+from typing import Final, Literal, TypeAlias, get_args
 
 TOOL_SESSION_START = "gdb_session_start"
 TOOL_SESSION_QUERY = "gdb_session_query"
@@ -24,6 +24,10 @@ TOOL_RUN_UNTIL_FAILURE = "gdb_run_until_failure"
 TOOL_EXECUTE_COMMAND = "gdb_execute_command"
 TOOL_ATTACH_PROCESS = "gdb_attach_process"
 TOOL_CALL_FUNCTION = "gdb_call_function"
+
+DEBUGGER_GDB: Final[DebuggerName] = "gdb"
+DebuggerName: TypeAlias = Literal["gdb"]
+DEBUGGER_NAMES: tuple[DebuggerName, ...] = get_args(DebuggerName)
 
 ACTION_LIST = "list"
 ActionListName: TypeAlias = Literal["list"]

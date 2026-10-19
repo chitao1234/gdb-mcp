@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 
 from gdb_mcp.contracts import (
+    DEBUGGER_NAMES,
     SESSION_MANAGE_ACTIONS,
     SESSION_QUERY_ACTIONS,
 )
@@ -32,6 +33,11 @@ from .common import (
 
 def _configure_session_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--program")
+    parser.add_argument(
+        "--debugger",
+        choices=list(DEBUGGER_NAMES),
+        help="Debugger backend to drive (only 'gdb' is implemented today)",
+    )
     parser.add_argument("--arg", dest="args", action="append", default=[])
     parser.add_argument("--init-command", dest="init_commands", action="append", default=[])
     parser.add_argument("--env", dest="env", action="append", type=key_value_entry, default=[])

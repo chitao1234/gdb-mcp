@@ -56,6 +56,7 @@ def _handle_start_session(
 
     session_id, result = session_manager.start_session(
         program=args.program,
+        debugger=args.debugger,
         args=normalized_args,
         init_commands=args.init_commands,
         env=args.env,

@@ -6,6 +6,7 @@ import logging
 import re
 from typing import TypeAlias, cast
 
+from ..contracts import DEBUGGER_GDB, DEBUGGER_NAMES
 from ..domain import (
     OperationError,
     OperationSuccess,
@@ -108,6 +109,7 @@ class SessionLifecycleService:
     def start(
         self,
         program: str | None = None,
+        debugger: str | None = None,
         args: list[str] | None = None,
         init_commands: list[str] | None = None,
         env: dict[str, str] | None = None,
@@ -133,6 +135,9 @@ class SessionLifecycleService:
             if gdb_path is None:
                 gdb_path = self._runtime.os_module.environ.get("GDB_PATH", "gdb")
 
+            if debugger is None:
+                debugger = DEBUGGER_GDB
+
             startup_warnings: list[str] = []
             if rr_replay and program:
                 startup_warnings.append(
@@ -142,6 +147,7 @@ class SessionLifecycleService:
 
             config = SessionConfig.from_inputs(
                 program=program,
+                debugger=debugger,
                 args=args,
                 init_commands=init_commands,
                 env=env,
@@ -155,6 +161,12 @@ class SessionLifecycleService:
             self._runtime.begin_startup(config)
 
             try:
+                if debugger not in DEBUGGER_NAMES:
+                    supported = ", ".join(DEBUGGER_NAMES)
+                    message = f"Unsupported debugger {debugger!r}: supported values are {supported}"
+                    self._runtime.mark_failed(message)
+                    return OperationError(message=message, code="unsupported_combination")
+
                 if rr_replay and (args or core):
                     message = (
                         "An rr trace already owns the target; do not also pass args or core "

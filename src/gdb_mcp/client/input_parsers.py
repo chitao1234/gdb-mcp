@@ -80,6 +80,7 @@ def parse_session_start_input(namespace: argparse.Namespace) -> SessionStartInpu
 
     return SessionStartInput(
         program=namespace.program,
+        debugger=namespace.debugger,
         args=tuple(namespace.args),
         init_commands=tuple(namespace.init_commands),
         env=collapse_key_value_entries(namespace.env),

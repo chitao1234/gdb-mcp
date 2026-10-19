@@ -44,6 +44,7 @@ class SessionRuntime:
     config: SessionConfig | None = None
     state: SessionState = SessionState.CREATED
     is_running: bool = False
+    debugger: str = "gdb"
     target_loaded: bool = False
     attached_pid: int | None = None
     execution_state: ExecutionState = "unknown"
@@ -99,6 +100,7 @@ class SessionRuntime:
 
         with self._state_lock:
             self.config = config
+            self.debugger = config.debugger
             self.state = SessionState.STARTING
             self.last_failure_message = None
             self._reset_transient()

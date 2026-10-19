@@ -186,6 +186,24 @@ class TestLifecycleApi:
         assert "rr trace already owns the target" in text(result["message"]).lower()
         assert session_service.state.value == "failed"
 
+    def test_start_session_rejects_unknown_debugger(self, session_service: SessionService) -> None:
+        """An unimplemented backend is rejected before GDB is spawned."""
+
+        result = result_to_mapping(session_service.start(program="/bin/ls", debugger="lldb"))
+
+        assert result["status"] == "error"
+        assert result["code"] == "unsupported_combination"
+        assert "supported values are gdb" in text(result["message"])
+        assert session_service.state.value == "failed"
+
+    def test_start_session_records_the_debugger_backend(self, start_session: StartHarness) -> None:
+        """The session remembers which backend it drives."""
+
+        result = start_session(program="/bin/ls", debugger="gdb")
+
+        assert result["status"] == "success"
+        assert start_session.service.runtime.debugger == "gdb"
+
     @patch.dict(os.environ, {"GDB_PATH": "/custom/path/to/gdb"})
     def test_start_session_with_gdb_path_env_var(self, start_session: StartHarness) -> None:
         """GDB_PATH should be used when gdb_path is not provided."""

@@ -11,6 +11,8 @@ def build_session_start_payload(typed_input: SessionStartInput) -> dict[str, obj
     payload: dict[str, object] = {}
     if typed_input.program is not None:
         payload["program"] = typed_input.program
+    if typed_input.debugger is not None:
+        payload["debugger"] = typed_input.debugger
     if typed_input.args:
         payload["args"] = list(typed_input.args)
     if typed_input.init_commands:

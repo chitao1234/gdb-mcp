@@ -227,6 +227,9 @@ Dedicated startup tool. This is not action-based.
 ### Request Fields
 
 - `program`: optional executable path
+- `debugger`: backend to drive, default `gdb`. Only `gdb` is implemented today; the
+  value is validated against the implemented set, and further backends reuse the same
+  tool surface.
 - `args`: optional argv override as `list[str]` or shell-style string
 - `core`: optional core-dump path
 - `init_commands`: optional list of GDB commands to run after environment setup

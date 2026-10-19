@@ -8,6 +8,7 @@ class SessionConfig:
     """Normalized launch configuration for a GDB session."""
 
     program: str | None = None
+    debugger: str = "gdb"
     args: tuple[str, ...] = ()
     init_commands: tuple[str, ...] = ()
     env: dict[str, str] = field(default_factory=dict)
@@ -23,6 +24,7 @@ class SessionConfig:
         cls,
         *,
         program: str | None = None,
+        debugger: str | None = None,
         args: list[str] | None = None,
         init_commands: list[str] | None = None,
         env: dict[str, str] | None = None,
@@ -37,6 +39,7 @@ class SessionConfig:
 
         return cls(
             program=program,
+            debugger=debugger or "gdb",
             args=tuple(args or ()),
             init_commands=tuple(init_commands or ()),
             env=dict(env or {}),

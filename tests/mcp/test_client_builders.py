@@ -46,6 +46,7 @@ def test_parse_session_start_input_from_namespace() -> None:
 
     namespace = argparse.Namespace(
         program="/bin/true",
+        debugger="gdb",
         args=["--mode", "fast"],
         init_commands=["set pagination off"],
         env=[("TERM", "dumb")],
@@ -58,6 +59,7 @@ def test_parse_session_start_input_from_namespace() -> None:
 
     assert parse_session_start_input(namespace) == SessionStartInput(
         program="/bin/true",
+        debugger="gdb",
         args=("--mode", "fast"),
         init_commands=("set pagination off",),
         env={"TERM": "dumb"},
@@ -74,6 +76,7 @@ def test_build_session_start_payload_from_typed_input() -> None:
 
     typed_input = SessionStartInput(
         program="/bin/true",
+        debugger=None,
         args=("--mode", "fast"),
         init_commands=("set pagination off",),
         env={"TERM": "dumb"},
@@ -193,6 +196,7 @@ def test_build_session_start_payload_includes_gdb_args() -> None:
 
     typed_input = SessionStartInput(
         program="/bin/true",
+        debugger=None,
         args=(),
         init_commands=(),
         env=None,
@@ -209,11 +213,34 @@ def test_build_session_start_payload_includes_gdb_args() -> None:
     }
 
 
+def test_build_session_start_payload_includes_debugger() -> None:
+    """The selected backend is forwarded under ``debugger``."""
+
+    typed_input = SessionStartInput(
+        program="/bin/true",
+        debugger="gdb",
+        args=(),
+        init_commands=(),
+        env=None,
+        core=None,
+        gdb_path=None,
+        gdb_args=(),
+        working_dir=None,
+        rr_replay=None,
+    )
+
+    assert build_session_start_payload(typed_input) == {
+        "program": "/bin/true",
+        "debugger": "gdb",
+    }
+
+
 def test_build_session_start_payload_includes_rr_replay() -> None:
     """A replay trace becomes the only field in the payload."""
 
     typed_input = SessionStartInput(
         program=None,
+        debugger=None,
         args=(),
         init_commands=(),
         env=None,
