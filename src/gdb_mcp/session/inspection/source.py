@@ -20,6 +20,10 @@ from .base import (
 
 _LIST_LINE_RE = re.compile(r"^(?P<line>\d+)\t(?P<text>.*)$")
 
+# `CommandExecutionInfo.output` strips trailing whitespace, so a final blank
+# source line arrives without its tab ("12\t" becomes "12").
+_LIST_TRAILING_BLANK_RE = re.compile(r"^(?P<line>\d+)$")
+
 
 def _parse_list_output(output: str) -> list[tuple[int, str]]:
     """Extract the numbered source lines from GDB's ``list`` output.
@@ -35,6 +39,10 @@ def _parse_list_output(output: str) -> list[tuple[int, str]]:
         match = _LIST_LINE_RE.match(raw_line)
         if match is not None:
             listed.append((int(match.group("line")), match.group("text")))
+            continue
+        blank = _LIST_TRAILING_BLANK_RE.match(raw_line)
+        if blank is not None:
+            listed.append((int(blank.group("line")), ""))
     return listed
 
 

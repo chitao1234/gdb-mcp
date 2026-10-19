@@ -61,6 +61,14 @@ _INFO_LINE_RE = re.compile(
     re.MULTILINE,
 )
 
+# A line that has a line-table entry but no instructions -- an empty source
+# line, for instance -- is reported without an end address.
+_INFO_LINE_NO_CODE_RE = re.compile(
+    r'^Line (?P<line>\d+) of "(?P<file>.+)" is at address '
+    r"(?P<start>0x[0-9a-fA-F]+)(?: <[^>]+>)? but contains no code\.",
+    re.MULTILINE,
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -270,8 +278,18 @@ class CodeLocationResolver:
 
         output = result.value.output or ""
         match = _INFO_LINE_RE.search(output)
-        if match is None:
-            return OperationError(message=f"GDB did not return source information for {command!r}")
+        if match is not None:
+            start_address: str | None = match.group("start")
+            end_address: str | None = match.group("end")
+        else:
+            no_code_match = _INFO_LINE_NO_CODE_RE.search(output)
+            if no_code_match is None:
+                return OperationError(
+                    message=f"GDB did not return source information for {command!r}"
+                )
+            match = no_code_match
+            start_address = match.group("start")
+            end_address = None
 
         line = int(match.group("line"))
         file = match.group("file")
@@ -282,6 +300,6 @@ class CodeLocationResolver:
             file=file,
             fullname=file,
             line=line,
-            start_address=match.group("start"),
-            end_address=match.group("end"),
+            start_address=start_address,
+            end_address=end_address,
         )

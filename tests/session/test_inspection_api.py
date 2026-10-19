@@ -517,6 +517,40 @@ class TestStructuredCodeInspectionApi:
         assert mapping_list(result["lines"])[0]["line_number"] == 1
         assert f"list {source_file}:1,{source_file}:1" in "".join(controller.decoded_writes)
 
+    def test_get_source_context_resolves_info_line_without_code(
+        self,
+        tmp_path: Path,
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_console: MiConsoleBuilder,
+        mi_result: MiRecordBuilder,
+    ) -> None:
+        """`info line` may report a line that holds no code; it still has a location."""
+
+        source_file = tmp_path / "main.c"
+        session, controller = scripted_running_session(
+            [
+                mi_console(
+                    f'Line 4 of "{source_file}" is at address 0x1141 <main> '
+                    "but contains no code.\n"
+                ),
+                mi_result(),
+            ],
+            [
+                mi_console("4\t\n"),
+                mi_result(),
+            ],
+        )
+
+        result = result_to_mapping(
+            session.get_source_context(function="main", context_before=0, context_after=0)
+        )
+
+        assert result["status"] == "success"
+        assert result["file"] == str(source_file)
+        assert result["line"] == 4
+        assert mapping_list(result["lines"])[0]["line_number"] == 4
+        assert f"list {source_file}:4,{source_file}:4" in "".join(controller.decoded_writes)
+
     def test_get_source_context_with_thread_and_frame_restores_selection(
         self,
         scripted_running_session: ScriptedSessionBuilder,
