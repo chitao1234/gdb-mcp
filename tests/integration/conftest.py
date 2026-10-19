@@ -313,11 +313,15 @@ def compile_program_with_core(_tempdirs: list[Path]) -> CompileProgramWithCore:
 
 @pytest.fixture
 def default_init_commands() -> list[str]:
-    """Return the standard init commands used by most integration sessions."""
+    """Return the standard init commands used by most integration sessions.
+
+    Only switches every supported GDB understands belong here: ``set
+    startup-with-shell`` only exists from GDB 8 on, and an unknown init
+    command aborts session start on the older releases this project supports.
+    """
 
     return [
         "set disable-randomization on",
-        "set startup-with-shell off",
     ]
 
 
