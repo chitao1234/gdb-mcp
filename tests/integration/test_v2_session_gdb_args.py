@@ -23,8 +23,9 @@ def test_gdb_args_reach_gdb_before_the_program_loads(
 ) -> None:
     """gdb_args must arrive on GDB's command line and take effect.
 
-    This is the only channel that can configure GDB before it reads the target,
-    which is what auto-load safe-path and search directories need.
+    The server inserts them before the program argument, which is the channel
+    that configures GDB's own search directories and settings. Only options
+    every supported GDB understands belong here.
     """
 
     program = compile_program(TEST_CPP_PROGRAM, filename="gdb_args_program.cpp", compiler="g++")
@@ -35,7 +36,7 @@ def test_gdb_args_reach_gdb_before_the_program_loads(
         program,
         gdb_args=[
             f"--directory={script_dir}",
-            "-iex",
+            "-ex",
             "set print elements 4242",
         ],
     )
