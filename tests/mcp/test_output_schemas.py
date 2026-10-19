@@ -73,6 +73,15 @@ def test_every_output_schema_is_json_serializable(
     assert json.loads(json.dumps(output_schemas)) == output_schemas
 
 
+def test_every_output_schema_describes_an_object(
+    output_schemas: dict[str, dict[str, Any]],
+) -> None:
+    """MCP output schemas are object schemas, so the root has to say so."""
+
+    for tool_name, schema in output_schemas.items():
+        assert schema.get("type") == "object", tool_name
+
+
 def test_every_output_schema_offers_success_and_error_alternatives(
     output_schemas: dict[str, dict[str, Any]],
 ) -> None:

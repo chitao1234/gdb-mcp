@@ -168,6 +168,31 @@ def test_batch_step_items_keep_the_tool_enum(tool_schemas: dict[str, dict[str, A
     assert dig(step, "properties", "tool", "enum") == list(BATCH_STEP_TOOL_NAMES)
 
 
+def test_every_published_input_schema_describes_an_object(
+    tool_schemas: dict[str, dict[str, Any]],
+) -> None:
+    """MCP tool schemas are object schemas, so the root has to say so."""
+
+    for tool_name, schema in tool_schemas.items():
+        assert schema.get("type") == "object", tool_name
+
+
+def test_a_union_root_still_declares_an_object() -> None:
+    """A tagged union of payload objects publishes as one object schema."""
+
+    published = normalize_schema(
+        {
+            "anyOf": [
+                {"type": "object", "properties": {"a": {"type": "string"}}},
+                {"type": "object", "properties": {"b": {"type": "integer"}}},
+            ]
+        }
+    )
+
+    assert published["type"] == "object"
+    assert len(sequence(published["anyOf"])) == 2
+
+
 def test_a_recursive_reference_publishes_its_definitions() -> None:
     """``$ref`` and ``$defs`` are allowed, so a recursive schema needs no rewrite."""
 
@@ -192,4 +217,6 @@ def test_a_recursive_reference_publishes_its_definitions() -> None:
 def test_a_const_becomes_a_single_value_enum() -> None:
     """``const`` is spelled as an enum, which every client understands."""
 
-    assert normalize_schema({"const": "list"}) == {"enum": ["list"]}
+    published = normalize_schema({"type": "object", "properties": {"action": {"const": "list"}}})
+
+    assert mapping(published["properties"])["action"] == {"enum": ["list"]}

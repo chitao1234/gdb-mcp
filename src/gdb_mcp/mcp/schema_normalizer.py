@@ -25,9 +25,18 @@ Schema = dict[str, object]
 
 
 def normalize_schema(schema: Schema) -> Schema:
-    """Return the published form of one generated schema."""
+    """Return the published form of one generated schema.
 
-    return cast(Schema, _normalize_node(schema))
+    MCP requires a tool schema to describe an object, and a tagged union of
+    payload objects does not say that on its own, so the root declares it.
+    """
+
+    published = cast(Schema, _normalize_node(schema))
+    definitions = published.get("$defs")
+    defs = definitions if isinstance(definitions, Mapping) else {}
+    if "type" not in published and _describes_object(published, defs):
+        published["type"] = "object"
+    return published
 
 
 def freeze_schema(value: object) -> object:
@@ -72,6 +81,23 @@ def public_input_schema(
     if examples:
         schema["examples"] = [dict(example) for example in examples]
     return schema
+
+
+def _describes_object(node: object, defs: Mapping[str, object]) -> bool:
+    """Return whether one schema node describes an object, directly or by union."""
+
+    current = node if isinstance(node, Mapping) else {}
+    ref = current.get("$ref")
+    if isinstance(ref, str):
+        return _describes_object(defs.get(ref.rsplit("/", 1)[-1]), defs)
+    if current.get("type") == "object" or "properties" in current:
+        return True
+    alternatives = current.get("anyOf")
+    return (
+        isinstance(alternatives, list)
+        and bool(alternatives)
+        and all(_describes_object(alternative, defs) for alternative in alternatives)
+    )
 
 
 def _normalize_node(node: object) -> object:
