@@ -302,7 +302,10 @@ class TestDapTcpStream:
         port = server.getsockname()[1]
 
         def serve() -> None:
-            connection, _ = server.accept()
+            try:
+                connection, _ = server.accept()
+            except OSError:
+                return
             reader = connection.makefile("rb")
             writer = connection.makefile("wb")
             message = _read_frame(reader)
@@ -316,8 +319,9 @@ class TestDapTcpStream:
             assert client.request("threads")["success"] is True
         finally:
             client.close()
-            server.close()
+        # Join before closing the listener, so the server thread never races with it.
         thread.join(timeout=_HANDSHAKE_TIMEOUT_SEC)
+        server.close()
 
     def test_unreachable_endpoint_raises(self) -> None:
         with pytest.raises(DapTransportError):

@@ -55,8 +55,7 @@ def _handle_breakpoint_query(session: SessionService, args: BreakpointQueryArgs)
                 if kinds and breakpoint_kind not in kinds:
                     continue
 
-                enabled_value = breakpoint_info.get("enabled")
-                is_enabled = enabled_value in {True, "y", "Y", "1"}
+                is_enabled = breakpoint_info.get("enabled") is True
                 if enabled_filter is not None and is_enabled != enabled_filter:
                     continue
 

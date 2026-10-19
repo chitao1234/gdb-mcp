@@ -38,6 +38,18 @@ Set `GDB_MCP_SERVER_URL` to avoid repeating `--server-url`. `--payload-json '<js
 
 Every tool result carries the same payload twice: as `structuredContent` (structured tool output) and as serialized JSON in `content[0].text` (for clients that only read text). Both are always the envelope described below.
 
+### Canonical Payload Fields
+
+Records keep whatever fields the debugger reported and add a small set that is
+canonical across backends, so callers can read them without knowing which
+debugger is behind the session:
+
+- `enabled` (breakpoints) is a boolean; GDB reports `y`/`n`
+- `times` (breakpoints) is an integer hit count; GDB reports a string
+- `level` (frames) is an integer; GDB reports a string
+
+A value that cannot be converted is passed through unchanged rather than dropped.
+
 ### Direct Success Payloads
 
 Tools without an `action` field return direct structured success payloads:

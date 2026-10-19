@@ -941,8 +941,8 @@ class TestHandlerRouting:
         session.list_breakpoints.return_value = OperationSuccess(
             BreakpointListInfo(
                 breakpoints=[
-                    {"number": "1", "type": "breakpoint", "enabled": "y"},
-                    {"number": "2", "type": "watchpoint", "enabled": "n"},
+                    {"number": "1", "type": "breakpoint", "enabled": True},
+                    {"number": "2", "type": "watchpoint", "enabled": False},
                 ],
                 count=2,
             )
