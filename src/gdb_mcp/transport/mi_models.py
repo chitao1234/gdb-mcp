@@ -31,23 +31,40 @@ class ParsedMiResponse:
         return self.result_class == "error"
 
     def error_message(self) -> str | None:
-        """Extract the best available error message from the parsed MI result."""
+        """Return everything GDB reported for a failed command.
+
+        GDB keeps the error itself in the MI ``msg`` and often prints context to
+        the console first (the thread header of ``thread apply``, the address
+        ``x`` tried to read). Both belong to the failure, so the streams come
+        first and the ``msg`` is appended unless it is already part of them.
+        """
 
         if not self.is_error_result():
             return None
 
+        streams = self.output_text()
+        result_message = None
         if isinstance(self.result, Mapping):
             for key in ("msg", "message"):
                 message = self.result.get(key)
                 if isinstance(message, str) and message.strip():
-                    return message.strip()
+                    result_message = message.strip()
+                    break
 
-        for stream in (self.console, self.log, self.output):
-            text = "".join(item for item in stream if isinstance(item, str)).strip()
-            if text:
-                return text
+        if result_message is None:
+            return streams or "GDB returned an error"
+        if not streams or result_message in streams:
+            return streams or result_message
+        return f"{streams}\n{result_message}"
 
-        return "GDB returned an error"
+    def output_text(self) -> str:
+        """Join the console, log, and output streams GDB printed for this command."""
+
+        parts = [
+            "".join(item for item in stream if isinstance(item, str)).strip()
+            for stream in (self.console, self.log, self.output)
+        ]
+        return "\n".join(part for part in parts if part)
 
     def to_dict(self) -> dict[str, object]:
         """Convert into plain builtin containers for higher-level payload assembly."""

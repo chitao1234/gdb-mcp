@@ -132,6 +132,8 @@ Errors are uniform across all tools and are returned as MCP tool results with `i
 
 Validation failures use `code="validation_error"` and populate `details.field_errors`; the top-level `message` lists every failure, including the selecting union tag when one applies, and is not truncated.
 
+A failure that a debugger reported carries **everything that debugger printed**: GDB's console context (`Thread 1 (...):`, the address `x` tried) followed by its MI `msg`, and for an LLDB command the command's whole output including its continuation lines (an expression error prints the offending source line and a caret). A timeout carries whatever arrived before the deadline. `message` is only a short sentence when this server itself rejected the request (no session, no frame, an unsupported option).
+
 Session-scoped failures also carry the session's state in `details` (`session_id`, `execution_state`, `stop_reason`, `exit_code`), so a failure whose message is only `No registers.` still tells the caller that the inferior exited.
 
 Common machine-readable codes include:

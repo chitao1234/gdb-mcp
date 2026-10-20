@@ -620,6 +620,25 @@ class TestLldbParsedCommands:
         assert result["code"] == "error"
         assert "not a valid command" in text(result["message"])
 
+    def test_an_escape_hatch_failure_keeps_the_whole_output(self) -> None:
+        """A failed command's message carries everything it printed, caret lines included."""
+
+        output = (
+            "(lldb) expression -- nosuchvar\n"
+            "error: <user expression 0>:1:1: use of undeclared identifier 'nosuchvar'\n"
+            "    1 | nosuchvar\n"
+            "      | ^\n"
+        )
+        adapter = FakeDapAdapter({"expression -- nosuchvar": output})
+        backend, _ = _started(adapter)
+
+        result = result_to_mapping(backend.execute_command("expression -- nosuchvar"))
+
+        assert result["status"] == "error"
+        assert "use of undeclared identifier" in text(result["message"])
+        assert "1 | nosuchvar" in text(result["message"])
+        assert dig(result, "details", "command") == "expression -- nosuchvar"
+
     def test_an_escape_hatch_command_with_output_stays_successful(self) -> None:
         adapter = FakeDapAdapter(
             {

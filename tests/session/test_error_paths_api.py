@@ -88,6 +88,32 @@ class TestSessionErrorPaths:
         assert result["status"] == "error"
         assert "no result from GDB" in text(result["message"])
 
+    def test_execute_command_keeps_the_output_of_a_failure(
+        self, running_session: SessionService, prompt_response: PromptResponseBuilder
+    ) -> None:
+        """A failed CLI command's console output belongs to the failure message."""
+
+        with patch.object(
+            gdb_backend(running_session)._command_runner,
+            "send_command_and_wait_for_prompt",
+            return_value=prompt_response(
+                command_responses=[
+                    {"type": "console", "payload": 'Thread 1 (Thread 0x1 "probe"):\n'},
+                    {
+                        "type": "result",
+                        "message": "error",
+                        "payload": {"msg": 'No symbol "nosuchvar" in current context.'},
+                        "token": 1000,
+                    },
+                ]
+            ),
+        ):
+            result = result_to_mapping(running_session.execute_command("thread apply all print x"))
+
+        assert result["status"] == "error"
+        assert 'Thread 1 (Thread 0x1 "probe"):' in text(result["message"])
+        assert 'No symbol "nosuchvar"' in text(result["message"])
+
     def test_gdb_internal_fatal_error(
         self, running_session: SessionService, prompt_response: PromptResponseBuilder
     ) -> None:

@@ -68,6 +68,40 @@ class TestMiParser:
         assert mi_payload(payload) is payload
         assert mi_payload(None) is None
 
+    def test_error_message_keeps_the_context_gdb_printed(self) -> None:
+        """GDB puts the error in `msg` and context in the console; both are the message."""
+
+        parsed = parse_mi_responses(
+            [
+                {"type": "console", "payload": '\nThread 1 (Thread 0x1 "probe"):\n'},
+                {
+                    "type": "result",
+                    "message": "error",
+                    "payload": {"msg": 'No symbol "nosuchvar" in current context.'},
+                },
+            ]
+        )
+
+        assert parsed.error_message() == (
+            'Thread 1 (Thread 0x1 "probe"):\n' 'No symbol "nosuchvar" in current context.'
+        )
+
+    def test_error_message_does_not_repeat_a_message_it_already_contains(self) -> None:
+        """When GDB printed the message to the console, it is not appended twice."""
+
+        parsed = parse_mi_responses(
+            [
+                {"type": "console", "payload": "Cannot access memory at address 0x1\n"},
+                {
+                    "type": "result",
+                    "message": "error",
+                    "payload": {"msg": "Cannot access memory at address 0x1"},
+                },
+            ]
+        )
+
+        assert parsed.error_message() == "Cannot access memory at address 0x1"
+
     def test_parsed_mi_response_extracts_error_message(self) -> None:
         """MI error results should expose their human-readable message."""
 

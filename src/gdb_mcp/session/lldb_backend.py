@@ -465,7 +465,11 @@ class LldbDapBackend:
     ) -> OperationSuccess[FunctionCallInfo] | OperationError:
         """Evaluate a function call in the debuggee."""
 
-        result = self._run_text_command(function_call, timeout_sec=timeout_sec)
+        result = self._run_text_command(
+            function_call,
+            timeout_sec=timeout_sec,
+            context="function_call",
+        )
         if isinstance(result, OperationError):
             return result
         return OperationSuccess(FunctionCallInfo(function_call=function_call, result=result))
@@ -1718,22 +1722,32 @@ class LldbDapBackend:
         return None
 
     def _run_text_command(
-        self, command: str, *, timeout_sec: int = DEFAULT_TIMEOUT_SEC
+        self,
+        command: str,
+        *,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        context: str = "command",
     ) -> str | OperationError:
-        """Run a command whose only result is text, failing when it produced none.
+        """Run a command whose only result is text, failing when it reported an error.
 
         The adapter answers ``evaluate`` with ``success`` even when the command
-        itself failed, so the text is the only place a failure appears. A command
-        that emitted any result keeps it: LLDB often prints a partial result next
-        to an error line, and the caller can still use that result.
+        itself failed, so the text is the only place a failure appears. LLDB can
+        print several diagnostics and continuation lines for one failure, and a
+        failed command carries no usable result, so any ``error:`` line fails the
+        command. As in the GDB backend, the debugger's own text is the message and
+        the request is kept as identifying context.
         """
 
         output = self._run_command(command, timeout_sec=timeout_sec)
         if isinstance(output, OperationError):
             return output
         errors = _command_errors(output)
-        if errors and not _has_command_data(output):
-            return OperationError(message=errors[0], code="error")
+        if errors:
+            return OperationError(
+                message=_command_text(output),
+                code="error",
+                details={context: command},
+            )
         return output
 
     @staticmethod
@@ -1891,13 +1905,15 @@ def _command_errors(output: str) -> list[str]:
     ]
 
 
-def _has_command_data(output: str) -> bool:
-    """Whether a command result carries anything besides diagnostics and blanks."""
+def _command_text(output: str) -> str:
+    """Return everything a command printed, without the adapter's echo.
 
-    return any(
-        line.strip() and not line.startswith(_COMMAND_DIAGNOSTIC_PREFIXES)
-        for line in _command_lines(output)
-    )
+    A failed LLDB command can carry its diagnostics across several lines (an
+    expression error prints the offending source line and a caret) and can have
+    printed results before it failed, so the whole text is the failure's message.
+    """
+
+    return "\n".join(line for line in _command_lines(output)).strip()
 
 
 def _parse_memory(
