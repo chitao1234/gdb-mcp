@@ -357,8 +357,10 @@ differs is what the backend can do and how a session begins.
 - Memory, disassembly, source windows, and write watchpoints have no request the
   adapter advertises, so they run the LLDB command and parse its text into the
   same structured payloads GDB returns: `memory read -f x` hex dumps, `disassemble`
-  listings (with `-m` source lines; LLDB prints no opcodes, so `opcodes` is
-  `null`), `source list` windows, and `watchpoint set variable`. A memory
+  listings (with `-m` source lines, so each instruction carries the source `line`
+  it belongs to and the stopped one is `is_current`; LLDB prints neither opcodes
+  nor a source path, so `opcodes` and `file`/`fullname` are `null`), `source list`
+  windows, and `watchpoint set variable`. A memory
   `address` must be a pointer-valued expression, which is also what GDB requires.
   Read watchpoints need an address and byte size the tool surface does not carry;
   they answer with `code="unsupported_operation"` and point at the escape hatch.

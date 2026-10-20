@@ -1823,7 +1823,12 @@ _MEMORY_LINE_RE = re.compile(
     r"^\s*(?P<address>0x[0-9a-fA-F]+):\s*(?P<bytes>(?:0x[0-9a-fA-F]{2}\s*)+)$"
 )
 _DISASSEMBLY_HEADER_RE = re.compile(r"^(?P<module>[^`]+)`(?P<function>.+):\s*$")
+# Mixed listings mark the instructions' source line with `**`; the line the stop
+# is on is marked with `->` instead (and the current instruction carries both
+# markers, `-> 0x... <+n>:`). Unprefixed source lines are surrounding context and
+# must not re-attribute the instructions that follow.
 _DISASSEMBLY_SOURCE_RE = re.compile(r"^\*\*\s+(?P<line>\d+)\s*\t(?P<text>.*)$")
+_DISASSEMBLY_CURRENT_SOURCE_RE = re.compile(r"^->\s+(?P<line>\d+)\s*\t(?P<text>.*)$")
 _DISASSEMBLY_INSN_RE = re.compile(
     r"^\s*(?P<current>->\s+)?(?P<address>0x[0-9a-fA-F]+)\s+<\+(?P<offset>\d+)>:\s*(?P<instruction>.*?)\s*$"
 )
@@ -1954,6 +1959,10 @@ def _parse_disassembly(output: str) -> tuple[str | None, list[DisassemblyInstruc
         source = _DISASSEMBLY_SOURCE_RE.match(line)
         if source is not None:
             source_line = int(source.group("line"))
+            continue
+        current_source = _DISASSEMBLY_CURRENT_SOURCE_RE.match(line)
+        if current_source is not None:
+            source_line = int(current_source.group("line"))
             continue
         match = _DISASSEMBLY_INSN_RE.match(line)
         if match is None:

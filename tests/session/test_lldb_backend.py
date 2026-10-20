@@ -517,11 +517,18 @@ _DISASSEMBLY_TEXT = (
     "    0x5555555551a7 <+38>: movl   $0x2, -0x10(%rbp)\n"
 )
 _DISASSEMBLY_MIXED_TEXT = (
-    "(lldb) disassemble -n describe -c 2 -m\n"
+    '(lldb) disassemble -m -n "describe" -c 6\n'
     "\n** 8   \tint describe(struct point p) {\n"
     "\nprobe_c`describe:\n"
-    "    0x555555555181 <+0>: endbr64 \n"
-    "    0x555555555185 <+4>: pushq  %rbp\n"
+    "    0x555555555181 <+0>:  endbr64 \n"
+    "    0x555555555185 <+4>:  pushq  %rbp\n"
+    "\n   6   \tint add(int a, int b) { return a + b; }\n"
+    "   7   \t\n"
+    "** 8   \tint describe(struct point p) {\n"
+    "\n    0x555555555189 <+8>:  subq   $0x30, %rsp\n"
+    "\n-> 9   \t    int nums[3] = {1, 2, 3};\n"
+    "\n->  0x5555555551a0 <+31>: movl   $0x1, -0x14(%rbp)\n"
+    "    0x5555555551a7 <+38>: movl   $0x2, -0x10(%rbp)\n"
 )
 _SOURCE_TEXT = (
     "(lldb) source list -f probe.c -l 8 -c 2\n"
@@ -614,13 +621,22 @@ class TestLldbParsedCommands:
         assert result["end_address"] == "0x5555555551a8"
 
     def test_disassembly_mixed_mode_attaches_the_source_line(self) -> None:
-        adapter = FakeDapAdapter({'disassemble -m -n "describe" -c 2': _DISASSEMBLY_MIXED_TEXT})
+        adapter = FakeDapAdapter({'disassemble -m -n "describe" -c 6': _DISASSEMBLY_MIXED_TEXT})
         backend, _ = _started(adapter)
 
-        result = result_to_mapping(backend.disassemble(function="describe", instruction_count=2))
+        result = result_to_mapping(backend.disassemble(function="describe", instruction_count=6))
 
         instructions = mapping_list(result["instructions"])
-        assert [instruction["line"] for instruction in instructions] == [8, 8]
+        # `**` marks the instructions' source line; `-> N` marks the stop's own line,
+        # and unprefixed context lines must not re-attribute what follows.
+        assert [instruction["line"] for instruction in instructions] == [8, 8, 8, 9, 9]
+        assert [instruction["is_current"] for instruction in instructions] == [
+            False,
+            False,
+            False,
+            True,
+            False,
+        ]
         assert instructions[0]["instruction"] == "endbr64"
 
     def test_source_context_parses_a_window(self) -> None:

@@ -198,7 +198,7 @@ def test_lldb_parses_memory_disassembly_source_and_watchpoints(
                 "action": "disassembly",
                 "query": {
                     "location": {"kind": "function", "function": "describe"},
-                    "instruction_count": 4,
+                    "instruction_count": 16,
                 },
             },
         )
@@ -207,6 +207,11 @@ def test_lldb_parses_memory_disassembly_source_and_watchpoints(
         assert instructions
         assert dig(instructions[0], "address") is not None
         assert dig(instructions[0], "instruction")
+        # Mixed mode interleaves source lines: the stop's own instruction is marked
+        # current and carries the line the debugger is stopped on.
+        current = [instruction for instruction in instructions if instruction.get("is_current")]
+        assert len(current) == 1
+        assert dig(current[0], "line") is not None
 
         source = call_gdb_tool(
             "gdb_inspect_query",
