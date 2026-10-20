@@ -585,8 +585,54 @@ class TestLldbParsedCommands:
         result = result_to_mapping(backend.read_memory("0x1", 8))
 
         assert result["status"] == "error"
-        assert result["code"] == "command_failed"
+        assert result["code"] == "memory_unavailable"
         assert "memory read failed" in text(result["message"])
+
+    def test_a_partial_read_keeps_its_data_and_reports_the_error(self) -> None:
+        command = 'memory read -c 8 -s 1 -f x "0x1000"'
+        text_with_error = (
+            '(lldb) memory read -c 8 -s 1 -f x "0x1000"\n'
+            "0x1000: 0x01 0x00\n"
+            "error: memory read failed for 0x0\n"
+        )
+        adapter = FakeDapAdapter({command: text_with_error})
+        backend, _ = _started(adapter)
+
+        result = result_to_mapping(backend.read_memory("0x1000", 8))
+
+        assert result["status"] == "success"
+        assert result["captured_bytes"] == 2
+        warnings = [str(item) for item in sequence(result["warnings"])]
+        assert "Partial read: captured 2 of 8 bytes" in warnings
+        assert "memory read failed for 0x0" in warnings
+
+    def test_an_escape_hatch_command_that_fails_is_reported(self) -> None:
+        adapter = FakeDapAdapter(
+            {
+                "nosuchcommand": "(lldb) nosuchcommand\nerror: 'nosuchcommand' is not a valid command.\n"
+            }
+        )
+        backend, _ = _started(adapter)
+
+        result = result_to_mapping(backend.execute_command("nosuchcommand"))
+
+        assert result["status"] == "error"
+        assert result["code"] == "error"
+        assert "not a valid command" in text(result["message"])
+
+    def test_an_escape_hatch_command_with_output_stays_successful(self) -> None:
+        adapter = FakeDapAdapter(
+            {
+                "image list": "(lldb) image list\n[  0] abc 0x1000 /bin/probe\n"
+                "warning: something small\n"
+            }
+        )
+        backend, _ = _started(adapter)
+
+        result = result_to_mapping(backend.execute_command("image list"))
+
+        assert result["status"] == "success"
+        assert "/bin/probe" in text(result["output"])
 
     def test_memory_read_applies_the_offset(self) -> None:
         command = 'memory read -c 8 -s 1 -f x "(0x1000) + 4"'
@@ -670,7 +716,7 @@ class TestLldbParsedCommands:
         result = result_to_mapping(backend.get_source_context(function="nosuch"))
 
         assert result["status"] == "error"
-        assert result["code"] == "command_failed"
+        assert result["code"] == "not_found"
         assert "Could not find function" in text(result["message"])
 
     def test_watchpoint_set_parses_the_creation(self) -> None:

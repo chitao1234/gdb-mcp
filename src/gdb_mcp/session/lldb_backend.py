@@ -453,7 +453,7 @@ class LldbDapBackend:
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Run one raw LLDB command through the adapter's REPL."""
 
-        output = self._run_command(command, timeout_sec=timeout_sec)
+        output = self._run_text_command(command, timeout_sec=timeout_sec)
         if isinstance(output, OperationError):
             return output
         return OperationSuccess(
@@ -465,7 +465,7 @@ class LldbDapBackend:
     ) -> OperationSuccess[FunctionCallInfo] | OperationError:
         """Evaluate a function call in the debuggee."""
 
-        result = self._run_command(function_call, timeout_sec=timeout_sec)
+        result = self._run_text_command(function_call, timeout_sec=timeout_sec)
         if isinstance(result, OperationError):
             return result
         return OperationSuccess(FunctionCallInfo(function_call=function_call, result=result))
@@ -935,17 +935,19 @@ class LldbDapBackend:
                 code="unsupported_operation",
             )
 
-        output = self._run_command_checked(
-            f"watchpoint set variable {quote_lldb_argument(expression)}"
+        output = self._run_command(
+            f"watchpoint set variable {quote_lldb_argument(expression)}",
+            timeout_sec=DEFAULT_TIMEOUT_SEC,
         )
         if isinstance(output, OperationError):
             return output
 
         record = _parse_watchpoint(output, expression)
         if record is None:
+            errors = _command_errors(output)
             return OperationError(
-                message=f"lldb did not report a watchpoint for {expression!r}",
-                code="unsupported_operation",
+                message=errors[0] if errors else f"lldb reported no watchpoint for {expression!r}",
+                code="not_found" if errors else "error",
             )
 
         native = record.number or ""
@@ -981,20 +983,21 @@ class LldbDapBackend:
 
         expression = address if offset == 0 else f"({address}) + {offset}"
         command = f"memory read -c {count} -s 1 -f x {quote_lldb_argument(expression)}"
-        output = self._run_command_checked(command)
+        output = self._run_command(command, timeout_sec=DEFAULT_TIMEOUT_SEC)
         if isinstance(output, OperationError):
             return output
 
         parsed = _parse_memory(output, count=count)
+        errors = _command_errors(output)
         if parsed is None:
             return OperationError(
-                message=f"lldb returned no readable memory at {address}",
+                message=errors[0] if errors else f"lldb returned no readable memory at {address}",
                 code="memory_unavailable",
             )
         blocks, captured_bytes = parsed
-        warnings: tuple[str, ...] = ()
+        warnings: list[str] = list(errors)
         if captured_bytes < count:
-            warnings = (f"Partial read: captured {captured_bytes} of {count} bytes",)
+            warnings.insert(0, f"Partial read: captured {captured_bytes} of {count} bytes")
         return OperationSuccess(
             MemoryReadInfo(
                 address=address,
@@ -1004,7 +1007,7 @@ class LldbDapBackend:
                 block_count=len(blocks),
                 captured_bytes=captured_bytes,
             ),
-            warnings=warnings,
+            warnings=tuple(warnings),
         )
 
     def disassemble(
@@ -1033,15 +1036,16 @@ class LldbDapBackend:
             instruction_count=instruction_count,
             mode=mode,
         )
-        output = self._run_command_checked(command)
+        output = self._run_command(command, timeout_sec=DEFAULT_TIMEOUT_SEC)
         if isinstance(output, OperationError):
             return output
 
         function_name, instructions = _parse_disassembly(output)
         if not instructions:
+            errors = _command_errors(output)
             target = function or address or start_address or file or "the current frame"
             return OperationError(
-                message=f"lldb returned no disassembly for {target!r}",
+                message=(errors[0] if errors else f"lldb returned no disassembly for {target!r}"),
                 code="disassembly_unavailable",
             )
 
@@ -1116,7 +1120,7 @@ class LldbDapBackend:
         else:
             command = f"source list -c {count}"
 
-        output = self._run_command_checked(command)
+        output = self._run_command(command, timeout_sec=DEFAULT_TIMEOUT_SEC)
         if isinstance(output, OperationError):
             return output
 
@@ -1626,7 +1630,7 @@ class LldbDapBackend:
                     code="not_found",
                 )
             verb = "enable" if enabled else "disable"
-            output = self._run_command_checked(f"watchpoint {verb} {native}")
+            output = self._run_text_command(f"watchpoint {verb} {native}")
             if isinstance(output, OperationError):
                 return output
             self._breakpoints[number] = record.model_copy(update={"enabled": enabled})
@@ -1704,7 +1708,7 @@ class LldbDapBackend:
         native = self._watchpoint_numbers.get(number)
         if native is None:
             return OperationError(message=f"Watchpoint {number} not found", code="not_found")
-        output = self._run_command_checked(f"watchpoint delete {native}")
+        output = self._run_text_command(f"watchpoint delete {native}")
         if isinstance(output, OperationError):
             return output
         del self._watchpoint_numbers[number]
@@ -1713,19 +1717,23 @@ class LldbDapBackend:
         self._breakpoint_lines.pop(number, None)
         return None
 
-    def _run_command_checked(self, command: str) -> str | OperationError:
-        """Run an LLDB command and turn its first error line into a failure.
+    def _run_text_command(
+        self, command: str, *, timeout_sec: int = DEFAULT_TIMEOUT_SEC
+    ) -> str | OperationError:
+        """Run a command whose only result is text, failing when it produced none.
 
         The adapter answers ``evaluate`` with ``success`` even when the command
-        itself failed, so the text is the only place the failure appears.
+        itself failed, so the text is the only place a failure appears. A command
+        that emitted any result keeps it: LLDB often prints a partial result next
+        to an error line, and the caller can still use that result.
         """
 
-        output = self._run_command(command, timeout_sec=DEFAULT_TIMEOUT_SEC)
+        output = self._run_command(command, timeout_sec=timeout_sec)
         if isinstance(output, OperationError):
             return output
-        error = _first_command_error(output)
-        if error is not None:
-            return OperationError(message=error, code="command_failed")
+        errors = _command_errors(output)
+        if errors and not _has_command_data(output):
+            return OperationError(message=errors[0], code="error")
         return output
 
     @staticmethod
@@ -1859,21 +1867,37 @@ def _is_watchpoint(record: BreakpointRecord) -> bool:
     return "watch" in (record.type or "").lower()
 
 
-def _first_command_error(output: str) -> str | None:
-    """Return the first error line of a command result, when it failed.
+_COMMAND_DIAGNOSTIC_PREFIXES = ("error:", "warning:")
 
-    The REPL reports command failures as text inside a successful DAP response;
-    the first meaningful line is either the error or the data.
+
+def _command_lines(output: str) -> list[str]:
+    """Return a command result's lines without the adapter's echo."""
+
+    return [line for line in output.splitlines() if not _ECHO_RE.match(line)]
+
+
+def _command_errors(output: str) -> list[str]:
+    """Return every failure LLDB reported for one command.
+
+    The REPL reports command failures as ``error: ...`` text inside a successful
+    DAP response, and can print several (one per rejected argument). Warnings are
+    diagnostics rather than failures.
     """
 
-    for line in output.splitlines():
-        if _ECHO_RE.match(line):
-            continue
-        if line.startswith("error:"):
-            return line[len("error:") :].strip()
-        if line.strip():
-            return None
-    return None
+    return [
+        line[len("error:") :].strip()
+        for line in _command_lines(output)
+        if line.startswith("error:")
+    ]
+
+
+def _has_command_data(output: str) -> bool:
+    """Whether a command result carries anything besides diagnostics and blanks."""
+
+    return any(
+        line.strip() and not line.startswith(_COMMAND_DIAGNOSTIC_PREFIXES)
+        for line in _command_lines(output)
+    )
 
 
 def _parse_memory(
