@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Mapping
-from typing import cast
+from typing import Literal, cast
 
 from ..domain import (
     CommandExecutionInfo,
@@ -520,15 +520,35 @@ class SessionCommandRunner:
         frame = as_optional_mapping(payload_mapping.get("frame"))
         signal_name = as_text_or_number(payload_mapping.get("signal-name"))
         signal_meaning = as_text_or_number(payload_mapping.get("signal-meaning"))
+        signal_code = as_int(payload_mapping.get("signal-code"))
+        fault_address = as_text_or_number(payload_mapping.get("fault-address"))
         breakpoint_number = self._extract_breakpoint_number(payload_mapping)
         execution_state: ExecutionState = (
             "exited"
             if stopped_reason in {"exited", "exited-normally", "exited-signalled"}
             else "paused"
         )
+        state_detail: Literal["crashed"] | None = (
+            "crashed"
+            if execution_state == "paused"
+            and signal_name in {"SIGSEGV", "SIGBUS", "SIGILL", "SIGFPE", "SIGABRT"}
+            else None
+        )
+        crash: StructuredPayload | None = None
+        if state_detail == "crashed":
+            compact: dict[str, object] = {}
+            if signal_name is not None:
+                compact["signal_name"] = signal_name
+            if signal_code is not None:
+                compact["code"] = signal_code
+            if fault_address is not None:
+                compact["fault_address"] = fault_address
+            if compact:
+                crash = cast(StructuredPayload, compact)
 
         return StopEvent(
             execution_state=execution_state,
+            state_detail=state_detail,
             reason=stopped_reason,
             stop_kind=stop_kind_from_reason(stopped_reason),
             command=command,
@@ -537,6 +557,9 @@ class SessionCommandRunner:
             frame=frame_record(frame) if frame is not None else None,
             signal_name=signal_name,
             signal_meaning=signal_meaning,
+            signal_code=signal_code,
+            fault_address=fault_address,
+            crash=crash,
             breakpoint_number=breakpoint_number,
             exit_code=exit_code,
             timestamp=self._runtime.time_module.time(),

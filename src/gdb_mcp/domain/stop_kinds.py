@@ -24,6 +24,10 @@ StopKind: TypeAlias = Literal[
     "exit",
     "entry",
     "pause",
+    "fork",
+    "vfork",
+    "exec",
+    "thread_exit",
     "unknown",
 ]
 
@@ -38,6 +42,10 @@ _RULES: tuple[tuple[str, StopKind], ...] = (
     ("stepping", "step"),
     ("function-finished", "step"),
     ("step", "step"),
+    ("thread-exit", "thread_exit"),
+    ("vfork", "vfork"),
+    ("fork", "fork"),
+    ("exec", "exec"),
     # `exited-signalled` is a process that died from a signal, which is an exit
     # rather than the `signal-received` stop where the inferior is still alive.
     ("exit", "exit"),

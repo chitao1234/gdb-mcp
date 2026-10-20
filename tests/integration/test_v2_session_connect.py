@@ -8,7 +8,7 @@ import subprocess
 
 import pytest
 
-from tests.support import dig, integer
+from tests.support import dig, integer, mapping_list
 
 from .conftest import (
     CallGdbTool,
@@ -69,7 +69,9 @@ def test_connect_to_externally_started_gdb_over_pty(
 
         breakpoint = create_breakpoint(call_gdb_tool, session_id, "main")
         assert breakpoint["status"] == "success", breakpoint
-        assert dig(breakpoint, "result", "breakpoint", "func") == "main"
+        assert (
+            mapping_list(dig(breakpoint, "result", "breakpoint", "locations"))[0]["func"] == "main"
+        )
 
         stopped = stop_session(session_id)
         assert stopped["status"] == "success", stopped

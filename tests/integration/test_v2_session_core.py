@@ -74,7 +74,7 @@ def test_breakpoint_query_run_and_status_v2(session_id: int, call_gdb_tool: Call
     create = create_breakpoint(call_gdb_tool, session_id, "main")
     assert create["status"] == "success"
     assert create["action"] == "create"
-    assert "main" in text(dig(create, "result", "breakpoint", "func"))
+    assert "main" in text(mapping_list(dig(create, "result", "breakpoint", "locations"))[0]["func"])
 
     listed = call_gdb_tool(
         "gdb_breakpoint_query",

@@ -61,6 +61,7 @@ from .models import (
     WatchpointAccessType,
 )
 from .records import (
+    BreakpointLocationRecord,
     BreakpointRecord,
     DisassemblyInstructionRecord,
     FrameRecord,
@@ -71,6 +72,7 @@ from .records import (
     SourceLineRecord,
     ThreadRecord,
     VariableRecord,
+    WatchpointDetails,
 )
 from .results import (
     OperationError,
@@ -92,6 +94,7 @@ __all__ = [
     "BatchStepResult",
     "BreakpointInfo",
     "BreakpointListInfo",
+    "BreakpointLocationRecord",
     "BreakpointRecord",
     "CaptureArtifactInfo",
     "CaptureBundleInfo",
@@ -147,6 +150,7 @@ __all__ = [
     "VariablesInfo",
     "WaitForStopInfo",
     "WatchpointAccessType",
+    "WatchpointDetails",
     "backtrace_info_from_payload",
     "breakpoint_list_info_from_payload",
     "breakpoint_record",

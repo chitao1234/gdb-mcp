@@ -37,17 +37,69 @@ class TestBreakpointCanonicalFields:
 
         assert record.enabled is None
         assert record.times is None
-        assert record.to_payload() == {"number": "1"}
+        assert record.to_payload() == {"number": "1", "locations": []}
 
     def test_undeclared_fields_are_kept(self) -> None:
-        """A debugger field this server does not know still reaches the client."""
+        """A payload field the record does not declare survives round-tripping."""
 
-        record = breakpoint_record(
-            {"number": "1", "enabled": "y", "disp": "keep", "thread-groups": ["i1"]}
-        )
+        record = breakpoint_record({"number": "1", "disp": "keep", "thread-groups": ["i1"]})
 
         assert record.to_payload()["disp"] == "keep"
         assert record.to_payload()["thread-groups"] == ["i1"]
+
+    def test_flat_location_fields_become_one_location(self) -> None:
+        record = breakpoint_record(
+            {
+                "number": "2",
+                "type": "breakpoint",
+                "addr": "0x401000",
+                "func": "main",
+                "file": "main.c",
+                "fullname": "/tmp/main.c",
+                "line": "7",
+                "column": "3",
+            }
+        )
+
+        assert "addr" not in record.to_payload()
+        assert "func" not in record.to_payload()
+        assert record.locations[0].func == "main"
+        assert record.locations[0].line == 7
+        assert record.locations[0].column == 3
+        assert record.locations[0].resolved is True
+
+    def test_multi_location_payload_is_published_as_locations(self) -> None:
+        record = breakpoint_record(
+            {
+                "number": "3",
+                "type": "breakpoint",
+                "locations": [
+                    {"addr": "0x401000", "func": "a", "line": "1"},
+                    {"func": "b", "line": "2"},
+                ],
+            }
+        )
+
+        assert [location.func for location in record.locations] == ["a", "b"]
+        assert [location.resolved for location in record.locations] == [True, False]
+
+    def test_watchpoint_details_are_derived_from_gdb_fields(self) -> None:
+        record = breakpoint_record(
+            {
+                "number": "4",
+                "type": "read watchpoint",
+                "addr": "0x7ffffff0",
+                "what": "counter",
+                "size": "4",
+            }
+        )
+
+        assert "what" not in record.to_payload()
+        assert record.watch is not None
+        assert record.watch.access == "read"
+        assert record.watch.address == "0x7ffffff0"
+        assert record.watch.size == 4
+        assert record.watch.spec == "counter"
 
     def test_a_non_numeric_hit_count_is_a_contract_violation(self) -> None:
         """MI promises a number, so anything else is raised instead of hidden."""

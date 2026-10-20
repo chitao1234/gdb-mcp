@@ -88,7 +88,7 @@ class TestBreakpointApi:
 
         assert result["status"] == "success"
         assert "breakpoint" in result
-        assert dig(result, "breakpoint", "func") == "main"
+        assert mapping_list(dig(result, "breakpoint", "locations"))[0]["func"] == "main"
         assert controller.decoded_writes[0].endswith('-break-insert "main"\n')
 
     def test_set_breakpoint_with_condition(
@@ -432,6 +432,7 @@ class TestBreakpointApi:
                 "number": "7",
                 "type": "catchpoint",
                 "catch-type": "fork",
+                "locations": [],
             }
         ]
         written = controller.decoded_writes

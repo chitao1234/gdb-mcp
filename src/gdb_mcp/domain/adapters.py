@@ -65,11 +65,12 @@ def _count(value: object) -> int:
 
 
 def _canonical_breakpoint(payload: Mapping[str, object]) -> BreakpointRecord:
-    """Build a breakpoint record with canonical ``enabled`` and ``times``.
+    """Build a breakpoint record with canonical locations and watchpoint data.
 
-    The published contract promises a boolean and an integer, so the MI strings
-    ("y", "3") are converted here. A value that cannot be parsed is left as it
-    arrived rather than dropped.
+    The published contract replaced the old flat ``addr``/``func``/``file``/
+    ``line`` fields with a ``locations`` list. GDB/MI still reports those fields
+    directly for single-location breakpoints and under ``locations`` for
+    multi-location breakpoints, so both forms are folded into the new shape here.
     """
 
     normalized = dict(payload)
@@ -77,7 +78,78 @@ def _canonical_breakpoint(payload: Mapping[str, object]) -> BreakpointRecord:
         normalized["enabled"] = _flag(normalized["enabled"])
     if "times" in normalized:
         normalized["times"] = _count(normalized["times"])
+
+    location_keys = ("addr", "func", "file", "fullname", "line", "column")
+    direct_location: dict[str, object] = {}
+    for key in location_keys:
+        value = normalized.pop(key, None)
+        if value is not None:
+            direct_location[key] = value
+
+    raw_locations = normalized.pop("locations", None)
+    locations: list[dict[str, object]] = []
+    if isinstance(raw_locations, list) and raw_locations:
+        for item in raw_locations:
+            if not isinstance(item, Mapping):
+                continue
+            location = dict(item.get("bkpt", item))
+            if "line" in location:
+                location["line"] = _optional_count(location["line"])
+            if "column" in location:
+                location["column"] = _optional_count(location["column"])
+            location.setdefault("resolved", _location_is_resolved(location))
+            locations.append(location)
+    elif direct_location:
+        direct_location["line"] = _optional_count(direct_location.get("line"))
+        direct_location["column"] = _optional_count(direct_location.get("column"))
+        direct_location["resolved"] = _location_is_resolved(direct_location)
+        locations.append(direct_location)
+
+    normalized["locations"] = locations
+
+    breakpoint_type = str(normalized.get("type") or "").lower()
+    what = normalized.pop("what", None)
+    if "watch" in breakpoint_type:
+        address = locations[0].get("addr") if locations else None
+        size = _optional_count(normalized.pop("size", None))
+        normalized["watch"] = {
+            "access": _watchpoint_access(breakpoint_type),
+            "address": address,
+            "size": size,
+            "spec": what or normalized.get("original-location"),
+        }
+
     return BreakpointRecord.from_payload(normalized)
+
+
+def _optional_count(value: object) -> int | None:
+    """Read a numeric MI field that may be missing."""
+
+    if value is None:
+        return None
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    text = as_text(value)
+    if text is None or not text.isdigit():
+        return None
+    return int(text)
+
+
+def _location_is_resolved(location: Mapping[str, object]) -> bool:
+    """Whether a breakpoint location points at a real address."""
+
+    address = as_text(location.get("addr"))
+    return bool(address) and address != "<PENDING>"
+
+
+def _watchpoint_access(breakpoint_type: str) -> str:
+    """Map GDB's watchpoint type spelling to the published access mode."""
+
+    if "read" in breakpoint_type:
+        return "read"
+    if "access" in breakpoint_type or "acc" in breakpoint_type:
+        return "access"
+    return "write"
 
 
 def _canonical_frame(payload: Mapping[str, object]) -> FrameRecord:

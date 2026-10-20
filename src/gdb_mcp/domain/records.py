@@ -15,6 +15,7 @@ payload it was built from.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Self
@@ -61,6 +62,29 @@ class ThreadRecord(RecordModel):
     name: str | None = None
     state: str | None = None
     target_id: str | None = Field(None, alias="target-id")
+    stop_reason: str | None = None
+    stop_kind: StopKind | None = None
+
+
+class BreakpointLocationRecord(RecordModel):
+    """One resolved location of a breakpoint."""
+
+    addr: str | None = None
+    func: str | None = None
+    file: str | None = None
+    fullname: str | None = None
+    line: int | None = None
+    column: int | None = None
+    resolved: bool | None = None
+
+
+class WatchpointDetails(RecordModel):
+    """The watchpoint-specific part of a breakpoint record."""
+
+    access: Literal["write", "read", "access"] | None = None
+    address: str | None = None
+    size: int | None = None
+    spec: str | None = None
 
 
 class BreakpointRecord(RecordModel):
@@ -72,10 +96,9 @@ class BreakpointRecord(RecordModel):
     times: int | None = None
     verified: bool | None = None
     condition: str | None = None
-    func: str | None = None
-    file: str | None = None
-    fullname: str | None = None
     original_location: str | None = Field(None, alias="original-location")
+    locations: list[BreakpointLocationRecord] = Field(default_factory=list)
+    watch: WatchpointDetails | None = None
 
 
 class VariableRecord(RecordModel):
@@ -85,6 +108,9 @@ class VariableRecord(RecordModel):
     type: str | None = None
     value: str | None = None
     arg: str | None = None
+    summary: str | None = None
+    address: str | None = None
+    children_count: int | None = None
     variables_reference: int | None = Field(None, alias="variablesReference")
 
 
@@ -110,6 +136,7 @@ class SourceLineRecord(RecordModel):
 
     line_number: int | None = None
     text: str | None = None
+    column: int | None = None
     is_current: bool = False
 
 

@@ -467,6 +467,13 @@ class SessionLifecycleService:
             target_loaded=self._runtime.target_loaded,
             has_controller=self._runtime.has_controller,
             execution_state=self._runtime.execution_state,
+            state_detail=(
+                self._runtime.last_stop_event.state_detail
+                if self._runtime.execution_state == "paused"
+                and self._runtime.last_stop_event is not None
+                and self._runtime.last_stop_event.reason == self._runtime.stop_reason
+                else None
+            ),
             stop_reason=self._runtime.stop_reason,
             stop_kind=self._runtime.stop_kind,
             exit_code=self._runtime.exit_code,

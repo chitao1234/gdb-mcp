@@ -55,6 +55,7 @@ class SessionStatusSnapshot:
     target_loaded: bool
     has_controller: bool
     execution_state: ExecutionState = "unknown"
+    state_detail: Literal["crashed"] | None = None
     stop_reason: str | None = None
     stop_kind: StopKind | None = None
     exit_code: int | None = None
@@ -134,6 +135,7 @@ class StopEvent:
     """Structured description of one inferior stop or exit event."""
 
     execution_state: ExecutionState
+    state_detail: Literal["crashed"] | None = None
     reason: str | None = None
     stop_kind: StopKind | None = None
     command: str | None = None
@@ -142,6 +144,9 @@ class StopEvent:
     frame: FrameRecord | None = None
     signal_name: str | None = None
     signal_meaning: str | None = None
+    signal_code: int | None = None
+    fault_address: str | None = None
+    crash: StructuredPayload | None = None
     breakpoint_number: str | None = None
     exit_code: int | None = None
     timestamp: float | None = None
@@ -496,6 +501,8 @@ class ExpressionValueInfo:
 
     expression: str
     value: object
+    type: str | None = None
+    summary: str | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -520,3 +527,5 @@ class FunctionCallInfo:
 
     function_call: str
     result: str
+    type: str | None = None
+    summary: str | None = None

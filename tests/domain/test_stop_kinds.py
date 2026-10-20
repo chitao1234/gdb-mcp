@@ -23,6 +23,11 @@ class TestStopKindFromReason:
             ("signal-received", "signal"),
             ("exited-normally", "exit"),
             ("exited-signalled", "exit"),
+            ("fork", "fork"),
+            ("vfork", "vfork"),
+            ("vfork-done", "vfork"),
+            ("exec", "exec"),
+            ("thread-exit", "thread_exit"),
             # DAP
             ("breakpoint", "breakpoint"),
             ("data breakpoint", "watchpoint"),
