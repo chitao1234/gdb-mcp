@@ -392,7 +392,8 @@ support the same inspection, breakpoint, and execution tools as local sessions.
 
 - `endpoint` (required): a GDB/MI endpoint or an LLDB remote stub URL
 - `debugger`: `gdb` (default) or `lldb`
-- `program`: executable for an LLDB remote target; ignored by the GDB/MI path
+- `program`: executable for an LLDB remote target; the GDB/MI path rejects it
+  because the external process already owns the target
 - `gdb_path`: LLDB binary/installation path for the LLDB path; ignored by GDB/MI
 - `init_commands`: optional debugger commands to run right after connecting
 

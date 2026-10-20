@@ -188,8 +188,8 @@ class ConnectSessionArgs(StrictArgsModel):
     program: str | None = Field(
         None,
         description=(
-            "Executable to associate with an LLDB remote target. Ignored by the GDB/MI "
-            "endpoint path, which already owns its target."
+            "Executable to associate with an LLDB remote target. The GDB/MI endpoint "
+            "path rejects it because the external process already owns its target."
         ),
     )
     gdb_path: str | None = Field(
