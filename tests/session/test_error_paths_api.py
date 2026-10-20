@@ -91,14 +91,15 @@ class TestSessionErrorPaths:
     def test_execute_command_keeps_the_output_of_a_failure(
         self, running_session: SessionService, prompt_response: PromptResponseBuilder
     ) -> None:
-        """A failed CLI command's console output belongs to the failure message."""
+        """A failed CLI command keeps its console context and its log error."""
 
         with patch.object(
             gdb_backend(running_session)._command_runner,
             "send_command_and_wait_for_prompt",
             return_value=prompt_response(
                 command_responses=[
-                    {"type": "console", "payload": 'Thread 1 (Thread 0x1 "probe"):\n'},
+                    {"type": "console", "payload": '\nThread 1 (Thread 0x1 "probe"):\n'},
+                    {"type": "log", "payload": 'No symbol "nosuchvar" in current context.\n'},
                     {
                         "type": "result",
                         "message": "error",
