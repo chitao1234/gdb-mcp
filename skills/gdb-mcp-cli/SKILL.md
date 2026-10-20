@@ -71,11 +71,19 @@ gdb-mcp-client tool inspect_query --action evaluate --expression "cfg->retries"
 
 Use it for actions with no short command (inferior management, thread/frame selection, breakpoint updates, expression evaluation) and whenever you want the raw tool surface. `--payload-json '<json>'` sends a payload verbatim, validated against the published tool schema; `tool <name> --help` prints ready-to-use examples.
 
-## Connect to an Externally Started gdb
+## Connect to an Externally Started gdb or LLDB Target
 
-Use `connect` when another process already owns gdb and the target. It calls
-`gdb_session_connect`, so gdb-mcp does **not** spawn gdb, and `stop` only
-**detaches** from the external gdb instead of killing it.
+Use `connect` when another process already owns the debugger and the target. It
+calls `gdb_session_connect`, so gdb-mcp does **not** spawn a debugger, and `stop`
+only **detaches** from the external process instead of killing it.
+
+For an LLDB remote stub, pass the LLDB backend and the executable:
+
+```bash
+gdb-mcp-client connect connect://127.0.0.1:12345 --debugger lldb --program ./build/app
+```
+
+For GDB/MI, use the endpoint forms in the next section.
 
 ```bash
 gdb-mcp-client connect tcp://127.0.0.1:4399

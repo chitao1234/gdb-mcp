@@ -62,11 +62,12 @@ When referring to an action-based tool below, use the full form such as `gdb_exe
 
 | Situation | Startup shape | Important notes |
 | --- | --- | --- |
-| Fresh live launch | `gdb_session_start` with `program` and optional `args`, `env`, `working_dir`, `init_commands` | Use when GDB should launch the program |
+| Fresh live launch | `gdb_session_start` with `program` and optional `args`, `env`, `working_dir`, `init_commands` | Use when the debugger should launch the program. Set `debugger="lldb"` for the SB API backend |
 | Attach to existing process | `gdb_session_start` first, then `gdb_attach_process` | Start empty if you only need to attach |
 | Core dump analysis | `gdb_session_start` with `core`, preferably also `program` | Expect startup to leave the target `paused` |
-| gdb already running elsewhere | `gdb_session_connect` with an `endpoint` | gdb-mcp never spawns gdb; stop only detaches |
-| Reverse debugging an rr recording | `gdb_session_start` with `rr_replay` | Record outside gdb-mcp (`rr record ./app`); the trace owns the target, so a `program` is ignored with a warning |
+| GDB already running elsewhere | `gdb_session_connect` with an `endpoint` | gdb-mcp never spawns gdb; stop only detaches |
+| LLDB remote stub | `gdb_session_connect` with `debugger="lldb"`, `endpoint="connect://host:port"`, and `program` | stop only detaches; `args` and `core` are rejected |
+| Reverse debugging an rr recording | `gdb_session_start` with `rr_replay` | GDB only; the trace owns the target |
 
 ### Configure Startup Fields Deliberately
 

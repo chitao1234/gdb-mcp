@@ -56,9 +56,27 @@ debugger is behind the session:
   omitting the field
 - `stop_kind` accompanies every `stop_reason` (and `final_stop_kind` every
   `final_stop_reason`) with the canonical meaning: `breakpoint`, `watchpoint`,
-  `step`, `signal`, `exception`, `exit`, `entry`, `pause`, or `unknown`. The
-  debugger's own `stop_reason` string is kept as-is; `stop_reasons` request
-  filters keep matching that native string
+  `step`, `signal`, `exception`, `exit`, `entry`, `pause`, `fork`, `vfork`,
+  `exec`, `thread_exit`, or `unknown`. The debugger's own `stop_reason` string is
+  kept as-is; `stop_reasons` request filters keep matching that native string
+- `state_detail` is `"crashed"` when a paused inferior stopped on a fatal signal
+  or LLDB reported a crashed process; the execution state itself stays `paused`
+- stop events may add `signal_name`, `signal_meaning`, `signal_code`,
+  `fault_address`, and a compact `crash` object when the backend can obtain
+  siginfo or structured crash information. A fault address of `0x0` is kept when
+  the signal identifies one; the field is not invented for ordinary breaks
+- `source` lines carry an optional `column`; only the current line normally has
+  one, since source files do not record a column for every line
+- `variables` carry `summary`, `address`, and `children_count` when the backend
+  can provide them; aggregate children are still fetched through the debugger's
+  own value model rather than expanded here
+- `breakpoint.locations[]` is the resolved location list. It replaces the old
+  flat `addr`/`func`/`file`/`fullname`/`line` fields; each location carries those
+  fields plus `column` and `resolved`
+- a watchpoint adds `watch` with `access` (`write`, `read`, `access`), `address`,
+  `size`, and `spec`; the old top-level `what` field is gone
+- expression and function-call results add `type` and `summary` alongside their
+  value/result
 
 A field that is not declared is passed through unchanged, so a debugger-specific
 field always reaches the caller. A declared field always carries its declared
@@ -141,8 +159,10 @@ Common machine-readable codes include:
 - `validation_error`, `unsupported_combination` — the request was rejected before any debugger work
 - `invalid_session`, `session_closing` — the session is gone or shutting down
 - `no_registers`, `inferior_not_running`, `inferior_running`, `no_stack_frame`, `memory_unavailable`, `symbol_unavailable`, `no_symbols_loaded`, `value_unavailable`, `command_timeout` — classified GDB failures
+- `not_started`, `unknown_operation`, `protocol_error`, `build_failed` — LLDB
+  bridge/session lifecycle failures
 - `unknown_tool`, `internal_error`, `not_found` — dispatch and lookup failures
-- `error` — fallback when a GDB failure matches no specific classification
+- `error` — fallback when a debugger failure matches no specific classification
 
 ## Shared Request Patterns
 
@@ -242,8 +262,8 @@ In practice, string shorthand is most useful for dedicated tools with empty or d
 
 | Tool | Role |
 | --- | --- |
-| `gdb_session_start` | Start a new GDB session (gdb-mcp spawns gdb) |
-| `gdb_session_connect` | Connect to an externally started GDB/MI endpoint |
+| `gdb_session_start` | Start a new debugger session (gdb-mcp spawns it) |
+| `gdb_session_connect` | Connect to an externally owned GDB/MI stream or LLDB remote stub |
 | `gdb_session_query` | Query session inventory or one live session |
 | `gdb_session_manage` | Mutate session lifecycle |
 | `gdb_inferior_query` | Query inferior inventory or current inferior |
@@ -268,17 +288,21 @@ Dedicated startup tool. This is not action-based.
 ### Request Fields
 
 - `program`: optional executable path
-- `debugger`: backend to drive, default and currently only `gdb` (GDB/MI). The
-  value is validated against the implemented set, and a backend that cannot perform
-  an operation answers with `code="unsupported_operation"`.
+- `debugger`: backend to drive, default `gdb`; supported values are `gdb`
+  (GDB/MI) and `lldb` (native SB API bridge). The value is validated against the
+  implemented set, and a backend that cannot perform an operation answers with
+  `code="unsupported_operation"`.
 - `args`: optional argv override as `list[str]` or shell-style string
 - `core`: optional core-dump path
-- `init_commands`: optional list of GDB commands to run after environment setup
+- `init_commands`: optional list of debugger commands to run after environment setup
 - `env`: optional environment mapping applied before `init_commands`
-- `gdb_path`: optional GDB binary override
-- `gdb_args`: optional extra GDB command-line arguments, inserted before the program
-- `working_dir`: optional working directory for the GDB process
-- `rr_replay`: optional rr trace directory to replay instead of launching a program
+- `gdb_path`: optional GDB binary override; for `debugger="lldb"` it selects an
+  LLDB binary/installation instead
+- `gdb_args`: optional extra GDB command-line arguments, inserted before the program;
+  ignored by the LLDB backend
+- `working_dir`: optional working directory for the debugger process
+- `rr_replay`: optional rr trace directory to replay instead of launching a program;
+  GDB only
 
 `args` and `core` are mutually exclusive. With `rr_replay` the recording already
 owns the target, so the session runs `rr replay --interpreter=mi <trace>` instead
@@ -345,11 +369,13 @@ wrapper such as `rust-gdb` achieves the same by injecting those options.
 
 ## `gdb_session_connect`
 
-Dedicated tool for attaching to a GDB/MI stream that **another process already
-started**. gdb-mcp does not spawn gdb in this mode, and stopping the session
-only detaches: it never terminates the external gdb.
+Dedicated tool for connecting to a target that **another process already owns**.
+The session never spawns a new debugger for this path, and stopping the session
+detaches instead of terminating the external owner.
 
-### Endpoint Forms
+### Backends and Endpoint Forms
+
+With `debugger="gdb"` (the default), `endpoint` is a GDB/MI stream:
 
 | Form | Meaning |
 | --- | --- |
@@ -357,20 +383,31 @@ only detaches: it never terminates the external gdb.
 | `unix:///path/to/socket` | GDB/MI exposed over a Unix domain socket |
 | `pty:///dev/pts/N` | GDB/MI carried by a pty/tty device |
 
+With `debugger="lldb"`, `endpoint` is passed to `SBTarget::ConnectRemote`, so it
+is a remote stub URL such as `connect://host:port`. The optional `program`
+names the executable to associate with the remote target. LLDB remote sessions
+support the same inspection, breakpoint, and execution tools as local sessions.
+
 ### Request Fields
 
-- `endpoint` (required): one of the endpoint forms above
-- `init_commands`: optional GDB commands to run right after connecting
+- `endpoint` (required): a GDB/MI endpoint or an LLDB remote stub URL
+- `debugger`: `gdb` (default) or `lldb`
+- `program`: executable for an LLDB remote target; ignored by the GDB/MI path
+- `gdb_path`: LLDB binary/installation path for the LLDB path; ignored by GDB/MI
+- `init_commands`: optional debugger commands to run right after connecting
 
-`program`, `args`, and `core` are rejected: the external process already owns
-the target.
+For GDB/MI, `program`, `args`, and `core` are rejected because the external
+process already owns the target. LLDB remote accepts `program` but rejects
+`args` and `core` for the same reason.
 
 ### Success Fields
 
 Same shape as `gdb_session_start`, plus `endpoint`. `target_loaded` is probed
-from the connected gdb (via `info files`), so it reflects the external target.
+from the connected debugger, so it reflects the external target.
 
-### Example
+### Examples
+
+GDB/MI:
 
 ```json
 {
@@ -388,6 +425,47 @@ socat TCP-LISTEN:4399,reuseaddr,fork \
 
 Keep `raw,echo=0` on the socat `pty`; a cooked tty rewrites gdb's line endings as
 CRLF, which breaks MI result records and makes the handshake time out.
+
+LLDB remote stub:
+
+```json
+{
+  "debugger": "lldb",
+  "program": "/path/to/app",
+  "endpoint": "connect://127.0.0.1:12345",
+  "gdb_path": "/opt/lldb/19/bin/lldb"
+}
+```
+
+## LLDB Backend
+
+The LLDB backend is compiled from this repository against the LLDB 4.0.1 SB API
+and talks to the selected real `liblldb` at runtime. Newer APIs are isolated in
+optional layers: error-returning core/step operations, recognized arguments,
+siginfo/crash information, watchpoint access/spec, and tagged-address fixup.
+When a layer cannot be loaded, that capability is absent and the baseline path
+is used.
+
+The backend is selected with `debugger="lldb"` and does not need the official
+Python `lldb` package. It never parses LLDB command output; only
+`gdb_execute_command` uses the command interpreter.
+
+Environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `LLDB_LIBRARY` | Path to the selected `liblldb` (or its directory) |
+| `LLDB_PREFIX` / `LLDB_PATH` | LLDB installation prefix |
+| `LLDB_BRIDGE_CXX` | C++ compiler used to build the bridge and layers |
+| `LLDB_BRIDGE_EXECUTABLE` | Use a prebuilt bridge instead of building one |
+| `LLDB_BRIDGE_DIR` | Directory containing a prebuilt bridge and layers |
+| `LLDB_BRIDGE_LAYER_DIR` | Override the layer directory for a prebuilt bridge |
+| `LLDB_BRIDGE_CACHE` | Cache directory for built artifacts |
+
+The bridge must be built with a compiler whose C library is compatible with the
+selected `liblldb`. When `LLDB_BRIDGE_CXX` is unset, the builder tries `c++`,
+`g++`, then `clang++` from `PATH`; set it explicitly when the selected LLDB was
+built against a different runtime.
 
 See the `gdb-mcp-cli` and `debug-with-gdb-mcp` skills for full runbooks.
 
@@ -445,6 +523,10 @@ Create, remove, select, or reconfigure inferiors.
 | `select` | `{"session_id":7,"action":"select","inferior":{"inferior_id":2}}` | `inferior_id`, `is_current`, `display`, `description`, `connection`, `executable`, `message` |
 | `set_follow_fork_mode` | `{"session_id":7,"action":"set_follow_fork_mode","inferior":{"mode":"child"}}` | `mode`, `message` |
 | `set_detach_on_fork` | `{"session_id":7,"action":"set_detach_on_fork","inferior":{"enabled":false}}` | `enabled`, `message` |
+
+The LLDB backend supports `set_follow_fork_mode` from LLDB 14 onward (older
+releases follow the parent only) and answers `set_detach_on_fork` with
+`code="unsupported_operation"`: LLDB has no corresponding setting.
 
 ## `gdb_execution_manage`
 

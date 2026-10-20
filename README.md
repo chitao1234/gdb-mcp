@@ -1,17 +1,20 @@
 # GDB MCP Server
 
 `gdb-mcp-server` gives AI assistants and other MCP clients structured access to
-GDB. It talks to GDB over GDB/MI and answers every call with machine-readable
-state — session status, stop reasons, breakpoints, frames, variables, registers,
-memory — instead of terminal text that a client has to screen-scrape.
+GDB and LLDB. GDB is driven over GDB/MI; LLDB is driven through a native SB API
+bridge, without requiring the official Python `lldb` package. Every call answers
+with machine-readable state — session status, stop reasons, breakpoints, frames,
+variables, registers, memory — instead of terminal text that a client has to
+screen-scrape.
 
 `gdb-mcp-client` is the companion CLI. It drives the same tools from a shell and
 keeps one background server per project, so a debug session survives between
 commands and reads like an ordinary debugger.
 
-- Structured GDB control with machine-readable success and error payloads
+- Structured GDB and LLDB control with machine-readable success and error payloads
 - Several concurrent sessions, addressed explicitly by `session_id`
 - Multi-inferior workflows, including fork-follow controls
+- LLDB remote targets through `gdb_session_connect` with `debugger="lldb"`
 - Read/write split by domain instead of one tool per operation
 - Workflow helpers: locked batches, capture bundles, run-until-failure campaigns
 - Dedicated privileged tools for attaching to processes and calling functions
@@ -24,7 +27,9 @@ commands and reads like an ordinary debugger.
 ## How It Works
 
 GDB/MI is the protocol family IDEs such as VS Code and CLion use to drive GDB.
-This server sits on top of it and adds:
+The LLDB backend instead compiles a small bridge against the stable SB API and
+loads the selected `liblldb` at runtime. Both feed the same domain tools, so
+callers see one contract.
 
 - strict JSON-schema validation for every tool input
 - explicit success/error envelopes for automation clients
@@ -36,7 +41,9 @@ This server sits on top of it and adds:
 - Python 3.10 or newer
 - GDB 7.1 or newer on `PATH` (GDB with Python support is recommended, so
   toolchain pretty-printers can load)
-- Optional: `rr` for reverse debugging, `rust-gdb` or similar wrappers for
+- Optional: LLDB 4.0.1 or newer with headers for the native bridge; a C++17
+  compiler is used to build it on first use
+- Optional: `rr` for reverse debugging (GDB), `rust-gdb` or similar wrappers for
   language-specific pretty-printers
 
 ## Install
@@ -215,6 +222,13 @@ MIT
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `GDB_PATH` | `gdb` | GDB binary to spawn. `gdb_session_start.gdb_path` overrides it per session. |
+| `LLDB_PREFIX` / `LLDB_PATH` | discovered | LLDB installation used by `debugger="lldb"`. |
+| `LLDB_LIBRARY` | discovered | Explicit `liblldb` path or directory for the LLDB backend. |
+| `LLDB_BRIDGE_CXX` | `c++`/`g++`/`clang++` | C++ compiler used to build the LLDB SB API bridge and its layers. |
+| `LLDB_BRIDGE_EXECUTABLE` | unset | Prebuilt LLDB bridge executable. |
+| `LLDB_BRIDGE_DIR` | unset | Directory containing a prebuilt bridge and layers. |
+| `LLDB_BRIDGE_LAYER_DIR` | bridge directory | Override the directory searched for LLDB API layers. |
+| `LLDB_BRIDGE_CACHE` | platform cache dir | Where built LLDB bridge artifacts are cached. |
 | `RR_PATH` | `rr` | `rr` binary used by `rr_replay` sessions. |
 | `GDB_MCP_LOG_LEVEL` | `INFO` | Server log level: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. |
 | `GDB_MCP_AUTH_TOKEN` | unset | Bearer token for the streamable HTTP transport, used by the server and sent by the client. |
