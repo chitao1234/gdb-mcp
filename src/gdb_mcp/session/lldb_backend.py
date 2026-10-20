@@ -117,6 +117,8 @@ _OPERATIONS: tuple[BackendOperation, ...] = (
     "registers",
     "set_breakpoint",
     "set_watchpoint",
+    "set_catchpoint",
+    "set_follow_fork_mode",
     "delete_watchpoint",
     "read_memory",
     "disassemble",
@@ -160,7 +162,7 @@ class LldbDapBackend:
         # backend keeps both the kind of each breakpoint and its native number.
         self._breakpoint_kinds: dict[int, str] = {}
         self._breakpoint_lines: dict[int, int] = {}
-        self._watchpoint_numbers: dict[int, str] = {}
+        self._native_ids: dict[int, str] = {}
         self._next_breakpoint_id = 1
 
     # -- capability surface -------------------------------------------------
@@ -781,7 +783,14 @@ class LldbDapBackend:
         if isinstance(client, OperationError):
             return client
         if location.startswith("*"):
-            return self._unsupported("breakpoints by address")
+            return self._set_native_breakpoint(
+                location[1:],
+                condition=condition,
+                temporary=temporary,
+                address=True,
+            )
+        if temporary:
+            return self._set_native_breakpoint(location, condition=condition, temporary=True)
 
         picked = self._pick_breakpoint(client, location, condition=condition)
         if isinstance(picked, OperationError):
@@ -825,11 +834,11 @@ class LldbDapBackend:
         if record is None:
             return OperationError(message=f"Breakpoint {number} not found", code="not_found")
 
-        if _is_watchpoint(record):
-            removed = self._remove_watchpoint(number)
+        if number in self._native_ids:
+            removed = self._remove_native(number)
             if isinstance(removed, OperationError):
                 return removed
-            return OperationSuccess(SessionMessage(message=f"Watchpoint {number} deleted"))
+            return OperationSuccess(SessionMessage(message=f"Breakpoint {number} deleted"))
 
         del self._breakpoints[number]
         self._breakpoint_kinds.pop(number, None)
@@ -861,12 +870,26 @@ class LldbDapBackend:
         record = self._breakpoints.get(number)
         if record is None:
             return OperationError(message=f"Breakpoint {number} not found", code="not_found")
+        condition_value = None if clear_condition else condition
+        native = self._native_ids.get(number)
+        if native is not None:
+            command = (
+                f"watchpoint modify -c {quote_lldb_argument(condition_value or '')} {native}"
+                if _is_watchpoint(record)
+                else f"breakpoint modify -c {quote_lldb_argument(condition_value or '')} {native}"
+            )
+            output = self._run_text_command(command)
+            if isinstance(output, OperationError):
+                return output
+            updated = record.model_copy(update={"condition": condition_value})
+            self._breakpoints[number] = updated
+            return OperationSuccess(BreakpointInfo(breakpoint=updated))
+
         client = self._require_client()
         if isinstance(client, OperationError):
             return client
 
         source = record.original_location or ""
-        condition_value = None if clear_condition else condition
         picked = self._pick_breakpoint(client, source, condition=condition_value)
         if isinstance(picked, OperationError):
             return picked
@@ -900,16 +923,35 @@ class LldbDapBackend:
     def set_follow_fork_mode(
         self, mode: FollowForkMode
     ) -> OperationSuccess[FollowForkModeInfo] | OperationError:
-        """DAP exposes no fork-following setting."""
+        """Set LLDB's fork-following mode and read it back."""
 
-        return self._unsupported("fork following")
+        output = self._run_text_command(f"settings set target.process.follow-fork-mode {mode}")
+        if isinstance(output, OperationError):
+            return output
+
+        current = self._run_text_command("settings show target.process.follow-fork-mode")
+        if isinstance(current, OperationError):
+            return current
+        resolved = _follow_fork_mode(current)
+        if resolved is None:
+            return OperationError(
+                message="lldb did not report its fork-following mode",
+                code="error",
+            )
+        return OperationSuccess(
+            FollowForkModeInfo(mode=resolved, message=f"Following the {resolved} on fork")
+        )
 
     def set_detach_on_fork(
         self, enabled: bool
     ) -> OperationSuccess[DetachOnForkInfo] | OperationError:
-        """DAP exposes no fork-following setting."""
+        """LLDB has no detach-on-fork setting, only follow-fork-mode."""
 
-        return self._unsupported("fork following")
+        return OperationError(
+            message="lldb has no detach-on-fork setting; it only follows one side "
+            "of a fork (set_follow_fork_mode)",
+            code="unsupported_operation",
+        )
 
     def set_catchpoint(
         self,
@@ -918,29 +960,54 @@ class LldbDapBackend:
         argument: str | None = None,
         temporary: bool = False,
     ) -> OperationSuccess[BreakpointInfo] | OperationError:
-        """DAP has no catchpoint request; use the command escape hatch."""
+        """Break on C++ exceptions through LLDB's exception breakpoint.
 
-        return self._unsupported("catchpoints")
+        LLDB expresses only thrown and caught exceptions: ``throw``/``rethrow`` both
+        map to its throw breakpoint (it watches ``__cxa_throw`` and
+        ``__cxa_rethrow`` together) and ``catch`` maps to the catch side. The other
+        GDB catchpoint kinds have no LLDB equivalent.
+        """
+
+        flags = {
+            "throw": "-h false -w true",
+            "rethrow": "-h false -w true",
+            "catch": "-h true -w false",
+        }.get(kind)
+        if flags is None:
+            return OperationError(
+                message=f"lldb has no {kind} catchpoint; it only watches C++ exceptions",
+                code="unsupported_operation",
+            )
+
+        command = f"breakpoint set -E c++ {flags}"
+        if temporary:
+            command = f"{command} -o true"
+        output = self._run_text_command(command)
+        if isinstance(output, OperationError):
+            return output
+
+        record = _parse_created_breakpoint(output, location=f"catch {kind}")
+        if record is None:
+            return OperationError(
+                message=f"lldb did not report the {kind} catchpoint",
+                code="error",
+            )
+        record = record.model_copy(update={"type": "catchpoint", "verified": False})
+        return self._remember_native(record, kind="native")
 
     def set_watchpoint(
         self, expression: str, *, access: WatchpointAccessType = "write"
     ) -> OperationSuccess[BreakpointInfo] | OperationError:
         """Watch one variable through LLDB's ``watchpoint set variable``.
 
-        LLDB's write watchpoint needs only the expression; read watchpoints need an
-        address and byte size the tool surface does not carry, so they point at the
-        command escape hatch instead of guessing the width.
+        LLDB takes the access mode on the command: `modify` for GDB's `watch`, `read`
+        for `rwatch`, and `read_write` for `awatch`; the byte size defaults to the
+        variable's own type.
         """
 
-        if access != "write":
-            return OperationError(
-                message="lldb watchpoints watch writes; use gdb_execute_command with "
-                "'watchpoint set expression -w read -s <size> <address>' for a read watchpoint",
-                code="unsupported_operation",
-            )
-
+        watch_type = _WATCH_TYPES[access]
         output = self._run_command(
-            f"watchpoint set variable {quote_lldb_argument(expression)}",
+            f"watchpoint set variable -w {watch_type} {quote_lldb_argument(expression)}",
             timeout_sec=DEFAULT_TIMEOUT_SEC,
         )
         if isinstance(output, OperationError):
@@ -954,21 +1021,13 @@ class LldbDapBackend:
                 code="not_found" if errors else "error",
             )
 
-        native = record.number or ""
-        number = self._next_breakpoint_id
-        self._next_breakpoint_id += 1
-        stored = record.model_copy(update={"number": str(number)})
-        self._breakpoints[number] = stored
-        self._breakpoint_kinds[number] = "watchpoint"
-        self._watchpoint_numbers[number] = native
-        # Setting a watchpoint can immediately report a hit; keep the runtime honest.
-        self._drain_events(timeout_sec=0.0)
-        return OperationSuccess(BreakpointInfo(breakpoint=stored))
+        record = record.model_copy(update={"type": "watchpoint"})
+        return self._remember_native(record, kind="watchpoint")
 
     def delete_watchpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
         """Delete one watchpoint through LLDB."""
 
-        removed = self._remove_watchpoint(number)
+        removed = self._remove_native(number)
         if isinstance(removed, OperationError):
             return removed
         return OperationSuccess(SessionMessage(message=f"Watchpoint {number} deleted"))
@@ -1430,9 +1489,21 @@ class LldbDapBackend:
 
         reason = _text(body.get("reason")) or "stopped"
         description = _text(body.get("description")) or ""
-        # DAP reports a watchpoint stop as a plain breakpoint and keeps the
-        # distinction in the description, so the kind is refined here.
-        stop_kind: StopKind | None = "watchpoint" if description.startswith("watchpoint") else None
+        hit = _hit_breakpoint(body)
+        # DAP reports every one of these as a plain `breakpoint` stop: a watchpoint
+        # only says so in the description, and an exception breakpoint is known by
+        # the native breakpoint id that hit, so the kind is refined here.
+        stop_kind: StopKind | None = None
+        if description.startswith("watchpoint"):
+            stop_kind = "watchpoint"
+        elif hit is not None:
+            hit_record = self._native_record(hit)
+            if hit_record.type == "catchpoint":
+                stop_kind = "exception"
+            if hit == "0":
+                # A one-shot breakpoint deletes itself when it hits, so lldb-dap
+                # reports the placeholder id 0; the inventory is reconciled below.
+                logger.debug("A one-shot breakpoint hit; reconciling the inventory")
         thread_id = _as_int(body.get("threadId"))
         if thread_id is not None:
             self.runtime.mark_thread_selected(thread_id)
@@ -1443,6 +1514,7 @@ class LldbDapBackend:
             stop_kind=stop_kind,
             inferior_id=inferior_id,
         )
+        self._reconcile_native_breakpoints()
         self.runtime.record_stop_event(
             StopEvent(
                 execution_state="paused",
@@ -1451,7 +1523,7 @@ class LldbDapBackend:
                 inferior_id=inferior_id,
                 thread_id=thread_id,
                 frame=frames,
-                breakpoint_number=_hit_breakpoint(body),
+                breakpoint_number=hit,
                 timestamp=self._time.time(),
             )
         )
@@ -1626,19 +1698,19 @@ class LldbDapBackend:
         if record is None:
             return OperationError(message=f"Breakpoint {number} not found", code="not_found")
 
-        if _is_watchpoint(record):
-            native = self._watchpoint_numbers.get(number)
-            if native is None:
-                return OperationError(
-                    message=f"Watchpoint {number} is not tracked by this session",
-                    code="not_found",
-                )
+        native = self._native_ids.get(number)
+        if native is not None:
             verb = "enable" if enabled else "disable"
-            output = self._run_text_command(f"watchpoint {verb} {native}")
+            command = (
+                f"watchpoint {verb} {native}"
+                if _is_watchpoint(record)
+                else f"breakpoint {verb} {native}"
+            )
+            output = self._run_text_command(command)
             if isinstance(output, OperationError):
                 return output
             self._breakpoints[number] = record.model_copy(update={"enabled": enabled})
-            return OperationSuccess(SessionMessage(message=f"Watchpoint {number} {verb}d"))
+            return OperationSuccess(SessionMessage(message=f"Breakpoint {number} {verb}d"))
 
         self._breakpoints[number] = record.model_copy(update={"enabled": enabled})
         pushed = self._push_breakpoints(source=record.file)
@@ -1706,20 +1778,136 @@ class LldbDapBackend:
                 return OperationError(message=failure)
         return None
 
-    def _remove_watchpoint(self, number: int) -> OperationError | None:
-        """Delete one watchpoint through LLDB and forget it."""
+    def _remove_native(self, number: int) -> OperationError | None:
+        """Delete one LLDB-native breakpoint or watchpoint and forget it."""
 
-        native = self._watchpoint_numbers.get(number)
-        if native is None:
-            return OperationError(message=f"Watchpoint {number} not found", code="not_found")
-        output = self._run_text_command(f"watchpoint delete {native}")
+        record = self._breakpoints.get(number)
+        native = self._native_ids.get(number)
+        if record is None or native is None:
+            return OperationError(message=f"Breakpoint {number} not found", code="not_found")
+        command = (
+            f"watchpoint delete {native}"
+            if _is_watchpoint(record)
+            else f"breakpoint delete {native}"
+        )
+        output = self._run_text_command(command)
         if isinstance(output, OperationError):
             return output
-        del self._watchpoint_numbers[number]
+        del self._native_ids[number]
         self._breakpoints.pop(number, None)
         self._breakpoint_kinds.pop(number, None)
         self._breakpoint_lines.pop(number, None)
         return None
+
+    def _forget_native(self, number: str | None) -> None:
+        """Drop one native breakpoint from the tracked inventory."""
+
+        if number is None or not number.isdigit():
+            return
+        key = int(number)
+        self._native_ids.pop(key, None)
+        self._breakpoints.pop(key, None)
+        self._breakpoint_kinds.pop(key, None)
+        self._breakpoint_lines.pop(key, None)
+
+    def _reconcile_native_breakpoints(self) -> None:
+        """Drop native breakpoints LLDB no longer has.
+
+        A one-shot breakpoint deletes itself when it hits and a breakpoint removed
+        through the command escape hatch disappears too, so the tracked inventory is
+        checked against LLDB's own lists after every stop.
+        """
+
+        if not self._native_ids:
+            return
+
+        breakpoints = self._run_command("breakpoint list", timeout_sec=DEFAULT_TIMEOUT_SEC)
+        watchpoints = self._run_command("watchpoint list", timeout_sec=DEFAULT_TIMEOUT_SEC)
+        present_breakpoints = (
+            set(_LISTED_BREAKPOINT_RE.findall(breakpoints))
+            if isinstance(breakpoints, str)
+            else None
+        )
+        present_watchpoints = (
+            set(_LISTED_WATCHPOINT_RE.findall(watchpoints))
+            if isinstance(watchpoints, str)
+            else None
+        )
+
+        for number, native in list(self._native_ids.items()):
+            record = self._breakpoints.get(number)
+            if record is None:
+                continue
+            present = present_watchpoints if _is_watchpoint(record) else present_breakpoints
+            if present is not None and native not in present:
+                self._forget_native(str(number))
+
+    def _native_record(self, native_id: str) -> BreakpointRecord:
+        """Return the record of one LLDB-native breakpoint by its native id."""
+
+        for number, native in self._native_ids.items():
+            if native == native_id:
+                return self._breakpoints[number]
+        return BreakpointRecord()
+
+    def _remember_native(
+        self,
+        record: BreakpointRecord,
+        *,
+        kind: str,
+    ) -> OperationSuccess[BreakpointInfo]:
+        """Store a breakpoint LLDB created and number it for this session."""
+
+        native = record.number or ""
+        number = self._next_breakpoint_id
+        self._next_breakpoint_id += 1
+        stored = record.model_copy(update={"number": str(number)})
+        self._breakpoints[number] = stored
+        self._breakpoint_kinds[number] = kind
+        self._native_ids[number] = native
+        self._drain_events(timeout_sec=0.0)
+        return OperationSuccess(BreakpointInfo(breakpoint=stored))
+
+    def _set_native_breakpoint(
+        self,
+        location: str,
+        *,
+        condition: str | None = None,
+        temporary: bool = False,
+        address: bool = False,
+    ) -> OperationSuccess[BreakpointInfo] | OperationError:
+        """Create a breakpoint through ``breakpoint set``.
+
+        DAP sets source and function breakpoints, but it cannot express a one-shot
+        breakpoint or an address, so those forms use LLDB's own command.
+        """
+
+        if address:
+            parts = ["-a", quote_lldb_argument(location)]
+        else:
+            path, line = _split_location(location)
+            parts = (
+                ["-f", quote_lldb_argument(path), "-l", str(line)]
+                if path is not None
+                else ["-n", quote_lldb_argument(location)]
+            )
+        if condition:
+            parts.extend(["-c", quote_lldb_argument(condition)])
+        if temporary:
+            parts.extend(["-o", "true"])
+
+        output = self._run_text_command(f"breakpoint set {' '.join(parts)}")
+        if isinstance(output, OperationError):
+            return output
+
+        record = _parse_created_breakpoint(output, location=location)
+        if record is None:
+            return OperationError(
+                message=f"lldb did not report a breakpoint at {location}",
+                code="not_found",
+            )
+        record = record.model_copy(update={"condition": condition, "temporary": temporary or None})
+        return self._remember_native(record, kind="native")
 
     def _run_text_command(
         self,
@@ -1858,6 +2046,23 @@ _SOURCE_LOCATION_RE = re.compile(
     r"^(?P<module>.+?)`(?P<function>[^ ]+) \+ (?P<offset>\d+) at "
     r"(?P<file>.+):(?P<line>\d+):(?P<column>\d+)\s*$"
 )
+#: LLDB's watch types for the tool's access modes.
+_WATCH_TYPES: dict[WatchpointAccessType, str] = {
+    "write": "modify",
+    "read": "read",
+    "access": "read_write",
+}
+
+#: `Breakpoint 3: where = module`func at file.c:9:9, address = 0x...`
+_CREATED_BREAKPOINT_RE = re.compile(r"^Breakpoint (?P<number>\d+): (?P<rest>.*)$", re.MULTILINE)
+_BREAKPOINT_ADDRESS_RE = re.compile(r"address = (?P<address>0x[0-9a-fA-F]+)")
+_BREAKPOINT_LOCATION_RE = re.compile(
+    r"`(?P<function>[^ ]+)(?: \+ \d+)? at (?P<file>[^:]+):(?P<line>\d+)(?::(?P<column>\d+))?"
+)
+_FOLLOW_FORK_RE = re.compile(r"=\s*(?P<mode>parent|child)\b")
+_LISTED_BREAKPOINT_RE = re.compile(r"^(?P<number>\d+): ", re.MULTILINE)
+_LISTED_WATCHPOINT_RE = re.compile(r"^Watchpoint (?P<number>\d+): ", re.MULTILINE)
+
 _WATCHPOINT_CREATED_RE = re.compile(
     r"^Watchpoint created: Watchpoint (?P<number>\d+): addr = (?P<address>0x[0-9a-fA-F]+) "
     r"size = (?P<size>\d+) state = (?P<state>\w+) type = (?P<type>\w)"
@@ -2074,3 +2279,40 @@ def _next_address(address: str) -> str | None:
         return hex(int(address, 16) + 1)
     except ValueError:
         return None
+
+
+def _parse_created_breakpoint(output: str, *, location: str) -> BreakpointRecord | None:
+    """Build a record from a ``breakpoint set`` confirmation.
+
+    LLDB answers ``Breakpoint N: where = module`func at file.c:9:9, address = 0x…``
+    for a resolved breakpoint and ``Breakpoint N: no locations (pending).`` for one
+    that has no location yet.
+    """
+
+    match = _CREATED_BREAKPOINT_RE.search(output)
+    if match is None:
+        return None
+    rest = match.group("rest")
+    address = _BREAKPOINT_ADDRESS_RE.search(rest)
+    where = _BREAKPOINT_LOCATION_RE.search(rest)
+    return BreakpointRecord(
+        number=match.group("number"),
+        type="breakpoint",
+        enabled=True,
+        verified=address is not None,
+        addr=address.group("address") if address is not None else None,
+        func=where.group("function") if where is not None else None,
+        file=where.group("file") if where is not None else None,
+        fullname=where.group("file") if where is not None else None,
+        line=int(where.group("line")) if where is not None else None,
+        original_location=location,
+    )
+
+
+def _follow_fork_mode(output: str) -> FollowForkMode | None:
+    """Read ``settings show target.process.follow-fork-mode``."""
+
+    match = _FOLLOW_FORK_RE.search(output)
+    if match is None:
+        return None
+    return cast(FollowForkMode, match.group("mode"))

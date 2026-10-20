@@ -261,3 +261,208 @@ def test_lldb_parses_memory_disassembly_source_and_watchpoints(
         assert catchpoint["code"] == "unsupported_operation"
     finally:
         stop_session(session_id, ignore_errors=True)
+
+
+THROW_PROGRAM = """
+#include <stdexcept>
+#include <cstdio>
+
+int risky(int value) {
+    if (value > 0) {
+        throw std::runtime_error("boom");
+    }
+    return value;
+}
+
+int main() {
+    try {
+        risky(1);
+    } catch (const std::exception &error) {
+        printf("caught: %s\\n", error.what());
+    }
+    return 0;
+}
+"""
+
+
+@pytest.mark.integration
+def test_lldb_read_watchpoint_stops_on_a_read(
+    compile_program: CompileProgram,
+    start_session: StartSession,
+    call_gdb_tool: CallGdbTool,
+    stop_session: StopSession,
+) -> None:
+    """A read watchpoint is expressible: `watchpoint set variable -w read`."""
+
+    program = compile_program(LLDB_PROGRAM, filename="lldb_probe.c", compiler="gcc")
+    session_id = start_session(program, debugger="lldb", gdb_path=LLDB_DAP)
+    try:
+        call_gdb_tool(
+            "gdb_breakpoint_manage",
+            {
+                "session_id": session_id,
+                "action": "create",
+                "breakpoint": {"kind": "code", "location": "describe"},
+            },
+        )
+        call_gdb_tool("gdb_execution_manage", {"session_id": session_id, "action": "run"})
+
+        watchpoint = call_gdb_tool(
+            "gdb_breakpoint_manage",
+            {
+                "session_id": session_id,
+                "action": "create",
+                "breakpoint": {"kind": "watch", "expression": "doubled", "access": "read"},
+            },
+        )
+        assert watchpoint["status"] == "success", watchpoint
+        assert dig(watchpoint, "result", "breakpoint", "type") == "watchpoint"
+
+        resumed = call_gdb_tool(
+            "gdb_execution_manage",
+            {"session_id": session_id, "action": "continue"},
+        )
+        assert resumed["status"] == "success", resumed
+        status = status_query(call_gdb_tool, session_id)
+        assert dig(status, "result", "stop_kind") == "watchpoint"
+    finally:
+        stop_session(session_id, ignore_errors=True)
+
+
+@pytest.mark.integration
+def test_lldb_address_breakpoint(
+    compile_program: CompileProgram,
+    start_session: StartSession,
+    call_gdb_tool: CallGdbTool,
+    stop_session: StopSession,
+) -> None:
+    """`*<address expression>` goes through LLDB's own address breakpoint."""
+
+    program = compile_program(LLDB_PROGRAM, filename="lldb_probe.c", compiler="gcc")
+    session_id = start_session(program, debugger="lldb", gdb_path=LLDB_DAP)
+    try:
+        created = call_gdb_tool(
+            "gdb_breakpoint_manage",
+            {
+                "session_id": session_id,
+                "action": "create",
+                "breakpoint": {"kind": "code", "location": "*describe"},
+            },
+        )
+        assert created["status"] == "success", created
+        assert dig(created, "result", "breakpoint", "addr") is not None
+
+        run = call_gdb_tool("gdb_execution_manage", {"session_id": session_id, "action": "run"})
+        assert run["status"] == "success", run
+        status = status_query(call_gdb_tool, session_id)
+        assert dig(status, "result", "execution_state") == "paused"
+        assert dig(status, "result", "stop_reason") == "breakpoint"
+    finally:
+        stop_session(session_id, ignore_errors=True)
+
+
+@pytest.mark.integration
+def test_lldb_throw_catchpoint_reports_an_exception_stop(
+    compile_program: CompileProgram,
+    start_session: StartSession,
+    call_gdb_tool: CallGdbTool,
+    stop_session: StopSession,
+) -> None:
+    """A C++ throw maps to LLDB's exception breakpoint and a canonical exception stop."""
+
+    program = compile_program(THROW_PROGRAM, filename="lldb_throw.cpp", compiler="g++")
+    session_id = start_session(program, debugger="lldb", gdb_path=LLDB_DAP)
+    try:
+        created = call_gdb_tool(
+            "gdb_breakpoint_manage",
+            {
+                "session_id": session_id,
+                "action": "create",
+                "breakpoint": {"kind": "catch", "event": "throw"},
+            },
+        )
+        assert created["status"] == "success", created
+        assert dig(created, "result", "breakpoint", "type") == "catchpoint"
+
+        run = call_gdb_tool("gdb_execution_manage", {"session_id": session_id, "action": "run"})
+        assert run["status"] == "success", run
+        status = status_query(call_gdb_tool, session_id)
+        assert dig(status, "result", "execution_state") == "paused"
+        assert dig(status, "result", "stop_kind") == "exception"
+    finally:
+        stop_session(session_id, ignore_errors=True)
+
+
+@pytest.mark.integration
+def test_lldb_follow_fork_mode_and_detach_on_fork(
+    compile_program: CompileProgram,
+    start_session: StartSession,
+    call_gdb_tool: CallGdbTool,
+    stop_session: StopSession,
+) -> None:
+    """LLDB has follow-fork-mode but no detach-on-fork setting."""
+
+    program = compile_program(LLDB_PROGRAM, filename="lldb_probe.c", compiler="gcc")
+    session_id = start_session(program, debugger="lldb", gdb_path=LLDB_DAP)
+    try:
+        followed = call_gdb_tool(
+            "gdb_inferior_manage",
+            {
+                "session_id": session_id,
+                "action": "set_follow_fork_mode",
+                "inferior": {"mode": "child"},
+            },
+        )
+        assert followed["status"] == "success", followed
+        assert dig(followed, "result", "mode") == "child"
+
+        detached = call_gdb_tool(
+            "gdb_inferior_manage",
+            {
+                "session_id": session_id,
+                "action": "set_detach_on_fork",
+                "inferior": {"enabled": False},
+            },
+        )
+        assert detached["status"] == "error"
+        assert detached["code"] == "unsupported_operation"
+        assert "detach-on-fork" in text(detached["message"])
+    finally:
+        stop_session(session_id, ignore_errors=True)
+
+
+@pytest.mark.integration
+def test_lldb_temporary_breakpoint_is_one_shot(
+    compile_program: CompileProgram,
+    start_session: StartSession,
+    call_gdb_tool: CallGdbTool,
+    stop_session: StopSession,
+) -> None:
+    """A temporary breakpoint stops once and leaves the tracked inventory."""
+
+    program = compile_program(LLDB_PROGRAM, filename="lldb_probe.c", compiler="gcc")
+    session_id = start_session(program, debugger="lldb", gdb_path=LLDB_DAP)
+    try:
+        created = call_gdb_tool(
+            "gdb_breakpoint_manage",
+            {
+                "session_id": session_id,
+                "action": "create",
+                "breakpoint": {"kind": "code", "location": "describe", "temporary": True},
+            },
+        )
+        assert created["status"] == "success", created
+        assert dig(created, "result", "breakpoint", "temporary") is True
+
+        run = call_gdb_tool("gdb_execution_manage", {"session_id": session_id, "action": "run"})
+        assert run["status"] == "success", run
+        status = status_query(call_gdb_tool, session_id)
+        assert dig(status, "result", "execution_state") == "paused"
+
+        listed = call_gdb_tool(
+            "gdb_breakpoint_query",
+            {"session_id": session_id, "action": "list", "query": {}},
+        )
+        assert dig(listed, "result", "count") == 0
+    finally:
+        stop_session(session_id, ignore_errors=True)

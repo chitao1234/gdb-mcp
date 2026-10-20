@@ -8,7 +8,12 @@ from typing import Any
 
 import pytest
 
-from gdb_mcp.domain import OperationResult, result_to_mapping
+from gdb_mcp.domain import (
+    CatchpointType,
+    OperationResult,
+    WatchpointAccessType,
+    result_to_mapping,
+)
 from gdb_mcp.session.lldb_backend import LldbDapBackend
 from gdb_mcp.transport.dap_client import DapTransportError
 from tests.support import dig, mapping, mapping_list, sequence, text
@@ -180,6 +185,16 @@ class FakeDapAdapter:
                     "message": f"unsupported request {command}",
                 }
             )
+
+
+def _expressions(adapter: FakeDapAdapter) -> list[str]:
+    """Return the REPL expressions the adapter received."""
+
+    return [
+        str(mapping(request["arguments"]).get("expression"))
+        for request in adapter.requests
+        if request["command"] == "evaluate"
+    ]
 
 
 def _backend(adapter: FakeDapAdapter) -> LldbDapBackend:
@@ -437,13 +452,106 @@ class TestLldbBreakpoints:
         breakpoint = mapping(result_to_mapping(backend.get_breakpoint(1))["breakpoint"])
         assert breakpoint["enabled"] is False
 
-    def test_a_breakpoint_by_address_is_refused(self) -> None:
-        backend, _ = _started(FakeDapAdapter())
+    def test_a_breakpoint_by_address_uses_lldb(self) -> None:
+        """LLDB sets address breakpoints itself and reports the resolved location."""
 
-        result = result_to_mapping(backend.set_breakpoint("*0x401000"))
+        adapter = FakeDapAdapter(
+            {
+                'breakpoint set -a "$pc"': "Breakpoint 1: where = probe`describe + 31 at "
+                "probe.c:9:9, address = 0x5555555551a0\n"
+            }
+        )
+        backend, _ = _started(adapter)
 
-        assert result["status"] == "error"
-        assert result["code"] == "unsupported_operation"
+        result = result_to_mapping(backend.set_breakpoint("*$pc"))
+
+        breakpoint = mapping(result["breakpoint"])
+        assert breakpoint["addr"] == "0x5555555551a0"
+        assert breakpoint["func"] == "describe"
+        assert breakpoint["file"] == "probe.c"
+        assert breakpoint["line"] == 9
+        assert breakpoint["verified"] is True
+
+    def test_a_native_breakpoint_is_deleted_and_conditioned_through_lldb(self) -> None:
+        adapter = FakeDapAdapter(
+            {
+                'breakpoint set -a "$pc"': "Breakpoint 1: where = probe`describe + 31 at "
+                "probe.c:9:9, address = 0x5555555551a0\n",
+                'breakpoint modify -c "p.x == 1" 1': "",
+                "breakpoint delete 1": "1 breakpoints deleted.\n",
+            }
+        )
+        backend, _ = _started(adapter)
+        backend.set_breakpoint("*$pc")
+
+        updated = result_to_mapping(backend.update_breakpoint(1, condition="p.x == 1"))
+        deleted = result_to_mapping(backend.delete_breakpoint(1))
+
+        assert dig(updated, "breakpoint", "condition") == "p.x == 1"
+        assert deleted["status"] == "success"
+        assert 'breakpoint modify -c "p.x == 1" 1' in _expressions(adapter)
+        assert "breakpoint delete 1" in _expressions(adapter)
+        assert result_to_mapping(backend.list_breakpoints())["count"] == 0
+
+    @pytest.mark.parametrize(
+        ("kind", "flags"),
+        [
+            ("throw", "-h false -w true"),
+            ("rethrow", "-h false -w true"),
+            ("catch", "-h true -w false"),
+        ],
+    )
+    def test_exception_catchpoints_use_the_matching_side(
+        self, kind: CatchpointType, flags: str
+    ) -> None:
+        """LLDB expresses thrown and caught C++ exceptions, nothing else."""
+
+        adapter = FakeDapAdapter(
+            {f"breakpoint set -E c++ {flags}": "Breakpoint 2: no locations (pending).\n"}
+        )
+        backend, _ = _started(adapter)
+
+        result = result_to_mapping(backend.set_catchpoint(kind))
+
+        breakpoint = mapping(result["breakpoint"])
+        assert breakpoint["type"] == "catchpoint"
+        assert breakpoint["verified"] is False
+
+    def test_a_temporary_breakpoint_is_one_shot(self) -> None:
+        """DAP cannot express a one-shot breakpoint, so LLDB's `-o` flag does."""
+
+        adapter = FakeDapAdapter(
+            {
+                'breakpoint set -f "/src/probe.c" -l 9 -o true': "Breakpoint 1: where = "
+                "probe`main at /src/probe.c:9:9, address = 0x1000\n"
+            }
+        )
+        backend, _ = _started(adapter)
+
+        created = result_to_mapping(backend.set_breakpoint("/src/probe.c:9", temporary=True))
+        assert created["status"] == "success", created
+        assert mapping(created["breakpoint"])["temporary"] is True
+
+        result_to_mapping(backend.continue_execution())
+
+        assert result_to_mapping(backend.list_breakpoints())["count"] == 0
+
+    def test_follow_fork_mode_is_set_and_read_back(self) -> None:
+        adapter = FakeDapAdapter(
+            {
+                "settings set target.process.follow-fork-mode child": "",
+                "settings show target.process.follow-fork-mode": (
+                    "target.process.follow-fork-mode (enum) = child\n"
+                ),
+            }
+        )
+        backend, _ = _started(adapter)
+
+        result = result_to_mapping(backend.set_follow_fork_mode("child"))
+
+        assert result["status"] == "success"
+        assert result["mode"] == "child"
+        assert "settings set target.process.follow-fork-mode child" in _expressions(adapter)
 
 
 class TestLldbUnsupportedOperations:
@@ -452,20 +560,16 @@ class TestLldbUnsupportedOperations:
     @pytest.mark.parametrize(
         "operation",
         [
-            "set_catchpoint",
             "add_inferior",
             "remove_inferior",
-            "set_follow_fork_mode",
             "set_detach_on_fork",
         ],
     )
     def test_unsupported_operations_report_their_code(self, operation: str) -> None:
         backend, _ = _started(FakeDapAdapter())
         call = {
-            "set_catchpoint": lambda: backend.set_catchpoint("throw"),
             "add_inferior": lambda: backend.add_inferior(executable="/bin/true"),
             "remove_inferior": lambda: backend.remove_inferior(1),
-            "set_follow_fork_mode": lambda: backend.set_follow_fork_mode("child"),
             "set_detach_on_fork": lambda: backend.set_detach_on_fork(True),
         }[operation]
 
@@ -474,14 +578,32 @@ class TestLldbUnsupportedOperations:
         assert result["status"] == "error"
         assert result["code"] == "unsupported_operation"
 
-    def test_a_read_watchpoint_points_at_the_escape_hatch(self) -> None:
+    def test_watchpoint_access_modes_map_to_lldb_watch_types(self) -> None:
+        """`watch` is modify, `rwatch` is read, and `awatch` is read_write."""
+
+        modes: list[tuple[WatchpointAccessType, str]] = [
+            ("write", "modify"),
+            ("read", "read"),
+            ("access", "read_write"),
+        ]
+        for access, watch_type in modes:
+            adapter = FakeDapAdapter(
+                {f'watchpoint set variable -w {watch_type} "total"': _WATCHPOINT_TEXT}
+            )
+            backend, _ = _started(adapter)
+
+            result = result_to_mapping(backend.set_watchpoint("total", access=access))
+
+            assert result["status"] == "success", access
+
+    def test_a_catchpoint_kind_lldb_cannot_express_is_refused(self) -> None:
         backend, _ = _started(FakeDapAdapter())
 
-        result = result_to_mapping(backend.set_watchpoint("total", access="read"))
+        result = result_to_mapping(backend.set_catchpoint("syscall", argument="open"))
 
         assert result["status"] == "error"
         assert result["code"] == "unsupported_operation"
-        assert "gdb_execute_command" in text(result["message"])
+        assert "syscall" in text(result["message"])
 
     def test_capabilities_match_the_implemented_operations(self) -> None:
         backend, _ = _started(FakeDapAdapter())
@@ -492,7 +614,9 @@ class TestLldbUnsupportedOperations:
         assert backend.capabilities.supports("read_memory") is True
         assert backend.capabilities.supports("disassemble") is True
         assert backend.capabilities.supports("source") is True
-        assert backend.capabilities.supports("set_catchpoint") is False
+        assert backend.capabilities.supports("set_catchpoint") is True
+        assert backend.capabilities.supports("set_follow_fork_mode") is True
+        assert backend.capabilities.supports("set_detach_on_fork") is False
         assert backend.capabilities.supports("add_inferior") is False
 
     def test_inferiors_describe_the_one_program(self) -> None:
@@ -739,7 +863,7 @@ class TestLldbParsedCommands:
         assert "Could not find function" in text(result["message"])
 
     def test_watchpoint_set_parses_the_creation(self) -> None:
-        adapter = FakeDapAdapter({'watchpoint set variable "p"': _WATCHPOINT_TEXT})
+        adapter = FakeDapAdapter({'watchpoint set variable -w modify "p"': _WATCHPOINT_TEXT})
         backend, _ = _started(adapter)
 
         result = result_to_mapping(backend.set_watchpoint("p"))
@@ -758,7 +882,7 @@ class TestLldbParsedCommands:
     def test_watchpoint_disable_and_delete_use_the_native_number(self) -> None:
         adapter = FakeDapAdapter(
             {
-                'watchpoint set variable "p"': _WATCHPOINT_TEXT,
+                'watchpoint set variable -w modify "p"': _WATCHPOINT_TEXT,
                 "watchpoint disable 1": "Watchpoint 1 disabled\n",
                 "watchpoint enable 1": "Watchpoint 1 enabled\n",
                 "watchpoint delete 1": "Watchpoint 1 deleted\n",

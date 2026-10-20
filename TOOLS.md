@@ -356,27 +356,45 @@ differs is what the backend can do and how a session begins.
   continues from there instead of starting the program.
 - `core`, `endpoint`, and `rr_replay` are refused with
   `code="unsupported_operation"` before an adapter is spawned.
-- Memory, disassembly, source windows, and write watchpoints have no request the
-  adapter advertises, so they run the LLDB command and parse its text into the
-  same structured payloads GDB returns: `memory read -f x` hex dumps, `disassemble`
-  listings (with `-m` source lines, so each instruction carries the source `line`
-  it belongs to and the stopped one is `is_current`; LLDB prints neither opcodes
-  nor a source path, so `opcodes` and `file`/`fullname` are `null`), `source list`
-  windows, and `watchpoint set variable`. A memory
-  `address` must be a pointer-valued expression, which is also what GDB requires.
-  Read watchpoints need an address and byte size the tool surface does not carry;
-  they answer with `code="unsupported_operation"` and point at the escape hatch.
-- Catchpoints, inferior management, fork settings, and reverse execution have no
-  DAP equivalent; they answer with `code="unsupported_operation"`. The command
-  escape hatch (`gdb_execute_command`) still runs anything LLDB can do.
-- A watchpoint stop arrives as DAP `reason="breakpoint"` with a `watchpoint N`
-  description; the backend refines it, so `stop_kind` is `watchpoint` while the
-  native `stop_reason` stays `breakpoint`.
-- Breakpoints accept `function` or `file:line` locations (addresses are refused);
-  DAP reports no inventory, so `gdb_breakpoint_query` lists what this session set,
-  including a `condition` and the `enabled` state the backend tracks. Deleting or
-  disabling one re-sends that source's remaining enabled breakpoints, because DAP
-  replaces a source's whole list on every request.
+- Memory, disassembly, and source windows have no request the adapter advertises,
+  so they run the LLDB command and parse its text into the same structured
+  payloads GDB returns: `memory read -f x` hex dumps, `disassemble` listings (with
+  `-m` source lines, so each instruction carries the source `line` it belongs to
+  and the stopped one is `is_current`; LLDB prints neither opcodes nor a source
+  path, so `opcodes` and `file`/`fullname` are `null`), and `source list` windows.
+  A memory `address` must be a pointer-valued expression, which is also what GDB
+  requires.
+- Watchpoints take the access mode on the command, so all three GDB kinds work:
+  `watch` (`access="write"`) is LLDB's `modify`, `rwatch` (`access="read"`) is
+  `read`, and `awatch` (`access="access"`) is `read_write`.
+- `throw`, `rethrow`, and `catch` catchpoints map to LLDB's C++ exception
+  breakpoint (`breakpoint set -E c++`); LLDB does not distinguish a throw from a
+  rethrow, so both watch the same throw locations. The other catchpoint kinds
+  (`exec`, `fork`, `vfork`, `load`, `unload`, `signal`, `syscall`) and
+  `set_detach_on_fork` answer with `code="unsupported_operation"`: LLDB has no
+  equivalent, only `target.process.follow-fork-mode`, which
+  `set_follow_fork_mode` sets and reads back.
+- Inferior management and reverse execution have no LLDB equivalent: one process
+  per session, and no reverse option on `process continue` or `thread step-*`.
+  `list_inferiors`/`select_inferior` still describe that one process. The command
+  escape hatch (`gdb_execute_command`) runs anything else LLDB can do.
+- A DAP stop reports `reason="breakpoint"` for watchpoints and exception
+  breakpoints alike. The backend refines the canonical kind — from the
+  `watchpoint N` description or the exception breakpoint that hit — so `stop_kind`
+  is `watchpoint`/`exception` while the native `stop_reason` stays `breakpoint`.
+- Breakpoints accept `function`, `file:line`, or `*<address expression>`: the first
+  two go through DAP's `setBreakpoints`, the address form through LLDB's
+  `breakpoint set -a`. DAP reports no inventory, so `gdb_breakpoint_query` lists
+  what this session set, including a `condition` and the `enabled` state the
+  backend tracks. Deleting, disabling, or conditioning a DAP breakpoint re-sends
+  that source's remaining enabled breakpoints (DAP replaces a source's whole list),
+  while LLDB-native ones use `breakpoint delete`/`enable`/`disable`/`modify`.
+- `temporary: true` uses LLDB's one-shot flag (`breakpoint set -o true`), because
+  DAP cannot express it. A one-shot breakpoint deletes itself when it hits (its
+  stop reports the placeholder breakpoint id `0`), and the tracked inventory is
+  reconciled against LLDB's own `breakpoint list`/`watchpoint list` after every
+  stop, so a breakpoint removed that way or through the escape hatch stops being
+  listed.
 
 ## `gdb_session_connect`
 
