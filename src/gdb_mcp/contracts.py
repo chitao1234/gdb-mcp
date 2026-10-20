@@ -26,7 +26,8 @@ TOOL_ATTACH_PROCESS = "gdb_attach_process"
 TOOL_CALL_FUNCTION = "gdb_call_function"
 
 DEBUGGER_GDB: Final[DebuggerName] = "gdb"
-DebuggerName: TypeAlias = Literal["gdb"]
+DEBUGGER_LLDB: Final[DebuggerName] = "lldb"
+DebuggerName: TypeAlias = Literal["gdb", "lldb"]
 DEBUGGER_NAMES: tuple[DebuggerName, ...] = get_args(DebuggerName)
 
 ACTION_LIST = "list"

@@ -73,12 +73,19 @@ def _handle_connect_session(
     args: ConnectSessionArgs,
     session_manager: SessionRegistry,
 ) -> ToolResult:
-    """Connect to an externally started GDB/MI endpoint and publish a session."""
+    """Connect to a target endpoint owned by another process and publish a session."""
 
-    session_id, result = session_manager.start_session(
-        endpoint=args.endpoint,
-        init_commands=args.init_commands,
-    )
+    kwargs: dict[str, object] = {
+        "endpoint": args.endpoint,
+        "init_commands": args.init_commands,
+    }
+    if args.debugger != "gdb":
+        kwargs["debugger"] = args.debugger
+    if args.program is not None:
+        kwargs["program"] = args.program
+    if args.gdb_path is not None:
+        kwargs["gdb_path"] = args.gdb_path
+    session_id, result = session_manager.start_session(**kwargs)  # type: ignore[arg-type]
     return _publish_session_result(session_id, result)
 
 

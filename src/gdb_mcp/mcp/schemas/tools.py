@@ -72,7 +72,7 @@ def build_tool_definitions() -> list[Tool]:
                 "missing debug symbols (not compiled with -g), file not found, or invalid executable. "
                 "Check the 'warnings' field in the response for critical issues that may affect debugging. "
                 "Available parameters: program (executable path), debugger (backend to drive: "
-                "'gdb'), args (program arguments), "
+                "'gdb' or 'lldb'), args (program arguments), "
                 "core (core dump path - uses --core flag for proper symbol resolution), "
                 "init_commands (GDB commands to run after environment setup), "
                 "env (environment variables applied before init_commands), gdb_path (GDB binary path), "
@@ -96,10 +96,12 @@ def build_tool_definitions() -> list[Tool]:
         Tool(
             name=TOOL_SESSION_CONNECT,
             description=(
-                "Connect to a GDB/MI stream that another process already started, instead of "
-                "letting gdb-mcp spawn its own gdb. Supported endpoints: 'tcp://host:port', "
-                "'unix:///path/to/socket', and 'pty:///dev/pts/N'. The external process owns "
-                "the target and the gdb process; stopping the session only detaches from it. "
+                "Connect to a target endpoint owned by another process, instead of letting "
+                "gdb-mcp spawn its own debugger. For debugger='gdb', endpoint is a GDB/MI "
+                "stream: 'tcp://host:port', 'unix:///path/to/socket', or 'pty:///dev/pts/N'. "
+                "For debugger='lldb', endpoint is a remote stub URL such as "
+                "'connect://host:port', with 'program' naming the executable. The external "
+                "process owns the target; stopping the session only detaches from it. "
                 "Returns a session_id integer that must be passed to all other GDB tools."
             ),
             outputSchema=public_output_schema(TOOL_SESSION_CONNECT),

@@ -39,7 +39,14 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-gdb_mcp = ["py.typed"]
+gdb_mcp = [
+    "py.typed",
+    "session/lldb/native/*.cpp",
+    "session/lldb/native/*.h",
+    "session/lldb/vendor/include/lldb/**/*.h",
+    "session/lldb/vendor/include/lldb/*.h",
+    "session/lldb/vendor/README.md",
+]
 
 [tool.black]
 line-length = 100

@@ -21,19 +21,29 @@ def _configure_session_connect(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--endpoint",
         required=True,
-        help="External GDB/MI endpoint: tcp://host:port, unix:///path, or pty:///dev/pts/N",
+        help=(
+            "Endpoint owned by another process: GDB/MI (tcp://, unix://, pty://) or "
+            "LLDB remote stub (connect://host:port)"
+        ),
     )
+    parser.add_argument("--debugger", choices=["gdb", "lldb"], default="gdb")
+    parser.add_argument("--program", help="Executable for an LLDB remote target")
+    parser.add_argument("--gdb-path", help="LLDB binary or installation path")
     parser.add_argument("--init-command", dest="init_commands", action="append", default=[])
 
 
 def _build_session_connect(namespace: argparse.Namespace) -> dict[str, object]:
-    return validate_model_payload(
-        ConnectSessionArgs,
-        {
-            "endpoint": namespace.endpoint,
-            "init_commands": list(namespace.init_commands) or None,
-        },
-    )
+    payload: dict[str, object] = {
+        "endpoint": namespace.endpoint,
+        "init_commands": list(namespace.init_commands) or None,
+    }
+    if namespace.debugger != "gdb":
+        payload["debugger"] = namespace.debugger
+    if namespace.program is not None:
+        payload["program"] = namespace.program
+    if namespace.gdb_path is not None:
+        payload["gdb_path"] = namespace.gdb_path
+    return validate_model_payload(ConnectSessionArgs, payload)
 
 
 def _configure_execute_command(parser: argparse.ArgumentParser) -> None:

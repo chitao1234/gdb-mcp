@@ -83,9 +83,9 @@ class StartSessionArgs(StrictArgsModel):
     debugger: DebuggerName = Field(
         DEBUGGER_GDB,
         description=(
-            "Debugger backend to drive: 'gdb' (GDB/MI). The value is validated "
-            "against the implemented set; operations a backend cannot perform answer "
-            "with code='unsupported_operation'."
+            "Debugger backend to drive: 'gdb' (GDB/MI) or 'lldb' (native SB API). "
+            "The value is validated against the implemented set; operations a backend "
+            "cannot perform answer with code='unsupported_operation'."
         ),
     )
     args: list[str] | str | None = Field(
@@ -99,8 +99,8 @@ class StartSessionArgs(StrictArgsModel):
     init_commands: list[str] | None = Field(
         None,
         description=(
-            "GDB commands to run on startup after environment variables have been applied "
-            "(e.g., 'core-file /path/to/core', 'set sysroot /path')"
+            "Debugger commands to run on startup after environment variables have been "
+            "applied (for example 'core-file /path/to/core' or 'settings set target.sysroot /path')"
         ),
     )
     env: dict[str, str] | None = Field(
@@ -112,7 +112,10 @@ class StartSessionArgs(StrictArgsModel):
     )
     gdb_path: str | None = Field(
         None,
-        description="Path to GDB executable (default: from GDB_PATH env var or 'gdb')",
+        description=(
+            "Path to the GDB executable (default: from GDB_PATH env var or 'gdb'). "
+            "With debugger='lldb', path to an LLDB binary or installation instead."
+        ),
     )
     gdb_args: list[str] | None = Field(
         None,
@@ -172,13 +175,33 @@ class ConnectSessionArgs(StrictArgsModel):
     endpoint: str = Field(
         ...,
         description=(
-            "GDB/MI endpoint of an externally started GDB. Supported forms: "
-            "'tcp://host:port', 'unix:///path/to/socket', 'pty:///dev/pts/N'."
+            "Endpoint of an externally owned target. For 'gdb', a GDB/MI stream: "
+            "'tcp://host:port', 'unix:///path/to/socket', or 'pty:///dev/pts/N'. "
+            "For 'lldb', a remote stub URL accepted by SBTarget::ConnectRemote, "
+            "for example 'connect://host:port'."
+        ),
+    )
+    debugger: DebuggerName = Field(
+        DEBUGGER_GDB,
+        description="Debugger backend that owns the endpoint: 'gdb' or 'lldb'.",
+    )
+    program: str | None = Field(
+        None,
+        description=(
+            "Executable to associate with an LLDB remote target. Ignored by the GDB/MI "
+            "endpoint path, which already owns its target."
+        ),
+    )
+    gdb_path: str | None = Field(
+        None,
+        description=(
+            "LLDB binary or installation path for the LLDB remote path. With GDB this is "
+            "ignored because the external GDB/MI process is already running."
         ),
     )
     init_commands: list[str] | None = Field(
         None,
-        description="GDB commands to run immediately after connecting",
+        description="Debugger commands to run immediately after connecting",
     )
 
     @field_validator("endpoint")

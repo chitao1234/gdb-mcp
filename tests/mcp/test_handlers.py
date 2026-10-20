@@ -220,6 +220,36 @@ class TestHandlerDispatch:
         assert result_data["status"] == "success"
         assert result_data["session_id"] == 11
 
+    def test_connect_session_passes_lldb_remote_fields_to_registry(self) -> None:
+        """An LLDB remote connection forwards its backend and target fields."""
+
+        manager = Mock()
+        manager.start_session.return_value = (
+            12,
+            OperationSuccess(SessionStartInfo(message="LLDB session started")),
+        )
+
+        result_data = dispatch(
+            "gdb_session_connect",
+            {
+                "debugger": "lldb",
+                "endpoint": "connect://127.0.0.1:12345",
+                "program": "/tmp/app",
+                "gdb_path": "/opt/lldb/19/bin/lldb",
+            },
+            manager,
+        )
+
+        manager.start_session.assert_called_once_with(
+            endpoint="connect://127.0.0.1:12345",
+            init_commands=None,
+            debugger="lldb",
+            program="/tmp/app",
+            gdb_path="/opt/lldb/19/bin/lldb",
+        )
+        assert result_data["status"] == "success"
+        assert result_data["session_id"] == 12
+
     def test_connect_session_failure_does_not_expose_session_id(self) -> None:
         """A failed endpoint connection should not expose a session ID."""
 
