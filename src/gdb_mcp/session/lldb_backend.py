@@ -1881,9 +1881,6 @@ def _is_watchpoint(record: BreakpointRecord) -> bool:
     return "watch" in (record.type or "").lower()
 
 
-_COMMAND_DIAGNOSTIC_PREFIXES = ("error:", "warning:")
-
-
 def _command_lines(output: str) -> list[str]:
     """Return a command result's lines without the adapter's echo."""
 
