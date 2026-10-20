@@ -75,6 +75,10 @@ class SessionRuntime:
     stop_history_limit: int = DEFAULT_STOP_HISTORY_LIMIT
     command_transcript: list[CommandTranscriptEntry] = field(default_factory=list)
     command_transcript_limit: int = DEFAULT_COMMAND_TRANSCRIPT_LIMIT
+    # A finer stop kind than the native reason expresses, tied to that reason.
+    _refined_stop_kind: tuple[str | None, StopKind] | None = field(
+        default=None, repr=False, compare=False
+    )
     # Leaf lock guarding the container state below. No other lock is taken while
     # it is held, so it cannot participate in a lock-order cycle.
     _state_lock: LockProtocol = field(default_factory=threading.RLock, repr=False, compare=False)
@@ -87,8 +91,16 @@ class SessionRuntime:
 
     @property
     def stop_kind(self) -> StopKind:
-        """Canonical kind of the current stop reason."""
+        """Canonical kind of the current stop reason.
 
+        A backend whose protocol loses a distinction (DAP reports a watchpoint as
+        a plain breakpoint) records the refined kind with the stop it belongs to;
+        it is used only while that stop reason is current.
+        """
+
+        refined = self._refined_stop_kind
+        if refined is not None and refined[0] == self.stop_reason:
+            return refined[1]
         return stop_kind_from_reason(self.stop_reason)
 
     def begin_startup(self, config: SessionConfig) -> None:
@@ -294,10 +306,16 @@ class SessionRuntime:
         self,
         reason: str | None = None,
         *,
+        stop_kind: StopKind | None = None,
         inferior_id: int | None = None,
     ) -> None:
-        """Record that the inferior is paused and inspectable."""
+        """Record that the inferior is paused and inspectable.
 
+        ``stop_kind`` refines the canonical kind when the native reason cannot say
+        it (DAP calls a watchpoint stop ``breakpoint``).
+        """
+
+        self._refined_stop_kind = (reason, stop_kind) if stop_kind is not None else None
         self._update_inferior_state(
             inferior_id=inferior_id,
             execution_state="paused",

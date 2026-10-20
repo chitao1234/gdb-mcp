@@ -155,27 +155,27 @@ def test_lldb_rejects_a_core_dump(
 
 
 @pytest.mark.integration
-def test_lldb_session_reports_unsupported_operations(
+def test_lldb_parses_memory_disassembly_source_and_watchpoints(
     compile_program: CompileProgram,
     start_session: StartSession,
     call_gdb_tool: CallGdbTool,
     stop_session: StopSession,
 ) -> None:
-    """Operations DAP cannot express answer with a machine-readable code."""
+    """The command fallbacks should return structured payloads, not raw text."""
 
     program = compile_program(LLDB_PROGRAM, filename="lldb_probe.c", compiler="gcc")
     session_id = start_session(program, debugger="lldb", gdb_path=LLDB_DAP)
     try:
-        watchpoint = call_gdb_tool(
+        call_gdb_tool(
             "gdb_breakpoint_manage",
             {
                 "session_id": session_id,
                 "action": "create",
-                "breakpoint": {"kind": "watch", "expression": "value"},
+                "breakpoint": {"kind": "code", "location": "describe"},
             },
         )
-        assert watchpoint["status"] == "error"
-        assert watchpoint["code"] == "unsupported_operation"
+        run = call_gdb_tool("gdb_execution_manage", {"session_id": session_id, "action": "run"})
+        assert run["status"] == "success", run
 
         memory = call_gdb_tool(
             "gdb_inspect_query",
@@ -185,7 +185,74 @@ def test_lldb_session_reports_unsupported_operations(
                 "query": {"address": "&value", "count": 4},
             },
         )
-        assert memory["status"] == "error"
-        assert memory["code"] == "unsupported_operation"
+        assert memory["status"] == "success", memory
+        assert dig(memory, "result", "captured_bytes") == 4
+        block = mapping_list(dig(memory, "result", "blocks"))[0]
+        assert len(text(block["contents"])) == 8
+        assert text(block["begin"]).startswith("0x")
+
+        disassembly = call_gdb_tool(
+            "gdb_inspect_query",
+            {
+                "session_id": session_id,
+                "action": "disassembly",
+                "query": {
+                    "location": {"kind": "function", "function": "describe"},
+                    "instruction_count": 4,
+                },
+            },
+        )
+        assert disassembly["status"] == "success", disassembly
+        instructions = mapping_list(dig(disassembly, "result", "instructions"))
+        assert instructions
+        assert dig(instructions[0], "address") is not None
+        assert dig(instructions[0], "instruction")
+
+        source = call_gdb_tool(
+            "gdb_inspect_query",
+            {
+                "session_id": session_id,
+                "action": "source",
+                "query": {
+                    "location": {"kind": "function", "function": "describe"},
+                    "context_before": 2,
+                    "context_after": 2,
+                },
+            },
+        )
+        assert source["status"] == "success", source
+        lines = mapping_list(dig(source, "result", "lines"))
+        assert lines
+        assert any("describe" in text(line["text"]) for line in lines)
+
+        watchpoint = call_gdb_tool(
+            "gdb_breakpoint_manage",
+            {
+                "session_id": session_id,
+                "action": "create",
+                "breakpoint": {"kind": "watch", "expression": "doubled"},
+            },
+        )
+        assert watchpoint["status"] == "success", watchpoint
+        assert dig(watchpoint, "result", "breakpoint", "type") == "watchpoint"
+
+        resumed = call_gdb_tool(
+            "gdb_execution_manage",
+            {"session_id": session_id, "action": "continue"},
+        )
+        assert resumed["status"] == "success", resumed
+        status = status_query(call_gdb_tool, session_id)
+        assert dig(status, "result", "stop_kind") == "watchpoint"
+
+        catchpoint = call_gdb_tool(
+            "gdb_breakpoint_manage",
+            {
+                "session_id": session_id,
+                "action": "create",
+                "breakpoint": {"kind": "catch", "event": "syscall"},
+            },
+        )
+        assert catchpoint["status"] == "error"
+        assert catchpoint["code"] == "unsupported_operation"
     finally:
         stop_session(session_id, ignore_errors=True)

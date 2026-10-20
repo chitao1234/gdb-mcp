@@ -135,6 +135,7 @@ class StopEvent:
 
     execution_state: ExecutionState
     reason: str | None = None
+    stop_kind: StopKind | None = None
     command: str | None = None
     inferior_id: int | None = None
     thread_id: int | None = None

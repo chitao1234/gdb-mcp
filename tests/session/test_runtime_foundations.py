@@ -89,6 +89,19 @@ class TestRuntimeFoundations:
         assert summaries[1].execution_state == "exited"
         assert summaries[1].is_current is True
 
+    def test_a_refined_stop_kind_belongs_to_its_reason(
+        self, session_service: SessionService
+    ) -> None:
+        """A backend refinement applies only to the stop reason it was recorded with."""
+
+        runtime = session_service.runtime
+
+        runtime.mark_inferior_paused("breakpoint", stop_kind="watchpoint")
+        assert runtime.stop_kind == "watchpoint"
+
+        runtime.mark_inferior_paused("breakpoint-hit")
+        assert runtime.stop_kind == "breakpoint"
+
     def test_update_inferior_inventory_reconciles_state_map(
         self, session_service: SessionService
     ) -> None:

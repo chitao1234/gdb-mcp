@@ -19,9 +19,11 @@ DAP has no "load without running" request, so `start` launches the debuggee with
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 from collections.abc import Callable, Mapping
-from typing import Any, Literal
+from dataclasses import dataclass
+from typing import Any, Literal, cast
 
 from ..contracts import DEBUGGER_LLDB
 from ..domain import (
@@ -33,6 +35,7 @@ from ..domain import (
     CommandExecutionInfo,
     DetachOnForkInfo,
     DisassemblyInfo,
+    DisassemblyInstructionRecord,
     ExpressionValueInfo,
     FinishInfo,
     FollowForkMode,
@@ -46,6 +49,7 @@ from ..domain import (
     InferiorRecord,
     InferiorRemoveInfo,
     InferiorSelectionInfo,
+    MemoryBlockRecord,
     MemoryReadInfo,
     MessageResult,
     OperationError,
@@ -56,7 +60,9 @@ from ..domain import (
     SessionStartInfo,
     SessionStatusSnapshot,
     SourceContextInfo,
+    SourceLineRecord,
     StopEvent,
+    StopKind,
     ThreadListInfo,
     ThreadRecord,
     ThreadSelectionInfo,
@@ -65,7 +71,17 @@ from ..domain import (
     WaitForStopInfo,
     WatchpointAccessType,
 )
-from ..transport import DapClient, DapStdioStream, DapStream, dap_error_message
+from ..transport import (
+    DapClient,
+    DapStdioStream,
+    DapStream,
+    build_source_list_command,
+    count_for_window,
+    dap_error_message,
+    parse_source_list_output,
+    quote_lldb_argument,
+    select_window,
+)
 from ..transport.dap_client import DapTransportError
 from .backends import BackendCapabilities, BackendOperation
 from .config import SessionConfig
@@ -100,6 +116,11 @@ _OPERATIONS: tuple[BackendOperation, ...] = (
     "variables",
     "registers",
     "set_breakpoint",
+    "set_watchpoint",
+    "delete_watchpoint",
+    "read_memory",
+    "disassemble",
+    "source",
     "list_breakpoints",
     "get_breakpoint",
     "delete_breakpoint",
@@ -135,6 +156,11 @@ class LldbDapBackend:
             operations=frozenset(_OPERATIONS),
         )
         self._breakpoints: dict[int, BreakpointRecord] = {}
+        # DAP has no inventory and LLDB numbers its watchpoints separately, so the
+        # backend keeps both the kind of each breakpoint and its native number.
+        self._breakpoint_kinds: dict[int, str] = {}
+        self._breakpoint_lines: dict[int, int] = {}
+        self._watchpoint_numbers: dict[int, str] = {}
         self._next_breakpoint_id = 1
 
     # -- capability surface -------------------------------------------------
@@ -756,13 +782,17 @@ class LldbDapBackend:
         picked = self._pick_breakpoint(client, location, condition=condition)
         if isinstance(picked, OperationError):
             return picked
+        record, kind, line_number = picked
 
         number = self._next_breakpoint_id
         self._next_breakpoint_id += 1
-        record = picked.model_copy(
+        record = record.model_copy(
             update={"number": str(number), "condition": condition, "temporary": temporary}
         )
         self._breakpoints[number] = record
+        self._breakpoint_kinds[number] = kind
+        if line_number is not None:
+            self._breakpoint_lines[number] = line_number
         return OperationSuccess(BreakpointInfo(breakpoint=record))
 
     def list_breakpoints(self) -> OperationSuccess[BreakpointListInfo] | OperationError:
@@ -785,20 +815,33 @@ class LldbDapBackend:
         return OperationSuccess(BreakpointInfo(breakpoint=record))
 
     def delete_breakpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
-        """Forget one breakpoint and clear it in the adapter."""
+        """Clear one breakpoint in the adapter and forget it."""
 
-        if number not in self._breakpoints:
+        record = self._breakpoints.get(number)
+        if record is None:
             return OperationError(message=f"Breakpoint {number} not found", code="not_found")
+
+        if _is_watchpoint(record):
+            removed = self._remove_watchpoint(number)
+            if isinstance(removed, OperationError):
+                return removed
+            return OperationSuccess(SessionMessage(message=f"Watchpoint {number} deleted"))
+
         del self._breakpoints[number]
+        self._breakpoint_kinds.pop(number, None)
+        self._breakpoint_lines.pop(number, None)
+        pushed = self._push_breakpoints(source=record.file)
+        if isinstance(pushed, OperationError):
+            return pushed
         return OperationSuccess(SessionMessage(message=f"Breakpoint {number} deleted"))
 
     def enable_breakpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
-        """Mark one breakpoint enabled."""
+        """Enable one breakpoint in the adapter."""
 
         return self._set_enabled(number, enabled=True)
 
     def disable_breakpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
-        """Mark one breakpoint disabled."""
+        """Disable one breakpoint in the adapter."""
 
         return self._set_enabled(number, enabled=False)
 
@@ -823,11 +866,15 @@ class LldbDapBackend:
         picked = self._pick_breakpoint(client, source, condition=condition_value)
         if isinstance(picked, OperationError):
             return picked
+        record, kind, line_number = picked
 
-        updated = picked.model_copy(
+        updated = record.model_copy(
             update={"number": str(number), "condition": condition_value, "temporary": False}
         )
         self._breakpoints[number] = updated
+        self._breakpoint_kinds[number] = kind
+        if line_number is not None:
+            self._breakpoint_lines[number] = line_number
         return OperationSuccess(BreakpointInfo(breakpoint=updated))
 
     # -- operations LLDB cannot perform -------------------------------------
@@ -874,21 +921,91 @@ class LldbDapBackend:
     def set_watchpoint(
         self, expression: str, *, access: WatchpointAccessType = "write"
     ) -> OperationSuccess[BreakpointInfo] | OperationError:
-        """DAP has no watchpoint request the adapter advertises; use a command."""
+        """Watch one variable through LLDB's ``watchpoint set variable``.
 
-        return self._unsupported("watchpoints")
+        LLDB's write watchpoint needs only the expression; read watchpoints need an
+        address and byte size the tool surface does not carry, so they point at the
+        command escape hatch instead of guessing the width.
+        """
+
+        if access != "write":
+            return OperationError(
+                message="lldb watchpoints watch writes; use gdb_execute_command with "
+                "'watchpoint set expression -w read -s <size> <address>' for a read watchpoint",
+                code="unsupported_operation",
+            )
+
+        output = self._run_command_checked(
+            f"watchpoint set variable {quote_lldb_argument(expression)}"
+        )
+        if isinstance(output, OperationError):
+            return output
+
+        record = _parse_watchpoint(output, expression)
+        if record is None:
+            return OperationError(
+                message=f"lldb did not report a watchpoint for {expression!r}",
+                code="unsupported_operation",
+            )
+
+        native = record.number or ""
+        number = self._next_breakpoint_id
+        self._next_breakpoint_id += 1
+        stored = record.model_copy(update={"number": str(number)})
+        self._breakpoints[number] = stored
+        self._breakpoint_kinds[number] = "watchpoint"
+        self._watchpoint_numbers[number] = native
+        # Setting a watchpoint can immediately report a hit; keep the runtime honest.
+        self._drain_events(timeout_sec=0.0)
+        return OperationSuccess(BreakpointInfo(breakpoint=stored))
 
     def delete_watchpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
-        """DAP has no watchpoint request the adapter advertises; use a command."""
+        """Delete one watchpoint through LLDB."""
 
-        return self._unsupported("watchpoints")
+        removed = self._remove_watchpoint(number)
+        if isinstance(removed, OperationError):
+            return removed
+        return OperationSuccess(SessionMessage(message=f"Watchpoint {number} deleted"))
 
     def read_memory(
         self, address: str, count: int, *, offset: int = 0
     ) -> OperationSuccess[MemoryReadInfo] | OperationError:
-        """``readMemory`` is not advertised and kills the adapter; use a command."""
+        """Read memory through ``memory read`` and parse its hex dump.
 
-        return self._unsupported("memory reads")
+        The DAP ``readMemory`` request is not advertised by lldb-dap and kills the
+        adapter when it is sent anyway, so the command is the supported path.
+        """
+
+        if count <= 0:
+            return OperationError(message="count must be positive", code="validation_error")
+
+        expression = address if offset == 0 else f"({address}) + {offset}"
+        command = f"memory read -c {count} -s 1 -f x {quote_lldb_argument(expression)}"
+        output = self._run_command_checked(command)
+        if isinstance(output, OperationError):
+            return output
+
+        parsed = _parse_memory(output, count=count)
+        if parsed is None:
+            return OperationError(
+                message=f"lldb returned no readable memory at {address}",
+                code="memory_unavailable",
+            )
+        blocks, captured_bytes = parsed
+        warnings: tuple[str, ...] = ()
+        if captured_bytes < count:
+            warnings = (f"Partial read: captured {captured_bytes} of {count} bytes",)
+        return OperationSuccess(
+            MemoryReadInfo(
+                address=address,
+                count=count,
+                offset=offset,
+                blocks=blocks,
+                block_count=len(blocks),
+                captured_bytes=captured_bytes,
+            ),
+            warnings=warnings,
+        )
 
     def disassemble(
         self,
@@ -904,9 +1021,61 @@ class LldbDapBackend:
         instruction_count: int = 32,
         mode: Literal["assembly", "mixed"] = "mixed",
     ) -> OperationSuccess[DisassemblyInfo] | OperationError:
-        """``disassemble`` is not advertised; use the ``disassemble`` command."""
+        """Disassemble through the ``disassemble`` command and parse its listing."""
 
-        return self._unsupported("disassembly")
+        command = _disassembly_command(
+            function=function,
+            address=address,
+            start_address=start_address,
+            end_address=end_address,
+            file=file,
+            line=line,
+            instruction_count=instruction_count,
+            mode=mode,
+        )
+        output = self._run_command_checked(command)
+        if isinstance(output, OperationError):
+            return output
+
+        function_name, instructions = _parse_disassembly(output)
+        if not instructions:
+            target = function or address or start_address or file or "the current frame"
+            return OperationError(
+                message=f"lldb returned no disassembly for {target!r}",
+                code="disassembly_unavailable",
+            )
+
+        current = self.runtime.last_stop_event
+        current_address = current.frame.addr if current is not None and current.frame else None
+        if current_address is not None:
+            for instruction in instructions:
+                if instruction.address == current_address:
+                    instruction.is_current = True
+
+        scope = "function" if function else ("address" if address or start_address else "current")
+        frame_info = self.runtime.current_frame
+        return OperationSuccess(
+            DisassemblyInfo(
+                scope=cast(
+                    Literal["current", "function", "address", "file_line", "file_range"], scope
+                ),
+                thread_id=thread_id if thread_id is not None else self.runtime.current_thread_id,
+                frame=frame if frame is not None else frame_info,
+                function=function_name or function,
+                file=file,
+                fullname=file,
+                line=line,
+                start_address=instructions[0].address,
+                end_address=(
+                    _next_address(instructions[-1].address)
+                    if instructions[-1].address is not None
+                    else None
+                ),
+                mode=mode,
+                instructions=instructions,
+                count=len(instructions),
+            )
+        )
 
     def get_source_context(
         self,
@@ -922,9 +1091,100 @@ class LldbDapBackend:
         context_before: int = 5,
         context_after: int = 5,
     ) -> OperationSuccess[SourceContextInfo] | OperationError:
-        """The adapter's ``source`` request returns a disassembly, not text."""
+        """List a source window through ``source list`` and parse its text."""
 
-        return self._unsupported("source context")
+        if start_line is not None and end_line is not None:
+            window_start, window_end = start_line, end_line
+        elif line is not None:
+            window_start = max(1, line - context_before)
+            window_end = line + context_after
+        else:
+            window_start, window_end = None, None
+
+        count = (
+            count_for_window(window_end - window_start + 1)
+            if window_start is not None and window_end is not None
+            else count_for_window(context_before + context_after + 1)
+        )
+        line_selector = line if line is not None else start_line
+        if file is not None or line_selector is not None:
+            command = build_source_list_command(file=file, line=line_selector, count=count)
+        elif function is not None:
+            command = build_source_list_command(function=function, count=count)
+        elif address is not None:
+            command = build_source_list_command(address=address, count=count)
+        else:
+            command = f"source list -c {count}"
+
+        output = self._run_command_checked(command)
+        if isinstance(output, OperationError):
+            return output
+
+        location = _parse_source_location(output)
+        listed = parse_source_list_output(output)
+        if not listed.lines:
+            detail = "; ".join(listed.errors) or "no source text"
+            target = file or function or address or "the current frame"
+            return OperationError(
+                message=f"lldb returned no source for {target!r}: {detail}",
+                code="not_found",
+            )
+
+        resolved_file = listed.file or file or (location.file if location is not None else None)
+        if resolved_file is None:
+            return OperationError(
+                message="lldb did not report which file these source lines belong to",
+                code="not_found",
+            )
+        current_line = (
+            line if line is not None else (location.line if location is not None else None)
+        )
+        if window_start is None or window_end is None:
+            window_start = listed.lines[0].number
+            window_end = listed.lines[-1].number
+        selected = select_window(listed.lines, start_line=window_start, end_line=window_end)
+        if not selected:
+            selected = listed.lines
+
+        lines = [
+            SourceLineRecord(
+                line_number=item.number,
+                text=item.text,
+                is_current=current_line is not None and item.number == current_line,
+            )
+            for item in selected
+        ]
+        designator = None
+        if file is not None and line is not None:
+            designator = "file_line"
+        elif start_line is not None and end_line is not None:
+            designator = "file_range"
+        elif function is not None:
+            designator = "function"
+        elif address is not None:
+            designator = "address"
+        else:
+            designator = "current"
+
+        return OperationSuccess(
+            SourceContextInfo(
+                scope=cast(
+                    Literal["current", "function", "address", "file_line", "file_range"],
+                    designator,
+                ),
+                thread_id=thread_id if thread_id is not None else self.runtime.current_thread_id,
+                frame=frame if frame is not None else self.runtime.current_frame,
+                function=function or (location.function if location else None),
+                address=address,
+                file=resolved_file,
+                fullname=resolved_file,
+                line=current_line,
+                start_line=selected[0].number,
+                end_line=selected[-1].number,
+                lines=lines,
+                count=len(lines),
+            )
+        )
 
     # -- internals ----------------------------------------------------------
 
@@ -1161,16 +1421,25 @@ class LldbDapBackend:
             return
 
         reason = _text(body.get("reason")) or "stopped"
+        description = _text(body.get("description")) or ""
+        # DAP reports a watchpoint stop as a plain breakpoint and keeps the
+        # distinction in the description, so the kind is refined here.
+        stop_kind: StopKind | None = "watchpoint" if description.startswith("watchpoint") else None
         thread_id = _as_int(body.get("threadId"))
         if thread_id is not None:
             self.runtime.mark_thread_selected(thread_id)
         frames = self._top_frame(thread_id)
         self.runtime.mark_frame_selected(0 if frames is not None else None)
-        self.runtime.mark_inferior_paused(reason, inferior_id=inferior_id)
+        self.runtime.mark_inferior_paused(
+            reason,
+            stop_kind=stop_kind,
+            inferior_id=inferior_id,
+        )
         self.runtime.record_stop_event(
             StopEvent(
                 execution_state="paused",
                 reason=reason,
+                stop_kind=stop_kind,
                 inferior_id=inferior_id,
                 thread_id=thread_id,
                 frame=frames,
@@ -1287,7 +1556,7 @@ class LldbDapBackend:
         location: str,
         *,
         condition: str | None,
-    ) -> BreakpointRecord | OperationError:
+    ) -> tuple[BreakpointRecord, str, int | None] | OperationError:
         path, line = _split_location(location)
         if path is None:
             response = client.request(
@@ -1325,7 +1594,7 @@ class LldbDapBackend:
             )
         source = first.get("source")
         source_path = _text(source.get("path")) if isinstance(source, Mapping) else None
-        return BreakpointRecord(
+        record = BreakpointRecord(
             number=None,
             type="breakpoint",
             enabled=True,
@@ -1336,6 +1605,11 @@ class LldbDapBackend:
             line=_as_int(first.get("line")),
             original_location=location,
         )
+        return (
+            record,
+            ("source" if path is not None else "function"),
+            (line if path is not None else None),
+        )
 
     def _set_enabled(
         self, number: int, *, enabled: bool
@@ -1343,15 +1617,116 @@ class LldbDapBackend:
         record = self._breakpoints.get(number)
         if record is None:
             return OperationError(message=f"Breakpoint {number} not found", code="not_found")
-        # DAP re-sends the whole breakpoint list per source, so a disabled
-        # breakpoint is remembered rather than pushed: sending an empty list would
-        # delete the debugger's breakpoint instead of disabling it.
-        self._breakpoints[number] = record.model_copy(
-            update={"enabled": enabled, "verified": enabled or record.verified}
-        )
+
+        if _is_watchpoint(record):
+            native = self._watchpoint_numbers.get(number)
+            if native is None:
+                return OperationError(
+                    message=f"Watchpoint {number} is not tracked by this session",
+                    code="not_found",
+                )
+            verb = "enable" if enabled else "disable"
+            output = self._run_command_checked(f"watchpoint {verb} {native}")
+            if isinstance(output, OperationError):
+                return output
+            self._breakpoints[number] = record.model_copy(update={"enabled": enabled})
+            return OperationSuccess(SessionMessage(message=f"Watchpoint {number} {verb}d"))
+
+        self._breakpoints[number] = record.model_copy(update={"enabled": enabled})
+        pushed = self._push_breakpoints(source=record.file)
+        if isinstance(pushed, OperationError):
+            return pushed
         return OperationSuccess(
             SessionMessage(message=f"Breakpoint {number} {'enabled' if enabled else 'disabled'}")
         )
+
+    def _push_breakpoints(self, *, source: str | None = None) -> OperationError | None:
+        """Send the enabled breakpoints this backend tracks to the adapter.
+
+        DAP replaces a source's whole breakpoint list on every ``setBreakpoints``
+        call and has no "disable" request, so a delete or a disable is expressed by
+        re-sending the remaining enabled set (an empty list for a cleared source).
+        """
+
+        client = self._require_client()
+        if isinstance(client, OperationError):
+            return client
+
+        functions = [
+            {
+                "name": record.original_location or "",
+                **({"condition": record.condition} if record.condition else {}),
+            }
+            for number, record in self._breakpoints.items()
+            if self._breakpoint_kinds.get(number) == "function" and record.enabled is True
+        ]
+        response = client.request(
+            "setFunctionBreakpoints",
+            {"breakpoints": functions},
+            timeout_sec=DEFAULT_TIMEOUT_SEC,
+        )
+        failure = dap_error_message(response)
+        if failure is not None:
+            return OperationError(message=failure)
+
+        sources = {
+            record.file
+            for number, record in self._breakpoints.items()
+            if self._breakpoint_kinds.get(number) == "source" and record.file is not None
+        }
+        if source is not None:
+            sources.add(source)
+        for path in sorted(sources):
+            lines = [
+                {
+                    "line": self._breakpoint_lines[number],
+                    **({"condition": record.condition} if record.condition else {}),
+                }
+                for number, record in self._breakpoints.items()
+                if self._breakpoint_kinds.get(number) == "source"
+                and record.file == path
+                and record.enabled is True
+                and number in self._breakpoint_lines
+            ]
+            response = client.request(
+                "setBreakpoints",
+                {"source": {"path": path}, "breakpoints": lines},
+                timeout_sec=DEFAULT_TIMEOUT_SEC,
+            )
+            failure = dap_error_message(response)
+            if failure is not None:
+                return OperationError(message=failure)
+        return None
+
+    def _remove_watchpoint(self, number: int) -> OperationError | None:
+        """Delete one watchpoint through LLDB and forget it."""
+
+        native = self._watchpoint_numbers.get(number)
+        if native is None:
+            return OperationError(message=f"Watchpoint {number} not found", code="not_found")
+        output = self._run_command_checked(f"watchpoint delete {native}")
+        if isinstance(output, OperationError):
+            return output
+        del self._watchpoint_numbers[number]
+        self._breakpoints.pop(number, None)
+        self._breakpoint_kinds.pop(number, None)
+        self._breakpoint_lines.pop(number, None)
+        return None
+
+    def _run_command_checked(self, command: str) -> str | OperationError:
+        """Run an LLDB command and turn its first error line into a failure.
+
+        The adapter answers ``evaluate`` with ``success`` even when the command
+        itself failed, so the text is the only place the failure appears.
+        """
+
+        output = self._run_command(command, timeout_sec=DEFAULT_TIMEOUT_SEC)
+        if isinstance(output, OperationError):
+            return output
+        error = _first_command_error(output)
+        if error is not None:
+            return OperationError(message=error, code="command_failed")
+        return output
 
     @staticmethod
     def _unsupported(operation: str) -> OperationError:
@@ -1436,3 +1811,220 @@ def _split_location(location: str) -> tuple[str | None, int]:
     if separator and path and line.isdigit():
         return path, int(line)
     return None, 0
+
+
+# -- LLDB text grammars -----------------------------------------------------
+# Measured against lldb-dap 14 and 20; see `TOOLS.md` for the commands each one
+# belongs to. The DAP escape hatch prefixes the command as `(lldb) ...`, which
+# every parser skips.
+
+_ECHO_RE = re.compile(r"^\(lldb\)\s")
+_MEMORY_LINE_RE = re.compile(
+    r"^\s*(?P<address>0x[0-9a-fA-F]+):\s*(?P<bytes>(?:0x[0-9a-fA-F]{2}\s*)+)$"
+)
+_DISASSEMBLY_HEADER_RE = re.compile(r"^(?P<module>[^`]+)`(?P<function>.+):\s*$")
+_DISASSEMBLY_SOURCE_RE = re.compile(r"^\*\*\s+(?P<line>\d+)\s*\t(?P<text>.*)$")
+_DISASSEMBLY_INSN_RE = re.compile(
+    r"^\s*(?P<current>->\s+)?(?P<address>0x[0-9a-fA-F]+)\s+<\+(?P<offset>\d+)>:\s*(?P<instruction>.*?)\s*$"
+)
+_SOURCE_LOCATION_RE = re.compile(
+    r"^(?P<module>.+?)`(?P<function>[^ ]+) \+ (?P<offset>\d+) at "
+    r"(?P<file>.+):(?P<line>\d+):(?P<column>\d+)\s*$"
+)
+_WATCHPOINT_CREATED_RE = re.compile(
+    r"^Watchpoint created: Watchpoint (?P<number>\d+): addr = (?P<address>0x[0-9a-fA-F]+) "
+    r"size = (?P<size>\d+) state = (?P<state>\w+) type = (?P<type>\w)"
+)
+_WATCHPOINT_DECLARE_RE = re.compile(r"^\s+declare @ '(?P<file>.+):(?P<line>\d+):(?P<column>\d+)'")
+_WATCHPOINT_SPEC_RE = re.compile(r"^\s+watchpoint spec = '(?P<spec>.+)'")
+
+
+@dataclass(frozen=True, slots=True)
+class _SourceLocation:
+    """Where LLDB says an address-form ``source list`` landed."""
+
+    file: str
+    function: str
+    line: int
+
+
+def _is_watchpoint(record: BreakpointRecord) -> bool:
+    """Whether one record was created through ``watchpoint set``."""
+
+    return "watch" in (record.type or "").lower()
+
+
+def _first_command_error(output: str) -> str | None:
+    """Return the first error line of a command result, when it failed.
+
+    The REPL reports command failures as text inside a successful DAP response;
+    the first meaningful line is either the error or the data.
+    """
+
+    for line in output.splitlines():
+        if _ECHO_RE.match(line):
+            continue
+        if line.startswith("error:"):
+            return line[len("error:") :].strip()
+        if line.strip():
+            return None
+    return None
+
+
+def _parse_memory(
+    output: str,
+    *,
+    count: int,
+) -> tuple[list[MemoryBlockRecord], int] | None:
+    """Parse a ``memory read -f x`` dump into one block of hex bytes."""
+
+    begin: str | None = None
+    end: str | None = None
+    contents: list[str] = []
+    for line in output.splitlines():
+        match = _MEMORY_LINE_RE.match(line)
+        if match is None:
+            continue
+        address = match.group("address")
+        tokens = match.group("bytes").split()
+        if begin is None:
+            begin = address
+        contents.extend(token[2:].zfill(2) for token in tokens)
+        end = hex(int(address, 16) + len(tokens))
+    if begin is None or end is None or not contents:
+        return None
+    captured = min(len(contents), count)
+    block = MemoryBlockRecord(
+        begin=begin,
+        offset="0x0",
+        end=end,
+        contents="".join(contents[:count]),
+    )
+    return [block], captured
+
+
+def _disassembly_command(
+    *,
+    function: str | None,
+    address: str | None,
+    start_address: str | None,
+    end_address: str | None,
+    file: str | None,
+    line: int | None,
+    instruction_count: int,
+    mode: Literal["assembly", "mixed"],
+) -> str:
+    """Build the ``disassemble`` command for one location selector."""
+
+    count = str(max(1, instruction_count))
+    parts = ["disassemble"]
+    if mode == "mixed":
+        parts.append("-m")
+    if function is not None:
+        parts.extend(["-n", quote_lldb_argument(function), "-c", count])
+    elif start_address is not None and end_address is not None:
+        parts.extend(
+            ["-s", quote_lldb_argument(start_address), "-e", quote_lldb_argument(end_address)]
+        )
+    elif start_address is not None:
+        parts.extend(["-s", quote_lldb_argument(start_address), "-c", count])
+    elif address is not None:
+        # `-a` means "the function containing this address"; `-s` starts there.
+        parts.extend(["-s", quote_lldb_argument(address), "-c", count])
+    elif file is not None and line is not None:
+        parts.extend(["-f", quote_lldb_argument(file), "-l", str(line), "-c", count])
+    else:
+        parts.extend(["-s", "$pc", "-c", count])
+    return " ".join(parts)
+
+
+def _parse_disassembly(output: str) -> tuple[str | None, list[DisassemblyInstructionRecord]]:
+    """Parse a ``disassemble`` listing, keeping mixed-mode source lines."""
+
+    function_name: str | None = None
+    source_line: int | None = None
+    instructions: list[DisassemblyInstructionRecord] = []
+    for line in output.splitlines():
+        if _ECHO_RE.match(line):
+            continue
+        header = _DISASSEMBLY_HEADER_RE.match(line)
+        if header is not None:
+            function_name = header.group("function")
+            continue
+        source = _DISASSEMBLY_SOURCE_RE.match(line)
+        if source is not None:
+            source_line = int(source.group("line"))
+            continue
+        match = _DISASSEMBLY_INSN_RE.match(line)
+        if match is None:
+            continue
+        instructions.append(
+            DisassemblyInstructionRecord(
+                address=match.group("address"),
+                instruction=match.group("instruction").strip(),
+                function=function_name,
+                offset=int(match.group("offset")),
+                line=source_line,
+                is_current=match.group("current") is not None,
+            )
+        )
+    return function_name, instructions
+
+
+def _parse_source_location(output: str) -> _SourceLocation | None:
+    """Read the location header an address-form ``source list`` prints."""
+
+    for line in output.splitlines():
+        match = _SOURCE_LOCATION_RE.match(line)
+        if match is not None:
+            return _SourceLocation(
+                file=match.group("file"),
+                function=match.group("function"),
+                line=int(match.group("line")),
+            )
+    return None
+
+
+def _parse_watchpoint(output: str, expression: str) -> BreakpointRecord | None:
+    """Build a watchpoint record from ``watchpoint set variable`` output."""
+
+    created: re.Match[str] | None = None
+    declared: re.Match[str] | None = None
+    spec: re.Match[str] | None = None
+    for line in output.splitlines():
+        if created is None:
+            created = _WATCHPOINT_CREATED_RE.match(line)
+        if declared is None:
+            declared = _WATCHPOINT_DECLARE_RE.match(line)
+        if spec is None:
+            spec = _WATCHPOINT_SPEC_RE.match(line)
+    if created is None:
+        return None
+
+    file: str | None = None
+    line_number: int | None = None
+    if declared is not None:
+        file = declared.group("file")
+        line_number = int(declared.group("line"))
+
+    return BreakpointRecord(
+        number=created.group("number"),
+        type="watchpoint",
+        enabled=created.group("state") == "enabled",
+        verified=True,
+        what=spec.group("spec") if spec is not None else expression,
+        addr=created.group("address"),
+        file=file,
+        fullname=file,
+        line=line_number,
+        original_location=expression,
+    )
+
+
+def _next_address(address: str) -> str | None:
+    """Return the address after one instruction address."""
+
+    try:
+        return hex(int(address, 16) + 1)
+    except ValueError:
+        return None

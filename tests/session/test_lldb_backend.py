@@ -17,7 +17,8 @@ from tests.support import dig, mapping, mapping_list, sequence, text
 class FakeDapAdapter:
     """Scripted DAP adapter: answers requests and emits the events a flow needs."""
 
-    def __init__(self) -> None:
+    def __init__(self, repl_outputs: dict[str, str] | None = None) -> None:
+        self.repl_outputs = dict(repl_outputs or {})
         self._queue: deque[dict[str, object]] = deque()
         self._seq = 0
         self.commands: list[str] = []
@@ -141,8 +142,12 @@ class FakeDapAdapter:
                 )
         elif command == "evaluate":
             expression = str(kwargs.get("expression", ""))
-            self._respond(request, {"result": f"result of {expression}", "type": "int"})
+            result = self.repl_outputs.get(expression, f"result of {expression}")
+            self._respond(request, {"result": result, "type": "int"})
         elif command in {"setBreakpoints", "setFunctionBreakpoints"}:
+            requested = kwargs.get("breakpoints")
+            first = requested[0] if isinstance(requested, list) and requested else {}
+            line = first.get("line", 9) if isinstance(first, dict) else 9
             self._respond(
                 request,
                 {
@@ -150,7 +155,7 @@ class FakeDapAdapter:
                         {
                             "id": 1,
                             "verified": True,
-                            "line": 9,
+                            "line": line,
                             "source": {"name": "probe.c", "path": "/src/probe.c"},
                         }
                     ]
@@ -447,12 +452,7 @@ class TestLldbUnsupportedOperations:
     @pytest.mark.parametrize(
         "operation",
         [
-            "set_watchpoint",
-            "delete_watchpoint",
             "set_catchpoint",
-            "read_memory",
-            "disassemble",
-            "get_source_context",
             "add_inferior",
             "remove_inferior",
             "set_follow_fork_mode",
@@ -462,12 +462,7 @@ class TestLldbUnsupportedOperations:
     def test_unsupported_operations_report_their_code(self, operation: str) -> None:
         backend, _ = _started(FakeDapAdapter())
         call = {
-            "set_watchpoint": lambda: backend.set_watchpoint("total"),
-            "delete_watchpoint": lambda: backend.delete_watchpoint(1),
             "set_catchpoint": lambda: backend.set_catchpoint("throw"),
-            "read_memory": lambda: backend.read_memory("0x1000", 8),
-            "disassemble": lambda: backend.disassemble(function="main"),
-            "get_source_context": lambda: backend.get_source_context(function="main"),
             "add_inferior": lambda: backend.add_inferior(executable="/bin/true"),
             "remove_inferior": lambda: backend.remove_inferior(1),
             "set_follow_fork_mode": lambda: backend.set_follow_fork_mode("child"),
@@ -479,13 +474,26 @@ class TestLldbUnsupportedOperations:
         assert result["status"] == "error"
         assert result["code"] == "unsupported_operation"
 
+    def test_a_read_watchpoint_points_at_the_escape_hatch(self) -> None:
+        backend, _ = _started(FakeDapAdapter())
+
+        result = result_to_mapping(backend.set_watchpoint("total", access="read"))
+
+        assert result["status"] == "error"
+        assert result["code"] == "unsupported_operation"
+        assert "gdb_execute_command" in text(result["message"])
+
     def test_capabilities_match_the_implemented_operations(self) -> None:
         backend, _ = _started(FakeDapAdapter())
 
         assert backend.capabilities.debugger == "lldb"
         assert backend.capabilities.supports("set_breakpoint") is True
-        assert backend.capabilities.supports("set_watchpoint") is False
-        assert backend.capabilities.supports("read_memory") is False
+        assert backend.capabilities.supports("set_watchpoint") is True
+        assert backend.capabilities.supports("read_memory") is True
+        assert backend.capabilities.supports("disassemble") is True
+        assert backend.capabilities.supports("source") is True
+        assert backend.capabilities.supports("set_catchpoint") is False
+        assert backend.capabilities.supports("add_inferior") is False
 
     def test_inferiors_describe_the_one_program(self) -> None:
         backend, _ = _started(FakeDapAdapter())
@@ -496,3 +504,219 @@ class TestLldbUnsupportedOperations:
         assert mapping_list(result["inferiors"])[0]["display"] == "/bin/probe"
         assert result["current_inferior_id"] == 1
         assert sequence(result["inferiors"])
+
+
+_MEMORY_TEXT = (
+    '(lldb) memory read -c 8 -s 1 -f x "0x1000"\n'
+    "0x1000: 0x01 0x00 0x00 0x00 0x02 0x00 0x00 0x00\n"
+)
+_DISASSEMBLY_TEXT = (
+    "(lldb) disassemble -n describe -c 3\n"
+    "probe_c`describe:\n"
+    "->  0x5555555551a0 <+31>: movl   $0x1, -0x14(%rbp)\n"
+    "    0x5555555551a7 <+38>: movl   $0x2, -0x10(%rbp)\n"
+)
+_DISASSEMBLY_MIXED_TEXT = (
+    "(lldb) disassemble -n describe -c 2 -m\n"
+    "\n** 8   \tint describe(struct point p) {\n"
+    "\nprobe_c`describe:\n"
+    "    0x555555555181 <+0>: endbr64 \n"
+    "    0x555555555185 <+4>: pushq  %rbp\n"
+)
+_SOURCE_TEXT = (
+    "(lldb) source list -f probe.c -l 8 -c 2\n"
+    "   8   \tint describe(struct point p) {\n"
+    "   9   \t    int nums[3] = {1, 2, 3};\n"
+    "   10  \t    int total = nums[0] + nums[1] + nums[2];\n"
+)
+_WATCHPOINT_TEXT = (
+    "(lldb) watchpoint set variable p\n"
+    "Watchpoint created: Watchpoint 1: addr = 0x7fffffffdbf8 size = 8 state = enabled type = m\n"
+    "    declare @ '/src/probe.c:8:27'\n"
+    "    watchpoint spec = 'p'\n"
+)
+
+
+class TestLldbParsedCommands:
+    """LLDB reports these results as text, so the backend parses them."""
+
+    def test_memory_read_parses_the_hex_dump(self) -> None:
+        adapter = FakeDapAdapter({_MEMORY_TEXT.splitlines()[0][7:]: _MEMORY_TEXT})
+        backend, _ = _started(adapter)
+
+        result = result_to_mapping(backend.read_memory("0x1000", 8))
+
+        assert result["status"] == "success"
+        assert result["captured_bytes"] == 8
+        assert result["block_count"] == 1
+        block = mapping_list(result["blocks"])[0]
+        assert block["begin"] == "0x1000"
+        assert block["end"] == "0x1008"
+        assert block["contents"] == "0100000002000000"
+        assert "warnings" not in result
+
+    def test_memory_read_reports_a_partial_read(self) -> None:
+        text = '(lldb) memory read -c 8 -s 1 -f x "0x1000"\n0x1000: 0x01 0x00\n'
+        adapter = FakeDapAdapter({_MEMORY_TEXT.splitlines()[0][7:]: text})
+        backend, _ = _started(adapter)
+
+        result = result_to_mapping(backend.read_memory("0x1000", 8))
+
+        assert result["captured_bytes"] == 2
+        warnings = [str(item) for item in sequence(result["warnings"])]
+        assert "Partial read: captured 2 of 8 bytes" in warnings
+
+    def test_memory_read_reports_a_command_error(self) -> None:
+        adapter = FakeDapAdapter(
+            {
+                'memory read -c 8 -s 1 -f x "0x1"': '(lldb) memory read -c 8 -s 1 -f x "0x1"\n'
+                "error: memory read failed for 0x0\n"
+            }
+        )
+        backend, _ = _started(adapter)
+
+        result = result_to_mapping(backend.read_memory("0x1", 8))
+
+        assert result["status"] == "error"
+        assert result["code"] == "command_failed"
+        assert "memory read failed" in text(result["message"])
+
+    def test_memory_read_applies_the_offset(self) -> None:
+        command = 'memory read -c 8 -s 1 -f x "(0x1000) + 4"'
+        adapter = FakeDapAdapter({command: _MEMORY_TEXT})
+        backend, _ = _started(adapter)
+
+        backend.read_memory("0x1000", 8, offset=4)
+
+        expressions = [
+            mapping(request["arguments"])["expression"]
+            for request in adapter.requests
+            if request["command"] == "evaluate"
+        ]
+        assert command in expressions
+
+    def test_disassembly_parses_instructions(self) -> None:
+        adapter = FakeDapAdapter({'disassemble -m -n "describe" -c 3': _DISASSEMBLY_TEXT})
+        backend, _ = _started(adapter)
+
+        result = result_to_mapping(backend.disassemble(function="describe", instruction_count=3))
+
+        assert result["status"] == "success"
+        assert result["function"] == "describe"
+        assert result["count"] == 2
+        first = mapping_list(result["instructions"])[0]
+        assert first["address"] == "0x5555555551a0"
+        assert first["offset"] == 31
+        assert first["instruction"] == "movl   $0x1, -0x14(%rbp)"
+        assert first["is_current"] is True
+        assert first["function"] == "describe"
+        assert result["start_address"] == "0x5555555551a0"
+        assert result["end_address"] == "0x5555555551a8"
+
+    def test_disassembly_mixed_mode_attaches_the_source_line(self) -> None:
+        adapter = FakeDapAdapter({'disassemble -m -n "describe" -c 2': _DISASSEMBLY_MIXED_TEXT})
+        backend, _ = _started(adapter)
+
+        result = result_to_mapping(backend.disassemble(function="describe", instruction_count=2))
+
+        instructions = mapping_list(result["instructions"])
+        assert [instruction["line"] for instruction in instructions] == [8, 8]
+        assert instructions[0]["instruction"] == "endbr64"
+
+    def test_source_context_parses_a_window(self) -> None:
+        command = "source list -f probe.c -l 8 -c 2"
+        adapter = FakeDapAdapter({command: _SOURCE_TEXT})
+        backend, _ = _started(adapter)
+
+        result = result_to_mapping(
+            backend.get_source_context(file="probe.c", start_line=8, end_line=10)
+        )
+
+        assert result["status"] == "success"
+        assert result["scope"] == "file_range"
+        assert result["start_line"] == 8
+        assert result["end_line"] == 10
+        assert result["count"] == 3
+        lines = mapping_list(result["lines"])
+        assert lines[0]["text"] == "int describe(struct point p) {"
+        assert lines[1]["line_number"] == 9
+
+    def test_source_context_reports_missing_source(self) -> None:
+        command = "source list -n nosuch -c 10"
+        adapter = FakeDapAdapter(
+            {
+                command: "(lldb) source list -n nosuch -c 10\n"
+                'error: Could not find function named: "nosuch".\n'
+            }
+        )
+        backend, _ = _started(adapter)
+
+        result = result_to_mapping(backend.get_source_context(function="nosuch"))
+
+        assert result["status"] == "error"
+        assert result["code"] == "command_failed"
+        assert "Could not find function" in text(result["message"])
+
+    def test_watchpoint_set_parses_the_creation(self) -> None:
+        adapter = FakeDapAdapter({'watchpoint set variable "p"': _WATCHPOINT_TEXT})
+        backend, _ = _started(adapter)
+
+        result = result_to_mapping(backend.set_watchpoint("p"))
+
+        breakpoint = mapping(result["breakpoint"])
+        assert breakpoint["type"] == "watchpoint"
+        assert breakpoint["number"] == "1"
+        assert breakpoint["what"] == "p"
+        assert breakpoint["addr"] == "0x7fffffffdbf8"
+        assert breakpoint["file"] == "/src/probe.c"
+        assert breakpoint["enabled"] is True
+
+        listed = result_to_mapping(backend.list_breakpoints())
+        assert listed["count"] == 1
+
+    def test_watchpoint_disable_and_delete_use_the_native_number(self) -> None:
+        adapter = FakeDapAdapter(
+            {
+                'watchpoint set variable "p"': _WATCHPOINT_TEXT,
+                "watchpoint disable 1": "Watchpoint 1 disabled\n",
+                "watchpoint enable 1": "Watchpoint 1 enabled\n",
+                "watchpoint delete 1": "Watchpoint 1 deleted\n",
+            }
+        )
+        backend, _ = _started(adapter)
+        backend.set_watchpoint("p")
+
+        result_to_mapping(backend.disable_breakpoint(1))
+        result_to_mapping(backend.enable_breakpoint(1))
+        result_to_mapping(backend.delete_breakpoint(1))
+
+        expressions = [
+            mapping(request["arguments"])["expression"]
+            for request in adapter.requests
+            if request["command"] == "evaluate"
+        ]
+        assert "watchpoint disable 1" in expressions
+        assert "watchpoint enable 1" in expressions
+        assert "watchpoint delete 1" in expressions
+        assert result_to_mapping(backend.list_breakpoints())["count"] == 0
+
+    def test_disabling_a_breakpoint_pushes_the_remaining_set(self) -> None:
+        adapter = FakeDapAdapter()
+        backend, _ = _started(adapter)
+        backend.set_breakpoint("/src/probe.c:9")
+        backend.set_breakpoint("/src/probe.c:10")
+
+        result_to_mapping(backend.disable_breakpoint(1))
+
+        pushes = [request for request in adapter.requests if request["command"] == "setBreakpoints"]
+        assert mapping(pushes[-1]["arguments"])["breakpoints"] == [{"line": 10}]
+
+    def test_deleting_the_last_breakpoint_clears_the_source(self) -> None:
+        adapter = FakeDapAdapter()
+        backend, _ = _started(adapter)
+        backend.set_breakpoint("/src/probe.c:9")
+
+        result_to_mapping(backend.delete_breakpoint(1))
+
+        pushes = [request for request in adapter.requests if request["command"] == "setBreakpoints"]
+        assert mapping(pushes[-1]["arguments"])["breakpoints"] == []

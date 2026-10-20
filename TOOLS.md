@@ -354,16 +354,25 @@ differs is what the backend can do and how a session begins.
   continues from there instead of starting the program.
 - `core`, `endpoint`, and `rr_replay` are refused with
   `code="unsupported_operation"` before an adapter is spawned.
-- Watchpoints, catchpoints, inferior management, fork settings, reverse
-  execution, memory reads, disassembly, and source windows have no request the
-  adapter advertises; they answer with `code="unsupported_operation"`. The command
-  escape hatch (`gdb_execute_command`) runs the LLDB equivalent and returns its
-  text, for example `memory read -c 8 -s 1 -f x <address>`, `disassemble -c 4 -n
-  <function>`, `source list -f <file> -l <line>`, or `watchpoint set variable
-  <name>`.
+- Memory, disassembly, source windows, and write watchpoints have no request the
+  adapter advertises, so they run the LLDB command and parse its text into the
+  same structured payloads GDB returns: `memory read -f x` hex dumps, `disassemble`
+  listings (with `-m` source lines; LLDB prints no opcodes, so `opcodes` is
+  `null`), `source list` windows, and `watchpoint set variable`. A memory
+  `address` must be a pointer-valued expression, which is also what GDB requires.
+  Read watchpoints need an address and byte size the tool surface does not carry;
+  they answer with `code="unsupported_operation"` and point at the escape hatch.
+- Catchpoints, inferior management, fork settings, and reverse execution have no
+  DAP equivalent; they answer with `code="unsupported_operation"`. The command
+  escape hatch (`gdb_execute_command`) still runs anything LLDB can do.
+- A watchpoint stop arrives as DAP `reason="breakpoint"` with a `watchpoint N`
+  description; the backend refines it, so `stop_kind` is `watchpoint` while the
+  native `stop_reason` stays `breakpoint`.
 - Breakpoints accept `function` or `file:line` locations (addresses are refused);
   DAP reports no inventory, so `gdb_breakpoint_query` lists what this session set,
-  including a `condition` and the `enabled` state the backend tracks.
+  including a `condition` and the `enabled` state the backend tracks. Deleting or
+  disabling one re-sends that source's remaining enabled breakpoints, because DAP
+  replaces a source's whole list on every request.
 
 ## `gdb_session_connect`
 

@@ -16,6 +16,7 @@ from ..domain import (
     StopEvent,
     StructuredPayload,
     payload_to_mapping,
+    stop_kind_from_reason,
 )
 from ..domain.adapters import frame_record
 from ..domain.parsing import as_int, as_mapping, as_optional_mapping, as_text_or_number
@@ -528,6 +529,7 @@ class SessionCommandRunner:
         return StopEvent(
             execution_state=execution_state,
             reason=stopped_reason,
+            stop_kind=stop_kind_from_reason(stopped_reason),
             command=command,
             inferior_id=inferior_id,
             thread_id=thread_id,
