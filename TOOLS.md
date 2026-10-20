@@ -132,7 +132,7 @@ Errors are uniform across all tools and are returned as MCP tool results with `i
 
 Validation failures use `code="validation_error"` and populate `details.field_errors`; the top-level `message` lists every failure, including the selecting union tag when one applies, and is not truncated.
 
-A failure that a debugger reported carries **everything that debugger printed**: GDB's console context (`Thread 1 (...):`, the address `x` tried) followed by its MI `msg`, and for an LLDB command the command's whole output including its continuation lines (an expression error prints the offending source line and a caret). A timeout carries whatever arrived before the deadline. `message` is only a short sentence when this server itself rejected the request (no session, no frame, an unsupported option).
+A failure that a debugger reported carries **everything that debugger printed**: GDB's console context (`Thread 1 (...):`, the address `x` tried) followed by its MI `msg`. A timeout carries whatever arrived before the deadline. `message` is only a short sentence when this server itself rejected the request (no session, no frame, an unsupported option).
 
 Session-scoped failures also carry the session's state in `details` (`session_id`, `execution_state`, `stop_reason`, `exit_code`), so a failure whose message is only `No registers.` still tells the caller that the inferior exited.
 
@@ -268,9 +268,9 @@ Dedicated startup tool. This is not action-based.
 ### Request Fields
 
 - `program`: optional executable path
-- `debugger`: backend to drive, default `gdb`; `lldb` drives `lldb-dap` over the
-  Debug Adapter Protocol. The value is validated against the implemented set, and a
-  backend that cannot perform an operation answers with `code="unsupported_operation"`.
+- `debugger`: backend to drive, default and currently only `gdb` (GDB/MI). The
+  value is validated against the implemented set, and a backend that cannot perform
+  an operation answers with `code="unsupported_operation"`.
 - `args`: optional argv override as `list[str]` or shell-style string
 - `core`: optional core-dump path
 - `init_commands`: optional list of GDB commands to run after environment setup
@@ -342,59 +342,6 @@ wrapper such as `rust-gdb` achieves the same by injecting those options.
   ]
 }
 ```
-
-## LLDB Sessions
-
-`gdb_session_start` with `debugger="lldb"` drives LLDB through `lldb-dap` over the
-Debug Adapter Protocol instead of GDB/MI. The tool surface is the same; what
-differs is what the backend can do and how a session begins.
-
-- The adapter is resolved from `gdb_path`, then `LLDB_DAP_PATH`, then `lldb-dap`
-  on `PATH`.
-- DAP has no "load without running" request, so the program is launched with
-  `stopOnEntry` and the session begins paused at `stop_kind="entry"`. `run` then
-  continues from there instead of starting the program.
-- `core`, `endpoint`, and `rr_replay` are refused with
-  `code="unsupported_operation"` before an adapter is spawned.
-- Memory, disassembly, and source windows have no request the adapter advertises,
-  so they run the LLDB command and parse its text into the same structured
-  payloads GDB returns: `memory read -f x` hex dumps, `disassemble` listings (with
-  `-m` source lines, so each instruction carries the source `line` it belongs to
-  and the stopped one is `is_current`; LLDB prints neither opcodes nor a source
-  path, so `opcodes` and `file`/`fullname` are `null`), and `source list` windows.
-  A memory `address` must be a pointer-valued expression, which is also what GDB
-  requires.
-- Watchpoints take the access mode on the command, so all three GDB kinds work:
-  `watch` (`access="write"`) is LLDB's `modify`, `rwatch` (`access="read"`) is
-  `read`, and `awatch` (`access="access"`) is `read_write`.
-- `throw`, `rethrow`, and `catch` catchpoints map to LLDB's C++ exception
-  breakpoint (`breakpoint set -E c++`); LLDB does not distinguish a throw from a
-  rethrow, so both watch the same throw locations. The other catchpoint kinds
-  (`exec`, `fork`, `vfork`, `load`, `unload`, `signal`, `syscall`) and
-  `set_detach_on_fork` answer with `code="unsupported_operation"`: LLDB has no
-  equivalent, only `target.process.follow-fork-mode`, which
-  `set_follow_fork_mode` sets and reads back.
-- Inferior management and reverse execution have no LLDB equivalent: one process
-  per session, and no reverse option on `process continue` or `thread step-*`.
-  `list_inferiors`/`select_inferior` still describe that one process. The command
-  escape hatch (`gdb_execute_command`) runs anything else LLDB can do.
-- A DAP stop reports `reason="breakpoint"` for watchpoints and exception
-  breakpoints alike. The backend refines the canonical kind — from the
-  `watchpoint N` description or the exception breakpoint that hit — so `stop_kind`
-  is `watchpoint`/`exception` while the native `stop_reason` stays `breakpoint`.
-- Breakpoints accept `function`, `file:line`, or `*<address expression>`: the first
-  two go through DAP's `setBreakpoints`, the address form through LLDB's
-  `breakpoint set -a`. DAP reports no inventory, so `gdb_breakpoint_query` lists
-  what this session set, including a `condition` and the `enabled` state the
-  backend tracks. Deleting, disabling, or conditioning a DAP breakpoint re-sends
-  that source's remaining enabled breakpoints (DAP replaces a source's whole list),
-  while LLDB-native ones use `breakpoint delete`/`enable`/`disable`/`modify`.
-- `temporary: true` uses LLDB's one-shot flag (`breakpoint set -o true`), because
-  DAP cannot express it. A one-shot breakpoint deletes itself when it hits (its
-  stop reports the placeholder breakpoint id `0`), and the tracked inventory is
-  reconciled against LLDB's own `breakpoint list`/`watchpoint list` after every
-  stop, so a breakpoint removed that way or through the escape hatch stops being
-  listed.
 
 ## `gdb_session_connect`
 

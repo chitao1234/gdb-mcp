@@ -10,7 +10,7 @@ from typing import cast
 from pygdbmi.gdbcontroller import GdbController
 from pygdbmi.IoManager import IoManager
 
-from ..contracts import DEBUGGER_GDB, DEBUGGER_LLDB
+from ..contracts import DEBUGGER_GDB
 from ..transport.protocols import GdbControllerFactoryProtocol, GdbControllerProtocol
 from .backends import DebuggerBackend
 from .constants import (
@@ -18,7 +18,6 @@ from .constants import (
     POLL_TIMEOUT_SEC,
 )
 from .gdb_backend import GdbMiBackend
-from .lldb_backend import LldbDapBackend
 from .protocols import OsModuleProtocol, TimeModuleProtocol
 from .service import SessionService
 
@@ -127,17 +126,11 @@ def create_default_session_service(debugger: str = DEBUGGER_GDB) -> SessionServi
     where the session is composed, rather than inside the facade.
     """
 
-    if debugger == DEBUGGER_LLDB:
-        backend: DebuggerBackend = LldbDapBackend(
-            os_module=cast(OsModuleProtocol, os),
-            time_module=cast(TimeModuleProtocol, time),
-        )
-    else:
-        backend = GdbMiBackend(
-            controller_factory=cast(GdbControllerFactoryProtocol, create_gdb_controller),
-            os_module=cast(OsModuleProtocol, os),
-            time_module=cast(TimeModuleProtocol, time),
-            initial_command_token=INITIAL_COMMAND_TOKEN,
-            poll_timeout_sec=POLL_TIMEOUT_SEC,
-        )
+    backend: DebuggerBackend = GdbMiBackend(
+        controller_factory=cast(GdbControllerFactoryProtocol, create_gdb_controller),
+        os_module=cast(OsModuleProtocol, os),
+        time_module=cast(TimeModuleProtocol, time),
+        initial_command_token=INITIAL_COMMAND_TOKEN,
+        poll_timeout_sec=POLL_TIMEOUT_SEC,
+    )
     return SessionService(backend=backend)

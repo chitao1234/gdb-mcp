@@ -204,19 +204,8 @@ class TestLifecycleApi:
 
         assert result["status"] == "error"
         assert result["code"] == "unsupported_combination"
-        assert "supported values are gdb, lldb" in text(result["message"])
+        assert "supported values are gdb" in text(result["message"])
         assert session_service.state.value == "failed"
-
-    def test_start_session_rejects_a_debugger_this_backend_does_not_drive(
-        self, session_service: SessionService
-    ) -> None:
-        """A gdb session asked to drive lldb refuses instead of spawning gdb."""
-
-        result = result_to_mapping(session_service.start(program="/bin/ls", debugger="lldb"))
-
-        assert result["status"] == "error"
-        assert result["code"] == "unsupported_operation"
-        assert "drives gdb" in text(result["message"])
 
     def test_start_session_records_the_debugger_backend(self, start_session: StartHarness) -> None:
         """The session remembers which backend it drives."""

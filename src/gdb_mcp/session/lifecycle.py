@@ -173,11 +173,6 @@ class SessionLifecycleService:
                     message = f"Unsupported debugger {debugger!r}: supported values are {supported}"
                     self._runtime.mark_failed(message)
                     return OperationError(message=message, code="unsupported_combination")
-                if debugger != DEBUGGER_GDB:
-                    message = f"This session drives gdb, not {debugger!r}"
-                    self._runtime.mark_failed(message)
-                    return OperationError(message=message, code="unsupported_operation")
-
                 if replay and (args or core):
                     message = (
                         "An rr trace already owns the target; do not also pass args or core "

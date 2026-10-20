@@ -72,7 +72,7 @@ def build_tool_definitions() -> list[Tool]:
                 "missing debug symbols (not compiled with -g), file not found, or invalid executable. "
                 "Check the 'warnings' field in the response for critical issues that may affect debugging. "
                 "Available parameters: program (executable path), debugger (backend to drive: "
-                "'gdb' or 'lldb'), args (program arguments), "
+                "'gdb'), args (program arguments), "
                 "core (core dump path - uses --core flag for proper symbol resolution), "
                 "init_commands (GDB commands to run after environment setup), "
                 "env (environment variables applied before init_commands), gdb_path (GDB binary path), "

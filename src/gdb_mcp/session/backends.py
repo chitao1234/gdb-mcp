@@ -5,8 +5,8 @@ locking, and the workflow/capture features; a backend owns spawning the debugger
 speaking its protocol, interpreting its events, and turning its output into the
 domain payload types.
 
-The seam is at the operation level on purpose: another debugger (LLDB over DAP)
-implements these operations directly instead of imitating GDB's command set.
+The seam is at the operation level on purpose: another debugger implements
+these operations directly instead of imitating GDB's command set.
 :data:`BackendOperation` names the same operations, so a backend publishes which
 ones it can perform and the service can reject the rest before doing any work.
 """
