@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from typing import TypeVar
+
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from gdb_mcp.mcp.schemas import (
     AttachProcessArgs,
@@ -30,6 +32,14 @@ from gdb_mcp.mcp.schemas import (
 
 SESSION_ID = 4
 """Repeated session identifier used by the consolidated action-model tests."""
+
+ModelT = TypeVar("ModelT", bound=BaseModel)
+
+
+def _validate(model: type[ModelT], payload: dict[str, object]) -> ModelT:
+    """Validate one raw request payload against a published model."""
+
+    return model.model_validate(payload)
 
 
 class TestStartSessionArgs:
@@ -123,7 +133,7 @@ class TestStartSessionArgs:
         """The published enum only lists backends this server implements."""
 
         with pytest.raises(ValidationError) as excinfo:
-            StartSessionArgs(program="/bin/ls", debugger="delvey")
+            _validate(StartSessionArgs, {"program": "/bin/ls", "debugger": "delvey"})
 
         assert "delvey" in str(excinfo.value)
 
@@ -138,7 +148,7 @@ class TestStartSessionArgs:
 
         with pytest.raises(ValidationError) as exc_info:
             # Invalid on purpose: only the raw-payload path can express this.
-            StartSessionArgs.model_validate({"program": "/bin/ls", "workingdir": "/tmp/work"})
+            _validate(StartSessionArgs, {"program": "/bin/ls", "workingdir": "/tmp/work"})
 
         assert "workingdir" in str(exc_info.value)
 
@@ -149,7 +159,7 @@ class TestExecuteCommandArgs:
     def test_command_required(self) -> None:
         """A command request without command text is rejected."""
         with pytest.raises(ValidationError):
-            ExecuteCommandArgs.model_validate({})
+            _validate(ExecuteCommandArgs, {})
 
     def test_command_arg(self) -> None:
         """Command text, session id, and timeout are stored as given."""
@@ -162,8 +172,9 @@ class TestExecuteCommandArgs:
         """Extra command fields should not be silently dropped."""
 
         with pytest.raises(ValidationError) as exc_info:
-            ExecuteCommandArgs.model_validate(
-                {"session_id": 1, "command": "info threads", "timeout_seconds": 10}
+            _validate(
+                ExecuteCommandArgs,
+                {"session_id": 1, "command": "info threads", "timeout_seconds": 10},
             )
 
         assert "timeout_seconds" in str(exc_info.value)
@@ -205,9 +216,9 @@ class TestV2ActionArgs:
     def test_session_query_list_and_status_have_different_shapes(self) -> None:
         """Session query should discriminate between global list and per-session status."""
 
-        list_args = SessionQueryArgs.model_validate({"action": "list", "query": {}})
-        status_args = SessionQueryArgs.model_validate(
-            {"session_id": 3, "action": "status", "query": {}}
+        list_args = _validate(SessionQueryArgs, {"action": "list", "query": {}})
+        status_args = _validate(
+            SessionQueryArgs, {"session_id": 3, "action": "status", "query": {}}
         )
 
         assert list_args.root.action == "list"
@@ -215,12 +226,13 @@ class TestV2ActionArgs:
         assert status_args.root.session_id == 3
 
         with pytest.raises(ValidationError):
-            SessionQueryArgs.model_validate({"action": "status", "query": {}})
+            _validate(SessionQueryArgs, {"action": "status", "query": {}})
 
     def test_breakpoint_manage_create_accepts_watchpoint_shape(self) -> None:
         """Breakpoint manage create should accept watchpoint payloads."""
 
-        args = BreakpointManageArgs.model_validate(
+        args = _validate(
+            BreakpointManageArgs,
             {
                 "session_id": SESSION_ID,
                 "action": "create",
@@ -229,7 +241,7 @@ class TestV2ActionArgs:
                     "expression": "state->ready",
                     "access": "read",
                 },
-            }
+            },
         )
 
         assert args.root.action == "create"
@@ -240,7 +252,8 @@ class TestV2ActionArgs:
         """Breakpoint update should require at least one requested change."""
 
         with pytest.raises(ValidationError):
-            BreakpointManageArgs.model_validate(
+            _validate(
+                BreakpointManageArgs,
                 {
                     "session_id": SESSION_ID,
                     "action": "update",
@@ -248,14 +261,15 @@ class TestV2ActionArgs:
                         "number": 2,
                     },
                     "changes": {},
-                }
+                },
             )
 
     def test_breakpoint_catch_rejects_command_separator_argument(self) -> None:
         """Catch arguments are passed unquoted to GDB, so separators must be rejected."""
 
         with pytest.raises(ValidationError):
-            BreakpointManageArgs.model_validate(
+            _validate(
+                BreakpointManageArgs,
                 {
                     "session_id": SESSION_ID,
                     "action": "create",
@@ -264,13 +278,14 @@ class TestV2ActionArgs:
                         "event": "syscall",
                         "argument": "read; shell echo pwned",
                     },
-                }
+                },
             )
 
     def test_breakpoint_catch_accepts_multiple_syscall_names(self) -> None:
         """Unless unsafe, argument text may hold several space-separated names."""
 
-        args = BreakpointManageArgs.model_validate(
+        args = _validate(
+            BreakpointManageArgs,
             {
                 "session_id": SESSION_ID,
                 "action": "create",
@@ -279,7 +294,7 @@ class TestV2ActionArgs:
                     "event": "syscall",
                     "argument": "read write openat",
                 },
-            }
+            },
         )
 
         breakpoint = args.root.breakpoint
@@ -289,7 +304,8 @@ class TestV2ActionArgs:
     def test_inspect_query_source_accepts_file_range_location(self) -> None:
         """Inspect source should accept a file-range location selector."""
 
-        args = InspectQueryArgs.model_validate(
+        args = _validate(
+            InspectQueryArgs,
             {
                 "session_id": 9,
                 "action": "source",
@@ -303,7 +319,7 @@ class TestV2ActionArgs:
                     "context_before": 0,
                     "context_after": 0,
                 },
-            }
+            },
         )
 
         assert args.root.action == "source"
@@ -312,7 +328,7 @@ class TestV2ActionArgs:
     def test_execution_run_accepts_omitted_execution_payload(self) -> None:
         """Run should default its flattened execution payload when omitted."""
 
-        args = ExecutionManageArgs.model_validate({"session_id": SESSION_ID, "action": "run"})
+        args = _validate(ExecutionManageArgs, {"session_id": SESSION_ID, "action": "run"})
 
         execution = args.root.execution
         assert isinstance(execution, ExecutionRunPayload)
@@ -323,8 +339,9 @@ class TestV2ActionArgs:
     def test_execution_continue_accepts_reverse_direction(self) -> None:
         """Continue should accept a reverse direction flag."""
 
-        args = ExecutionManageArgs.model_validate(
-            {"session_id": SESSION_ID, "action": "continue", "execution": {"reverse": True}}
+        args = _validate(
+            ExecutionManageArgs,
+            {"session_id": SESSION_ID, "action": "continue", "execution": {"reverse": True}},
         )
 
         execution = args.root.execution
@@ -335,19 +352,21 @@ class TestV2ActionArgs:
         """Run has no reverse direction, so the flag is not part of its payload."""
 
         with pytest.raises(ValidationError):
-            ExecutionManageArgs.model_validate(
-                {"session_id": SESSION_ID, "action": "run", "execution": {"reverse": True}}
+            _validate(
+                ExecutionManageArgs,
+                {"session_id": SESSION_ID, "action": "run", "execution": {"reverse": True}},
             )
 
     def test_execution_continue_accepts_flattened_wait_fields(self) -> None:
         """Continue should accept wait_until and timeout_sec directly."""
 
-        args = ExecutionManageArgs.model_validate(
+        args = _validate(
+            ExecutionManageArgs,
             {
                 "session_id": SESSION_ID,
                 "action": "continue",
                 "execution": {"wait_until": "acknowledged", "timeout_sec": 5},
-            }
+            },
         )
 
         execution = args.root.execution
@@ -358,7 +377,7 @@ class TestV2ActionArgs:
     def test_inferior_create_accepts_omitted_inferior_payload(self) -> None:
         """Inferior creation should default its payload when omitted."""
 
-        args = InferiorManageArgs.model_validate({"session_id": SESSION_ID, "action": "create"})
+        args = _validate(InferiorManageArgs, {"session_id": SESSION_ID, "action": "create"})
 
         inferior = args.root.inferior
         assert isinstance(inferior, InferiorCreatePayload)
@@ -373,7 +392,7 @@ class TestAttachProcessArgs:
         """Attach requests should require a positive PID."""
 
         with pytest.raises(ValidationError):
-            AttachProcessArgs.model_validate({"session_id": 1})
+            _validate(AttachProcessArgs, {"session_id": 1})
 
     def test_attach_args(self) -> None:
         """Attach requests should accept pid and timeout."""
@@ -418,7 +437,7 @@ class TestBatchArgs:
         """Batch step tools should be validated against the supported allowlist."""
 
         with pytest.raises(ValidationError) as exc_info:
-            BatchStepArgs(tool="gdb_get_status", arguments={})
+            _validate(BatchStepArgs, {"tool": "gdb_get_status", "arguments": {}})
 
         assert "gdb_get_status" in str(exc_info.value)
 
@@ -426,8 +445,8 @@ class TestBatchArgs:
         """Batch step definitions should reject unexpected keys."""
 
         with pytest.raises(ValidationError) as exc_info:
-            BatchStepArgs.model_validate(
-                {"tool": "gdb_session_query", "arguments": {}, "unexpected": True}
+            _validate(
+                BatchStepArgs, {"tool": "gdb_session_query", "arguments": {}, "unexpected": True}
             )
 
         assert "unexpected" in str(exc_info.value)
@@ -482,7 +501,7 @@ class TestCaptureBundleArgs:
         """Capture requests should reject unexpected keys."""
 
         with pytest.raises(ValidationError) as exc_info:
-            CaptureBundleArgs.model_validate({"session_id": 1, "output": "/tmp/out"})
+            _validate(CaptureBundleArgs, {"session_id": 1, "output": "/tmp/out"})
 
         assert "output" in str(exc_info.value)
 
@@ -545,7 +564,7 @@ class TestRunUntilFailureArgs:
         """Campaign requests should reject unexpected top-level keys."""
 
         with pytest.raises(ValidationError) as exc_info:
-            RunUntilFailureArgs.model_validate({"iterations": 5})
+            _validate(RunUntilFailureArgs, {"iterations": 5})
 
         assert "iterations" in str(exc_info.value)
 
@@ -555,7 +574,7 @@ class TestRunUntilFailureArgs:
         args = RunUntilFailureArgs(
             setup_steps=["gdb_session_query"],
             run_args='--mode "fast path"',
-            capture={"memory_ranges": ["&value:8"]},
+            capture=RunUntilFailureCaptureArgs(memory_ranges=["&value:8"]),
         )
         assert args.setup_steps == ["gdb_session_query"]
         assert args.run_args == '--mode "fast path"'
@@ -568,7 +587,7 @@ class TestCallFunctionArgs:
     def test_function_call_required(self) -> None:
         """A call request without function_call is rejected."""
         with pytest.raises(ValidationError):
-            CallFunctionArgs.model_validate({})
+            _validate(CallFunctionArgs, {})
 
     def test_function_call_arg(self) -> None:
         """Function call text, session id, and timeout are stored as given."""

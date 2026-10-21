@@ -57,6 +57,10 @@ python_version = "3.10"
 plugins = ["pydantic.mypy"]
 strict = true
 
+[tool.pydantic-mypy]
+init_typed = true
+warn_required_dynamic_aliases = true
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"
