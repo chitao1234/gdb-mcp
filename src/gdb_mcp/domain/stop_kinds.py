@@ -41,6 +41,7 @@ _RULES: tuple[tuple[str, StopKind], ...] = (
     ("breakpoint", "breakpoint"),
     ("stepping", "step"),
     ("function-finished", "step"),
+    ("location-reached", "step"),
     ("step", "step"),
     ("thread-exit", "thread_exit"),
     ("vfork", "vfork"),

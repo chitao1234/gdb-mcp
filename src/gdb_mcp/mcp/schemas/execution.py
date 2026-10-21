@@ -7,6 +7,7 @@ from typing import Annotated
 from pydantic import (
     Field,
     RootModel,
+    field_validator,
 )
 
 from ... import contracts as shared_contracts
@@ -16,6 +17,7 @@ from ...contracts import (
 from .common import (
     SessionId,
     StrictArgsModel,
+    _normalize_optional_text,
 )
 from .selectors import EmptyQuery
 
@@ -47,6 +49,34 @@ class ExecutionControlPayload(ExecutionWaitPolicy):
             "such as an 'rr replay' session or gdb's record mode."
         ),
     )
+
+
+class ExecutionLocationPayload(ExecutionWaitPolicy):
+    location: str = Field(..., description="Function, file:line, line number, or *address")
+
+    @field_validator("location")
+    @classmethod
+    def validate_location(cls, value: str) -> str:
+        normalized = _normalize_optional_text(value, field_name="location")
+        if normalized is None:
+            raise ValueError("location is required")
+        return normalized
+
+
+class ExecutionJumpAction(StrictArgsModel):
+    session_id: SessionId
+    action: shared_contracts.ActionJumpName = Field(
+        ..., description="Relocate execution and resume"
+    )
+    execution: ExecutionLocationPayload
+
+
+class ExecutionUntilAction(StrictArgsModel):
+    session_id: SessionId
+    action: shared_contracts.ActionUntilName = Field(
+        ..., description="Execute until the destination in the starting frame or that frame returns"
+    )
+    execution: ExecutionLocationPayload
 
 
 class ExecutionWaitForStopPayload(StrictArgsModel):
@@ -175,6 +205,8 @@ class ExecutionManageArgs(
             | ExecutionNextInstructionAction
             | ExecutionReturnAction
             | ExecutionFinishAction
+            | ExecutionJumpAction
+            | ExecutionUntilAction
             | ExecutionWaitForStopAction,
             Field(discriminator="action"),
         ]

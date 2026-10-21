@@ -49,11 +49,17 @@ class SessionCommandRunner:
         return self._transport.is_alive()
 
     def send_command_and_wait_for_prompt(
-        self, command: str, timeout_sec: float = DEFAULT_TIMEOUT_SEC
+        self,
+        command: str,
+        timeout_sec: float = DEFAULT_TIMEOUT_SEC,
+        *,
+        return_on_running: bool = False,
     ) -> dict[str, object]:
         """Send a command through transport and update fatal session state."""
 
-        result = self._transport.send_command_and_wait_for_prompt(command, timeout_sec=timeout_sec)
+        result = self._transport.send_command_and_wait_for_prompt(
+            command, timeout_sec=timeout_sec, return_on_running=return_on_running
+        )
 
         if result.fatal:
             failure_message = result.error or "GDB transport failed"
@@ -107,6 +113,7 @@ class SessionCommandRunner:
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
         *,
         allow_running_timeout: bool = False,
+        return_on_running: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Execute a GDB command and normalize CLI vs MI results."""
 
@@ -134,7 +141,13 @@ class SessionCommandRunner:
         if cli_command:
             logger.debug("Wrapping CLI command: %s -> %s", command, actual_command)
 
-        result = self.send_command_and_wait_for_prompt(actual_command, timeout_sec)
+        result = (
+            self.send_command_and_wait_for_prompt(
+                actual_command, timeout_sec, return_on_running=True
+            )
+            if return_on_running
+            else self.send_command_and_wait_for_prompt(actual_command, timeout_sec)
+        )
 
         if "error" in result:
             self._record_command_transcript(

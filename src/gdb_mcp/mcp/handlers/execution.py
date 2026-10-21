@@ -15,6 +15,7 @@ from ..schemas import (
     ExecutionContinueAction,
     ExecutionFinishAction,
     ExecutionInterruptAction,
+    ExecutionJumpAction,
     ExecutionManageArgs,
     ExecutionNextAction,
     ExecutionNextInstructionAction,
@@ -22,6 +23,7 @@ from ..schemas import (
     ExecutionRunAction,
     ExecutionStepAction,
     ExecutionStepInstructionAction,
+    ExecutionUntilAction,
     ExecutionWaitForStopAction,
 )
 from .common import (
@@ -99,6 +101,18 @@ def _handle_execution_manage(
             )
         case ExecutionReturnAction():
             return session.return_from_frame(value=action_args.execution.value)
+        case ExecutionJumpAction() | ExecutionUntilAction():
+            timeout_sec, wait_for_stop = _execution_wait_policy(
+                action_args.execution.wait_until, action_args.execution.timeout_sec
+            )
+            operation = (
+                session.jump if isinstance(action_args, ExecutionJumpAction) else session.until
+            )
+            return operation(
+                location=action_args.execution.location,
+                timeout_sec=timeout_sec,
+                wait_for_stop=wait_for_stop,
+            )
         case ExecutionFinishAction():
             timeout_sec, wait_for_stop = _execution_wait_policy(
                 action_args.execution.wait_until, action_args.execution.timeout_sec

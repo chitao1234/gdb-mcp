@@ -34,6 +34,7 @@ from ..domain import (
     InferiorListInfo,
     InferiorRemoveInfo,
     InferiorSelectionInfo,
+    LocationExecutionInfo,
     MemoryCaptureRange,
     MemoryReadInfo,
     MessageResult,
@@ -310,6 +311,28 @@ class SessionService:
         """Delegate force-return to the execution service."""
 
         return self._backend.return_from_frame(value=value)
+
+    def jump(
+        self,
+        location: str,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+    ) -> OperationSuccess[LocationExecutionInfo] | OperationError:
+        """Relocate the executing frame and resume through the debugger backend."""
+
+        return self._backend.jump(location, wait_for_stop=wait_for_stop, timeout_sec=timeout_sec)
+
+    def until(
+        self,
+        location: str,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+    ) -> OperationSuccess[LocationExecutionInfo] | OperationError:
+        """Execute toward a destination using the debugger's frame-scoped until."""
+
+        return self._backend.until(location, wait_for_stop=wait_for_stop, timeout_sec=timeout_sec)
 
     def finish(
         self,

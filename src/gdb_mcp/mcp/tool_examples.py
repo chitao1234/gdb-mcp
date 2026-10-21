@@ -8,6 +8,8 @@ published ``inputSchema`` under the standard JSON Schema ``examples`` keyword.
 from __future__ import annotations
 
 from ..contracts import (
+    ACTION_JUMP,
+    ACTION_UNTIL,
     TOOL_BREAKPOINT_MANAGE,
     TOOL_CAPTURE_BUNDLE,
     TOOL_EXECUTION_MANAGE,
@@ -50,6 +52,24 @@ TOOL_EXAMPLES: dict[str, tuple[dict[str, object], ...]] = {
         },
         {"session_id": 7, "action": "continue"},
         {"session_id": 7, "action": "interrupt"},
+        {
+            "session_id": 7,
+            "action": ACTION_JUMP,
+            "execution": {"location": "worker.c:42"},
+        },
+        {
+            "session_id": 7,
+            "action": ACTION_UNTIL,
+            "execution": {"location": "60"},
+        },
+        {
+            "session_id": 7,
+            "action": ACTION_UNTIL,
+            "execution": {
+                "location": "*0x4012ab",
+                "wait_until": "acknowledged",
+            },
+        },
         {
             "session_id": 7,
             "action": "wait_for_stop",

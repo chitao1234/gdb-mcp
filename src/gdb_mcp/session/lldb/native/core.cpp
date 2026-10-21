@@ -1180,6 +1180,65 @@ Json return_from_frame(const Json &request) {
   return out;
 }
 
+std::string quote_lldb(const std::string &value) {
+  std::string quoted = "\"";
+  for (char character : value) {
+    if (character == '\\' || character == '"')
+      quoted += '\\';
+    quoted += character;
+  }
+  return quoted + '"';
+}
+
+Json execute_location(const Json &request) {
+  bool relocate = as_bool(member(request, "relocate"), false);
+  std::string kind = as_string(member(request, "kind"));
+  std::string text = relocate ? "thread jump --force" : "thread until";
+  std::string error;
+  std::string output;
+  bool succeeded;
+  if (!relocate && kind == "file_line") {
+    SBThread thread;
+    SBFrame frame;
+    ensure_thread(thread, frame, false);
+    frame = thread.GetFrameAtIndex(0);
+    SBFileSpec file(as_string(member(request, "file")).c_str(), false);
+    SBError result = thread.StepOverUntil(
+        frame, file, static_cast<uint32_t>(as_integer(member(request, "line"), 0)));
+    succeeded = result.Success();
+    error = S(result.GetCString());
+    text = "SBThread::StepOverUntil";
+  } else {
+    if (kind == "address")
+      text += " --address " + quote_lldb(as_string(member(request, "address")));
+    else {
+      if (kind == "file_line")
+        text += " --file " + quote_lldb(as_string(member(request, "file")));
+      text += (relocate ? " --line " : " -- ") +
+              as_string(member(request, "line"));
+    }
+    SBCommandReturnObject result;
+    g_bridge->debugger.GetCommandInterpreter().HandleCommand(text.c_str(), result, false);
+    succeeded = result.Succeeded();
+    error = S(result.GetError());
+    output = S(result.GetOutput());
+  }
+  bool relocated = relocate && succeeded;
+  if (relocated) {
+    SBError continued = current_process().Continue();
+    succeeded = continued.Success();
+    if (!succeeded)
+      error += S(continued.GetCString());
+  }
+  Json out = status_json();
+  out.object["command"] = Json::string_value(text);
+  out.object["console_output"] = Json::string_value(output);
+  out.object["succeeded"] = Json::boolean_value(succeeded);
+  out.object["error"] = Json::string_value(error);
+  out.object["relocated"] = Json::boolean_value(relocated);
+  return out;
+}
+
 Json connect_remote(const Json &request) {
   std::string url = as_string(member(request, "endpoint"));
   if (url.empty())
@@ -2320,6 +2379,8 @@ Json dispatch(const std::string &operation, const Json &request) {
     return step_thread(as_string(member(request, "kind"), "into"));
   if (operation == "return_from_frame")
     return return_from_frame(request);
+  if (operation == "execute_location")
+    return execute_location(request);
   if (operation == "interrupt") {
     SBProcess process = current_process();
     if (!process.IsValid())

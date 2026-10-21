@@ -7,7 +7,13 @@ from typing import Literal, TypeAlias
 
 from typing_extensions import TypeAliasType
 
-from ..contracts import DebuggerName, DisassemblyMode, ExecutionState, LocationKind, SessionState
+from ..contracts import (
+    DebuggerName,
+    DisassemblyMode,
+    ExecutionState,
+    LocationKind,
+    SessionState,
+)
 from .records import (
     BreakpointRecord,
     DisassemblyInstructionRecord,
@@ -408,6 +414,17 @@ class CommandExecutionInfo(StructuredOutput):
 
     command: str
     backend_data: BackendData
+
+
+@dataclass(slots=True, frozen=True)
+class LocationExecutionInfo(CommandExecutionInfo):
+    """The requested location and execution state actually observed."""
+
+    location: str
+    execution_state: ExecutionState
+    stop_reason: str | None = None
+    stop_kind: StopKind | None = None
+    last_stop_event: StopEvent | None = None
 
 
 @dataclass(slots=True, frozen=True)

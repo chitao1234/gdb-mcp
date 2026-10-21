@@ -11,8 +11,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from gdb_mcp.contracts import (
+    ACTION_JUMP,
     ACTION_LIST,
     ACTION_STOP,
+    ACTION_UNTIL,
     TOOL_ATTACH_PROCESS,
     TOOL_BREAKPOINT_MANAGE,
     TOOL_BREAKPOINT_QUERY,
@@ -78,6 +80,18 @@ FACADE_COMMANDS: dict[str, FacadeCommand] = {
         TOOL_EXECUTION_MANAGE,
         action="finish",
         help="Run until the current frame returns",
+    ),
+    ACTION_JUMP: FacadeCommand(
+        TOOL_EXECUTION_MANAGE,
+        action=ACTION_JUMP,
+        positionals=(("location", "--location"),),
+        help="Relocate to an explicit destination and resume",
+    ),
+    ACTION_UNTIL: FacadeCommand(
+        TOOL_EXECUTION_MANAGE,
+        action=ACTION_UNTIL,
+        positionals=(("location", "--location"),),
+        help="Execute until a destination or the starting frame returns",
     ),
     "wait-stop": FacadeCommand(
         TOOL_EXECUTION_MANAGE,

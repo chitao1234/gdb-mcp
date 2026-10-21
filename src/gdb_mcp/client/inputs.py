@@ -83,6 +83,7 @@ class ExecutionManageInput:
     stop_reasons: tuple[str, ...]
     reverse: bool
     value: str | None = None
+    location: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

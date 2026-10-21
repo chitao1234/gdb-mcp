@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 
 from gdb_mcp.contracts import (
+    ACTION_JUMP,
+    ACTION_UNTIL,
     EXECUTION_MANAGE_ACTIONS,
     EXECUTION_WAIT_UNTIL_VALUES,
 )
@@ -29,6 +31,9 @@ from .common import (
 def _validate_execution_manage_input(typed_input: ExecutionManageInput) -> None:
     invalid_flags: list[str] = []
 
+    if typed_input.action not in {ACTION_JUMP, ACTION_UNTIL} and typed_input.location is not None:
+        invalid_flags.append("--location")
+
     if typed_input.action != "return" and typed_input.value is not None:
         invalid_flags.append("--value")
 
@@ -50,11 +55,15 @@ def _validate_execution_manage_input(typed_input: ExecutionManageInput) -> None:
         "step_instruction",
         "next_instruction",
         "finish",
+        ACTION_JUMP,
+        ACTION_UNTIL,
     }:
         if typed_input.args:
             invalid_flags.append("--arg")
         if typed_input.stop_reasons:
             invalid_flags.append("--stop-reason")
+        if typed_input.action in {ACTION_JUMP, ACTION_UNTIL} and typed_input.reverse:
+            invalid_flags.append("--reverse")
     elif typed_input.action == "return":
         if typed_input.args:
             invalid_flags.append("--arg")
@@ -94,6 +103,9 @@ def _configure_execution_manage(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--timeout-sec", type=int, default=None)
     parser.add_argument("--stop-reason", dest="stop_reasons", action="append", default=None)
     parser.add_argument("--value", help="Return value expression for action=return")
+    parser.add_argument(
+        "--location", help="Destination: function, file:line, line number, or *address"
+    )
     parser.add_argument(
         "--reverse",
         action="store_true",

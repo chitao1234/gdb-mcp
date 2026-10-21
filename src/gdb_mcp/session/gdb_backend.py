@@ -24,6 +24,7 @@ from ..domain import (
     InferiorListInfo,
     InferiorRemoveInfo,
     InferiorSelectionInfo,
+    LocationExecutionInfo,
     MemoryReadInfo,
     MessageResult,
     OperationError,
@@ -296,6 +297,28 @@ class GdbMiBackend:
         """Delegate force-return to the execution service."""
 
         return self._execution.return_from_frame(value=value)
+
+    def jump(
+        self,
+        location: str,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+    ) -> OperationSuccess[LocationExecutionInfo] | OperationError:
+        """Delegate relocation and resume to the execution service."""
+
+        return self._execution.jump(location, wait_for_stop=wait_for_stop, timeout_sec=timeout_sec)
+
+    def until(
+        self,
+        location: str,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+    ) -> OperationSuccess[LocationExecutionInfo] | OperationError:
+        """Delegate frame-scoped execution to the execution service."""
+
+        return self._execution.until(location, wait_for_stop=wait_for_stop, timeout_sec=timeout_sec)
 
     def finish(
         self,

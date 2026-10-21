@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from gdb_mcp.client.inputs import ExecutionManageInput
+from gdb_mcp.contracts import ACTION_JUMP, ACTION_UNTIL
 
 
 def build_execution_manage_payload(typed_input: ExecutionManageInput) -> dict[str, object]:
@@ -34,6 +35,8 @@ def build_execution_manage_payload(typed_input: ExecutionManageInput) -> dict[st
         return payload
 
     execution_payload: dict[str, object] = {}
+    if typed_input.action in {ACTION_JUMP, ACTION_UNTIL} and typed_input.location is not None:
+        execution_payload["location"] = typed_input.location
     if typed_input.action == "run" and typed_input.args:
         execution_payload["args"] = list(typed_input.args)
     if typed_input.wait_until is not None:

@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Protocol, TypeAlias, get_args
 
+from ..contracts import ActionJumpName, ActionUntilName
 from ..domain import (
     BacktraceInfo,
     BreakpointInfo,
@@ -35,6 +36,7 @@ from ..domain import (
     InferiorListInfo,
     InferiorRemoveInfo,
     InferiorSelectionInfo,
+    LocationExecutionInfo,
     MemoryReadInfo,
     MessageResult,
     OperationError,
@@ -66,6 +68,8 @@ BackendOperation: TypeAlias = Literal[
     "next_instruction",
     "return_from_frame",
     "finish",
+    ActionJumpName,
+    ActionUntilName,
     "interrupt",
     "wait_for_stop",
     "attach",
@@ -237,6 +241,22 @@ class DebuggerBackend(Protocol):
     def return_from_frame(
         self, *, value: str | None = None
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError: ...
+
+    def jump(
+        self,
+        location: str,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+    ) -> OperationSuccess[LocationExecutionInfo] | OperationError: ...
+
+    def until(
+        self,
+        location: str,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+    ) -> OperationSuccess[LocationExecutionInfo] | OperationError: ...
 
     def finish(
         self,

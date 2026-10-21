@@ -81,6 +81,10 @@ ACTION_RETURN = "return"
 ActionReturnName: TypeAlias = Literal["return"]
 ACTION_FINISH = "finish"
 ActionFinishName: TypeAlias = Literal["finish"]
+ACTION_JUMP: Final[ActionJumpName] = "jump"
+ActionJumpName: TypeAlias = Literal["jump"]
+ACTION_UNTIL: Final[ActionUntilName] = "until"
+ActionUntilName: TypeAlias = Literal["until"]
 ACTION_WAIT_FOR_STOP = "wait_for_stop"
 ActionWaitForStopName: TypeAlias = Literal["wait_for_stop"]
 ACTION_UPDATE = "update"
@@ -203,6 +207,8 @@ ExecutionManageAction: TypeAlias = Literal[
     "next_instruction",
     "return",
     "finish",
+    "jump",
+    "until",
     "wait_for_stop",
 ]
 EXECUTION_MANAGE_ACTIONS: tuple[ExecutionManageAction, ...] = get_args(ExecutionManageAction)

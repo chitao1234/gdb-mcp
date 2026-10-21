@@ -6,6 +6,12 @@ import logging
 import signal
 from collections.abc import Mapping
 
+from ..contracts import (
+    ACTION_JUMP,
+    ACTION_UNTIL,
+    ActionJumpName,
+    ActionUntilName,
+)
 from ..domain import (
     BackendData,
     CommandExecutionInfo,
@@ -19,6 +25,7 @@ from ..domain import (
     InferiorListInfo,
     InferiorRecord,
     InferiorRemoveInfo,
+    LocationExecutionInfo,
     MessageResult,
     OperationError,
     OperationSuccess,
@@ -82,6 +89,66 @@ class SessionExecutionService:
         self._runtime = runtime
         self._command_runner = command_runner
         self._transport = transport
+
+    def jump(
+        self,
+        location: str,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+    ) -> OperationSuccess[LocationExecutionInfo] | OperationError:
+        """Let GDB resolve the destination, relocate execution, and resume."""
+
+        return self._execute_location(
+            ACTION_JUMP, location, wait_for_stop=wait_for_stop, timeout_sec=timeout_sec
+        )
+
+    def until(
+        self,
+        location: str,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+    ) -> OperationSuccess[LocationExecutionInfo] | OperationError:
+        """Use GDB's native until semantics with an explicit destination."""
+
+        return self._execute_location(
+            ACTION_UNTIL, location, wait_for_stop=wait_for_stop, timeout_sec=timeout_sec
+        )
+
+    def _execute_location(
+        self,
+        action: ActionJumpName | ActionUntilName,
+        location: str,
+        *,
+        wait_for_stop: bool,
+        timeout_sec: int,
+    ) -> OperationSuccess[LocationExecutionInfo] | OperationError:
+        # GDB/MI's until passes raw CLI arguments; jump consumes MI argv.
+        argument = location if action == ACTION_UNTIL else quote_mi_string(location)
+        previous_stop = self._runtime.last_stop_event
+        result = self._command_runner.execute_command_result(
+            f"-exec-{action} {argument}",
+            timeout_sec=timeout_sec,
+            return_on_running=not wait_for_stop,
+        )
+        if isinstance(result, OperationError):
+            return result
+        event = self._runtime.last_stop_event
+        if event is previous_stop:
+            event = None
+        return OperationSuccess(
+            LocationExecutionInfo(
+                command=result.value.command,
+                backend_data=result.value.backend_data,
+                location=location,
+                execution_state=self._runtime.execution_state,
+                stop_reason=event.reason if event is not None else None,
+                stop_kind=event.stop_kind if event is not None else None,
+                last_stop_event=event,
+            ),
+            warnings=result.warnings,
+        )
 
     def execute_command(
         self, command: str, timeout_sec: int = DEFAULT_TIMEOUT_SEC

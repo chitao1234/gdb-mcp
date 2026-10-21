@@ -8,7 +8,14 @@ import time
 from collections.abc import Mapping
 from typing import Literal, cast
 
-from ..contracts import DEBUGGER_LLDB, LocationKind
+from ..contracts import (
+    ACTION_JUMP,
+    ACTION_UNTIL,
+    DEBUGGER_LLDB,
+    ActionJumpName,
+    ActionUntilName,
+    LocationKind,
+)
 from ..domain import (
     BackendData,
     BacktraceInfo,
@@ -35,6 +42,7 @@ from ..domain import (
     InferiorRecord,
     InferiorRemoveInfo,
     InferiorSelectionInfo,
+    LocationExecutionInfo,
     MemoryBlockRecord,
     MemoryReadInfo,
     MessageResult,
@@ -888,6 +896,105 @@ class LldbSbBackend:
                         console_output="",
                         data=_structured(result),
                     ),
+                )
+            )
+        except BridgeError as exc:
+            return _operation_error(exc)
+
+    def jump(
+        self,
+        location: str,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+    ) -> OperationSuccess[LocationExecutionInfo] | OperationError:
+        """Relocate through LLDB, then resume without restricting the function."""
+
+        return self._execute_location(
+            ACTION_JUMP, location, wait_for_stop=wait_for_stop, timeout_sec=timeout_sec
+        )
+
+    def until(
+        self,
+        location: str,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+    ) -> OperationSuccess[LocationExecutionInfo] | OperationError:
+        """Use LLDB's native until plan, including its return boundary and errors."""
+
+        return self._execute_location(
+            ACTION_UNTIL, location, wait_for_stop=wait_for_stop, timeout_sec=timeout_sec
+        )
+
+    def _execute_location(
+        self,
+        action: ActionJumpName | ActionUntilName,
+        location: str,
+        *,
+        wait_for_stop: bool,
+        timeout_sec: int,
+    ) -> OperationSuccess[LocationExecutionInfo] | OperationError:
+        try:
+            text = location.strip()
+            fields: dict[str, object]
+            if text.lstrip("+-").isdigit():
+                kind, fields = "line", {"line": text}
+            else:
+                mode, fields = self._parse_breakpoint_location(text)
+                kind = "file_line" if mode == "location" else "address"
+                if mode == "function":
+                    fields = {"address": fields["name"]}
+            previous_stop = self.runtime.last_stop_event
+            result = self._request(
+                "execute_location",
+                relocate=action == ACTION_JUMP,
+                kind=kind,
+                **fields,
+            )
+            snapshot = self._apply_status(result)
+            command = self._text(result, "command") or action
+            if not result.get("succeeded"):
+                return OperationError(
+                    (self._text(result, "console_output") or "")
+                    + (self._text(result, "error") or "LLDB execution failed"),
+                    details={
+                        "relocated": bool(result.get("relocated")),
+                        "execution_state": snapshot.execution_state,
+                        "backend_data": _structured(result),
+                    },
+                )
+            console_output = self._text(result, "console_output") or ""
+            if wait_for_stop and snapshot.execution_state == "running":
+                waited = self._request("wait", timeout_ms=timeout_sec * 1000)
+                snapshot = self._apply_status(waited)
+                result = {**result, **waited}
+                if waited.get("timed_out") and snapshot.execution_state == "running":
+                    return OperationError(
+                        f"Timeout waiting for execution to stop after {timeout_sec}s",
+                        code="command_timeout",
+                        details={
+                            "relocated": bool(result.get("relocated")),
+                            "execution_state": snapshot.execution_state,
+                            "backend_data": _structured(result),
+                        },
+                    )
+            event = self.runtime.last_stop_event
+            if event is previous_stop:
+                event = None
+            return OperationSuccess(
+                LocationExecutionInfo(
+                    command=command,
+                    backend_data=BackendData(
+                        debugger=DEBUGGER_LLDB,
+                        console_output=console_output,
+                        data=_structured(result),
+                    ),
+                    location=location,
+                    execution_state=snapshot.execution_state,
+                    stop_reason=event.reason if event is not None else None,
+                    stop_kind=event.stop_kind if event is not None else None,
+                    last_stop_event=event,
                 )
             )
         except BridgeError as exc:

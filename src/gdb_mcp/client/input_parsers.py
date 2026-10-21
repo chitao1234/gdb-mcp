@@ -160,6 +160,7 @@ def parse_execution_manage_input(namespace: NamespaceLike) -> ExecutionManageInp
         stop_reasons=text_tuple(values, "stop_reasons"),
         reverse=boolean(values, "reverse"),
         value=optional_text(values, "value"),
+        location=optional_text(values, "location"),
     )
 
 

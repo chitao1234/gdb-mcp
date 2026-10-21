@@ -169,6 +169,7 @@ class MiClient:
         command: str,
         *,
         timeout_sec: float,
+        return_on_running: bool = False,
     ) -> MiTransportResponse:
         """Send one command and collect responses until the result record is received."""
 
@@ -252,7 +253,9 @@ class MiClient:
                     )
 
                 if not responses:
-                    if saw_result_record and (result_class != "running" or saw_stop_after_running):
+                    if saw_result_record and (
+                        result_class != "running" or saw_stop_after_running or return_on_running
+                    ):
                         return MiTransportResponse(
                             command_responses=command_responses,
                             async_notifications=async_notifications,
@@ -316,7 +319,9 @@ class MiClient:
                             response.get("payload"),
                         )
 
-                if saw_result_record and (result_class != "running" or saw_stop_after_running):
+                if saw_result_record and (
+                    result_class != "running" or saw_stop_after_running or return_on_running
+                ):
                     return MiTransportResponse(
                         command_responses=command_responses,
                         async_notifications=async_notifications,
