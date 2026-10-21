@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from gdb_mcp.contracts import ACTION_JUMP, ACTION_UNTIL
 from gdb_mcp.domain import StopEvent, payload_to_mapping, result_to_mapping
 from gdb_mcp.session.service import SessionService
 from gdb_mcp.transport.protocols import GdbControllerProtocol
@@ -28,6 +29,72 @@ from .conftest import (
     PromptResponseBuilder,
     ScriptedSessionBuilder,
 )
+
+
+@pytest.mark.parametrize("action", [ACTION_JUMP, ACTION_UNTIL])
+def test_native_location_command_has_no_preflight_checks(
+    action: str,
+    scripted_running_session: ScriptedSessionBuilder,
+    mi_result: MiRecordBuilder,
+    mi_notify: MiNotifyBuilder,
+) -> None:
+    session, controller = scripted_running_session(
+        [
+            mi_result(message="running"),
+            mi_notify(
+                "stopped",
+                {
+                    "reason": "location-reached",
+                    "thread-id": "1",
+                    "frame": {"level": "0", "addr": "0x401040"},
+                },
+            ),
+        ]
+    )
+    operation = session.jump if action == ACTION_JUMP else session.until
+    result = result_to_mapping(operation("-1"))
+
+    assert len(controller.decoded_writes) == 1
+    argument = '"-1"' if action == ACTION_JUMP else "-1"
+    assert controller.decoded_writes[0].endswith(f"-exec-{action} {argument}\n")
+    assert result["execution_state"] == "paused"
+    assert result["stop_reason"] == "location-reached"
+    assert result["stop_kind"] == "step"
+
+
+@pytest.mark.parametrize("action", [ACTION_JUMP, ACTION_UNTIL])
+def test_native_location_error_text_is_preserved(
+    action: str,
+    scripted_running_session: ScriptedSessionBuilder,
+    mi_result: MiRecordBuilder,
+) -> None:
+    message = "Native debugger rejected the supplied location"
+    session, controller = scripted_running_session([mi_result({"msg": message}, message="error")])
+    operation = session.jump if action == ACTION_JUMP else session.until
+    result = result_to_mapping(operation("*bad_symbol"))
+
+    assert len(controller.decoded_writes) == 1
+    assert result["status"] == "error"
+    assert result["message"] == message
+
+
+@pytest.mark.parametrize("action", [ACTION_JUMP, ACTION_UNTIL])
+def test_acknowledged_location_execution_excludes_the_previous_stop(
+    action: str,
+    scripted_running_session: ScriptedSessionBuilder,
+    mi_result: MiRecordBuilder,
+) -> None:
+    session, controller = scripted_running_session([mi_result(message="running")])
+    previous = StopEvent(execution_state="paused", reason="breakpoint-hit", stop_kind="breakpoint")
+    session.runtime.record_stop_event(previous)
+    operation = session.jump if action == ACTION_JUMP else session.until
+    result = result_to_mapping(operation("*$pc + 4", wait_for_stop=False))
+
+    assert len(controller.decoded_writes) == 1
+    assert result["execution_state"] == "running"
+    assert result["last_stop_event"] is None
+    assert result["stop_reason"] is None
+    assert session.runtime.last_stop_event is previous
 
 
 class TestExecutionApi:

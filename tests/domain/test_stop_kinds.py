@@ -20,6 +20,7 @@ class TestStopKindFromReason:
             ("access-watchpoint-trigger", "watchpoint"),
             ("end-stepping-range", "step"),
             ("function-finished", "step"),
+            ("location-reached", "step"),
             ("signal-received", "signal"),
             ("exited-normally", "exit"),
             ("exited-signalled", "exit"),

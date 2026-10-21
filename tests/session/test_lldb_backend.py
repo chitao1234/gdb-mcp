@@ -10,8 +10,17 @@ from __future__ import annotations
 import os
 import time
 from typing import TypeVar, cast
+from unittest.mock import patch
 
-from gdb_mcp.domain import OperationError, OperationResult, OperationSuccess
+import pytest
+
+from gdb_mcp.contracts import ACTION_JUMP, ACTION_UNTIL
+from gdb_mcp.domain import (
+    OperationError,
+    OperationResult,
+    OperationSuccess,
+    StopEvent,
+)
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.lldb_backend import LldbSbBackend
 from gdb_mcp.session.lldb_bridge import BridgeClient
@@ -193,6 +202,68 @@ def _backend() -> tuple[LldbSbBackend, FakeBridge]:
     bridge = FakeBridge()
     backend._client = cast(BridgeClient, bridge)
     return backend, bridge
+
+
+@pytest.mark.parametrize("action", [ACTION_JUMP, ACTION_UNTIL])
+def test_lldb_location_request_is_sent_without_preflight_checks(action: str) -> None:
+    backend, _ = _backend()
+    native_message = "error: Until target outside of the current function.\n"
+    response = {"succeeded": False, "error": native_message, "execution_state": "paused"}
+    with patch.object(backend, "_request", return_value=response) as request:
+        operation = backend.jump if action == ACTION_JUMP else backend.until
+        result = operation("missing.c:999999")
+
+    request.assert_called_once_with(
+        "execute_location",
+        relocate=action == ACTION_JUMP,
+        kind="file_line",
+        file="missing.c",
+        line=999999,
+    )
+    assert isinstance(result, OperationError)
+    assert result.message == native_message
+
+
+@pytest.mark.parametrize("action", [ACTION_JUMP, ACTION_UNTIL])
+def test_lldb_location_acknowledgement_does_not_reuse_a_stop(action: str) -> None:
+    backend, _ = _backend()
+    previous = StopEvent(execution_state="paused", reason="breakpoint", stop_kind="breakpoint")
+    backend.runtime.record_stop_event(previous)
+    with patch.object(
+        backend,
+        "_request",
+        return_value={
+            "succeeded": True,
+            "execution_state": "running",
+            "relocated": action == ACTION_JUMP,
+        },
+    ) as request:
+        operation = backend.jump if action == ACTION_JUMP else backend.until
+        result = _value(operation("*$pc + 4", wait_for_stop=False))
+
+    assert request.call_count == 1
+    assert result.execution_state == "running"
+    assert result.last_stop_event is None
+    assert result.stop_reason is None
+
+
+def test_lldb_jump_reports_relocation_when_resume_fails() -> None:
+    backend, _ = _backend()
+    with patch.object(
+        backend,
+        "_request",
+        return_value={
+            "succeeded": False,
+            "relocated": True,
+            "execution_state": "paused",
+            "error": "native resume failed",
+        },
+    ):
+        result = backend.jump("42")
+
+    assert isinstance(result, OperationError)
+    assert result.message == "native resume failed"
+    assert result.details["relocated"] is True
 
 
 def test_factory_selects_the_lldb_backend() -> None:

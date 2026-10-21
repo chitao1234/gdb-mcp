@@ -12,7 +12,15 @@ from unittest.mock import MagicMock, Mock
 import pytest
 from mcp.types import TextContent
 
-from gdb_mcp.contracts import DEBUGGER_GDB, DEBUGGER_LLDB, DebuggerName, SessionState
+from gdb_mcp.contracts import (
+    ACTION_JUMP,
+    ACTION_UNTIL,
+    DEBUGGER_GDB,
+    DEBUGGER_LLDB,
+    TOOL_EXECUTION_MANAGE,
+    DebuggerName,
+    SessionState,
+)
 from gdb_mcp.domain import (
     BackendData,
     BreakpointInfo,
@@ -172,6 +180,35 @@ def dispatch(name: str, arguments: object, session_manager: object) -> dict[str,
     content = result.content[0]
     assert isinstance(content, TextContent)
     return mapping(json.loads(content.text))
+
+
+@pytest.mark.parametrize("action", [ACTION_JUMP, ACTION_UNTIL])
+def test_location_execution_routes_location_and_wait_policy(action: str) -> None:
+    session = _session_double()
+    operation = session.jump if action == ACTION_JUMP else session.until
+    operation.return_value = OperationSuccess({"command": action})
+
+    result = dispatch(
+        TOOL_EXECUTION_MANAGE,
+        {
+            "session_id": 7,
+            "action": action,
+            "execution": {
+                "location": "*$pc + 4",
+                "wait_until": "acknowledged",
+                "timeout_sec": 5,
+            },
+        },
+        _manager_for(session),
+    )
+
+    assert result["status"] == "success"
+    assert result["action"] == action
+    operation.assert_called_once_with(
+        location="*$pc + 4",
+        wait_for_stop=False,
+        timeout_sec=5,
+    )
 
 
 class TestHandlerDispatch:
