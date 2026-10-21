@@ -25,7 +25,7 @@ from ..inputs import (
 from ..parsers import (
     CliUsageError,
     add_boolean_flag,
-    validate_model_payload,
+    validate_model,
 )
 from .common import (
     _add_action,
@@ -173,14 +173,13 @@ def _configure_breakpoint_query(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_breakpoint_query(typed_input: BreakpointQueryInput) -> dict[str, object]:
+def _build_breakpoint_query(typed_input: BreakpointQueryInput) -> BreakpointQueryArgs:
     _validate_breakpoint_query_input(typed_input)
     payload = build_breakpoint_query_payload(typed_input)
-    validated = validate_model_payload(BreakpointQueryArgs, payload)
-    query = validated.get("query")
+    query = payload.get("query")
     if isinstance(query, dict) and query.get("kinds") == []:
         query.pop("kinds", None)
-    return validated
+    return validate_model(BreakpointQueryArgs, payload)
 
 
 def _configure_breakpoint_manage(parser: argparse.ArgumentParser) -> None:
@@ -216,7 +215,7 @@ def _configure_breakpoint_manage(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_breakpoint_manage(typed_input: BreakpointManageInput) -> dict[str, object]:
+def _build_breakpoint_manage(typed_input: BreakpointManageInput) -> BreakpointManageArgs:
     _validate_breakpoint_manage_input(typed_input)
     payload = build_breakpoint_manage_payload(typed_input)
-    return validate_model_payload(BreakpointManageArgs, payload)
+    return validate_model(BreakpointManageArgs, payload)

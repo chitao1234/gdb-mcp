@@ -20,7 +20,7 @@ from ..inputs import (
 )
 from ..parsers import (
     CliUsageError,
-    validate_model_payload,
+    validate_model,
 )
 from .common import (
     _add_action,
@@ -72,10 +72,10 @@ def _configure_context_query(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-frames", type=int, default=None)
 
 
-def _build_context_query(typed_input: ContextQueryInput) -> dict[str, object]:
+def _build_context_query(typed_input: ContextQueryInput) -> ContextQueryArgs:
     _validate_context_query_input(typed_input)
     payload = build_context_query_payload(typed_input)
-    return validate_model_payload(ContextQueryArgs, payload)
+    return validate_model(ContextQueryArgs, payload)
 
 
 def _configure_context_manage(parser: argparse.ArgumentParser) -> None:
@@ -85,7 +85,7 @@ def _configure_context_manage(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--frame", type=int, default=None)
 
 
-def _build_context_manage(typed_input: ContextManageInput) -> dict[str, object]:
+def _build_context_manage(typed_input: ContextManageInput) -> ContextManageArgs:
     _validate_context_manage_input(typed_input)
     payload = build_context_manage_payload(typed_input)
-    return validate_model_payload(ContextManageArgs, payload)
+    return validate_model(ContextManageArgs, payload)

@@ -7,6 +7,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
+from pydantic import BaseModel
+
 from gdb_mcp.mcp.schemas import (
     build_tool_definitions,
 )
@@ -26,7 +28,7 @@ class ToolCliSpec(Generic[_ToolInputT]):
     name: str
     configure_parser: Callable[[argparse.ArgumentParser], None]
     parse_input: Callable[[NamespaceLike], _ToolInputT]
-    build_arguments: Callable[[_ToolInputT], dict[str, object]]
+    build_arguments: Callable[[_ToolInputT], BaseModel]
     render_human: Callable[[dict[str, object]], str]
 
 
@@ -36,7 +38,7 @@ class RegisteredToolCliSpec:
 
     name: str
     configure_parser: Callable[[argparse.ArgumentParser], None]
-    build_arguments: Callable[[NamespaceLike], dict[str, object]]
+    build_arguments: Callable[[NamespaceLike], BaseModel]
     render_human: Callable[[dict[str, object]], str]
 
 
@@ -52,7 +54,7 @@ def _parse_namespace(namespace: NamespaceLike) -> NamespaceLike:
 
 
 def _register_tool_spec(spec: ToolCliSpec[_ToolInputT]) -> RegisteredToolCliSpec:
-    def build_arguments(namespace: NamespaceLike) -> dict[str, object]:
+    def build_arguments(namespace: NamespaceLike) -> BaseModel:
         return spec.build_arguments(spec.parse_input(namespace))
 
     return RegisteredToolCliSpec(

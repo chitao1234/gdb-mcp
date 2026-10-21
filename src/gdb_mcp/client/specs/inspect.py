@@ -23,7 +23,7 @@ from ..parsers import (
     CliUsageError,
     add_boolean_flag,
     format_cli_flag,
-    validate_model_payload,
+    validate_model,
 )
 from .common import (
     _add_action,
@@ -394,7 +394,7 @@ def _configure_inspect_query(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--context-after", type=int, default=None)
 
 
-def _build_inspect_query(typed_input: InspectQueryInput) -> dict[str, object]:
+def _build_inspect_query(typed_input: InspectQueryInput) -> InspectQueryArgs:
     _validate_inspect_query_input(typed_input)
     payload = build_inspect_query_payload(typed_input)
-    return validate_model_payload(InspectQueryArgs, payload)
+    return validate_model(InspectQueryArgs, payload)

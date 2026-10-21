@@ -5,8 +5,11 @@ from __future__ import annotations
 import argparse
 from collections.abc import Iterable, Mapping
 from copy import deepcopy
+from typing import TypeVar
 
 from pydantic import BaseModel, ValidationError
+
+ModelT = TypeVar("ModelT", bound=BaseModel)
 
 
 class CliUsageError(ValueError):
@@ -128,12 +131,19 @@ def add_boolean_flag(
     )
 
 
-def validate_model_payload(model: type[BaseModel], payload: dict[str, object]) -> dict[str, object]:
-    """Validate and normalize one CLI-built payload using the shared schema model."""
+def validate_model(model: type[ModelT], payload: dict[str, object]) -> ModelT:
+    """Validate one CLI-built payload into its shared request model."""
 
-    validated = model.model_validate(payload)
-    dumped = validated.model_dump(mode="python", exclude_unset=True, exclude_none=True)
-    return dumped
+    return model.model_validate(payload)
+
+
+def serialize_model(model: BaseModel) -> dict[str, object]:
+    """Serialize one request model into the payload sent to the server."""
+
+    payload: dict[str, object] = model.model_dump(
+        mode="python", exclude_unset=True, exclude_none=True
+    )
+    return payload
 
 
 def _coerce_single_item_list_path(
@@ -173,17 +183,17 @@ def _coerce_single_item_list_path(
     return True
 
 
-def validate_model_payload_with_list_coercion(
-    model: type[BaseModel],
+def validate_model_with_list_coercion(
+    model: type[ModelT],
     payload: dict[str, object],
-) -> dict[str, object]:
+) -> ModelT:
     """Validate one payload, retrying by widening scalars into single-item lists when needed."""
 
     candidate = deepcopy(payload)
 
     while True:
         try:
-            return validate_model_payload(model, candidate)
+            return validate_model(model, candidate)
         except ValidationError as exc:
             errors = exc.errors()
             if not errors or any(error.get("type") != "list_type" for error in errors):

@@ -22,7 +22,7 @@ from ..inputs import (
 from ..parsers import (
     CliUsageError,
     add_boolean_flag,
-    validate_model_payload,
+    validate_model,
 )
 from .common import (
     _add_action,
@@ -80,9 +80,9 @@ def _configure_inferior_query(parser: argparse.ArgumentParser) -> None:
     _add_action(parser, choices=INFERIOR_QUERY_ACTIONS)
 
 
-def _build_inferior_query(typed_input: InferiorQueryInput) -> dict[str, object]:
+def _build_inferior_query(typed_input: InferiorQueryInput) -> InferiorQueryArgs:
     payload = build_inferior_query_payload(typed_input)
-    return validate_model_payload(InferiorQueryArgs, payload)
+    return validate_model(InferiorQueryArgs, payload)
 
 
 def _configure_inferior_manage(parser: argparse.ArgumentParser) -> None:
@@ -105,7 +105,7 @@ def _configure_inferior_manage(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_inferior_manage(typed_input: InferiorManageInput) -> dict[str, object]:
+def _build_inferior_manage(typed_input: InferiorManageInput) -> InferiorManageArgs:
     _validate_inferior_manage_input(typed_input)
     payload = build_inferior_manage_payload(typed_input)
-    return validate_model_payload(InferiorManageArgs, payload)
+    return validate_model(InferiorManageArgs, payload)

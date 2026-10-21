@@ -12,7 +12,7 @@ from contextlib import redirect_stderr
 from typing import Protocol, TextIO, runtime_checkable
 
 import httpx
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from gdb_mcp import __version__
 from gdb_mcp.contracts import (
@@ -39,7 +39,12 @@ from .daemon import (
 )
 from .facade import FACADE_COMMANDS, FACADE_GROUPS, FacadeCommand
 from .namespace import NamespaceLike
-from .parsers import CliUsageError, format_validation_error, validate_model_payload
+from .parsers import (
+    CliUsageError,
+    format_validation_error,
+    serialize_model,
+    validate_model,
+)
 from .results import ToolEnvelope
 from .runtime import invoke_tool
 from .specs import (
@@ -150,7 +155,7 @@ def _payload_from_json(
     tool_name: str,
     raw_payload: str,
     parser: argparse.ArgumentParser,
-) -> dict[str, object]:
+) -> BaseModel:
     """Validate one raw JSON payload against the published tool schema."""
 
     try:
@@ -160,7 +165,7 @@ def _payload_from_json(
     if not isinstance(parsed, dict):
         parser.error("--payload-json must be a JSON object")
     try:
-        return validate_model_payload(TOOL_MODELS[tool_name], parsed)
+        return validate_model(TOOL_MODELS[tool_name], parsed)
     except ValidationError as exc:
         parser.error(format_validation_error(exc))
 
@@ -488,7 +493,7 @@ def _build_payload(
     spec: RegisteredToolCliSpec,
     args: CliNamespace,
     resolved: ResolvedServer,
-) -> dict[str, object]:
+) -> BaseModel:
     """Build one tool payload, filling a remembered session id when needed."""
 
     try:
@@ -692,14 +697,15 @@ async def main(
         if payload_mode:
             if args.payload_json is None:
                 parser.error("--payload-json is required")
-            payload = _payload_from_json(args.tool_name, args.payload_json, parser)
+            request = _payload_from_json(args.tool_name, args.payload_json, parser)
         else:
             try:
-                payload = _build_payload(spec, args, resolved)
+                request = _build_payload(spec, args, resolved)
             except CliUsageError as exc:
                 parser.error(str(exc))
             except ValidationError as exc:
                 parser.error(format_validation_error(exc))
+    payload = serialize_model(request)
     try:
         response = await invoke_tool(
             resolved.url,

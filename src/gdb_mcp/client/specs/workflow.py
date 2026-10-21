@@ -29,7 +29,7 @@ from ..parsers import (
     add_boolean_flag,
     dotted_assignment,
     key_value_entry,
-    validate_model_payload,
+    validate_model,
 )
 
 
@@ -69,9 +69,9 @@ def _configure_capture_bundle(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_capture_bundle(namespace: NamespaceLike) -> dict[str, object]:
+def _build_capture_bundle(namespace: NamespaceLike) -> CaptureBundleArgs:
     values = snapshot(namespace)
-    return validate_model_payload(
+    return validate_model(
         CaptureBundleArgs,
         {
             "session_id": optional_integer(values, "session_id"),
@@ -115,9 +115,9 @@ def _configure_workflow_batch(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_workflow_batch(typed_input: WorkflowBatchInput) -> dict[str, object]:
+def _build_workflow_batch(typed_input: WorkflowBatchInput) -> BatchArgs:
     payload = build_workflow_batch_payload(typed_input)
-    return validate_model_payload(BatchArgs, payload)
+    return validate_model(BatchArgs, payload)
 
 
 def _configure_run_until_failure(parser: argparse.ArgumentParser) -> None:
@@ -250,6 +250,6 @@ def _configure_run_until_failure(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_run_until_failure(typed_input: RunUntilFailureInput) -> dict[str, object]:
+def _build_run_until_failure(typed_input: RunUntilFailureInput) -> RunUntilFailureArgs:
     payload = build_run_until_failure_payload(typed_input)
-    return validate_model_payload(RunUntilFailureArgs, payload)
+    return validate_model(RunUntilFailureArgs, payload)

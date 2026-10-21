@@ -23,7 +23,7 @@ from ..namespace import (
     text_tuple,
 )
 from ..parsers import (
-    validate_model_payload,
+    validate_model,
 )
 from .common import _configure_session_id_and_timeout
 
@@ -43,7 +43,7 @@ def _configure_session_connect(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--init-command", dest="init_commands", action="append", default=[])
 
 
-def _build_session_connect(namespace: NamespaceLike) -> dict[str, object]:
+def _build_session_connect(namespace: NamespaceLike) -> ConnectSessionArgs:
     values = snapshot(namespace)
     payload: dict[str, object] = {
         "endpoint": text(values, "endpoint"),
@@ -57,7 +57,7 @@ def _build_session_connect(namespace: NamespaceLike) -> dict[str, object]:
     debugger_path = optional_text(values, "debugger_path")
     if debugger_path is not None:
         payload["debugger_path"] = debugger_path
-    return validate_model_payload(ConnectSessionArgs, payload)
+    return validate_model(ConnectSessionArgs, payload)
 
 
 def _configure_execute_command(parser: argparse.ArgumentParser) -> None:
@@ -65,9 +65,9 @@ def _configure_execute_command(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--command", required=True)
 
 
-def _build_execute_command(namespace: NamespaceLike) -> dict[str, object]:
+def _build_execute_command(namespace: NamespaceLike) -> ExecuteCommandArgs:
     values = snapshot(namespace)
-    return validate_model_payload(
+    return validate_model(
         ExecuteCommandArgs,
         {
             "session_id": optional_integer(values, "session_id"),
@@ -82,9 +82,9 @@ def _configure_attach_process(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--pid", type=int, required=True)
 
 
-def _build_attach_process(namespace: NamespaceLike) -> dict[str, object]:
+def _build_attach_process(namespace: NamespaceLike) -> AttachProcessArgs:
     values = snapshot(namespace)
-    return validate_model_payload(
+    return validate_model(
         AttachProcessArgs,
         {
             "session_id": optional_integer(values, "session_id"),
@@ -99,9 +99,9 @@ def _configure_call_function(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--function-call", required=True)
 
 
-def _build_call_function(namespace: NamespaceLike) -> dict[str, object]:
+def _build_call_function(namespace: NamespaceLike) -> CallFunctionArgs:
     values = snapshot(namespace)
-    return validate_model_payload(
+    return validate_model(
         CallFunctionArgs,
         {
             "session_id": optional_integer(values, "session_id"),

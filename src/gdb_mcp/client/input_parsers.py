@@ -73,7 +73,8 @@ from .parsers import (
     assign_dotted_value,
     collapse_key_value_entries,
     format_validation_error,
-    validate_model_payload_with_list_coercion,
+    serialize_model,
+    validate_model_with_list_coercion,
 )
 
 _WORKFLOW_STEP_OPTION_MAP = {
@@ -234,7 +235,7 @@ def _validate_workflow_step(
         raise CliUsageError(f"Unsupported workflow step tool: {tool_name}")
 
     try:
-        validated = validate_model_payload_with_list_coercion(
+        validated = validate_model_with_list_coercion(
             model,
             {"session_id": 1, **arguments},
         )
@@ -243,8 +244,9 @@ def _validate_workflow_step(
             f"Invalid workflow step {index} ({tool_name}): {format_validation_error(exc)}"
         ) from exc
 
-    validated.pop("session_id", None)
-    return validated
+    step_arguments = serialize_model(validated)
+    step_arguments.pop("session_id", None)
+    return step_arguments
 
 
 def _normalize_step_events(

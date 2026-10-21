@@ -17,7 +17,7 @@ from ..inputs import (
     ExecutionManageInput,
 )
 from ..parsers import (
-    validate_model_payload,
+    validate_model,
 )
 from .common import (
     _add_action,
@@ -79,7 +79,7 @@ def _configure_execution_manage(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_execution_manage(typed_input: ExecutionManageInput) -> dict[str, object]:
+def _build_execution_manage(typed_input: ExecutionManageInput) -> ExecutionManageArgs:
     _validate_execution_manage_input(typed_input)
     payload = build_execution_manage_payload(typed_input)
-    return validate_model_payload(ExecutionManageArgs, payload)
+    return validate_model(ExecutionManageArgs, payload)

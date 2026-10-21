@@ -9,6 +9,7 @@ import pytest
 
 import gdb_mcp.client.specs as client_specs
 from gdb_mcp.client.cli import build_parser, parse_client_args
+from gdb_mcp.client.parsers import serialize_model
 from gdb_mcp.client.renderers import render_action_payload
 from gdb_mcp.client.specs import CLIENT_TOOL_SPECS
 
@@ -1144,7 +1145,7 @@ class TestClientCli:
         )
         typed_input = client_specs.parse_breakpoint_manage_input(args)
 
-        payload = client_specs._build_breakpoint_manage(typed_input)
+        payload = serialize_model(client_specs._build_breakpoint_manage(typed_input))
 
         assert payload == {
             "session_id": SESSION_ID,
@@ -1482,7 +1483,7 @@ class TestClientCli:
         )
         typed_input = client_specs.parse_workflow_batch_input(args)
 
-        payload = client_specs._build_workflow_batch(typed_input)
+        payload = serialize_model(client_specs._build_workflow_batch(typed_input))
 
         assert payload == {
             "session_id": SESSION_ID,
@@ -1867,7 +1868,7 @@ class TestClientCli:
         )
         typed_input = client_specs.parse_run_until_failure_input(args)
 
-        payload = client_specs._build_run_until_failure(typed_input)
+        payload = serialize_model(client_specs._build_run_until_failure(typed_input))
 
         assert payload == {
             "startup": {"program": "/bin/true"},

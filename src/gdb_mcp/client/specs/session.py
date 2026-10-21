@@ -24,7 +24,7 @@ from ..namespace import NamespaceLike, one_of, optional_integer, snapshot
 from ..parsers import (
     CliUsageError,
     key_value_entry,
-    validate_model_payload,
+    validate_model,
 )
 from .common import (
     _add_action,
@@ -66,9 +66,9 @@ def _configure_session_start(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_session_start(typed_input: SessionStartInput) -> dict[str, object]:
+def _build_session_start(typed_input: SessionStartInput) -> StartSessionArgs:
     payload = build_session_start_payload(typed_input)
-    return validate_model_payload(StartSessionArgs, payload)
+    return validate_model(StartSessionArgs, payload)
 
 
 def _configure_session_query(parser: argparse.ArgumentParser) -> None:
@@ -76,11 +76,11 @@ def _configure_session_query(parser: argparse.ArgumentParser) -> None:
     _add_session_id(parser)
 
 
-def _build_session_query(typed_input: SessionQueryInput) -> dict[str, object]:
+def _build_session_query(typed_input: SessionQueryInput) -> SessionQueryArgs:
     payload = build_session_query_payload(typed_input)
     if typed_input.action == "list" and typed_input.session_id is not None:
         raise CliUsageError("--session-id not valid with --action list")
-    return validate_model_payload(SessionQueryArgs, payload)
+    return validate_model(SessionQueryArgs, payload)
 
 
 def _configure_session_manage(parser: argparse.ArgumentParser) -> None:
@@ -88,9 +88,9 @@ def _configure_session_manage(parser: argparse.ArgumentParser) -> None:
     _add_action(parser, choices=SESSION_MANAGE_ACTIONS)
 
 
-def _build_session_manage(namespace: NamespaceLike) -> dict[str, object]:
+def _build_session_manage(namespace: NamespaceLike) -> SessionManageArgs:
     values = snapshot(namespace)
-    return validate_model_payload(
+    return validate_model(
         SessionManageArgs,
         {
             "session_id": optional_integer(values, "session_id"),
