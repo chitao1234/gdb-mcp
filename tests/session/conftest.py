@@ -6,7 +6,7 @@ import contextlib
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import cast
+from typing import Protocol, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -27,12 +27,53 @@ from gdb_mcp.transport.protocols import (
 )
 from tests.support import attach_controller, gdb_backend
 
-MiRecordBuilder = Callable[..., dict[str, object]]
-MiConsoleBuilder = Callable[[str], dict[str, object]]
-MiNotifyBuilder = Callable[..., dict[str, object]]
-PromptResponseBuilder = Callable[..., dict[str, object]]
-CommandResultBuilder = Callable[..., OperationSuccess[CommandExecutionInfo]]
-ScriptedSessionBuilder = Callable[..., tuple[SessionService, "ScriptedController"]]
+
+class MiRecordBuilder(Protocol):
+    def __call__(
+        self, payload: dict[str, object] | None = None, *, message: str = ...
+    ) -> dict[str, object]: ...
+
+
+class MiConsoleBuilder(Protocol):
+    def __call__(self, payload: str) -> dict[str, object]: ...
+
+
+class MiNotifyBuilder(Protocol):
+    def __call__(
+        self, message: str, payload: dict[str, object] | None = None
+    ) -> dict[str, object]: ...
+
+
+class PromptResponseBuilder(Protocol):
+    def __call__(
+        self,
+        *,
+        command_responses: list[dict[str, object]] | None = None,
+        async_notifications: list[dict[str, object]] | None = None,
+        timed_out: bool = False,
+        error: str | None = None,
+        fatal: bool = False,
+    ) -> dict[str, object]: ...
+
+
+class CommandResultBuilder(Protocol):
+    def __call__(
+        self,
+        command: str,
+        *,
+        result: StructuredPayload | None = None,
+        output: str | None = None,
+    ) -> OperationSuccess[CommandExecutionInfo]: ...
+
+
+class ScriptedSessionBuilder(Protocol):
+    def __call__(
+        self, *response_batches: list[dict[str, object]]
+    ) -> tuple[SessionService, ScriptedController]: ...
+
+
+class ConsoleRowsBuilder(Protocol):
+    def __call__(self, *rows: str) -> list[dict[str, object]]: ...
 
 
 @dataclass(frozen=True)
@@ -228,7 +269,7 @@ def prompt_response() -> PromptResponseBuilder:
 @pytest.fixture
 def inferiors_console(
     mi_console: MiConsoleBuilder, mi_result: MiRecordBuilder
-) -> Callable[..., list[dict[str, object]]]:
+) -> ConsoleRowsBuilder:
     """Build the ``info inferiors`` console batch from one string per row.
 
     Each row must be the raw fixed-width line GDB prints, for example
