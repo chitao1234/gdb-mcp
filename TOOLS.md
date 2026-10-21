@@ -700,6 +700,12 @@ Catchpoint:
 }
 ```
 
+The LLDB backend supports exception catchpoints (`throw`, `rethrow`, `catch`)
+only. LLDB's public SB API has no breakpoint kind for fork, exec, syscall,
+load/unload, or signal catchpoints; those requests return
+`code="unsupported_combination"`. Fork/exec events can still appear as native
+stop reasons when LLDB stops on them.
+
 ### `update` Semantics
 
 `changes` currently supports:
