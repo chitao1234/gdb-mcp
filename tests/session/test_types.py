@@ -8,6 +8,7 @@ from gdb_mcp.domain import result_to_mapping
 from gdb_mcp.session.config import SessionConfig
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.state import SessionState
+from gdb_mcp.transport.protocols import GdbControllerProtocol
 from tests.support import gdb_backend
 
 from .conftest import PromptResponseBuilder
@@ -65,7 +66,7 @@ class TestSessionState:
     ) -> None:
         """Successful startup should populate config and move to READY."""
 
-        mock_controller_class.return_value = MagicMock()
+        mock_controller_class.return_value = MagicMock(spec=GdbControllerProtocol)
         session = create_default_session_service()
 
         with patch.object(
@@ -93,7 +94,7 @@ class TestSessionState:
     ) -> None:
         """working_dir should be forwarded into process startup without chdir."""
 
-        mock_create_controller.return_value = MagicMock()
+        mock_create_controller.return_value = MagicMock(spec=GdbControllerProtocol)
         session = create_default_session_service()
 
         with patch.object(
@@ -130,7 +131,7 @@ class TestSessionState:
         """Stopping an active session should move it to STOPPED."""
 
         session = create_default_session_service()
-        session.runtime.controller = MagicMock()
+        session.runtime.controller = MagicMock(spec=GdbControllerProtocol)
         session.runtime.mark_ready()
 
         result = result_to_mapping(session.stop())

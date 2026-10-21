@@ -23,6 +23,8 @@ from gdb_mcp.session.service import SessionService
 from gdb_mcp.transport.mi_models import MiRecord
 from gdb_mcp.transport.protocols import (
     ControllerIoManagerProtocol,
+    GdbControllerFactoryProtocol,
+    GdbControllerProtocol,
     GdbProcessProtocol,
 )
 from tests.support import attach_controller, gdb_backend
@@ -97,7 +99,7 @@ def session_service() -> SessionService:
 def running_session(session_service: SessionService) -> SessionService:
     """Create a session with a controller attached and marked running."""
 
-    attach_controller(session_service, MagicMock())
+    attach_controller(session_service, MagicMock(spec=GdbControllerProtocol))
     session_service.runtime.mark_ready()
     return session_service
 
@@ -119,11 +121,11 @@ class ScriptedController:
 
     def __init__(self, response_batches: list[list[dict[str, object]]]) -> None:
         self._stdin = _FakeStdin()
-        self.io_manager: ControllerIoManagerProtocol = MagicMock()
+        self.io_manager: ControllerIoManagerProtocol = MagicMock(spec=ControllerIoManagerProtocol)
         self.io_manager.stdin = self._stdin
         self._response_batches = [list(batch) for batch in response_batches]
         self._emit_empty = False
-        self.gdb_process: GdbProcessProtocol | None = MagicMock()
+        self.gdb_process: GdbProcessProtocol | None = MagicMock(spec=GdbProcessProtocol)
         self.exit_called = False
 
     @property
@@ -416,7 +418,7 @@ def start_session(
 
     harness = StartHarness(
         service=session_service,
-        controller_factory=MagicMock(),
+        controller_factory=MagicMock(spec=GdbControllerFactoryProtocol),
         maker=_RecordBuilders(
             prompt_response=prompt_response,
             command_result=command_result,

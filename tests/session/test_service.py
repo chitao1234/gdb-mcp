@@ -62,7 +62,10 @@ class TestSessionService:
     ) -> None:
         """Startup should use the injected controller factory rather than importing one directly."""
 
-        controller_factory = MagicMock(return_value=MagicMock())
+        controller_factory = MagicMock(
+            spec=GdbControllerFactoryProtocol,
+            return_value=MagicMock(spec=GdbControllerProtocol),
+        )
         service = _service(controller_factory=controller_factory)
 
         with (
@@ -93,7 +96,10 @@ class TestSessionService:
     ) -> None:
         """working_dir should be forwarded into process startup instead of mutating global cwd."""
 
-        controller_factory = MagicMock(return_value=MagicMock())
+        controller_factory = MagicMock(
+            spec=GdbControllerFactoryProtocol,
+            return_value=MagicMock(spec=GdbControllerProtocol),
+        )
         fake_os = _os_module()
         fake_os.path.isdir.return_value = True
         service = _service(controller_factory=controller_factory, os_module=fake_os)

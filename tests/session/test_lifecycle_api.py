@@ -13,6 +13,7 @@ from gdb_mcp.domain import (
     result_to_mapping,
 )
 from gdb_mcp.session.service import SessionService
+from gdb_mcp.transport.protocols import GdbControllerProtocol
 from tests.support import gdb_backend, sequence, text
 
 from .conftest import CommandResultBuilder, StartHarness
@@ -62,7 +63,7 @@ class TestLifecycleApi:
     def test_start_session_already_running(self, session_service: SessionService) -> None:
         """Starting twice should be rejected before touching transport."""
 
-        session_service.runtime.controller = Mock()
+        session_service.runtime.controller = Mock(spec=GdbControllerProtocol)
 
         result = result_to_mapping(session_service.start(program="/bin/ls"))
 

@@ -9,6 +9,7 @@ import pytest
 from gdb_mcp.domain import result_to_mapping
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.transport import EndpointError
+from gdb_mcp.transport.protocols import ControllerIoManagerProtocol, ControllerStdinProtocol
 from tests.support import gdb_backend, text
 
 
@@ -16,8 +17,8 @@ class _ScriptedExternalController:
     """Controller double that answers the commands the lifecycle sends."""
 
     def __init__(self, *, info_files_output: str = 'Symbols from "/bin/true".\n') -> None:
-        self.io_manager = MagicMock()
-        self.io_manager.stdin = MagicMock()
+        self.io_manager = MagicMock(spec=ControllerIoManagerProtocol)
+        self.io_manager.stdin = MagicMock(spec=ControllerStdinProtocol)
         self.gdb_process = None
         self.exited = False
         self.answered: set[str] = set()

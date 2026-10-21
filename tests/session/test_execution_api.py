@@ -10,6 +10,7 @@ import pytest
 
 from gdb_mcp.domain import StopEvent, result_to_mapping
 from gdb_mcp.session.service import SessionService
+from gdb_mcp.transport.protocols import GdbControllerProtocol
 from tests.support import (
     attach_controller,
     dig,
@@ -373,7 +374,7 @@ class TestExecutionApi:
 
         # Any controller marks the session as having one; this path only reads the
         # already-recorded stop event and never talks to the controller.
-        attach_controller(session_service, MagicMock())
+        attach_controller(session_service, MagicMock(spec=GdbControllerProtocol))
         session_service.runtime.mark_ready()
         session_service.runtime.mark_inferior_paused("breakpoint-hit")
         session_service.runtime.record_stop_event(

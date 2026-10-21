@@ -20,13 +20,17 @@ class ControllerStdinProtocol(Protocol):
 class ControllerIoManagerProtocol(Protocol):
     """Subset of pygdbmi's IO manager used by the transport client."""
 
-    stdin: ControllerStdinProtocol
+    @property
+    def stdin(self) -> ControllerStdinProtocol:
+        """Expose the controller's stdin stream."""
 
 
 class GdbProcessProtocol(Protocol):
     """Minimal process interface used for liveness checks and interrupts."""
 
-    pid: int
+    @property
+    def pid(self) -> int:
+        """Expose the child process id."""
 
     def poll(self) -> int | None:
         """Return the child exit code or None while it is still running."""
@@ -35,8 +39,13 @@ class GdbProcessProtocol(Protocol):
 class GdbControllerProtocol(Protocol):
     """Minimal controller interface required by the session and transport layers."""
 
-    io_manager: ControllerIoManagerProtocol
-    gdb_process: GdbProcessProtocol | None
+    @property
+    def io_manager(self) -> ControllerIoManagerProtocol:
+        """Expose the controller's IO manager."""
+
+    @property
+    def gdb_process(self) -> GdbProcessProtocol | None:
+        """Expose the debugger child process, if the controller owns one."""
 
     def get_gdb_response(
         self,

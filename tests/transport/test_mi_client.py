@@ -10,9 +10,8 @@ from unittest.mock import MagicMock, patch
 from gdb_mcp.transport.mi_client import MiClient
 from gdb_mcp.transport.mi_models import MiRecord, MiTransportResponse
 from gdb_mcp.transport.protocols import (
-    ControllerIoManagerProtocol,
+    GdbControllerFactoryProtocol,
     GdbControllerProtocol,
-    GdbProcessProtocol,
 )
 
 # Locks expose no "waiter is blocked" callback, so give a contending thread a
@@ -38,14 +37,14 @@ class _FakeStdin:
         self.flush_count += 1
 
 
-class _FakeIoManager(ControllerIoManagerProtocol):
+class _FakeIoManager:
     """Typed stand-in for pygdbmi's IO manager."""
 
     def __init__(self, write_event: threading.Event | None = None) -> None:
         self.stdin = _FakeStdin(write_event)
 
 
-class _FakeProcess(GdbProcessProtocol):
+class _FakeProcess:
     """Typed stand-in for the GDB child process."""
 
     def __init__(self) -> None:
@@ -55,7 +54,7 @@ class _FakeProcess(GdbProcessProtocol):
         return None
 
 
-class _FakeController(GdbControllerProtocol):
+class _FakeController:
     """Scripted controller that returns preloaded response batches."""
 
     def __init__(self, responses: list[list[MiRecord]]) -> None:
@@ -75,7 +74,7 @@ class _FakeController(GdbControllerProtocol):
         self.exit_called = True
 
 
-class ContinuousAsyncController(GdbControllerProtocol):
+class ContinuousAsyncController:
     """Return one scripted batch, then endless async notifications."""
 
     def __init__(self, first_response: list[MiRecord]) -> None:
@@ -97,7 +96,7 @@ class ContinuousAsyncController(GdbControllerProtocol):
         pass
 
 
-class BlockingController(GdbControllerProtocol):
+class BlockingController:
     """Controller whose response depends on the number of writes so far.
 
     The handler receives the current write count and may block on test-owned
@@ -130,7 +129,9 @@ class TestMiClient:
 
     def _make_client(self, controller: GdbControllerProtocol) -> MiClient:
         client = MiClient(
-            controller_factory=MagicMock(return_value=controller),
+            controller_factory=MagicMock(
+                spec=GdbControllerFactoryProtocol, return_value=controller
+            ),
             initial_command_token=1000,
             poll_timeout_sec=0.01,
         )
@@ -144,7 +145,7 @@ class TestMiClient:
         """Starting the client should create and retain the controller."""
 
         controller = _FakeController([])
-        controller_factory = MagicMock(return_value=controller)
+        controller_factory = MagicMock(spec=GdbControllerFactoryProtocol, return_value=controller)
         client = MiClient(
             controller_factory=controller_factory,
             initial_command_token=1000,
@@ -167,7 +168,7 @@ class TestMiClient:
         """Starting with a working directory should forward cwd to the controller factory."""
 
         controller = _FakeController([])
-        controller_factory = MagicMock(return_value=controller)
+        controller_factory = MagicMock(spec=GdbControllerFactoryProtocol, return_value=controller)
         client = MiClient(
             controller_factory=controller_factory,
             initial_command_token=1000,
