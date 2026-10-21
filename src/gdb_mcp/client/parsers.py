@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from copy import deepcopy
-from typing import TypeVar
+from dataclasses import dataclass
+from typing import TypeAlias, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -16,27 +17,29 @@ class CliUsageError(ValueError):
     """Raised when CLI flag combinations are structurally invalid."""
 
 
-class AppendTaggedValue(argparse.Action):
-    """Collect tagged CLI events while preserving the originating option."""
+@dataclass(frozen=True)
+class StepToolEvent:
+    """Start one workflow step."""
 
-    def __call__(
-        self,
-        parser: argparse.ArgumentParser,
-        namespace: argparse.Namespace,
-        values: object,
-        option_string: str | None = None,
-    ) -> None:
-        del parser
+    tool: str
 
-        tag = option_string if option_string is not None else self.option_strings[0]
-        if self.dest not in {"step_events", "setup_step_events"}:
-            raise CliUsageError(f"unsupported tagged-value destination: {self.dest}")
-        attributes: Mapping[str, object] = vars(namespace)
-        events_value = attributes.get(self.dest)
-        if not isinstance(events_value, list):
-            raise CliUsageError(f"unsupported tagged-value destination: {self.dest}")
-        events: list[object] = events_value
-        events.append((tag, values))
+
+@dataclass(frozen=True)
+class StepLabelEvent:
+    """Name the preceding workflow step."""
+
+    label: str
+
+
+@dataclass(frozen=True)
+class StepArgumentEvent:
+    """Assign a field on the preceding workflow step."""
+
+    path: str
+    value: object
+
+
+StepEvent: TypeAlias = StepToolEvent | StepLabelEvent | StepArgumentEvent
 
 
 def key_value_entry(text: str) -> tuple[str, str]:
@@ -61,7 +64,7 @@ def collapse_key_value_entries(entries: list[tuple[str, str]]) -> dict[str, str]
     return {key: value for key, value in entries}
 
 
-def dotted_assignment(text: str) -> tuple[str, object]:
+def dotted_assignment(text: str) -> StepArgumentEvent:
     """Parse one PATH=VALUE dotted assignment."""
 
     if "=" not in text:
@@ -75,7 +78,7 @@ def dotted_assignment(text: str) -> tuple[str, object]:
             "Expected PATH with non-empty dotted segments in PATH=VALUE"
         )
 
-    return path, raw_value
+    return StepArgumentEvent(path, raw_value)
 
 
 def assign_dotted_value(target: dict[str, object], path: str, value: object) -> None:

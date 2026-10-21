@@ -25,7 +25,8 @@ from ..namespace import (
     text_tuple,
 )
 from ..parsers import (
-    AppendTaggedValue,
+    StepLabelEvent,
+    StepToolEvent,
     add_boolean_flag,
     dotted_assignment,
     key_value_entry,
@@ -93,12 +94,14 @@ def _build_capture_bundle(namespace: NamespaceLike) -> CaptureBundleArgs:
 
 def _configure_workflow_batch(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--session-id", type=int, default=argparse.SUPPRESS)
-    parser.add_argument("--step", dest="step_events", action=AppendTaggedValue, default=[])
-    parser.add_argument("--step-label", dest="step_events", action=AppendTaggedValue)
+    parser.add_argument(
+        "--step", dest="step_events", action="append", type=StepToolEvent, default=[]
+    )
+    parser.add_argument("--step-label", dest="step_events", action="append", type=StepLabelEvent)
     parser.add_argument(
         "--step-arg",
         dest="step_events",
-        action=AppendTaggedValue,
+        action="append",
         type=dotted_assignment,
     )
     add_boolean_flag(
@@ -140,13 +143,15 @@ def _configure_run_until_failure(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--startup-working-dir", default=None)
     parser.add_argument("--startup-core", default=None)
     parser.add_argument(
-        "--setup-step", dest="setup_step_events", action=AppendTaggedValue, default=[]
+        "--setup-step", dest="setup_step_events", action="append", type=StepToolEvent, default=[]
     )
-    parser.add_argument("--setup-step-label", dest="setup_step_events", action=AppendTaggedValue)
+    parser.add_argument(
+        "--setup-step-label", dest="setup_step_events", action="append", type=StepLabelEvent
+    )
     parser.add_argument(
         "--setup-step-arg",
         dest="setup_step_events",
-        action=AppendTaggedValue,
+        action="append",
         type=dotted_assignment,
     )
     parser.add_argument("--run-arg", dest="run_args", action="append", default=[])

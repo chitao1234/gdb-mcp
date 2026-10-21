@@ -1,137 +1,245 @@
-"""Typed reads from one parsed argparse namespace."""
+"""Typed reads from values already parsed by argparse."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Protocol, TypeVar
+from typing import Literal, Protocol, TypeAlias, TypeVar, cast, overload
 
-from .parsers import CliUsageError
+from .parsers import CliUsageError, StepEvent
 
 ChoiceT = TypeVar("ChoiceT", bound=str)
 
+TextOption: TypeAlias = Literal[
+    "access",
+    "action",
+    "address",
+    "argument",
+    "breakpoint_kind",
+    "bundle_name",
+    "capture_bundle_name",
+    "capture_bundle_name_prefix",
+    "capture_output_dir",
+    "command",
+    "condition",
+    "core",
+    "debugger",
+    "debugger_path",
+    "end_address",
+    "endpoint",
+    "event",
+    "executable",
+    "expression",
+    "failure_result_text_regex",
+    "file",
+    "function",
+    "function_call",
+    "location",
+    "location_kind",
+    "mode",
+    "output_dir",
+    "program",
+    "rr_replay",
+    "start_address",
+    "startup_core",
+    "startup_debugger_path",
+    "startup_program",
+    "startup_working_dir",
+    "value_format",
+    "wait_until",
+    "working_dir",
+]
+IntegerOption: TypeAlias = Literal[
+    "capture_max_frames",
+    "context_after",
+    "context_before",
+    "count",
+    "end_line",
+    "frame",
+    "inferior_id",
+    "instruction_count",
+    "line",
+    "max_frames",
+    "max_iterations",
+    "max_registers",
+    "number",
+    "offset",
+    "pid",
+    "run_timeout_sec",
+    "session_id",
+    "start_line",
+    "thread_id",
+    "timeout_sec",
+]
+FlagOption: TypeAlias = Literal[
+    "include_backtraces",
+    "include_frame",
+    "include_registers",
+    "include_stop_history",
+    "include_threads",
+    "include_transcript",
+    "include_variables",
+    "reverse",
+]
+OptionalFlagOption: TypeAlias = Literal[
+    "capture_enabled",
+    "capture_include_backtraces",
+    "capture_include_frame",
+    "capture_include_registers",
+    "capture_include_stop_history",
+    "capture_include_threads",
+    "capture_include_transcript",
+    "capture_include_variables",
+    "capture_stop_events",
+    "clear_condition",
+    "enabled",
+    "fail_fast",
+    "failure_on_error",
+    "failure_on_timeout",
+    "include_vector_registers",
+    "make_current",
+    "temporary",
+]
+TextListOption: TypeAlias = Literal[
+    "args",
+    "capture_expressions",
+    "capture_memory_ranges",
+    "debugger_args",
+    "expressions",
+    "failure_execution_states",
+    "failure_stop_reasons",
+    "init_commands",
+    "kinds",
+    "memory_ranges",
+    "register_names",
+    "run_args",
+    "startup_args",
+    "startup_init_commands",
+    "stop_reasons",
+]
+IntegerListOption: TypeAlias = Literal["failure_exit_codes", "register_numbers"]
+KeyValueOption: TypeAlias = Literal["env", "startup_env"]
+EventOption: TypeAlias = Literal["step_events", "setup_step_events"]
+
 
 class NamespaceLike(Protocol):
-    """A parsed namespace carrying its options in ``__dict__``."""
+    """A parsed namespace carrying its options in __dict__."""
 
     __dict__: dict[str, object]
 
 
-def snapshot(namespace: NamespaceLike) -> Mapping[str, object]:
-    """Return one namespace's attributes as an ``object`` mapping."""
+class ParsedOptions(Protocol):
+    """The field types established by the CLI's argparse configuration."""
 
-    attributes: Mapping[str, object] = vars(namespace)
-    return attributes
+    @overload
+    def get(self, name: TextOption) -> str | None: ...
+
+    @overload
+    def get(self, name: IntegerOption) -> int | None: ...
+
+    @overload
+    def get(self, name: FlagOption | OptionalFlagOption) -> bool | None: ...
+
+    @overload
+    def get(self, name: TextListOption) -> list[str] | None: ...
+
+    @overload
+    def get(self, name: IntegerListOption) -> list[int] | None: ...
+
+    @overload
+    def get(self, name: KeyValueOption) -> list[tuple[str, str]] | None: ...
+
+    @overload
+    def get(self, name: EventOption) -> list[StepEvent] | None: ...
+
+    @overload
+    def get(self, name: str) -> object: ...
+
+    def __getitem__(self, name: FlagOption) -> bool: ...
+
+
+def snapshot(namespace: NamespaceLike) -> ParsedOptions:
+    """Give argparse's untyped namespace its declared option types at the boundary."""
+
+    return cast(ParsedOptions, vars(namespace))
 
 
 def _flag(name: str) -> str:
     return "--" + name.replace("_", "-")
 
 
-def _string(name: str, value: object) -> str:
-    if not isinstance(value, str):
-        raise CliUsageError(f"{_flag(name)} must be text")
-    return value
-
-
-def _integer(name: str, value: object) -> int:
-    if not isinstance(value, int) or isinstance(value, bool):
-        raise CliUsageError(f"{_flag(name)} must be an integer")
-    return value
-
-
-def _boolean(name: str, value: object) -> bool:
-    if not isinstance(value, bool):
-        raise CliUsageError(f"{_flag(name)} must be a flag")
-    return value
-
-
-def text(attributes: Mapping[str, object], name: str) -> str:
-    """Return a required text option."""
+def text(attributes: ParsedOptions, name: TextOption) -> str:
+    """Return required text, including flags relaxed by facade shorthands."""
 
     value = attributes.get(name)
     if value is None:
         raise CliUsageError(f"{_flag(name)} is required")
-    return _string(name, value)
+    return value
 
 
-def optional_text(attributes: Mapping[str, object], name: str) -> str | None:
-    """Return a text option, or ``None`` when it was not provided."""
+def optional_text(attributes: ParsedOptions, name: TextOption) -> str | None:
+    """Return a text option, or None when it was not provided."""
 
-    value = attributes.get(name)
-    return None if value is None else _string(name, value)
+    return attributes.get(name)
 
 
-def integer(attributes: Mapping[str, object], name: str) -> int:
-    """Return a required integer option."""
+def integer(attributes: ParsedOptions, name: IntegerOption) -> int:
+    """Return a required integer, including relaxed positional shorthands."""
 
     value = attributes.get(name)
     if value is None:
         raise CliUsageError(f"{_flag(name)} is required")
-    return _integer(name, value)
+    return value
 
 
-def optional_integer(attributes: Mapping[str, object], name: str) -> int | None:
-    """Return an integer option, or ``None`` when it was not provided."""
+def optional_integer(attributes: ParsedOptions, name: IntegerOption) -> int | None:
+    """Return an integer option, or None when it was not provided."""
 
-    value = attributes.get(name)
-    return None if value is None else _integer(name, value)
-
-
-def boolean(attributes: Mapping[str, object], name: str) -> bool:
-    """Return a required boolean option."""
-
-    return _boolean(name, attributes.get(name))
+    return attributes.get(name)
 
 
-def optional_boolean(attributes: Mapping[str, object], name: str) -> bool | None:
-    """Return a tri-state boolean option."""
+def boolean(attributes: ParsedOptions, name: FlagOption) -> bool:
+    """Return a flag whose parser always supplies a boolean default."""
 
-    value = attributes.get(name)
-    return None if value is None else _boolean(name, value)
+    return attributes[name]
 
 
-def text_tuple(attributes: Mapping[str, object], name: str) -> tuple[str, ...]:
+def optional_boolean(
+    attributes: ParsedOptions, name: FlagOption | OptionalFlagOption
+) -> bool | None:
+    """Return a flag, distinguishing absence from explicit false."""
+
+    return attributes.get(name)
+
+
+def text_tuple(attributes: ParsedOptions, name: TextListOption) -> tuple[str, ...]:
     """Return a repeated text option, defaulting to an empty tuple."""
 
-    value = attributes.get(name)
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        raise CliUsageError(f"{_flag(name)} must be a list")
-    items: list[str] = []
-    for item in value:
-        items.append(_string(name, item))
-    return tuple(items)
+    return tuple(attributes.get(name) or ())
 
 
-def optional_text_tuple(attributes: Mapping[str, object], name: str) -> tuple[str, ...] | None:
+def optional_text_tuple(attributes: ParsedOptions, name: TextListOption) -> tuple[str, ...] | None:
     """Return a repeated text option, distinguishing absence from empty."""
 
-    return None if attributes.get(name) is None else text_tuple(attributes, name)
+    value = attributes.get(name)
+    return None if value is None else tuple(value)
 
 
-def integer_tuple(attributes: Mapping[str, object], name: str) -> tuple[int, ...]:
+def integer_tuple(attributes: ParsedOptions, name: IntegerListOption) -> tuple[int, ...]:
     """Return a repeated integer option, defaulting to an empty tuple."""
 
-    value = attributes.get(name)
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        raise CliUsageError(f"{_flag(name)} must be a list")
-    items: list[int] = []
-    for item in value:
-        items.append(_integer(name, item))
-    return tuple(items)
+    return tuple(attributes.get(name) or ())
 
 
-def optional_integer_tuple(attributes: Mapping[str, object], name: str) -> tuple[int, ...] | None:
+def optional_integer_tuple(
+    attributes: ParsedOptions, name: IntegerListOption
+) -> tuple[int, ...] | None:
     """Return a repeated integer option, distinguishing absence from empty."""
 
-    return None if attributes.get(name) is None else integer_tuple(attributes, name)
+    value = attributes.get(name)
+    return None if value is None else tuple(value)
 
 
 def choice(value: object, allowed: tuple[ChoiceT, ...], *, name: str) -> ChoiceT:
-    """Return one value from a closed set, or fail with the option name."""
+    """Narrow a parsed choice or normalized alias to its canonical literal."""
 
     for option in allowed:
         if value == option:
@@ -139,14 +247,14 @@ def choice(value: object, allowed: tuple[ChoiceT, ...], *, name: str) -> ChoiceT
     raise CliUsageError(f"{_flag(name)} must be one of {', '.join(allowed)}")
 
 
-def one_of(attributes: Mapping[str, object], name: str, allowed: tuple[ChoiceT, ...]) -> ChoiceT:
+def one_of(attributes: ParsedOptions, name: TextOption, allowed: tuple[ChoiceT, ...]) -> ChoiceT:
     """Return one required choice option."""
 
     return choice(attributes.get(name), allowed, name=name)
 
 
 def optional_one_of(
-    attributes: Mapping[str, object], name: str, allowed: tuple[ChoiceT, ...]
+    attributes: ParsedOptions, name: TextOption, allowed: tuple[ChoiceT, ...]
 ) -> ChoiceT | None:
     """Return one optional choice option."""
 
@@ -155,53 +263,20 @@ def optional_one_of(
 
 
 def one_of_tuple(
-    attributes: Mapping[str, object], name: str, allowed: tuple[ChoiceT, ...]
+    attributes: ParsedOptions, name: TextListOption, allowed: tuple[ChoiceT, ...]
 ) -> tuple[ChoiceT, ...]:
     """Return a repeated choice option, defaulting to an empty tuple."""
 
-    value = attributes.get(name)
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        raise CliUsageError(f"{_flag(name)} must be a list")
-    items: list[ChoiceT] = []
-    for item in value:
-        items.append(choice(item, allowed, name=name))
-    return tuple(items)
+    return tuple(choice(item, allowed, name=name) for item in attributes.get(name) or ())
 
 
-def key_value_entries(attributes: Mapping[str, object], name: str) -> list[tuple[str, str]]:
-    """Return repeated ``KEY=VALUE`` options."""
+def key_value_entries(attributes: ParsedOptions, name: KeyValueOption) -> list[tuple[str, str]]:
+    """Return entries already parsed by key_value_entry."""
 
-    value = attributes.get(name)
-    if value is None:
-        return []
-    if not isinstance(value, list):
-        raise CliUsageError(f"{_flag(name)} must be a list")
-    entries: list[tuple[str, str]] = []
-    for item in value:
-        if (
-            not isinstance(item, tuple)
-            or len(item) != 2
-            or not isinstance(item[0], str)
-            or not isinstance(item[1], str)
-        ):
-            raise CliUsageError(f"{_flag(name)} must be KEY=VALUE")
-        entries.append((item[0], item[1]))
-    return entries
+    return attributes.get(name) or []
 
 
-def tagged_events(attributes: Mapping[str, object], name: str) -> list[tuple[str, object]] | None:
-    """Return repeated ``(option, value)`` events from a tagged-value action."""
+def tagged_events(attributes: ParsedOptions, name: EventOption) -> list[StepEvent] | None:
+    """Return events already constructed by the argparse type converters."""
 
-    value = attributes.get(name)
-    if value is None:
-        return None
-    if not isinstance(value, list):
-        raise CliUsageError(f"{_flag(name)} must be a list")
-    events: list[tuple[str, object]] = []
-    for item in value:
-        if not isinstance(item, tuple) or len(item) != 2 or not isinstance(item[0], str):
-            raise CliUsageError(f"{_flag(name)} must be an option/value pair")
-        events.append((item[0], item[1]))
-    return events
+    return attributes.get(name)

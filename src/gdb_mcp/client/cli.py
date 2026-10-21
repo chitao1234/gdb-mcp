@@ -89,6 +89,7 @@ def _add_invocation_flags(
     parser: argparse.ArgumentParser,
     *,
     suppress_defaults: bool = False,
+    payload_required: bool = False,
 ) -> None:
     """Add shared connection and output flags to a parser."""
 
@@ -101,6 +102,9 @@ def _add_invocation_flags(
     )
     parser.add_argument(
         "--payload-json",
+        dest="raw_payload_json" if payload_required else "payload_json",
+        required=payload_required,
+        metavar="JSON",
         default=default,
         help=(
             "Raw MCP tool payload as JSON. Mutually exclusive with field flags; "
@@ -310,7 +314,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Make one session the default for this project",
     )
     _add_invocation_flags(use_parser, suppress_defaults=True)
-    use_parser.add_argument("session_id", type=int, metavar="session_id")
+    use_parser.add_argument("selected_session_id", type=int, metavar="session_id")
     session_commands.add_parser("current", help="Print the default session for this project")
 
     return parser
@@ -326,7 +330,7 @@ def build_payload_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(prog="gdb-mcp-client")
     _add_version_flag(parser)
-    _add_invocation_flags(parser)
+    _add_invocation_flags(parser, payload_required=True)
     _add_global_session_id(parser)
     parser.add_argument("tool_name", metavar="tool_name")
     return parser
@@ -357,9 +361,10 @@ class CliNamespace(NamespaceLike, Protocol):
     session_command: str | None
     daemon_command: str | None
     session_id: int | None
+    selected_session_id: int
     server_url: str | None
     json: bool
-    payload_json: str | None
+    raw_payload_json: str
     force: bool
     facade_command: FacadeCommand | None
     action: str | None
@@ -612,10 +617,7 @@ async def _run_session_command(
         output.write(f"{session_id}\n")
         return 0
 
-    session_id = args.session_id
-    if session_id is None:
-        error_output.write("gdb-mcp-client: error: session_id is required\n")
-        return 1
+    session_id = args.selected_session_id
     try:
         resolved = await resolve_server(explicit_url=args.server_url)
     except DaemonError as exc:
@@ -714,7 +716,7 @@ async def main(
                 error_output.write(f"gdb-mcp-client: error: {_format_runtime_error(exc)}\n")
                 return 1
         if payload_mode:
-            request = _payload_from_json(args.tool_name, cast(str, args.payload_json), parser)
+            request = _payload_from_json(args.tool_name, args.raw_payload_json, parser)
         else:
             try:
                 request = _build_payload(spec, args, resolved)

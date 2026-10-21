@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import cast
+from dataclasses import dataclass
+from typing import Literal, overload
 
 from pydantic import ValidationError
 
 import gdb_mcp.contracts as shared_contracts
 from gdb_mcp.contracts import (
+    BATCH_STEP_TOOL_NAMES,
     BREAKPOINT_ACCESS_VALUES,
     BREAKPOINT_EVENTS,
     BREAKPOINT_KINDS,
@@ -29,7 +30,6 @@ from gdb_mcp.contracts import (
     SESSION_QUERY_ACTIONS,
     TOOL_SESSION_MANAGE,
     TOOL_SESSION_QUERY,
-    BatchStepToolName,
 )
 from gdb_mcp.mcp.schemas import BATCH_STEP_TOOL_MODELS
 
@@ -52,6 +52,7 @@ from .inputs import (
 )
 from .namespace import (
     NamespaceLike,
+    ParsedOptions,
     boolean,
     choice,
     integer_tuple,
@@ -70,18 +71,16 @@ from .namespace import (
 )
 from .parsers import (
     CliUsageError,
+    StepArgumentEvent,
+    StepEvent,
+    StepLabelEvent,
+    StepToolEvent,
     assign_dotted_value,
     collapse_key_value_entries,
     format_validation_error,
     serialize_model,
     validate_model_with_list_coercion,
 )
-
-_WORKFLOW_STEP_OPTION_MAP = {
-    "--setup-step": "--step",
-    "--setup-step-label": "--step-label",
-    "--setup-step-arg": "--step-arg",
-}
 
 
 def _normalize_step_tool_name(tool_name: str) -> str:
@@ -188,7 +187,7 @@ def parse_context_manage_input(namespace: NamespaceLike) -> ContextManageInput:
     )
 
 
-def _parse_location_input(values: Mapping[str, object]) -> LocationInput | None:
+def _parse_location_input(values: ParsedOptions) -> LocationInput | None:
     location_kind = optional_text(values, "location_kind")
     if location_kind is None:
         return None
@@ -230,9 +229,7 @@ def _validate_workflow_step(
             raise CliUsageError(f"{tool_name} is not valid inside workflow steps")
         raise CliUsageError(f"Unsupported workflow step tool: {tool_name}")
 
-    model = BATCH_STEP_TOOL_MODELS.get(tool_name)
-    if model is None:
-        raise CliUsageError(f"Unsupported workflow step tool: {tool_name}")
+    model = BATCH_STEP_TOOL_MODELS[tool_name]
 
     try:
         validated = validate_model_with_list_coercion(
@@ -249,76 +246,68 @@ def _validate_workflow_step(
     return step_arguments
 
 
-def _normalize_step_events(
-    step_events: list[tuple[str, object]] | None,
-) -> list[tuple[str, object]] | None:
-    if step_events is None:
-        return None
-    return [(_WORKFLOW_STEP_OPTION_MAP.get(option, option), value) for option, value in step_events]
+@dataclass
+class _PendingStep:
+    """One step assembled from flags before its tool and arguments are validated."""
+
+    tool: str
+    arguments: dict[str, object]
+    label: str | None = None
+
+
+@overload
+def parse_step_inputs(
+    step_events: list[StepEvent] | None, *, required: Literal[True], step_flag: str
+) -> tuple[SessionStepInput, ...]: ...
+
+
+@overload
+def parse_step_inputs(
+    step_events: list[StepEvent] | None, *, required: Literal[False], step_flag: str
+) -> tuple[SessionStepInput, ...] | None: ...
 
 
 def parse_step_inputs(
-    step_events: list[tuple[str, object]] | None,
+    step_events: list[StepEvent] | None,
     *,
     required: bool,
     step_flag: str,
 ) -> tuple[SessionStepInput, ...] | None:
-    normalized_events = _normalize_step_events(step_events)
-    if not normalized_events:
+    if not step_events:
         if required:
             raise CliUsageError(f"At least one {step_flag} is required")
         return None
 
-    steps: list[SessionStepInput] = []
-    current_tool: BatchStepToolName | None = None
-    current_label: str | None = None
-    current_arguments: dict[str, object] | None = None
+    steps: list[_PendingStep] = []
+    current: _PendingStep | None = None
 
-    for option, value in normalized_events:
-        if option == "--step":
-            current_tool = cast(BatchStepToolName, _normalize_step_tool_name(str(value)))
-            current_label = None
-            current_arguments = {}
-            steps.append(
-                SessionStepInput(
-                    tool=current_tool,
-                    label=current_label,
-                    arguments=current_arguments,
-                )
+    for event in step_events:
+        if isinstance(event, StepToolEvent):
+            current = _PendingStep(
+                tool=_normalize_step_tool_name(event.tool),
+                arguments={},
             )
+            steps.append(current)
             continue
 
-        if current_tool is None or current_arguments is None:
-            raise CliUsageError(f"{option} requires a preceding {step_flag}")
+        if current is None:
+            suffix = "label" if isinstance(event, StepLabelEvent) else "arg"
+            raise CliUsageError(f"{step_flag}-{suffix} requires a preceding {step_flag}")
 
-        if option == "--step-label":
-            if not isinstance(value, str):
-                raise CliUsageError(f"{step_flag}-label requires text")
-            current_label = value
-            steps[-1] = SessionStepInput(
-                tool=current_tool,
-                label=current_label,
-                arguments=current_arguments,
-            )
-            continue
-
-        if option == "--step-arg":
-            if not isinstance(value, tuple) or len(value) != 2 or not isinstance(value[0], str):
-                raise CliUsageError(f"{step_flag}-arg requires PATH=VALUE")
-            path, scalar = value
-            assign_dotted_value(current_arguments, path, scalar)
+        match event:
+            case StepLabelEvent():
+                current.label = event.label
+            case StepArgumentEvent():
+                assign_dotted_value(current.arguments, event.path, event.value)
 
     validated_steps: list[SessionStepInput] = []
     for index, step in enumerate(steps):
+        arguments = _validate_workflow_step(step.tool, dict(step.arguments), index=index)
         validated_steps.append(
             SessionStepInput(
-                tool=step.tool,
+                tool=choice(step.tool, BATCH_STEP_TOOL_NAMES, name="step"),
                 label=step.label,
-                arguments=_validate_workflow_step(
-                    step.tool,
-                    dict(step.arguments),
-                    index=index,
-                ),
+                arguments=arguments,
             )
         )
 
@@ -445,8 +434,6 @@ def parse_workflow_batch_input(namespace: NamespaceLike) -> WorkflowBatchInput:
         required=True,
         step_flag="--step",
     )
-    if steps is None:  # pragma: no cover - required=True raises before this
-        raise CliUsageError("At least one --step is required")
     return WorkflowBatchInput(
         session_id=optional_integer(values, "session_id"),
         steps=steps,
