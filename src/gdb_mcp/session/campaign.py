@@ -19,7 +19,7 @@ from ..domain import (
     SessionStatusSnapshot,
     StopEvent,
     StructuredPayload,
-    result_to_mapping,
+    result_to_envelope,
 )
 from .locking import session_workflow_context
 from .service import SessionService
@@ -120,7 +120,7 @@ class RunUntilFailureService:
                     core=request.core,
                 )
                 if isinstance(startup_result, OperationError):
-                    run_payload = result_to_mapping(startup_result)
+                    run_payload = result_to_envelope(startup_result)
                     last_payload = run_payload
                     matched_info = _MatchedFailure(
                         iteration=iteration,
@@ -151,7 +151,7 @@ class RunUntilFailureService:
                         matched_info = _MatchedFailure(
                             iteration=iteration,
                             trigger="setup_error",
-                            run_payload=result_to_mapping(setup_result),
+                            run_payload=result_to_envelope(setup_result),
                             status_snapshot=self._status_snapshot(session),
                             capture_bundle=None,
                             capture_error=None,
@@ -192,7 +192,7 @@ class RunUntilFailureService:
                     timeout_sec=request.run_timeout_sec,
                     wait_for_stop=True,
                 )
-                run_payload = result_to_mapping(run_result)
+                run_payload = result_to_envelope(run_result)
                 status_snapshot = self._status_snapshot(session)
                 last_payload = run_payload
                 last_status_snapshot = status_snapshot

@@ -41,7 +41,11 @@ def _publish_session_result(session_id: int | None, result: ToolResult) -> ToolR
     payload = result.value
     if not isinstance(payload, SessionStartInfo):
         return OperationError(message="Internal error: session start payload must be an object")
-    return OperationSuccess(replace(payload, session_id=session_id))
+    return OperationSuccess(
+        replace(payload, session_id=session_id),
+        warnings=result.warnings,
+        action=result.action,
+    )
 
 
 def _handle_start_session(

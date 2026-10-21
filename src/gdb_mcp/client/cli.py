@@ -24,7 +24,6 @@ from gdb_mcp.contracts import (
     TOOL_SESSION_QUERY,
     TOOL_SESSION_START,
 )
-from gdb_mcp.domain.parsing import as_int
 from gdb_mcp.mcp.schemas import TOOL_MODELS
 from gdb_mcp.mcp.tool_examples import TOOL_EXAMPLES
 
@@ -469,11 +468,7 @@ def _session_id_from_payload(payload: dict[str, object]) -> int | None:
     """Return the session id reported by a session-creating response."""
 
     envelope = ToolEnvelope.from_payload(payload)
-    if envelope.session_id is not None:
-        return envelope.session_id
-    if envelope.result is not None:
-        return as_int(envelope.result.get("session_id"))
-    return None
+    return envelope.session_id
 
 
 async def _ensure_attach_session(

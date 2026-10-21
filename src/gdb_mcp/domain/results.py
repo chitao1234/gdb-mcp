@@ -17,6 +17,7 @@ class OperationSuccess(Generic[PayloadT_co]):
 
     value: PayloadT_co
     warnings: tuple[str, ...] = ()
+    action: str | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -61,7 +62,7 @@ def payload_to_mapping(value: object) -> JsonValue:
 
 
 def result_to_mapping(result: OperationResult[object]) -> StructuredPayload:
-    """Convert a typed operation result into the external JSON payload shape."""
+    """Convert a typed operation result into its flattened payload mapping."""
 
     if isinstance(result, OperationSuccess):
         serialized_value = payload_to_mapping(result.value)
@@ -92,3 +93,21 @@ def result_to_mapping(result: OperationResult[object]) -> StructuredPayload:
         if nested_details:
             error_payload["details"] = nested_details
     return error_payload
+
+
+def result_to_envelope(result: OperationResult[object]) -> StructuredPayload:
+    """Convert an operation result into the uniform public tool envelope."""
+
+    if isinstance(result, OperationError):
+        return result_to_mapping(result)
+
+    serialized_value = payload_to_mapping(result.value)
+    if not isinstance(serialized_value, dict):
+        raise TypeError("Successful tool results must contain an object payload")
+    payload: StructuredPayload = {"status": "success"}
+    if result.action is not None:
+        payload["action"] = result.action
+    payload["result"] = serialized_value
+    if result.warnings:
+        payload["warnings"] = list(result.warnings)
+    return payload

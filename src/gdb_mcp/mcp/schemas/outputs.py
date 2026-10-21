@@ -1,15 +1,9 @@
 """Published output schemas for the tool surface.
 
-Every tool result is the same envelope: ``status`` says whether the call
-succeeded, and the tool-specific payload sits next to it, flat for a dedicated
-tool and under ``result`` for an action-based one.
-
-The schema of each success shape is generated from the payload type the session
-layer actually returns, so it cannot drift from the code that produces it, and
-then normalized like a request schema. A dedicated tool's payload is merged into
-the envelope here because that is the shape the serializer publishes; an
-action-based tool keeps one alternative per action, which states that action's
-own requirements.
+Every success uses the same envelope: ``status`` and a typed ``result`` payload,
+with an ``action`` discriminator on action-based tools. The payload schema is
+generated from the type the session layer returns, so it cannot drift from the
+code that produces it, and then normalized like a request schema.
 """
 
 from __future__ import annotations
@@ -19,7 +13,7 @@ import json
 from collections.abc import Mapping
 from typing import Literal, cast
 
-from pydantic import BaseModel, ConfigDict, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from ...contracts import (
     ACTION_BACKTRACE,
@@ -116,7 +110,7 @@ class ToolSuccessEnvelope(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     status: Literal["success"]
-    warnings: list[str] | None = None
+    warnings: list[str] = Field(default_factory=list)
 
 
 class ToolErrorEnvelope(BaseModel):
@@ -242,15 +236,11 @@ def _success_variant(
 
     properties = _properties(_model_schema(ToolSuccessEnvelope))
     required: list[str] = ["status"]
-
-    if action is None:
-        # A dedicated tool publishes its payload fields next to the envelope.
-        properties.update(_properties(payload))
-        required.extend(_required(payload))
-    else:
+    if action is not None:
         properties["action"] = {"const": action}
-        properties["result"] = payload
-        required.extend(["action", "result"])
+        required.append("action")
+    properties["result"] = payload
+    required.append("result")
 
     return {
         "type": "object",
@@ -291,12 +281,3 @@ def _properties(schema: Schema) -> dict[str, object]:
 
     properties = schema.get("properties")
     return dict(properties) if isinstance(properties, Mapping) else {}
-
-
-def _required(schema: Schema) -> list[str]:
-    """Return one schema's required property names, or an empty list."""
-
-    required = schema.get("required")
-    if not isinstance(required, list):
-        return []
-    return [name for name in required if isinstance(name, str)]

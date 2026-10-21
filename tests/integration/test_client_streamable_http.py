@@ -124,8 +124,8 @@ def test_cli_calls_real_streamable_http_workflow_batch(
 
     assert exit_code == 0
     assert payload["status"] == "success"
-    assert payload["count"] == 1
-    steps = mapping_list(payload["steps"])
+    assert dig(payload, "result", "count") == 1
+    steps = mapping_list(dig(payload, "result", "steps"))
     assert steps[0]["tool"] == "gdb_session_query"
     assert steps[0]["action"] == "status"
 
@@ -185,8 +185,8 @@ def test_cli_calls_real_streamable_http_workflow_batch_with_nested_step_args(
 
     assert exit_code == 0
     assert payload["status"] == "success"
-    assert payload["count"] == 3
-    steps = mapping_list(payload["steps"])
+    assert dig(payload, "result", "count") == 3
+    steps = mapping_list(dig(payload, "result", "steps"))
     assert steps[0]["label"] == "break-main"
     assert steps[1]["label"] == "run"
     assert dig(steps[1], "stop_event", "reason") == "breakpoint-hit"
@@ -230,8 +230,8 @@ def test_cli_calls_real_streamable_http_workflow_batch_with_single_list_step_arg
 
     assert exit_code == 0
     assert payload["status"] == "success"
-    assert payload["count"] == 1
-    steps = mapping_list(payload["steps"])
+    assert dig(payload, "result", "count") == 1
+    steps = mapping_list(dig(payload, "result", "steps"))
     assert steps[0]["tool"] == "gdb_breakpoint_query"
     assert steps[0]["action"] == "list"
 
@@ -274,9 +274,9 @@ def test_cli_calls_real_streamable_http_run_until_failure(
 
     assert exit_code == 0
     assert payload["status"] == "success"
-    assert payload["matched_failure"] is True
-    assert dig(payload, "capture_bundle", "bundle_name") == "cli-failure"
-    assert Path(text(dig(payload, "capture_bundle", "manifest_path"))).exists()
+    assert dig(payload, "result", "matched_failure") is True
+    assert dig(payload, "result", "capture_bundle", "bundle_name") == "cli-failure"
+    assert Path(text(dig(payload, "result", "capture_bundle", "manifest_path"))).exists()
 
 
 @pytest.mark.integration
@@ -327,6 +327,6 @@ def test_cli_calls_real_streamable_http_run_until_failure_with_setup_steps(
 
     assert exit_code == 0
     assert payload["status"] == "success"
-    assert payload["matched_failure"] is True
-    assert dig(payload, "capture_bundle", "bundle_name") == "cli-break-main"
-    assert Path(text(dig(payload, "capture_bundle", "manifest_path"))).exists()
+    assert dig(payload, "result", "matched_failure") is True
+    assert dig(payload, "result", "capture_bundle", "bundle_name") == "cli-break-main"
+    assert Path(text(dig(payload, "result", "capture_bundle", "manifest_path"))).exists()

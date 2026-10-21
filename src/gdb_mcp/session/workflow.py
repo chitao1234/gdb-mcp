@@ -13,7 +13,7 @@ from ..domain import (
     OperationResult,
     OperationSuccess,
     StopEvent,
-    result_to_mapping,
+    result_to_envelope,
 )
 from ..domain.parsing import as_text
 from .runtime import SessionRuntime
@@ -65,7 +65,7 @@ class SessionWorkflowService:
         for index, step in enumerate(steps):
             previous_stop_history_size = len(self._runtime.stop_history)
             step_result = step.execute()
-            serialized_result = result_to_mapping(step_result)
+            serialized_result = result_to_envelope(step_result)
             step_status = serialized_result.get("status")
             if not isinstance(step_status, str):
                 step_status = "error" if isinstance(step_result, OperationError) else "success"

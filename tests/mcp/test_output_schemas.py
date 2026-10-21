@@ -134,6 +134,17 @@ def test_every_output_schema_accepts_the_error_envelope(
         jsonschema.validate(error, schema)
 
 
+def test_success_warnings_are_an_optional_array(
+    output_schemas: dict[str, dict[str, Any]],
+) -> None:
+    """Warnings are omitted when empty and otherwise always an array."""
+
+    schema = output_schemas["gdb_session_start"]
+    jsonschema.validate({"status": "success", "result": {}, "warnings": []}, schema)
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({"status": "success", "result": {}, "warnings": None}, schema)
+
+
 def test_an_action_tool_offers_one_alternative_per_action(
     output_schemas: dict[str, dict[str, Any]],
 ) -> None:
@@ -156,16 +167,17 @@ def test_an_action_tool_offers_one_alternative_per_action(
     ]
 
 
-def test_a_dedicated_tool_merges_its_payload_into_the_envelope(
+def test_a_dedicated_tool_nests_its_payload_under_result(
     output_schemas: dict[str, dict[str, Any]],
 ) -> None:
-    """A dedicated tool publishes its payload fields next to the envelope."""
+    """A dedicated tool publishes its payload under the uniform result field."""
 
     success = _variants(output_schemas["gdb_session_start"])[0]
 
-    assert success["required"] == ["status"]
+    assert success["required"] == ["status", "result"]
+    result = _resolve(output_schemas["gdb_session_start"], success["properties"]["result"])
     assert {"session_id", "message", "target_loaded", "execution_state"} <= set(
-        success["properties"]
+        result["properties"]
     )
 
 
@@ -175,7 +187,8 @@ def test_a_nullable_result_field_keeps_its_null_alternative(
     """A result publishes the null it really carries, unlike a request."""
 
     success = _variants(output_schemas["gdb_workflow_batch"])[0]
-    last_stop_event = mapping(success["properties"]["last_stop_event"])
+    result = _resolve(output_schemas["gdb_workflow_batch"], success["properties"]["result"])
+    last_stop_event = mapping(result["properties"]["last_stop_event"])
 
     alternatives = [mapping(item) for item in sequence(last_stop_event["anyOf"])]
     assert alternatives == [{"$ref": "#/$defs/StopEvent"}, {"type": "null"}]
@@ -183,16 +196,18 @@ def test_a_nullable_result_field_keeps_its_null_alternative(
     jsonschema.validate(
         {
             "status": "success",
-            "steps": [],
-            "count": 0,
-            "completed_steps": 0,
-            "error_count": 0,
-            "stopped_early": False,
-            "failure_step_index": None,
-            "final_execution_state": None,
-            "final_stop_reason": None,
-            "final_stop_kind": None,
-            "last_stop_event": None,
+            "result": {
+                "steps": [],
+                "count": 0,
+                "completed_steps": 0,
+                "error_count": 0,
+                "stopped_early": False,
+                "failure_step_index": None,
+                "final_execution_state": None,
+                "final_stop_reason": None,
+                "final_stop_kind": None,
+                "last_stop_event": None,
+            },
         },
         output_schemas["gdb_workflow_batch"],
     )
@@ -223,14 +238,22 @@ def test_arbitrary_debugger_data_publishes_as_a_recursive_reference(
     schema = output_schemas["gdb_execute_command"]
     success = _variants(schema)[0]
 
-    assert dig(success, "properties", "result", "anyOf") == [
+    payload = _resolve(schema, success["properties"]["result"])
+    assert dig(payload, "properties", "debugger_result", "anyOf") == [
         {"$ref": "#/$defs/JsonObject"},
         {"type": "null"},
     ]
     assert {"JsonObject", "JsonValue"} <= set(schema["$defs"])
 
     jsonschema.validate(
-        {"status": "success", "command": "-break-list", "output": None, "result": {"x": [1]}},
+        {
+            "status": "success",
+            "result": {
+                "command": "-break-list",
+                "output": None,
+                "debugger_result": {"x": [1]},
+            },
+        },
         schema,
     )
 
@@ -241,7 +264,8 @@ def test_the_start_payload_documents_the_session_id(
     """The id the registry allocates is part of the published payload."""
 
     success = _variants(output_schemas["gdb_session_start"])[0]
-    session_id = mapping(success["properties"]["session_id"])
+    payload = _resolve(output_schemas["gdb_session_start"], success["properties"]["result"])
+    session_id = mapping(payload["properties"]["session_id"])
 
     assert [mapping(item) for item in sequence(session_id["anyOf"])] == [
         {"type": "integer"},
@@ -251,10 +275,12 @@ def test_the_start_payload_documents_the_session_id(
     jsonschema.validate(
         {
             "status": "success",
-            "session_id": 7,
-            "message": "GDB session started successfully",
-            "target_loaded": True,
-            "execution_state": "not_started",
+            "result": {
+                "session_id": 7,
+                "message": "GDB session started successfully",
+                "target_loaded": True,
+                "execution_state": "not_started",
+            },
         },
         output_schemas["gdb_session_start"],
     )

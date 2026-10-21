@@ -6,7 +6,7 @@ import json
 
 from mcp.types import CallToolResult, TextContent
 
-from ..domain import OperationError, OperationResult, StructuredPayload, result_to_mapping
+from ..domain import OperationError, OperationResult, StructuredPayload, result_to_envelope
 
 
 def result_to_payload(
@@ -14,7 +14,7 @@ def result_to_payload(
 ) -> StructuredPayload:
     """Convert a typed internal result into the external JSON payload shape."""
 
-    return result_to_mapping(result)
+    return result_to_envelope(result)
 
 
 def serialize_result(

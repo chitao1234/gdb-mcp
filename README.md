@@ -185,8 +185,8 @@ see what the server actually asked GDB.
   interrupt the inferior; the
   [debug-with-gdb-mcp skill](skills/debug-with-gdb-mcp/SKILL.md) shows the exact
   calls.
-- **Breakpoints or locals look wrong** — read the `warnings` array returned by
-  `gdb_session_start`. Missing debug symbols mean the target was not built with
+- **Breakpoints or locals look wrong** — read the top-level `warnings` array
+  returned by `gdb_session_start`. Missing debug symbols mean the target was not built with
   `-g`; a refused auto-load script means the language's GDB helpers stayed
   inactive.
 - **The background server will not start** — the client prints the tail of the

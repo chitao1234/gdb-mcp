@@ -96,10 +96,10 @@ def test_rr_replay_session_supports_reverse_execution(
 
     start = call_gdb_tool("gdb_session_start", {"rr_replay": rr_trace})
     assert start["status"] == "success", start
-    session_id = integer(start["session_id"])
+    session_id = integer(dig(start, "result", "session_id"))
     try:
-        assert start["rr_replay"] == rr_trace
-        assert start["target_loaded"] is True
+        assert dig(start, "result", "rr_replay") == rr_trace
+        assert dig(start, "result", "target_loaded") is True
 
         created = call_gdb_tool(
             "gdb_breakpoint_manage",
@@ -168,9 +168,9 @@ def test_rr_replay_ignores_a_program_alongside_the_trace(
     )
 
     assert start["status"] == "success", start
-    session_id = integer(start["session_id"])
+    session_id = integer(dig(start, "result", "session_id"))
     try:
-        assert start["program"] is None
+        assert dig(start, "result", "program") is None
         assert any("ignored" in text(warning).lower() for warning in sequence(start["warnings"]))
     finally:
         stop_session(session_id, ignore_errors=True)

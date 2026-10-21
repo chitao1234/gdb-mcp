@@ -102,10 +102,12 @@ class TestClientCli:
             ],
             response={
                 "status": "success",
-                "session_id": SESSION_ID,
-                "message": "GDB session started successfully",
-                "target_loaded": True,
-                "execution_state": "not_started",
+                "result": {
+                    "session_id": SESSION_ID,
+                    "message": "GDB session started successfully",
+                    "target_loaded": True,
+                    "execution_state": "not_started",
+                },
             },
         )
 
@@ -137,10 +139,12 @@ class TestClientCli:
             ],
             response={
                 "status": "success",
-                "session_id": 3,
-                "message": "GDB session started",
-                "target_loaded": False,
-                "execution_state": "not_started",
+                "result": {
+                    "session_id": 3,
+                    "message": "GDB session started",
+                    "target_loaded": False,
+                    "execution_state": "not_started",
+                },
             },
         )
 
@@ -167,11 +171,14 @@ class TestClientCli:
                 "--pid",
                 "1234",
             ],
-            response={"status": "success", "message": "attached"},
+            response={"status": "success", "result": {"message": "attached"}},
         )
 
         assert result.exit_code == 0
-        assert json.loads(result.stdout) == {"status": "success", "message": "attached"}
+        assert json.loads(result.stdout) == {
+            "status": "success",
+            "result": {"message": "attached"},
+        }
 
     def test_main_accepts_global_flags_after_subcommand(self) -> None:
         """Accept global flags after the subcommand."""
@@ -187,7 +194,7 @@ class TestClientCli:
                 "--server-url",
                 SERVER_URL,
             ],
-            response={"status": "success", "message": "attached"},
+            response={"status": "success", "result": {"message": "attached"}},
         )
 
         assert result.exit_code == 0
@@ -195,7 +202,10 @@ class TestClientCli:
             "gdb_attach_process",
             {"session_id": SESSION_ID, "pid": 1234, "timeout_sec": 30},
         )
-        assert json.loads(result.stdout) == {"status": "success", "message": "attached"}
+        assert json.loads(result.stdout) == {
+            "status": "success",
+            "result": {"message": "attached"},
+        }
 
     def test_main_reports_schema_validation_as_cli_error(self) -> None:
         """Report schema validation failures as a CLI error."""
@@ -233,7 +243,7 @@ class TestClientCli:
                 "--timeout-sec",
                 "9",
             ],
-            response={"status": "success", "message": "ok"},
+            response={"status": "success", "result": {"message": "ok"}},
         )
 
         assert result.exit_code == 0
@@ -255,7 +265,7 @@ class TestClientCli:
                 "--function-call",
                 'printf("hello\\n")',
             ],
-            response={"status": "success", "message": "called"},
+            response={"status": "success", "result": {"message": "called"}},
         )
 
         assert result.exit_code == 0
@@ -290,7 +300,7 @@ class TestClientCli:
                 "12",
                 "--no-include-registers",
             ],
-            response={"status": "success", "artifact_count": 3},
+            response={"status": "success", "result": {"artifact_count": 3}},
         )
 
         assert result.exit_code == 0
@@ -1343,7 +1353,7 @@ class TestClientCli:
                 "--step-arg",
                 "action=threads",
             ],
-            response={"status": "success", "count": 1, "error_count": 0},
+            response={"status": "success", "result": {"count": 1, "error_count": 0}},
         )
 
         assert result.exit_code == 0
@@ -1381,7 +1391,7 @@ class TestClientCli:
                 "query.expression=counter",
                 "--no-fail-fast",
             ],
-            response={"status": "success", "count": 2, "error_count": 0},
+            response={"status": "success", "result": {"count": 2, "error_count": 0}},
         )
 
         assert result.exit_code == 0
@@ -1421,16 +1431,23 @@ class TestClientCli:
             ],
             response={
                 "status": "success",
-                "count": 1,
-                "error_count": 0,
-                "steps": [
-                    {
-                        "tool": "gdb_context_query",
-                        "label": "stack",
-                        "action": "backtrace",
-                        "result": {"result": {"count": 1}},
-                    }
-                ],
+                "result": {
+                    "count": 1,
+                    "error_count": 0,
+                    "steps": [
+                        {
+                            "tool": "gdb_context_query",
+                            "label": "stack",
+                            "action": "backtrace",
+                            "status": "success",
+                            "result": {
+                                "status": "success",
+                                "action": "backtrace",
+                                "result": {"count": 1},
+                            },
+                        }
+                    ],
+                },
             },
         )
 
@@ -1496,7 +1513,7 @@ class TestClientCli:
                 "--step-arg",
                 "query.expression=123",
             ],
-            response={"status": "success", "count": 1, "error_count": 0},
+            response={"status": "success", "result": {"count": 1, "error_count": 0}},
         )
 
         assert result.exit_code == 0
@@ -1534,7 +1551,7 @@ class TestClientCli:
                 "--step-arg",
                 "execution.wait_until=stop",
             ],
-            response={"status": "success", "count": 1, "error_count": 0},
+            response={"status": "success", "result": {"count": 1, "error_count": 0}},
         )
 
         assert result.exit_code == 0
@@ -1571,7 +1588,7 @@ class TestClientCli:
                 "--step-arg",
                 "query.kinds=code",
             ],
-            response={"status": "success", "count": 1, "error_count": 0},
+            response={"status": "success", "result": {"count": 1, "error_count": 0}},
         )
 
         assert result.exit_code == 0
@@ -1705,8 +1722,7 @@ class TestClientCli:
             ],
             response={
                 "status": "success",
-                "matched_failure": False,
-                "iterations_completed": 1,
+                "result": {"matched_failure": False, "iterations_completed": 1},
             },
         )
 
@@ -1735,24 +1751,22 @@ class TestClientCli:
             ],
             response={
                 "status": "success",
-                "matched_failure": True,
-                "iterations_completed": 1,
-                "iterations": [
-                    {
-                        "iteration": 1,
-                        "status": "success",
-                        "trigger": "signal-received",
-                    }
-                ],
-                "capture_bundle": {
-                    "bundle_name": "cli-failure",
-                    "artifacts": [
-                        {
-                            "name": "manifest.json",
-                            "path": "/tmp/cli-failure/manifest.json",
-                            "status": "written",
-                        }
+                "result": {
+                    "matched_failure": True,
+                    "iterations_completed": 1,
+                    "iterations": [
+                        {"iteration": 1, "status": "success", "trigger": "signal-received"}
                     ],
+                    "capture_bundle": {
+                        "bundle_name": "cli-failure",
+                        "artifacts": [
+                            {
+                                "name": "manifest.json",
+                                "path": "/tmp/cli-failure/manifest.json",
+                                "status": "written",
+                            }
+                        ],
+                    },
                 },
             },
         )
@@ -1782,8 +1796,7 @@ class TestClientCli:
             ],
             response={
                 "status": "success",
-                "matched_failure": False,
-                "iterations_completed": 1,
+                "result": {"matched_failure": False, "iterations_completed": 1},
             },
         )
 
@@ -1815,8 +1828,7 @@ class TestClientCli:
             ],
             response={
                 "status": "success",
-                "matched_failure": False,
-                "iterations_completed": 1,
+                "result": {"matched_failure": False, "iterations_completed": 1},
             },
         )
 

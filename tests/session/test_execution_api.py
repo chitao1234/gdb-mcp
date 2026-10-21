@@ -10,7 +10,15 @@ import pytest
 
 from gdb_mcp.domain import StopEvent, result_to_mapping
 from gdb_mcp.session.service import SessionService
-from tests.support import attach_controller, dig, gdb_backend, mapping_list, text
+from tests.support import (
+    attach_controller,
+    dig,
+    gdb_backend,
+    mapping,
+    mapping_list,
+    sequence,
+    text,
+)
 
 from .conftest import (
     MiConsoleBuilder,
@@ -102,7 +110,7 @@ class TestExecutionApi:
             result = result_to_mapping(running_session.continue_execution(wait_for_stop=False))
 
         assert result["status"] == "success"
-        assert dig(result, "result", "result_class") == "running"
+        assert dig(result, "debugger_result", "result_class") == "running"
         assert "warnings" in result
         status = result_to_mapping(running_session.get_status())
         assert status["execution_state"] == "running"
@@ -482,8 +490,9 @@ class TestExecutionApi:
         with patch.object(running_session.runtime.os_module, "kill") as mock_kill:
             result = result_to_mapping(running_session.interrupt())
 
-        assert result["status"] == "warning"
-        assert "no stopped notification" in text(result["message"]).lower()
+        assert result["status"] == "success"
+        assert "no stopped notification" in text(sequence(result["warnings"])[0]).lower()
+        assert result["message"] == "Interrupt sent"
         status = result_to_mapping(running_session.get_status())
         assert status["execution_state"] == "running"
         mock_kill.assert_called_once()
@@ -534,7 +543,7 @@ class TestExecutionApi:
         result = result_to_mapping(session.execute_command("-thread-info"))
 
         assert result["status"] == "success"
-        assert "result" in result
+        assert "result" in mapping(result["debugger_result"])
         assert controller.decoded_writes[0].endswith("-thread-info\n")
 
     def test_execute_command_mi_error_result(

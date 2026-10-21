@@ -147,14 +147,18 @@ class TestHandlerDispatch:
         manager = Mock()
         manager.start_session.return_value = (
             42,
-            OperationSuccess(SessionStartInfo(message="Session started")),
+            OperationSuccess(
+                SessionStartInfo(message="Session started"),
+                warnings=("symbols missing",),
+            ),
         )
 
         result_data = dispatch("gdb_session_start", {}, manager)
 
         manager.start_session.assert_called_once()
         assert result_data["status"] == "success"
-        assert result_data["session_id"] == 42
+        assert dig(result_data, "result", "session_id") == 42
+        assert result_data["warnings"] == ["symbols missing"]
 
     def test_start_session_normalizes_shell_style_string_args(self) -> None:
         """Startup args in shell-string form should be normalized before session creation."""
@@ -218,7 +222,7 @@ class TestHandlerDispatch:
             init_commands=["set pagination off"],
         )
         assert result_data["status"] == "success"
-        assert result_data["session_id"] == 11
+        assert dig(result_data, "result", "session_id") == 11
 
     def test_connect_session_passes_lldb_remote_fields_to_registry(self) -> None:
         """An LLDB remote connection forwards its backend and target fields."""
@@ -248,7 +252,7 @@ class TestHandlerDispatch:
             debugger_path="/opt/lldb/19/bin/lldb",
         )
         assert result_data["status"] == "success"
-        assert result_data["session_id"] == 12
+        assert dig(result_data, "result", "session_id") == 12
 
     def test_connect_session_failure_does_not_expose_session_id(self) -> None:
         """A failed endpoint connection should not expose a session ID."""
@@ -1330,11 +1334,11 @@ class TestHandlerRouting:
         )
 
         assert result_data["status"] == "success"
-        assert result_data["count"] == 2
-        assert result_data["completed_steps"] == 2
-        assert result_data["error_count"] == 0
-        assert result_data["stopped_early"] is False
-        steps = mapping_list(result_data["steps"])
+        assert dig(result_data, "result", "count") == 2
+        assert dig(result_data, "result", "completed_steps") == 2
+        assert dig(result_data, "result", "error_count") == 0
+        assert dig(result_data, "result", "stopped_early") is False
+        steps = mapping_list(dig(result_data, "result", "steps"))
         assert steps[0]["tool"] == "gdb_breakpoint_manage"
         assert steps[0]["action"] == "create"
         assert steps[0]["label"] == "break main"
@@ -1342,7 +1346,7 @@ class TestHandlerRouting:
         assert steps[1]["tool"] == "gdb_execution_manage"
         assert steps[1]["action"] == "continue"
         assert mapping(steps[1]["stop_event"])["reason"] == "breakpoint-hit"
-        assert dig(result_data, "last_stop_event", "reason") == "breakpoint-hit"
+        assert dig(result_data, "result", "last_stop_event", "reason") == "breakpoint-hit"
         session.set_breakpoint.assert_called_once_with(
             location="main",
             condition=None,
@@ -1389,11 +1393,11 @@ class TestHandlerRouting:
         )
 
         assert result_data["status"] == "success"
-        assert result_data["completed_steps"] == 1
-        assert result_data["error_count"] == 1
-        assert result_data["stopped_early"] is True
-        assert result_data["failure_step_index"] == 0
-        assert mapping_list(result_data["steps"])[0]["status"] == "error"
+        assert dig(result_data, "result", "completed_steps") == 1
+        assert dig(result_data, "result", "error_count") == 1
+        assert dig(result_data, "result", "stopped_early") is True
+        assert dig(result_data, "result", "failure_step_index") == 0
+        assert mapping_list(dig(result_data, "result", "steps"))[0]["status"] == "error"
         session.execute_command.assert_called_once_with(command="info threads", timeout_sec=30)
         session.get_status.assert_not_called()
 
@@ -1418,8 +1422,8 @@ class TestHandlerRouting:
         )
 
         assert result_data["status"] == "success"
-        assert result_data["completed_steps"] == 1
-        assert mapping_list(result_data["steps"])[0]["tool"] == "gdb_capture_bundle"
+        assert dig(result_data, "result", "completed_steps") == 1
+        assert mapping_list(dig(result_data, "result", "steps"))[0]["tool"] == "gdb_capture_bundle"
         session.capture_bundle.assert_called_once()
 
     def test_session_tool_dispatch_uses_workflow_lock(self) -> None:
@@ -1627,10 +1631,10 @@ class TestHandlerRouting:
         )
         session.run.assert_called_once_with(args=None, timeout_sec=30, wait_for_stop=True)
         assert result_data["status"] == "success"
-        assert result_data["matched_failure"] is True
-        assert result_data["failure_iteration"] == 1
-        assert result_data["trigger"] == "stop_reason:signal-received"
-        assert result_data["capture_bundle"] is None
+        assert dig(result_data, "result", "matched_failure") is True
+        assert dig(result_data, "result", "failure_iteration") == 1
+        assert dig(result_data, "result", "trigger") == "stop_reason:signal-received"
+        assert dig(result_data, "result", "capture_bundle") is None
 
     def test_multiple_tools_use_different_sessions(self) -> None:
         """Separate session IDs should be routed independently."""

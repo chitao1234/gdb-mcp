@@ -192,7 +192,9 @@ def command_result() -> CommandResultBuilder:
         result: StructuredPayload | None = None,
         output: str | None = None,
     ) -> OperationSuccess[CommandExecutionInfo]:
-        return OperationSuccess(CommandExecutionInfo(command=command, result=result, output=output))
+        return OperationSuccess(
+            CommandExecutionInfo(command=command, debugger_result=result, output=output)
+        )
 
     return build
 

@@ -133,6 +133,6 @@ def _as_response(
     if isinstance(response, ClientToolResponse):
         return response
     return ClientToolResponse(
-        payload=response if response is not None else {"status": "success"},
+        payload=response if response is not None else {"status": "success", "result": {}},
         is_error=is_error,
     )

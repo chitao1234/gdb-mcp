@@ -180,7 +180,7 @@ def test_source_context_honours_substitute_path(
         moved_program,
         debugger_args=["-ex", f"set substitute-path {build_dir} {moved_dir}"],
     )
-    session_id = integer(started["session_id"])
+    session_id = integer(dig(started, "result", "session_id"))
 
     try:
         create_breakpoint(call_gdb_tool, session_id, "add")
@@ -296,10 +296,10 @@ def test_startup_missing_program_reports_target_not_loaded_v2(
 
     result = start_session_payload(f"{compiled_program}.missing", init_commands=[])
     assert result["status"] == "success"
-    assert result["target_loaded"] is False
+    assert dig(result, "result", "target_loaded") is False
 
-    if "session_id" in result:
-        stop_session(integer(result["session_id"]), ignore_errors=True)
+    if dig(result, "result", "session_id") is not None:
+        stop_session(integer(dig(result, "result", "session_id")), ignore_errors=True)
 
 
 @pytest.mark.integration
@@ -312,10 +312,10 @@ def test_startup_existing_program_reports_target_loaded_v2(
 
     result = start_session_payload(compiled_program, init_commands=[])
     assert result["status"] == "success"
-    assert result["target_loaded"] is True
+    assert dig(result, "result", "target_loaded") is True
 
-    if "session_id" in result:
-        stop_session(integer(result["session_id"]), ignore_errors=True)
+    if dig(result, "result", "session_id") is not None:
+        stop_session(integer(dig(result, "result", "session_id")), ignore_errors=True)
 
 
 @pytest.mark.integration
@@ -329,10 +329,10 @@ def test_startup_program_with_core_reports_target_loaded_v2(
     program, core = compiled_program_and_core
     result = start_session_payload(program, core=core, init_commands=[])
     assert result["status"] == "success"
-    assert result["target_loaded"] is True
+    assert dig(result, "result", "target_loaded") is True
 
-    if "session_id" in result:
-        stop_session(integer(result["session_id"]), ignore_errors=True)
+    if dig(result, "result", "session_id") is not None:
+        stop_session(integer(dig(result, "result", "session_id")), ignore_errors=True)
 
 
 @pytest.mark.integration
@@ -344,8 +344,8 @@ def test_execute_command_escape_hatch_v2(session_id: int, call_gdb_tool: CallGdb
         {"session_id": session_id, "command": "info functions", "timeout_sec": 30},
     )
     assert result["status"] == "success"
-    assert result["command"] == "info functions"
-    assert isinstance(result["output"], str)
+    assert dig(result, "result", "command") == "info functions"
+    assert isinstance(dig(result, "result", "output"), str)
 
 
 @pytest.mark.integration
@@ -379,7 +379,7 @@ def test_attach_process_v2(
     session_id: int | None = None
     try:
         start = start_session_payload(attachable_program)
-        session_id = integer(start["session_id"])
+        session_id = integer(dig(start, "result", "session_id"))
 
         attach = call_gdb_tool(
             "gdb_attach_process",

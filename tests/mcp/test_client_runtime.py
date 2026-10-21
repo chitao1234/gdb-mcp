@@ -87,7 +87,7 @@ class TestClientRuntime:
                 content=[
                     TextContent(
                         type="text",
-                        text='{"status":"success","session_id":7,"message":"started"}',
+                        text='{"status":"success","result":{"session_id":7,"message":"started"}}',
                     )
                 ]
             )
@@ -114,7 +114,7 @@ class TestClientRuntime:
         session.call_tool.assert_awaited_once_with("gdb_session_start", {"program": "/bin/true"})
         assert result.is_error is False
         assert result.payload["status"] == "success"
-        assert result.payload["session_id"] == 7
+        assert result.envelope().session_id == 7
 
     def test_invoke_tool_preserves_tool_error_flag(self, runtime_harness: _RuntimeHarness) -> None:
         """A tool-level error should survive parsing as ``is_error``."""
@@ -214,7 +214,7 @@ class TestClientRuntime:
         runtime_harness.session.call_tool = AsyncMock(
             return_value=CallToolResult(
                 content=[],
-                structuredContent={"status": "success", "value": 42},
+                structuredContent={"status": "success", "result": {"value": 42}},
             )
         )
 
@@ -226,7 +226,7 @@ class TestClientRuntime:
             )
         )
 
-        assert result.payload == {"status": "success", "value": 42}
+        assert result.payload == {"status": "success", "result": {"value": 42}}
         assert result.is_error is False
 
     def test_invoke_tool_rejects_non_object_json_payload(

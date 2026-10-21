@@ -205,13 +205,7 @@ def _wrap_action_result(action: str, result: ToolResult) -> ToolResult:
             details=details,
         )
 
-    return OperationSuccess(
-        {
-            "action": action,
-            "result": payload_to_mapping(result.value),
-        },
-        warnings=result.warnings,
-    )
+    return OperationSuccess(result.value, warnings=result.warnings, action=action)
 
 
 def _wrap_action_result_for(validated_args: BaseModel, result: ToolResult) -> ToolResult:

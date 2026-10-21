@@ -105,4 +105,6 @@ def render_session_start(payload: dict[str, object]) -> str:
         "execution_state": envelope.execution_state,
         "message": envelope.message,
     }
+    if isinstance(payload.get("warnings"), list):
+        summary["warnings"] = payload["warnings"]
     return render_mapping(summary)

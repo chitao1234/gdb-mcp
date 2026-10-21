@@ -19,7 +19,7 @@ from mcp.types import TextContent
 from gdb_mcp.mcp.runtime import ServerRuntime, create_server_runtime
 from gdb_mcp.session.registry import SessionRegistry
 
-from ..support import integer, mapping
+from ..support import dig, integer, mapping
 from .program_sources import TEST_CPP_PROGRAM
 
 _PROCESS_TERMINATE_TIMEOUT_SEC = 5
@@ -369,13 +369,12 @@ def start_session(start_session_payload: StartSessionResult) -> StartSession:
         init_commands: list[str] | None = None,
         **kwargs: object,
     ) -> int:
-        return integer(
-            start_session_payload(
-                program,
-                init_commands=init_commands,
-                **kwargs,
-            )["session_id"]
+        result = start_session_payload(
+            program,
+            init_commands=init_commands,
+            **kwargs,
         )
+        return integer(dig(result, "result", "session_id"))
 
     return start
 

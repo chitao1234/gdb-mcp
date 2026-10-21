@@ -53,7 +53,7 @@ def test_missing_server_url_is_resolved_from_the_daemon(
 
     with patch("gdb_mcp.client.cli.resolve_server", new_callable=AsyncMock) as mock_resolve:
         mock_resolve.return_value = resolved
-        result = invoke_cli(["status"], response={"status": "success"})
+        result = invoke_cli(["status"], response={"status": "success", "result": {}})
 
     assert result.exit_code == 0
     mock_resolve.assert_awaited_once_with(explicit_url=None)
@@ -92,7 +92,7 @@ def test_payload_json_sends_the_raw_payload(monkeypatch: pytest.MonkeyPatch) -> 
             "--payload-json",
             '{"session_id": 7, "action": "disable", "breakpoint": {"number": 3}}',
         ],
-        response={"status": "success"},
+        response={"status": "success", "result": {}},
     )
 
     assert result.exit_code == 0
@@ -157,7 +157,7 @@ def test_batch_step_failures_set_a_nonzero_exit_code(
             "--payload-json",
             '{"session_id": 7, "steps": [{"tool": "gdb_capture_bundle"}]}',
         ],
-        response={"status": "success", "count": 2, "error_count": 1},
+        response={"status": "success", "result": {"count": 2, "error_count": 1}},
     )
 
     assert result.exit_code == 1
@@ -195,7 +195,7 @@ def test_session_id_is_accepted_before_the_subcommand(
 
     result = invoke_cli(
         ["--session-id", "4", "exec", "run"],
-        response={"status": "success"},
+        response={"status": "success", "result": {}},
     )
 
     assert result.exit_code == 0

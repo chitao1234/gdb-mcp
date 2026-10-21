@@ -419,12 +419,12 @@ class SessionLifecycleService:
                         stop_kind=self._runtime.stop_kind,
                         exit_code=self._runtime.exit_code,
                         startup_output=startup_output_text.strip() or None,
-                        warnings=warnings or None,
                         env_output=env_output or None,
                         init_output=init_output or None,
                         endpoint=endpoint,
                         rr_replay=replay,
-                    )
+                    ),
+                    warnings=tuple(warnings),
                 )
 
             except EndpointError as exc:

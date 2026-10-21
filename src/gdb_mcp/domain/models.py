@@ -123,7 +123,6 @@ class SessionStartInfo:
     stop_kind: StopKind | None = None
     exit_code: int | None = None
     startup_output: str | None = None
-    warnings: list[str] | None = None
     env_output: list[StructuredPayload] | None = None
     init_output: list[StructuredPayload] | None = None
     endpoint: str | None = None
@@ -388,8 +387,7 @@ class MessageResult:
     """Message plus structured result payload."""
 
     message: str
-    result: StructuredPayload
-    status: Literal["success", "warning"] = "success"
+    debugger_result: StructuredPayload
 
 
 @dataclass(slots=True, frozen=True)
@@ -398,7 +396,7 @@ class CommandExecutionInfo:
 
     command: str
     output: str | None = None
-    result: StructuredPayload | None = None
+    debugger_result: StructuredPayload | None = None
 
 
 @dataclass(slots=True, frozen=True)

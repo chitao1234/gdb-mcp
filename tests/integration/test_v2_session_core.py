@@ -47,8 +47,8 @@ def test_session_lifecycle_and_status_v2(
 
     start = start_session_payload(compiled_program)
     assert start["status"] == "success"
-    assert start["target_loaded"] is True
-    session_id = integer(start["session_id"])
+    assert dig(start, "result", "target_loaded") is True
+    session_id = integer(dig(start, "result", "session_id"))
 
     status = status_query(call_gdb_tool, session_id)
     assert status["status"] == "success"
@@ -160,9 +160,9 @@ def test_workflow_batch_v2(session_id: int, call_gdb_tool: CallGdbTool) -> None:
     )
 
     assert batch["status"] == "success"
-    assert batch["count"] == 3
-    assert batch["error_count"] == 0
-    steps = mapping_list(batch["steps"])
+    assert dig(batch, "result", "count") == 3
+    assert dig(batch, "result", "error_count") == 0
+    steps = mapping_list(dig(batch, "result", "steps"))
     assert steps[0]["tool"] == "gdb_breakpoint_manage"
     assert steps[1]["tool"] == "gdb_execution_manage"
     assert dig(steps[1], "stop_event", "reason") == "breakpoint-hit"
@@ -183,8 +183,8 @@ def test_capture_bundle_v2(session_id: int, tmp_path: Path, call_gdb_tool: CallG
         {"session_id": session_id, "output_dir": str(tmp_path), "bundle_name": "capture"},
     )
     assert bundle["status"] == "success"
-    assert integer(bundle["artifact_count"]) > 0
-    manifest = json.loads(Path(text(bundle["manifest_path"])).read_text())
+    assert integer(dig(bundle, "result", "artifact_count")) > 0
+    manifest = json.loads(Path(text(dig(bundle, "result", "manifest_path"))).read_text())
     assert manifest["bundle_name"] == "capture"
     assert manifest["stop_reason"] == "breakpoint-hit"
 
@@ -220,8 +220,8 @@ def test_run_until_failure_v2(
         },
     )
     assert result["status"] == "success"
-    assert result["matched_failure"] is True
-    assert dig(result, "capture_bundle", "bundle_name") == "failure"
+    assert dig(result, "result", "matched_failure") is True
+    assert dig(result, "result", "capture_bundle", "bundle_name") == "failure"
 
 
 @pytest.mark.integration

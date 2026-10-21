@@ -38,7 +38,11 @@ Set `GDB_MCP_SERVER_URL` to avoid repeating `--server-url`. `--payload-json '<js
 
 Every tool result carries the same payload twice: as `structuredContent` (structured tool output) and as serialized JSON in `content[0].text` (for clients that only read text). Both are always the envelope described below.
 
-`status` is `success` for a completed call, `warning` for a call that completed but could not confirm its effect (an interrupt with no stop notification), and `error` for a failure.
+Every successful call has `status: "success"` and a tool-specific object under
+`result`. Action-based tools also include the selected `action` at the top level.
+When an operation completed with a warning, `warnings` is a top-level array;
+`status` remains `success`. Failures use `status: "error"` and include `code`
+and `message`.
 
 ### Canonical Payload Fields
 
@@ -84,9 +88,13 @@ type: a payload value that contradicts the debugger's own grammar (a flag that i
 neither `y` nor `n`, a count that is not a number) fails the command rather than
 being converted to a plausible value.
 
-### Direct Success Payloads
+### Success Envelope
 
-Tools without an `action` field return direct structured success payloads:
+Every successful tool returns the same shape. Dedicated tools put their full
+tool-specific payload under `result`; action-based tools also include the
+selected `action` at the top level. Warnings, when present, are top-level too.
+
+Dedicated tools include:
 
 - `gdb_session_start`
 - `gdb_workflow_batch`
@@ -101,10 +109,12 @@ Example:
 ```json
 {
   "status": "success",
-  "session_id": 7,
-  "message": "GDB session started successfully",
-  "target_loaded": true,
-  "execution_state": "not_started"
+  "result": {
+    "session_id": 7,
+    "message": "GDB session started successfully",
+    "target_loaded": true,
+    "execution_state": "not_started"
+  }
 }
 ```
 
@@ -124,7 +134,7 @@ Action-based tools return:
 }
 ```
 
-The wrapped `result` object is action-specific.
+The `result` object is action-specific.
 
 ### Error Envelope
 
@@ -181,7 +191,7 @@ High-complexity tools also publish request `examples` inside their `inputSchema`
 
 Every tool also publishes an `outputSchema` describing the `structuredContent` of its result. It is generated from the payload type the session layer returns and normalized the same way as an input schema, so it follows the code instead of a hand-kept copy:
 
-- the schema offers one alternative per success action plus one for the error envelope, each stating its own `required` fields — an action-scoped tool nests its payload under `result`, a dedicated tool publishes its payload fields next to the envelope;
+- the schema offers one alternative per success action plus one for the error envelope, each stating its own `required` fields — every success nests its payload under `result`;
 - a field that can be `null` in a result keeps its `null` alternative, because a result really carries `null` where a request only omits the field;
 - a field carrying arbitrary debugger data (an MI result payload) refers to a recursive definition, since the payload really is arbitrary JSON;
 - a success alternative always allows additional fields, so a debugger-specific field is never rejected.
@@ -351,7 +361,6 @@ wrapper such as `rust-gdb` achieves the same by injecting those options.
 
 ### Success Fields
 
-- `status`
 - `session_id`
 - `message`
 - `program`
@@ -361,9 +370,11 @@ wrapper such as `rust-gdb` achieves the same by injecting those options.
 - `stop_reason`
 - `exit_code`
 - `startup_output`
-- `warnings`
 - `env_output`
 - `init_output`
+
+These fields are inside the success envelope's `result` object. Any `warnings`
+array is at the envelope root.
 
 ### Example
 
@@ -413,8 +424,9 @@ process already owns the target. LLDB remote accepts `program` but rejects
 
 ### Success Fields
 
-Same shape as `gdb_session_start`, plus `endpoint`. `target_loaded` is probed
-from the connected debugger, so it reflects the external target.
+Same payload as `gdb_session_start` under `result`, plus `endpoint`.
+`target_loaded` is probed from the connected debugger, so it reflects the
+external target.
 
 ### Examples
 
@@ -563,11 +575,11 @@ Run or synchronize execution state.
 
 | Action | Request Shape | Success `result` |
 | --- | --- | --- |
-| `run` | `{"session_id":7,"action":"run"}` | direct execution payload under `result` |
-| `continue` | `{"session_id":7,"action":"continue"}` | direct execution payload under `result` |
-| `interrupt` | `{"session_id":7,"action":"interrupt"}` | direct execution payload under `result` |
-| `step` | `{"session_id":7,"action":"step"}` | direct execution payload under `result` |
-| `next` | `{"session_id":7,"action":"next"}` | direct execution payload under `result` |
+| `run` | `{"session_id":7,"action":"run"}` | `command`, optional `output`, optional `debugger_result` |
+| `continue` | `{"session_id":7,"action":"continue"}` | `command`, optional `output`, optional `debugger_result` |
+| `interrupt` | `{"session_id":7,"action":"interrupt"}` | `message`, `debugger_result` |
+| `step` | `{"session_id":7,"action":"step"}` | `command`, optional `output`, optional `debugger_result` |
+| `next` | `{"session_id":7,"action":"next"}` | `command`, optional `output`, optional `debugger_result` |
 | `finish` | `{"session_id":7,"action":"finish"}` | `message`, `return_value`, `result_var`, `frame`, `execution_state`, `stop_reason`, `last_stop_event` |
 | `wait_for_stop` | `{"session_id":7,"action":"wait_for_stop","execution":{"timeout_sec":10,"stop_reasons":["breakpoint-hit"]}}` | `message`, `matched`, `timed_out`, `source`, `execution_state`, `stop_reason`, `reason_filter`, `last_stop_event` |
 
@@ -594,7 +606,7 @@ started with `record`/`target record-full`. `run`, `interrupt`, and
 
 ### Notes
 
-- `run`, `continue`, `step`, `next`, and `interrupt` wrap the structured command result produced by GDB. Inside `result`, expect `command`, optional text `output`, and optional machine-readable `result`.
+- `run`, `continue`, `step`, and `next` return `command`, optional text `output`, and optional machine-readable `debugger_result` inside the success `result` object. `interrupt` uses the same envelope and may include top-level `warnings` when no stop notification arrives.
 - `wait_for_stop` is the structured replacement for manual polling.
 
 ### Reverse Debugging
@@ -822,7 +834,6 @@ Execute a structured sequence of session-scoped tools under one workflow lock.
 
 ### Success Fields
 
-- `status`
 - `steps`
 - `count`
 - `completed_steps`
@@ -832,6 +843,8 @@ Execute a structured sequence of session-scoped tools under one workflow lock.
 - `final_execution_state`
 - `final_stop_reason`
 - `last_stop_event`
+
+These fields are inside the success envelope's `result` object.
 
 Each step result includes:
 
@@ -844,7 +857,8 @@ Each step result includes:
 - `result`
 - `stop_event`
 
-`steps[].result` preserves the full wrapped result of the inner action-based tool call.
+`steps[].result` preserves the full wrapped result of the inner tool call, using
+the same success and error envelope as a direct call.
 
 ## `gdb_capture_bundle`
 
@@ -885,7 +899,6 @@ or shorthand string form:
 
 ### Success Fields
 
-- `status`
 - `message`
 - `bundle_dir`
 - `bundle_name`
@@ -896,6 +909,8 @@ or shorthand string form:
 - `execution_state`
 - `stop_reason`
 - `last_stop_event`
+
+These fields are inside the success envelope's `result` object.
 
 Each artifact contains `name`, `path`, `status`, and `kind`.
 
@@ -943,7 +958,6 @@ Repeat fresh debugger sessions until failure predicates match or the iteration l
 
 ### Success Fields
 
-- `status`
 - `message`
 - `matched_failure`
 - `iterations_requested`
@@ -957,6 +971,9 @@ Repeat fresh debugger sessions until failure predicates match or the iteration l
 - `capture_error`
 - `last_result`
 - `iterations`
+
+These fields are inside the success envelope's `result` object. Any `warnings`
+array is at the envelope root.
 
 Each `iterations[]` entry contains:
 
@@ -981,10 +998,11 @@ Escape hatch for CLI or MI commands. This is not action-based.
 
 ### Success Fields
 
-- `status`
 - `command`
 - `output`
-- `result`
+- `debugger_result`
+
+These fields are inside the success envelope's `result` object.
 
 Use this when no dedicated structured tool exists. Prefer the structured families when they already cover the operation.
 
@@ -1000,10 +1018,11 @@ Attach to a running process by PID. This is a privileged tool.
 
 ### Success Fields
 
-- `status`
 - `command`
 - `output`
-- `result`
+- `debugger_result`
+
+These fields are inside the success envelope's `result` object.
 
 ## `gdb_call_function`
 
@@ -1017,9 +1036,10 @@ Execute a function call in the target process. This is a privileged tool.
 
 ### Success Fields
 
-- `status`
 - `function_call`
 - `result`
+
+These fields are inside the success envelope's `result` object.
 
 Example:
 

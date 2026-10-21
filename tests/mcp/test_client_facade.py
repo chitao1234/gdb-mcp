@@ -40,7 +40,7 @@ def test_facade_start_remembers_the_new_session(managed_server: ResolvedServer) 
     result = invoke_cli(
         ["start", "/bin/true"],
         resolved=managed_server,
-        response={"status": "success", "session_id": 9},
+        response={"status": "success", "result": {"session_id": 9}},
     )
 
     assert result.exit_code == 0

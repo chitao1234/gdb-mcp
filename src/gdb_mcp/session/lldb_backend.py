@@ -627,7 +627,7 @@ class LldbSbBackend:
             self._apply_status(result)
             return OperationSuccess(
                 CommandExecutionInfo(
-                    command="run", output="LLDB run started", result=_structured(result)
+                    command="run", output="LLDB run started", debugger_result=_structured(result)
                 )
             )
         except BridgeError as exc:
@@ -684,7 +684,9 @@ class LldbSbBackend:
             self.runtime.mark_attached(pid)
             return OperationSuccess(
                 CommandExecutionInfo(
-                    command="attach", output=f"Attached to pid {pid}", result=_structured(result)
+                    command="attach",
+                    output=f"Attached to pid {pid}",
+                    debugger_result=_structured(result),
                 )
             )
         except BridgeError as exc:
@@ -734,7 +736,9 @@ class LldbSbBackend:
             self._apply_status(result)
             return OperationSuccess(
                 CommandExecutionInfo(
-                    command="continue", output="LLDB continue", result=_structured(result)
+                    command="continue",
+                    output="LLDB continue",
+                    debugger_result=_structured(result),
                 )
             )
         except BridgeError as exc:
@@ -799,7 +803,9 @@ class LldbSbBackend:
             self._apply_status(result)
             return OperationSuccess(
                 CommandExecutionInfo(
-                    command=kind, output=f"LLDB step {kind}", result=_structured(result)
+                    command=kind,
+                    output=f"LLDB step {kind}",
+                    debugger_result=_structured(result),
                 )
             )
         except BridgeError as exc:
@@ -843,7 +849,7 @@ class LldbSbBackend:
             result = self._request("interrupt")
             self._apply_status(result)
             return OperationSuccess(
-                MessageResult(message="LLDB interrupted", result=_structured(result))
+                MessageResult(message="LLDB interrupted", debugger_result=_structured(result))
             )
         except BridgeError as exc:
             return _operation_error(exc)

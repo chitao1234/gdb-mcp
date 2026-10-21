@@ -63,9 +63,9 @@ def test_connect_to_externally_started_gdb_over_pty(
             {"endpoint": f"pty://{slave_name}"},
         )
         assert start["status"] == "success", start
-        assert start["endpoint"] == f"pty://{slave_name}"
-        assert start["target_loaded"] is True
-        session_id = integer(start["session_id"])
+        assert dig(start, "result", "endpoint") == f"pty://{slave_name}"
+        assert dig(start, "result", "target_loaded") is True
+        session_id = integer(dig(start, "result", "session_id"))
 
         breakpoint = create_breakpoint(call_gdb_tool, session_id, "main")
         assert breakpoint["status"] == "success", breakpoint

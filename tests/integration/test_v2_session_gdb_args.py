@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.support import integer, text
+from tests.support import dig, integer, text
 
 from .conftest import CallGdbTool, CompileProgram, StartSessionResult, StopSession
 from .program_sources import TEST_CPP_PROGRAM
@@ -43,7 +43,7 @@ def test_debugger_args_reach_gdb_before_the_program_loads(
         ],
     )
     assert started["status"] == "success"
-    session_id = integer(started["session_id"])
+    session_id = integer(dig(started, "result", "session_id"))
 
     try:
         elements = call_gdb_tool(
@@ -57,5 +57,5 @@ def test_debugger_args_reach_gdb_before_the_program_loads(
     finally:
         stop_session(session_id)
 
-    assert "4242" in text(elements.get("output"))
-    assert str(script_dir) in text(directories.get("output"))
+    assert "4242" in text(dig(elements, "result", "output"))
+    assert str(script_dir) in text(dig(directories, "result", "output"))

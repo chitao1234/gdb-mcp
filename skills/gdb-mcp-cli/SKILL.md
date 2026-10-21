@@ -153,8 +153,8 @@ Notes:
 
 - Do not pass `program`/`args`/`core` on connect; the external gdb owns the
   target (`--payload-json` with those fields is rejected).
-- `target_loaded` is probed from the connected gdb, so the envelope reflects the
-  external target.
+- `result.target_loaded` is probed from the connected gdb, so the envelope
+  reflects the external target.
 - `--json` and exit codes behave exactly like `start`.
 
 ## Worked Loop

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from mcp.types import CallToolResult, TextContent
 
 from gdb_mcp.domain import OperationError, OperationSuccess, SessionMessage
@@ -21,19 +22,13 @@ def _payload_text(result: CallToolResult) -> str:
 class TestMcpSerializer:
     """Test serialization of typed MCP results."""
 
-    def test_result_to_payload_preserves_v2_success_envelope(self) -> None:
-        """The serializer should preserve explicit v2 success envelope fields."""
+    def test_result_to_payload_uses_action_and_result_fields_consistently(self) -> None:
+        """Action metadata stays at the root and every payload is nested."""
 
         payload = result_to_payload(
             OperationSuccess(
-                {
-                    "action": "status",
-                    "result": {
-                        "session": {
-                            "execution_state": "paused",
-                        }
-                    },
-                }
+                {"session": {"execution_state": "paused"}},
+                action="status",
             )
         )
 
@@ -84,9 +79,15 @@ class TestMcpSerializer:
     def test_result_to_payload_for_success(self) -> None:
         """OperationSuccess should serialize its payload unchanged."""
 
-        payload = result_to_payload(OperationSuccess({"status": "success", "value": 42}))
+        payload = result_to_payload(OperationSuccess({"value": 42}))
 
-        assert payload == {"status": "success", "value": 42}
+        assert payload == {"status": "success", "result": {"value": 42}}
+
+    def test_success_payload_must_be_an_object(self) -> None:
+        """The published output schema requires an object under result."""
+
+        with pytest.raises(TypeError, match="must contain an object payload"):
+            result_to_payload(OperationSuccess(42))
 
     def test_result_to_payload_for_error(self) -> None:
         """OperationError should serialize to the standard external error shape."""
@@ -145,7 +146,7 @@ class TestMcpSerializer:
         contents = serialize_result(OperationSuccess(SessionMessage(message="ok")))
         payload = json.loads(_payload_text(contents))
 
-        assert payload == {"status": "success", "message": "ok"}
+        assert payload == {"status": "success", "result": {"message": "ok"}}
 
     def test_serialize_result_preserves_warning_payload_contract(self) -> None:
         """Serializer output should include wrapper warnings for typed payloads."""
@@ -160,8 +161,8 @@ class TestMcpSerializer:
 
         assert payload == {
             "status": "success",
-            "message": "ok",
             "warnings": ["symbols missing"],
+            "result": {"message": "ok"},
         }
 
     def test_serialize_result_marks_errors_as_mcp_errors(self) -> None:
@@ -191,8 +192,8 @@ class TestMcpSerializer:
 
         assert contents.structuredContent == {
             "status": "success",
-            "message": "ok",
             "warnings": ["symbols missing"],
+            "result": {"message": "ok"},
         }
         assert json.loads(_payload_text(contents)) == contents.structuredContent
 
@@ -244,8 +245,10 @@ class TestMcpSerializer:
 
         assert payload == {
             "status": "success",
-            "messages": [
-                {"message": "first"},
-                {"message": "second"},
-            ],
+            "result": {
+                "messages": [
+                    {"message": "first"},
+                    {"message": "second"},
+                ],
+            },
         }

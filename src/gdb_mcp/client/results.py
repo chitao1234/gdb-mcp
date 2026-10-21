@@ -36,18 +36,32 @@ class ToolEnvelope:
     def from_payload(cls, payload: Mapping[str, object]) -> ToolEnvelope:
         """Build a typed envelope from a raw tool payload."""
 
-        result_value = payload.get("result")
+        status = as_text(payload.get("status"))
+        if status == "success":
+            if "result" not in payload:
+                raise TypeError("Successful tool results require an object payload")
+            result_value = payload["result"]
+            if not isinstance(result_value, Mapping):
+                raise TypeError("Successful tool results must contain an object payload")
+            result: Mapping[str, object] | None = result_value
+        else:
+            result = None
+        message = (
+            as_text(result.get("message"))
+            if result is not None
+            else as_text(payload.get("message"))
+        )
         return cls(
-            status=as_text(payload.get("status")),
+            status=status,
             action=as_text(payload.get("action")),
             code=as_text(payload.get("code")),
-            message=as_text(payload.get("message")),
+            message=message,
             fatal=_as_bool(payload.get("fatal")),
-            session_id=as_int(payload.get("session_id")),
-            target_loaded=_as_bool(payload.get("target_loaded")),
-            execution_state=as_text(payload.get("execution_state")),
-            error_count=as_int(payload.get("error_count")),
-            result=result_value if isinstance(result_value, Mapping) else None,
+            session_id=as_int(result.get("session_id")) if result is not None else None,
+            target_loaded=_as_bool(result.get("target_loaded")) if result is not None else None,
+            execution_state=as_text(result.get("execution_state")) if result is not None else None,
+            error_count=as_int(result.get("error_count")) if result is not None else None,
+            result=result,
         )
 
     def is_list_action(self) -> bool:

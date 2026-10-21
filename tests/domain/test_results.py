@@ -106,10 +106,10 @@ class TestDomainResults:
 
         inner: JsonObject = {"nested": [1, 2]}
 
-        payload = mapping(payload_to_mapping(MessageResult(message="m", result=inner)))
+        payload = mapping(payload_to_mapping(MessageResult(message="m", debugger_result=inner)))
 
-        assert payload["result"] == {"nested": [1, 2]}
-        assert payload["result"] is not inner
+        assert payload["debugger_result"] == {"nested": [1, 2]}
+        assert payload["debugger_result"] is not inner
 
     def test_payload_to_mapping_rejects_non_serializable_dataclass_field(self) -> None:
         """A dataclass holding a non-JSON field should fail during conversion."""
@@ -119,4 +119,4 @@ class TestDomainResults:
         bad_payload = cast(JsonObject, {"bad": {1, 2}})
 
         with pytest.raises(TypeError):
-            payload_to_mapping(MessageResult(message="m", result=bad_payload))
+            payload_to_mapping(MessageResult(message="m", debugger_result=bad_payload))

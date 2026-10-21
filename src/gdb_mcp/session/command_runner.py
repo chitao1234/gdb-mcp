@@ -175,7 +175,7 @@ class SessionCommandRunner:
                 return OperationSuccess(
                     CommandExecutionInfo(
                         command=command,
-                        result=cast(StructuredPayload, parsed.to_dict()),
+                        debugger_result=cast(StructuredPayload, parsed.to_dict()),
                     ),
                     warnings=(
                         (
@@ -231,7 +231,7 @@ class SessionCommandRunner:
         return OperationSuccess(
             CommandExecutionInfo(
                 command=command,
-                result=cast(StructuredPayload, parsed.to_dict()),
+                debugger_result=cast(StructuredPayload, parsed.to_dict()),
             )
         )
 

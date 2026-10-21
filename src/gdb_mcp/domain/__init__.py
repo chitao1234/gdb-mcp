@@ -79,6 +79,7 @@ from .results import (
     OperationResult,
     OperationSuccess,
     payload_to_mapping,
+    result_to_envelope,
     result_to_mapping,
 )
 from .stop_kinds import (
@@ -159,6 +160,7 @@ __all__ = [
     "memory_block_records",
     "payload_to_mapping",
     "registers_info_from_payload",
+    "result_to_envelope",
     "result_to_mapping",
     "stop_kind_from_reason",
     "thread_list_info_from_payload",

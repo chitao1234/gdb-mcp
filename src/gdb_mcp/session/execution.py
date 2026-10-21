@@ -634,10 +634,10 @@ class SessionExecutionService:
             )
             return OperationSuccess(
                 MessageResult(
-                    message="Interrupt sent but no stopped notification received",
-                    result=parsed_result,
-                    status="warning",
-                )
+                    message="Interrupt sent",
+                    debugger_result=parsed_result,
+                ),
+                warnings=("Interrupt sent but no stopped notification received",),
             )
 
         stop_reason = self._extract_stop_reason(parsed_result)
@@ -655,7 +655,7 @@ class SessionExecutionService:
             )
         )
         return OperationSuccess(
-            MessageResult(message="Program interrupted (paused)", result=parsed_result)
+            MessageResult(message="Program interrupted (paused)", debugger_result=parsed_result)
         )
 
     def call_function(

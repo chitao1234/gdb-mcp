@@ -48,7 +48,7 @@ When referring to an action-based tool below, use the full form such as `gdb_exe
 ## Core Workflow
 
 1. Choose the right startup mode with `gdb_session_start`: live launch, empty attach bootstrap, or core-dump analysis.
-2. Validate startup immediately with `target_loaded`, `warnings`, `execution_state`, and startup outputs.
+2. Validate startup immediately with `result.target_loaded`, top-level `warnings`, `result.execution_state`, and startup outputs.
 3. Configure stop conditions before resuming: `gdb_breakpoint_manage(action="create")` and, when needed, `gdb_inferior_manage(action="set_follow_fork_mode" | "set_detach_on_fork")`.
 4. Transition execution with `gdb_execution_manage(action="run" | "continue" | "step" | "next" | "finish" | "interrupt")`.
 5. Synchronize explicitly with `gdb_execution_manage(action="wait_for_stop")` when execution remains live.
@@ -86,7 +86,7 @@ When referring to an action-based tool below, use the full form such as `gdb_exe
 ### Environment and Launch Setup Rules
 
 - Put inferior environment in `env`, not inside `init_commands`.
-- Act on auto-load warnings: when `warnings` says a script was declined or could not be found, the language's GDB helpers (Rust pretty-printers, Go's goroutine commands, a kernel's `vmlinux-gdb.py`) are inactive. For Rust, restart with `debugger_path="rust-gdb"`; otherwise pass `debugger_args`. `init_commands` cannot fix it because the program is already loaded.
+- Act on auto-load warnings: when top-level `warnings` says a script was declined or could not be found, the language's GDB helpers (Rust pretty-printers, Go's goroutine commands, a kernel's `vmlinux-gdb.py`) are inactive. For Rust, restart with `debugger_path="rust-gdb"`; otherwise pass `debugger_args`. `init_commands` cannot fix it because the program is already loaded.
 - Pair `env` with `working_dir` when launch behavior depends on both environment and cwd.
 - Keep `init_commands` for GDB configuration, symbol paths, and one-off debugger commands.
 - If you need different argv on a later rerun, prefer `gdb_execution_manage(action="run", execution.args=...)` instead of recreating the whole session.
@@ -219,16 +219,16 @@ Rules and expectations:
 
 Run these checks immediately after `gdb_session_start`, `gdb_session_connect`, or `gdb_attach_process`:
 
-- `target_loaded`: must be `true` before trusting later inspection
-- `warnings`: treat missing symbols, bad executables, or load failures as real blockers
-- `execution_state`: tells you whether the inferior is `not_started`, `running`, `paused`, `exited`, or `unknown`
-- `env_output` and `init_output`: read these when startup configuration or symbol-path setup mattered
-- `stop_reason`: important when startup leaves the inferior paused
+- `result.target_loaded`: must be `true` before trusting later inspection
+- top-level `warnings`: treat missing symbols, bad executables, or load failures as real blockers
+- `result.execution_state`: tells you whether the inferior is `not_started`, `running`, `paused`, `exited`, or `unknown`
+- `result.env_output` and `result.init_output`: read these when startup configuration or symbol-path setup mattered
+- `result.stop_reason`: important when startup leaves the inferior paused
 
 Treat these outcomes as hard gates:
 
-- `target_loaded=false`: fix the executable, core, or attach target before going deeper
-- unexpected `execution_state=running`: use `gdb_execution_manage(action="interrupt")` before inspecting state
+- `result.target_loaded=false`: fix the executable, core, or attach target before going deeper
+- unexpected `result.execution_state=running`: use `gdb_execution_manage(action="interrupt")` before inspecting state
 - warning about missing symbols: continue only if low-fidelity backtraces or variables are acceptable
 
 ## Tool Selection Rules

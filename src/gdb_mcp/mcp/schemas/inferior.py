@@ -78,7 +78,9 @@ class InferiorFollowForkPayload(StrictArgsModel):
 
 
 class InferiorDetachOnForkPayload(StrictArgsModel):
-    enabled: bool = Field(..., description="Whether the debugger should detach from the non-followed fork.")
+    enabled: bool = Field(
+        ..., description="Whether the debugger should detach from the non-followed fork."
+    )
 
 
 class InferiorManageCreateAction(StrictArgsModel):
