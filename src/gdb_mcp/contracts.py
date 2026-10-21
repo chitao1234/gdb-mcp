@@ -30,6 +30,8 @@ DEBUGGER_LLDB: Final[DebuggerName] = "lldb"
 DebuggerName: TypeAlias = Literal["gdb", "lldb"]
 DEBUGGER_NAMES: tuple[DebuggerName, ...] = get_args(DebuggerName)
 
+ExecutionState: TypeAlias = Literal["unknown", "not_started", "running", "paused", "exited"]
+
 ACTION_LIST = "list"
 ActionListName: TypeAlias = Literal["list"]
 ACTION_STATUS = "status"

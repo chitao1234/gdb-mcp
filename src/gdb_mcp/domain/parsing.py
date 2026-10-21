@@ -20,7 +20,7 @@ import logging
 from collections.abc import Mapping
 from typing import cast, get_args
 
-from .models import ExecutionState
+from ..contracts import ExecutionState
 from .stop_kinds import StopKind
 
 logger = logging.getLogger(__name__)

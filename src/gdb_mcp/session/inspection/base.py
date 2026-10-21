@@ -6,6 +6,7 @@ import logging
 import re
 from dataclasses import dataclass
 
+from ...contracts import LocationKind
 from ...domain import (
     OperationError,
     SourceLineRecord,
@@ -32,7 +33,7 @@ class _SelectionSnapshot:
 class _ResolvedCodeLocation:
     """One normalized code location used by disassembly and source lookup helpers."""
 
-    scope: str
+    scope: LocationKind
     thread_id: int | None = None
     frame: int | None = None
     function: str | None = None
@@ -249,7 +250,7 @@ class CodeLocationResolver:
         )
         resolved_frame = frame if frame is not None else as_int(frame_payload.get("level"))
         return _ResolvedCodeLocation(
-            scope="current_context",
+            scope="current",
             thread_id=resolved_thread_id,
             frame=resolved_frame,
             function=as_text_or_number(frame_payload.get("func")),
@@ -263,7 +264,7 @@ class CodeLocationResolver:
         self,
         *,
         command: str,
-        scope: str,
+        scope: LocationKind,
         function: str | None,
         address: str | None,
     ) -> _ResolvedCodeLocation | OperationError:

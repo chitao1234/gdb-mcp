@@ -20,6 +20,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Self
 
+from ..contracts import ExecutionState
 from .stop_kinds import StopKind
 
 
@@ -163,7 +164,7 @@ class InferiorRecord(RecordModel):
     description: str | None = None
     connection: str | None = None
     executable: str | None = None
-    execution_state: str | None = None
+    execution_state: ExecutionState | None = None
     stop_reason: str | None = None
     stop_kind: StopKind | None = None
     exit_code: int | None = None
@@ -174,7 +175,7 @@ class InferiorStateRecord(RecordModel):
 
     inferior_id: int | None = None
     is_current: bool | None = None
-    execution_state: str | None = None
+    execution_state: ExecutionState | None = None
     stop_reason: str | None = None
     stop_kind: StopKind | None = None
     exit_code: int | None = None

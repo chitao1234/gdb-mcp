@@ -8,6 +8,7 @@ from typing import Literal
 
 from ..domain import (
     CommandExecutionInfo,
+    CommandStatus,
     CommandTranscriptEntry,
     ExecutionState,
     FollowForkMode,
@@ -571,7 +572,7 @@ class SessionCommandRunner:
         *,
         command: str,
         sent_command: str,
-        status: str,
+        status: CommandStatus,
         parsed: ParsedMiResponse | None = None,
         timed_out: bool = False,
         fatal: bool = False,

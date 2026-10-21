@@ -17,6 +17,7 @@ from ..domain import (
     OperationSuccess,
     StructuredPayload,
     ToolPayload,
+    ToolResultStatus,
     payload_to_mapping,
     result_to_mapping,
 )
@@ -379,7 +380,12 @@ class SessionCaptureService:
         """Serialize one typed operation result into an artifact file."""
 
         payload = result_to_mapping(result)
-        artifact = self._write_payload_artifact(bundle_dir, name, payload)
+        artifact = self._write_payload_artifact(
+            bundle_dir,
+            name,
+            payload,
+            status="error" if isinstance(result, OperationError) else "success",
+        )
         return _WrittenArtifact(artifact=artifact, payload=payload)
 
     def _write_payload_artifact(
@@ -387,6 +393,8 @@ class SessionCaptureService:
         bundle_dir: Path,
         name: str,
         payload: object,
+        *,
+        status: ToolResultStatus = "success",
     ) -> CaptureArtifactInfo:
         """Write one JSON artifact and return its manifest entry."""
 
@@ -396,12 +404,6 @@ class SessionCaptureService:
             json.dumps(structured_payload, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-        status = "success"
-        if isinstance(structured_payload, dict):
-            payload_status = structured_payload.get("status")
-            if isinstance(payload_status, str):
-                status = payload_status
-
         return CaptureArtifactInfo(
             name=name,
             path=str(artifact_path.resolve()),

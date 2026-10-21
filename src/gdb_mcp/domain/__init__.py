@@ -1,5 +1,6 @@
 """Domain types for the GDB MCP server."""
 
+from ..contracts import ExecutionState
 from .adapters import (
     backtrace_info_from_payload,
     breakpoint_list_info_from_payload,
@@ -22,10 +23,10 @@ from .models import (
     CaptureBundleInfo,
     CatchpointType,
     CommandExecutionInfo,
+    CommandStatus,
     CommandTranscriptEntry,
     DetachOnForkInfo,
     DisassemblyInfo,
-    ExecutionState,
     ExpressionValueInfo,
     FinishInfo,
     FollowForkMode,
@@ -105,6 +106,7 @@ __all__ = [
     "CaptureBundleInfo",
     "CatchpointType",
     "CommandExecutionInfo",
+    "CommandStatus",
     "CommandTranscriptEntry",
     "DetachOnForkInfo",
     "DisassemblyInfo",

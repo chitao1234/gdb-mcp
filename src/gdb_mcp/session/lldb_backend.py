@@ -8,7 +8,7 @@ import time
 from collections.abc import Mapping
 from typing import Literal, cast
 
-from ..contracts import DEBUGGER_LLDB
+from ..contracts import DEBUGGER_LLDB, LocationKind
 from ..domain import (
     BacktraceInfo,
     BreakpointInfo,
@@ -1174,11 +1174,14 @@ class LldbSbBackend:
                 for item in self._mappings(payload.get("instructions"))
             ]
             first = instructions[0] if instructions else None
+            scope: LocationKind
             if function:
                 scope = "function"
             elif file:
                 scope = "file_line"
-            elif address or start_address:
+            elif start_address is not None and end_address is not None:
+                scope = "address_range"
+            elif address:
                 scope = "address"
             else:
                 scope = "current"
@@ -1229,10 +1232,13 @@ class LldbSbBackend:
             lines = [
                 SourceLineRecord.from_payload(item) for item in self._mappings(payload.get("lines"))
             ]
+            scope: LocationKind
             if function:
                 scope = "function"
             elif address:
                 scope = "address"
+            elif file is not None and start_line is not None:
+                scope = "file_range"
             elif file:
                 scope = "file_line"
             else:

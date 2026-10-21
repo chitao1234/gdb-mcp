@@ -7,6 +7,7 @@ from typing import Literal, TypeAlias
 
 from typing_extensions import TypeAliasType
 
+from ..contracts import DisassemblyMode, ExecutionState, LocationKind
 from .records import (
     BreakpointRecord,
     DisassemblyInstructionRecord,
@@ -33,7 +34,7 @@ StructuredPayload: TypeAlias = JsonObject
 ToolResultStatus: TypeAlias = Literal["success", "error"]
 FollowForkMode: TypeAlias = Literal["parent", "child"]
 WatchpointAccessType: TypeAlias = Literal["write", "read", "access"]
-ExecutionState: TypeAlias = Literal["unknown", "not_started", "running", "paused", "exited"]
+CommandStatus: TypeAlias = Literal["success", "error", "timeout"]
 CatchpointType: TypeAlias = Literal[
     "throw",
     "rethrow",
@@ -163,7 +164,7 @@ class CommandTranscriptEntry(StructuredOutput):
 
     command: str
     sent_command: str | None = None
-    status: str = "success"
+    status: CommandStatus = "success"
     result_class: str | None = None
     timed_out: bool = False
     fatal: bool = False
@@ -209,7 +210,7 @@ class CaptureArtifactInfo(StructuredOutput):
 
     name: str
     path: str
-    status: str
+    status: ToolResultStatus
     kind: str = "json"
 
 
@@ -436,7 +437,7 @@ class FrameInfo(StructuredOutput):
 class DisassemblyInfo(StructuredOutput):
     """Structured disassembly response."""
 
-    scope: str
+    scope: LocationKind
     thread_id: int | None
     frame: int | None
     function: str | None
@@ -445,7 +446,7 @@ class DisassemblyInfo(StructuredOutput):
     line: int | None
     start_address: str | None
     end_address: str | None
-    mode: str
+    mode: DisassemblyMode
     instructions: list[DisassemblyInstructionRecord]
 
 
@@ -453,7 +454,7 @@ class DisassemblyInfo(StructuredOutput):
 class SourceContextInfo(StructuredOutput):
     """Structured source-context response."""
 
-    scope: str
+    scope: LocationKind
     thread_id: int | None
     frame: int | None
     function: str | None

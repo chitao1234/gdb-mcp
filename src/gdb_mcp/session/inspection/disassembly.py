@@ -78,7 +78,7 @@ class InspectionDisassembly:
                 return self._context.selection_error_with_restore(selection, selection_error)
 
             location_result = _ResolvedCodeLocation(
-                scope="current_context",
+                scope="current",
                 thread_id=(
                     thread_id
                     if thread_id is not None
@@ -178,7 +178,7 @@ class InspectionDisassembly:
         """Build one MI disassembly command for the resolved selector mode."""
 
         mode_token = "0" if mode == "assembly" else "1"
-        if location.scope in {"current_context", "file_line"}:
+        if location.scope in {"current", "file_line"}:
             file_selector = location.fullname or location.file
             if file_selector is not None and location.line is not None:
                 return (
