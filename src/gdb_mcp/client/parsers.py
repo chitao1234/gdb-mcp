@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from copy import deepcopy
 
 from pydantic import BaseModel, ValidationError
@@ -26,12 +26,14 @@ class AppendTaggedValue(argparse.Action):
         del parser
 
         tag = option_string if option_string is not None else self.option_strings[0]
-        if self.dest == "step_events":
-            namespace.step_events.append((tag, values))
-        elif self.dest == "setup_step_events":
-            namespace.setup_step_events.append((tag, values))
-        else:
+        if self.dest not in {"step_events", "setup_step_events"}:
             raise CliUsageError(f"unsupported tagged-value destination: {self.dest}")
+        attributes: Mapping[str, object] = vars(namespace)
+        events_value = attributes.get(self.dest)
+        if not isinstance(events_value, list):
+            raise CliUsageError(f"unsupported tagged-value destination: {self.dest}")
+        events: list[object] = events_value
+        events.append((tag, values))
 
 
 def key_value_entry(text: str) -> tuple[str, str]:
