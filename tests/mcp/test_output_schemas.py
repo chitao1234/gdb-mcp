@@ -179,6 +179,69 @@ def test_success_warnings_are_an_optional_array(
         )
 
 
+def test_inspection_outputs_publish_nested_context_location_and_range(
+    output_schemas: dict[str, dict[str, object]],
+) -> None:
+    """Source and disassembly schemas expose their shared nested output shape."""
+
+    schema = output_schemas[TOOL_INSPECT_QUERY]
+    source_result = {
+        "context": {"thread_id": 3, "frame": 0},
+        "location": {
+            "kind": "file_line",
+            "function": "main",
+            "address": "0x401125",
+            "file": "src/main.c",
+            "fullname": "/work/src/main.c",
+            "line": 42,
+        },
+        "range": {"start_line": 37, "end_line": 47},
+        "lines": [],
+    }
+    disassembly_result = {
+        "context": {"thread_id": 3, "frame": 0},
+        "location": {"kind": "function", "function": "main"},
+        "range": {"start_address": "0x401100", "end_address": "0x401140"},
+        "mode": "mixed",
+        "instructions": [],
+    }
+
+    jsonschema.validate(
+        {"status": "success", "action": ACTION_SOURCE, "result": source_result},
+        schema,
+    )
+    jsonschema.validate(
+        {
+            "status": "success",
+            "action": ACTION_DISASSEMBLY,
+            "result": disassembly_result,
+        },
+        schema,
+    )
+
+
+def test_frame_output_schema_types_source_line_as_integer(
+    output_schemas: dict[str, dict[str, object]],
+) -> None:
+    """Frames publish their optional source line as an integer."""
+
+    schema = output_schemas[TOOL_CONTEXT_QUERY]
+    valid = {
+        "status": "success",
+        "action": ACTION_BACKTRACE,
+        "result": {"thread_id": 3, "frames": [{"level": 0, "line": 42}]},
+    }
+    invalid = {
+        "status": "success",
+        "action": ACTION_BACKTRACE,
+        "result": {"thread_id": 3, "frames": [{"level": 0, "line": "42"}]},
+    }
+
+    jsonschema.validate(valid, schema)
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(invalid, schema)
+
+
 def test_an_action_tool_offers_one_alternative_per_action(
     output_schemas: dict[str, dict[str, object]],
 ) -> None:

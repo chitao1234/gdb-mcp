@@ -460,18 +460,48 @@ class FrameInfo(StructuredOutput):
 
 
 @dataclass(slots=True, frozen=True)
+class InspectionContextInfo(StructuredOutput):
+    """Thread and frame selection used for an inspection result."""
+
+    thread_id: int | None
+    frame: int | None
+
+
+@dataclass(slots=True, frozen=True)
+class InspectionLocation(StructuredOutput):
+    """Normalized code location shared by source and disassembly results."""
+
+    kind: LocationKind
+    function: str | None = None
+    address: str | None = None
+    file: str | None = None
+    fullname: str | None = None
+    line: int | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class AddressRange(StructuredOutput):
+    """Address bounds returned with disassembly."""
+
+    start_address: str | None
+    end_address: str | None
+
+
+@dataclass(slots=True, frozen=True)
+class SourceRange(StructuredOutput):
+    """Source line bounds returned with source context."""
+
+    start_line: int
+    end_line: int
+
+
+@dataclass(slots=True, frozen=True)
 class DisassemblyInfo(StructuredOutput):
     """Structured disassembly response."""
 
-    scope: LocationKind
-    thread_id: int | None
-    frame: int | None
-    function: str | None
-    file: str | None
-    fullname: str | None
-    line: int | None
-    start_address: str | None
-    end_address: str | None
+    context: InspectionContextInfo
+    location: InspectionLocation
+    range: AddressRange
     mode: DisassemblyMode
     instructions: list[DisassemblyInstructionRecord]
 
@@ -480,16 +510,9 @@ class DisassemblyInfo(StructuredOutput):
 class SourceContextInfo(StructuredOutput):
     """Structured source-context response."""
 
-    scope: LocationKind
-    thread_id: int | None
-    frame: int | None
-    function: str | None
-    address: str | None
-    file: str
-    fullname: str | None
-    line: int | None
-    start_line: int
-    end_line: int
+    context: InspectionContextInfo
+    location: InspectionLocation
+    range: SourceRange
     lines: list[SourceLineRecord]
 
 

@@ -17,6 +17,7 @@ from ..contracts import (
     LocationKind,
 )
 from ..domain import (
+    AddressRange,
     BackendData,
     BacktraceInfo,
     BreakpointInfo,
@@ -42,6 +43,8 @@ from ..domain import (
     InferiorRecord,
     InferiorRemoveInfo,
     InferiorSelectionInfo,
+    InspectionContextInfo,
+    InspectionLocation,
     LocationExecutionInfo,
     MemoryBlockRecord,
     MemoryReadInfo,
@@ -55,6 +58,7 @@ from ..domain import (
     SessionStatusSnapshot,
     SourceContextInfo,
     SourceLineRecord,
+    SourceRange,
     StartupDiagnostics,
     StopEvent,
     StructuredPayload,
@@ -151,7 +155,9 @@ class LldbSbBackend:
         return value if isinstance(value, int) and not isinstance(value, bool) else None
 
     def _frame(self, payload: object) -> FrameRecord | None:
-        mapping = self._mapping(payload)
+        mapping = dict(self._mapping(payload))
+        if mapping.get("line") is not None:
+            mapping["line"] = self._integer(mapping, "line")
         return FrameRecord.from_payload(mapping) if mapping else None
 
     def _thread(self, payload: object) -> ThreadRecord | None:
@@ -1383,15 +1389,19 @@ class LldbSbBackend:
                 scope = "current"
             return OperationSuccess(
                 DisassemblyInfo(
-                    scope=scope,
-                    thread_id=thread_id,
-                    frame=frame,
-                    function=self._text(payload, "function") or function,
-                    file=first.file if first is not None else file,
-                    fullname=first.fullname if first is not None else file,
-                    line=first.line if first is not None else line,
-                    start_address=self._text(payload, "start_address"),
-                    end_address=self._text(payload, "end_address"),
+                    context=InspectionContextInfo(thread_id=thread_id, frame=frame),
+                    location=InspectionLocation(
+                        kind=scope,
+                        function=self._text(payload, "function") or function,
+                        address=address,
+                        file=first.file if first is not None else file,
+                        fullname=first.fullname if first is not None else file,
+                        line=first.line if first is not None else line,
+                    ),
+                    range=AddressRange(
+                        start_address=self._text(payload, "start_address"),
+                        end_address=self._text(payload, "end_address"),
+                    ),
                     mode=mode,
                     instructions=instructions,
                 )
@@ -1441,16 +1451,19 @@ class LldbSbBackend:
                 scope = "current"
             return OperationSuccess(
                 SourceContextInfo(
-                    scope=scope,
-                    thread_id=thread_id,
-                    frame=frame,
-                    function=self._text(payload, "function") or function,
-                    address=address,
-                    file=str(payload.get("file") or file or ""),
-                    fullname=self._text(payload, "fullname"),
-                    line=self._integer(payload, "line") or line,
-                    start_line=self._integer(payload, "start_line") or start_line or 1,
-                    end_line=self._integer(payload, "end_line") or end_line or len(lines),
+                    context=InspectionContextInfo(thread_id=thread_id, frame=frame),
+                    location=InspectionLocation(
+                        kind=scope,
+                        function=self._text(payload, "function") or function,
+                        address=address,
+                        file=str(payload.get("file") or file or ""),
+                        fullname=self._text(payload, "fullname"),
+                        line=self._integer(payload, "line") or line,
+                    ),
+                    range=SourceRange(
+                        start_line=self._integer(payload, "start_line") or start_line or 1,
+                        end_line=self._integer(payload, "end_line") or end_line or len(lines),
+                    ),
                     lines=lines,
                 )
             )

@@ -14,6 +14,7 @@ from .adapters import (
     variables_info_from_payload,
 )
 from .models import (
+    AddressRange,
     BackendData,
     BacktraceInfo,
     BatchExecutionInfo,
@@ -40,6 +41,8 @@ from .models import (
     InferiorListInfo,
     InferiorRemoveInfo,
     InferiorSelectionInfo,
+    InspectionContextInfo,
+    InspectionLocation,
     JsonArray,
     JsonObject,
     JsonValue,
@@ -57,6 +60,7 @@ from .models import (
     SessionStatusSnapshot,
     SessionSummary,
     SourceContextInfo,
+    SourceRange,
     StartupDiagnostics,
     StopEvent,
     StructuredOutput,
@@ -99,6 +103,7 @@ from .stop_kinds import (
 
 __all__ = [
     "STOP_KINDS",
+    "AddressRange",
     "BackendData",
     "BacktraceInfo",
     "BatchExecutionInfo",
@@ -132,6 +137,8 @@ __all__ = [
     "InferiorRemoveInfo",
     "InferiorSelectionInfo",
     "InferiorStateRecord",
+    "InspectionContextInfo",
+    "InspectionLocation",
     "JsonArray",
     "JsonObject",
     "JsonValue",
@@ -155,6 +162,7 @@ __all__ = [
     "SessionSummary",
     "SourceContextInfo",
     "SourceLineRecord",
+    "SourceRange",
     "StartupDiagnostics",
     "StopEvent",
     "StopKind",

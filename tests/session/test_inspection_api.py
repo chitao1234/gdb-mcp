@@ -330,7 +330,7 @@ class TestStructuredCodeInspectionApi:
     def test_disassemble_current_context(
         self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
     ) -> None:
-        """Disassembly should flatten current-context MI output into instruction records."""
+        """Disassembly publishes nested context, location, range, and instructions."""
 
         session, _ = scripted_running_session(
             [mi_result({"features": ["data-disassemble-a-option"]})],
@@ -349,6 +349,16 @@ class TestStructuredCodeInspectionApi:
         result = result_to_mapping(session.disassemble(instruction_count=2, mode="assembly"))
 
         assert result["status"] == "success"
+        context = result["context"]
+        assert isinstance(context, dict)
+        location = result["location"]
+        assert isinstance(location, dict)
+        assert location["kind"] == "current"
+        assert location["address"] == "$pc"
+        address_range = result["range"]
+        assert isinstance(address_range, dict)
+        assert address_range["start_address"] == "0x401000"
+        assert address_range["end_address"] == "0x401001"
         assert len(mapping_list(result["instructions"])) == 2
         assert mapping_list(result["instructions"])[0]["address"] == "0x401000"
         assert result["mode"] == "assembly"
@@ -371,6 +381,10 @@ class TestStructuredCodeInspectionApi:
         result = result_to_mapping(session.disassemble(thread_id=2, frame=1))
 
         assert result["status"] == "success"
+        context = result["context"]
+        assert isinstance(context, dict)
+        assert context["thread_id"] == 2
+        assert context["frame"] == 1
         written = controller.decoded_writes
         assert written[-2].endswith("-thread-select 1\n")
         assert written[-1].endswith("-stack-select-frame 0\n")
@@ -474,9 +488,13 @@ class TestStructuredCodeInspectionApi:
         )
 
         assert result["status"] == "success"
-        assert result["file"] == str(source_file)
-        assert result["start_line"] == 1
-        assert result["end_line"] == 2
+        location = result["location"]
+        assert isinstance(location, dict)
+        assert location["file"] == str(source_file)
+        source_range = result["range"]
+        assert isinstance(source_range, dict)
+        assert source_range["start_line"] == 1
+        assert source_range["end_line"] == 2
         lines = mapping_list(result["lines"])
         assert lines[1]["line_number"] == 2
         assert lines[1]["is_current"] is True
@@ -511,9 +529,11 @@ class TestStructuredCodeInspectionApi:
         )
 
         assert result["status"] == "success"
-        assert result["file"] == str(source_file)
-        assert result["function"] == "add"
-        assert result["line"] == 1
+        location = result["location"]
+        assert isinstance(location, dict)
+        assert location["file"] == str(source_file)
+        assert location["function"] == "add"
+        assert location["line"] == 1
         assert mapping_list(result["lines"])[0]["line_number"] == 1
         assert f"list {source_file}:1,{source_file}:1" in "".join(controller.decoded_writes)
 
@@ -546,8 +566,10 @@ class TestStructuredCodeInspectionApi:
         )
 
         assert result["status"] == "success"
-        assert result["file"] == str(source_file)
-        assert result["line"] == 4
+        location = result["location"]
+        assert isinstance(location, dict)
+        assert location["file"] == str(source_file)
+        assert location["line"] == 4
         assert mapping_list(result["lines"])[0]["line_number"] == 4
         assert f"list {source_file}:4,{source_file}:4" in "".join(controller.decoded_writes)
 
@@ -587,7 +609,13 @@ class TestStructuredCodeInspectionApi:
         result = result_to_mapping(session.get_source_context(thread_id=2, frame=1))
 
         assert result["status"] == "success"
-        assert result["line"] == 2
+        context = result["context"]
+        assert isinstance(context, dict)
+        assert context["thread_id"] == 2
+        assert context["frame"] == 1
+        location = result["location"]
+        assert isinstance(location, dict)
+        assert location["line"] == 2
         written = controller.decoded_writes
         assert written[-2].endswith("-thread-select 1\n")
         assert written[-1].endswith("-stack-select-frame 0\n")

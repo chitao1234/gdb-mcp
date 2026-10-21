@@ -60,6 +60,7 @@ debugger is behind the session:
 - `enabled` (breakpoints) is a boolean; GDB reports `y`/`n`
 - `times` (breakpoints) is an integer hit count; GDB reports a string
 - `level` (frames) is an integer; GDB reports a string
+- `line` (frames) is an integer; GDB reports a string
 - `number` (registers) is an integer index; GDB reports a string
 - `is_current` (source lines and disassembly instructions) is a boolean;
   it is derived by this server rather than reported by the debugger, so a line,
@@ -850,8 +851,13 @@ Read program state without using raw debugger commands.
 | `variables` | `{"session_id":7,"action":"variables","query":{"context":{"thread_id":3,"frame":0}}}` | `thread_id`, `frame`, `variables` |
 | `registers` | `{"session_id":7,"action":"registers","query":{"context":{"thread_id":3,"frame":0},"register_names":["rax","rip"],"value_format":"hex"}}` | `registers` |
 | `memory` | `{"session_id":7,"action":"memory","query":{"address":"buffer","count":64,"offset":0}}` | `address`, `requested_bytes`, `offset`, `blocks`, `captured_bytes` |
-| `disassembly` | `{"session_id":7,"action":"disassembly","query":{"location":{"kind":"function","function":"process_data"},"instruction_count":24,"mode":"mixed"}}` | `scope`, `thread_id`, `frame`, `function`, `file`, `fullname`, `line`, `start_address`, `end_address`, `mode`, `instructions` |
-| `source` | `{"session_id":7,"action":"source","query":{"location":{"kind":"file_line","file":"src/main.c","line":42},"context_before":5,"context_after":5}}` | `scope`, `thread_id`, `frame`, `function`, `address`, `file`, `fullname`, `line`, `start_line`, `end_line`, `lines` |
+| `disassembly` | `{"session_id":7,"action":"disassembly","query":{"location":{"kind":"function","function":"process_data"},"instruction_count":24,"mode":"mixed"}}` | `context`, `location`, `range`, `mode`, `instructions` |
+| `source` | `{"session_id":7,"action":"source","query":{"location":{"kind":"file_line","file":"src/main.c","line":42},"context_before":5,"context_after":5}}` | `context`, `location`, `range`, `lines` |
+
+Inspection results group the selected `thread_id` and `frame` under `context`.
+Their `location` contains `kind`, `function`, `address`, `file`, `fullname`,
+and `line` where available. `range` contains `start_address` and `end_address`
+for disassembly, or `start_line` and `end_line` for the source window.
 
 ### Register Filters
 

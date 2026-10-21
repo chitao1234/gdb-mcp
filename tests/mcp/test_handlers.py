@@ -22,6 +22,7 @@ from gdb_mcp.contracts import (
     SessionState,
 )
 from gdb_mcp.domain import (
+    AddressRange,
     BackendData,
     BreakpointInfo,
     BreakpointListInfo,
@@ -32,6 +33,8 @@ from gdb_mcp.domain import (
     InferiorListInfo,
     InferiorRecord,
     InferiorSelectionInfo,
+    InspectionContextInfo,
+    InspectionLocation,
     MemoryCaptureRange,
     OperationError,
     OperationSuccess,
@@ -41,6 +44,7 @@ from gdb_mcp.domain import (
     SessionStatusSnapshot,
     SessionSummary,
     SourceContextInfo,
+    SourceRange,
     StartupDiagnostics,
     StopEvent,
     ThreadSelectionInfo,
@@ -925,15 +929,9 @@ class TestHandlerRouting:
         session = _session_double()
         session.disassemble.return_value = OperationSuccess(
             DisassemblyInfo(
-                scope="function",
-                thread_id=None,
-                frame=None,
-                function="main",
-                file=None,
-                fullname=None,
-                line=None,
-                start_address=None,
-                end_address=None,
+                context=InspectionContextInfo(thread_id=None, frame=None),
+                location=InspectionLocation(kind="function", function="main"),
+                range=AddressRange(start_address=None, end_address=None),
                 mode="mixed",
                 instructions=[],
             )
@@ -994,16 +992,9 @@ class TestHandlerRouting:
         session = _session_double()
         session.get_source_context.return_value = OperationSuccess(
             SourceContextInfo(
-                scope="file_range",
-                thread_id=None,
-                frame=None,
-                function=None,
-                address=None,
-                file="main.c",
-                fullname=None,
-                line=None,
-                start_line=10,
-                end_line=12,
+                context=InspectionContextInfo(thread_id=None, frame=None),
+                location=InspectionLocation(kind="file_range", file="main.c"),
+                range=SourceRange(start_line=10, end_line=12),
                 lines=[],
             )
         )

@@ -5,10 +5,13 @@ from __future__ import annotations
 import re
 
 from ...domain import (
+    InspectionContextInfo,
+    InspectionLocation,
     OperationError,
     OperationSuccess,
     SourceContextInfo,
     SourceLineRecord,
+    SourceRange,
 )
 from .base import (
     CodeLocationResolver,
@@ -147,16 +150,22 @@ class InspectionSource:
 
         return OperationSuccess(
             SourceContextInfo(
-                scope=location_result.scope,
-                thread_id=location_result.thread_id,
-                frame=location_result.frame,
-                function=location_result.function,
-                address=location_result.address,
-                file=read_result.file,
-                fullname=read_result.fullname,
-                line=location_result.line,
-                start_line=read_result.start_line,
-                end_line=read_result.end_line,
+                context=InspectionContextInfo(
+                    thread_id=location_result.thread_id,
+                    frame=location_result.frame,
+                ),
+                location=InspectionLocation(
+                    kind=location_result.scope,
+                    function=location_result.function,
+                    address=location_result.address,
+                    file=read_result.file,
+                    fullname=read_result.fullname,
+                    line=location_result.line,
+                ),
+                range=SourceRange(
+                    start_line=read_result.start_line,
+                    end_line=read_result.end_line,
+                ),
                 lines=read_result.lines,
             )
         )

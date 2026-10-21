@@ -54,6 +54,7 @@ class FrameRecord(RecordModel):
     func: str | None = None
     file: str | None = None
     fullname: str | None = None
+    line: int | None = None
 
 
 class ThreadRecord(RecordModel):

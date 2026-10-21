@@ -35,6 +35,8 @@ callers see one contract.
 
 - strict JSON-schema validation for every tool input
 - explicit success/error envelopes for automation clients
+- inspection results group context, location, and returned ranges; frame records
+  include a typed source line when the debugger provides one
 - tagged debugger data and console output where a command has backend-specific results
 - stable, domain-oriented tool names
 - structured session snapshots instead of parsed terminal output

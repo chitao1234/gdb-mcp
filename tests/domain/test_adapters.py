@@ -130,13 +130,23 @@ class TestBreakpointCanonicalFields:
 
 
 class TestFrameCanonicalFields:
-    """`level` arrives as a string and is published as an integer."""
+    """Frame levels and source lines arrive as strings and publish as integers."""
 
     def test_stack_levels_become_integers(self) -> None:
         frames = frame_records({"stack": [{"level": "0", "func": "main"}, {"level": "1"}]})
 
         assert [frame.level for frame in frames] == [0, 1]
         assert frames[0].func == "main"
+
+    def test_frame_lines_become_integers(self) -> None:
+        frame = frame_record({"level": "0", "line": "42"})
+
+        assert frame.line == 42
+        assert frame.to_payload() == {"level": 0, "line": 42}
+
+    def test_invalid_frame_line_is_rejected(self) -> None:
+        with pytest.raises(ValueError):
+            frame_record({"line": "unknown"})
 
     def test_single_frame_record(self) -> None:
         record = frame_record({"level": "3", "func": "worker"})

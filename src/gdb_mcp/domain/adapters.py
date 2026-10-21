@@ -155,11 +155,13 @@ def _watchpoint_access(breakpoint_type: str) -> str:
 
 
 def _canonical_frame(payload: Mapping[str, object]) -> FrameRecord:
-    """Build a frame record with a canonical integer ``level``."""
+    """Build a frame record with canonical integer ``level`` and ``line``."""
 
     normalized = dict(payload)
     if "level" in normalized:
         normalized["level"] = _count(normalized["level"])
+    if normalized.get("line") is not None:
+        normalized["line"] = _count(normalized["line"])
     return FrameRecord.from_payload(normalized)
 
 

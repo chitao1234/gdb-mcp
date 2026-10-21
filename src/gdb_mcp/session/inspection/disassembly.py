@@ -7,8 +7,11 @@ from collections.abc import Mapping
 from typing import Literal
 
 from ...domain import (
+    AddressRange,
     DisassemblyInfo,
     DisassemblyInstructionRecord,
+    InspectionContextInfo,
+    InspectionLocation,
     OperationError,
     OperationSuccess,
 )
@@ -147,16 +150,24 @@ class InspectionDisassembly:
         instructions = instructions[:instruction_count]
 
         info = DisassemblyInfo(
-            scope=location_result.scope,
-            thread_id=location_result.thread_id,
-            frame=location_result.frame,
-            function=location_result.function or self._first_instruction_function(instructions),
-            file=location_result.file or self._first_instruction_file(instructions),
-            fullname=location_result.fullname or self._first_instruction_fullname(instructions),
-            line=location_result.line or self._first_instruction_line(instructions),
-            start_address=location_result.start_address
-            or self._first_instruction_address(instructions),
-            end_address=location_result.end_address or self._last_instruction_address(instructions),
+            context=InspectionContextInfo(
+                thread_id=location_result.thread_id,
+                frame=location_result.frame,
+            ),
+            location=InspectionLocation(
+                kind=location_result.scope,
+                function=location_result.function or self._first_instruction_function(instructions),
+                address=location_result.address,
+                file=location_result.file or self._first_instruction_file(instructions),
+                fullname=location_result.fullname or self._first_instruction_fullname(instructions),
+                line=location_result.line or self._first_instruction_line(instructions),
+            ),
+            range=AddressRange(
+                start_address=location_result.start_address
+                or self._first_instruction_address(instructions),
+                end_address=location_result.end_address
+                or self._last_instruction_address(instructions),
+            ),
             mode=mode,
             instructions=instructions,
         )
