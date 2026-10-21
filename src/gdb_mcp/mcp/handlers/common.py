@@ -37,6 +37,7 @@ from ..schemas import (
 )
 
 
+@runtime_checkable
 class SessionArgsProtocol(Protocol):
     """Validated MCP argument models that carry a session_id."""
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import cast
 
 from mcp.types import CallToolResult
 from pydantic import BaseModel, ValidationError
@@ -54,7 +53,9 @@ def _dispatch_tool(
     validated_args = spec.validate(arguments)
 
     if spec.scope == "session":
-        session_args = cast(SessionArgsProtocol, _unwrap_action_args(validated_args))
+        session_args = _unwrap_action_args(validated_args)
+        if not isinstance(session_args, SessionArgsProtocol):
+            raise TypeError(f"{name} is session-scoped but carries no session_id")
         session = session_manager.resolve_session(session_args.session_id)
         if isinstance(session, OperationError):
             return _wrap_action_result_for(validated_args, session)
