@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import signal
-from typing import cast
+from collections.abc import Mapping
 
 from ..domain import (
     CommandExecutionInfo,
@@ -13,7 +13,6 @@ from ..domain import (
     FinishInfo,
     FollowForkMode,
     FollowForkModeInfo,
-    FrameRecord,
     FunctionCallInfo,
     InferiorAddInfo,
     InferiorListInfo,
@@ -26,6 +25,7 @@ from ..domain import (
     WaitForStopInfo,
     payload_to_mapping,
 )
+from ..domain.adapters import frame_record
 from ..transport import (
     MiClient,
     build_exec_arguments_command,
@@ -554,7 +554,7 @@ class SessionExecutionService:
         if not payload_mapping and self._runtime.last_stop_event is not None:
             payload_mapping = self._runtime.last_stop_event.details
         frame_payload = payload_mapping.get("frame")
-        frame = cast(FrameRecord | None, frame_payload) if isinstance(frame_payload, dict) else None
+        frame = frame_record(frame_payload) if isinstance(frame_payload, Mapping) else None
         if frame is None and self._runtime.last_stop_event is not None:
             frame = self._runtime.last_stop_event.frame
         return_value = payload_mapping.get("return-value")
