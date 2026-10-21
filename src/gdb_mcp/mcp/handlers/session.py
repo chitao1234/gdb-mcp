@@ -43,11 +43,8 @@ def _publish_session_result(
     if session_id is None or not isinstance(result, OperationSuccess):
         return result
 
-    payload = result.value
-    if not isinstance(payload, SessionStartInfo):
-        return OperationError(message="Internal error: session start payload must be an object")
     return OperationSuccess(
-        replace(payload, session_id=session_id),
+        replace(result.value, session_id=session_id),
         warnings=result.warnings,
         action=result.action,
     )
