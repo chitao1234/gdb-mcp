@@ -7,7 +7,7 @@ from typing import Literal, TypeAlias
 
 from typing_extensions import TypeAliasType
 
-from ..contracts import DisassemblyMode, ExecutionState, LocationKind, SessionState
+from ..contracts import DebuggerName, DisassemblyMode, ExecutionState, LocationKind, SessionState
 from .records import (
     BreakpointRecord,
     DisassemblyInstructionRecord,
@@ -52,6 +52,14 @@ CatchpointType: TypeAlias = Literal[
 @dataclass(slots=True, frozen=True)
 class StructuredOutput:
     """Nominal marker for dataclasses that form object-shaped tool results."""
+
+
+@dataclass(slots=True, frozen=True)
+class BackendData(StructuredOutput):
+    """Debugger-specific data, explicitly identified and outside the portable contract."""
+
+    debugger: DebuggerName
+    data: StructuredPayload
 
 
 @dataclass(slots=True, frozen=True)
@@ -157,11 +165,10 @@ class StopEvent(StructuredOutput):
     signal_meaning: str | None = None
     signal_code: int | None = None
     fault_address: str | None = None
-    crash: StructuredPayload | None = None
     breakpoint_number: str | None = None
     exit_code: int | None = None
     timestamp: float | None = None
-    details: StructuredPayload = field(default_factory=dict)
+    backend_data: BackendData | None = None
 
 
 @dataclass(slots=True, frozen=True)

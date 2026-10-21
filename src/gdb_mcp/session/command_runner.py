@@ -7,6 +7,7 @@ from collections.abc import Callable, Mapping
 from typing import Literal
 
 from ..domain import (
+    BackendData,
     CommandExecutionInfo,
     CommandStatus,
     CommandTranscriptEntry,
@@ -535,17 +536,28 @@ class SessionCommandRunner:
             and signal_name in {"SIGSEGV", "SIGBUS", "SIGILL", "SIGFPE", "SIGABRT"}
             else None
         )
-        crash: StructuredPayload | None = None
-        if state_detail == "crashed":
-            compact: StructuredPayload = {}
-            if signal_name is not None:
-                compact["signal_name"] = signal_name
-            if signal_code is not None:
-                compact["code"] = signal_code
-            if fault_address is not None:
-                compact["fault_address"] = fault_address
-            if compact:
-                crash = compact
+        promoted = {
+            "reason",
+            "thread-id",
+            "thread-group",
+            "group-id",
+            "frame",
+            "signal-name",
+            "signal-meaning",
+            "signal-code",
+            "fault-address",
+            "bkptno",
+            "exit-code",
+        }
+        backend_details = {
+            key: value for key, value in payload_mapping.items() if key not in promoted
+        }
+        for key in ("wpt", "awpt", "hw-awpt"):
+            watchpoint = backend_details.get(key)
+            if isinstance(watchpoint, dict):
+                backend_details[key] = {
+                    name: value for name, value in watchpoint.items() if name != "number"
+                }
 
         return StopEvent(
             execution_state=execution_state,
@@ -560,11 +572,12 @@ class SessionCommandRunner:
             signal_meaning=signal_meaning,
             signal_code=signal_code,
             fault_address=fault_address,
-            crash=crash,
             breakpoint_number=breakpoint_number,
             exit_code=exit_code,
             timestamp=self._runtime.time_module.time(),
-            details=payload_mapping,
+            backend_data=(
+                BackendData(debugger="gdb", data=backend_details) if backend_details else None
+            ),
         )
 
     def _record_command_transcript(

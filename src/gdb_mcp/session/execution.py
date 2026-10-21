@@ -549,8 +549,9 @@ class SessionExecutionService:
 
         raw_payload = extract_mi_result_payload(command_result_payload(result))
         payload_mapping = raw_payload if isinstance(raw_payload, dict) else {}
-        if not payload_mapping and self._runtime.last_stop_event is not None:
-            payload_mapping = self._runtime.last_stop_event.details
+        stop_event = self._runtime.last_stop_event
+        if not payload_mapping and stop_event is not None and stop_event.backend_data is not None:
+            payload_mapping = stop_event.backend_data.data
         frame_payload = payload_mapping.get("frame")
         frame = frame_record(frame_payload) if isinstance(frame_payload, Mapping) else None
         if frame is None and self._runtime.last_stop_event is not None:

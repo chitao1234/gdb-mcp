@@ -14,6 +14,7 @@ from .adapters import (
     variables_info_from_payload,
 )
 from .models import (
+    BackendData,
     BacktraceInfo,
     BatchExecutionInfo,
     BatchStepResult,
@@ -96,6 +97,7 @@ from .stop_kinds import (
 
 __all__ = [
     "STOP_KINDS",
+    "BackendData",
     "BacktraceInfo",
     "BatchExecutionInfo",
     "BatchStepResult",

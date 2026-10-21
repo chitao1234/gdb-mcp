@@ -10,6 +10,7 @@ from typing import Literal, cast
 
 from ..contracts import DEBUGGER_LLDB, LocationKind
 from ..domain import (
+    BackendData,
     BacktraceInfo,
     BreakpointInfo,
     BreakpointListInfo,
@@ -230,22 +231,25 @@ class LldbSbBackend:
             except (ValueError, AttributeError):
                 signal_meaning = None
         crash = payload.get("crash")
-        crash_mapping = _structured(crash) if isinstance(crash, dict) else None
-        if self._state_detail == "crashed" and not crash_mapping:
-            compact: StructuredPayload = {}
-            if signal_number is not None:
-                compact["signal"] = signal_number
-            if signal_name is not None:
-                compact["signal_name"] = signal_name
-            signal_code = self._integer(payload, "signal_code")
-            if signal_code is not None:
-                compact["code"] = signal_code
-            fault_address = self._text(payload, "fault_address")
-            if fault_address is not None:
-                compact["fault_address"] = fault_address
-            if compact:
-                crash_mapping = compact
         details: StructuredPayload = {}
+        if signal_number is not None:
+            details["signal_number"] = signal_number
+        if isinstance(crash, dict):
+            exception_details = {
+                name: value
+                for name, value in crash.items()
+                if name
+                not in {
+                    "signal",
+                    "signal_name",
+                    "signal_meaning",
+                    "code",
+                    "signal_code",
+                    "fault_address",
+                }
+            }
+            if exception_details:
+                details["exception"] = payload_to_mapping(exception_details)
         for name in ("stop_data", "pid"):
             if name in payload:
                 details[name] = payload_to_mapping(payload[name])
@@ -274,11 +278,10 @@ class LldbSbBackend:
             signal_meaning=signal_meaning,
             signal_code=self._integer(payload, "signal_code"),
             fault_address=self._text(payload, "fault_address"),
-            crash=crash_mapping,
             breakpoint_number=breakpoint_number,
             exit_code=self._integer(payload, "exit_code"),
             timestamp=time.time(),
-            details=_structured(details),
+            backend_data=BackendData(debugger="lldb", data=details) if details else None,
         )
         self.runtime.record_stop_event(event)
 
