@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, Mock
 
+from gdb_mcp.contracts import SessionState
 from gdb_mcp.domain import (
     BatchExecutionInfo,
     BatchStepResult,
@@ -67,9 +68,9 @@ class TestRunUntilFailureService:
 
         session = _fake_session(
             status=SessionStatusSnapshot(
-                is_running=True,
+                debugger_alive=True,
                 target_loaded=True,
-                has_controller=True,
+                session_state=SessionState.READY,
                 execution_state="paused",
                 stop_reason="signal-received",
             ),
@@ -107,9 +108,9 @@ class TestRunUntilFailureService:
         """Campaigns should complete cleanly when no predicate matches."""
 
         exited = SessionStatusSnapshot(
-            is_running=True,
+            debugger_alive=True,
             target_loaded=True,
-            has_controller=True,
+            session_state=SessionState.READY,
             execution_state="exited",
             stop_reason="exited-normally",
             exit_code=0,
@@ -146,9 +147,9 @@ class TestRunUntilFailureService:
 
         session = _fake_session(
             status=SessionStatusSnapshot(
-                is_running=True,
+                debugger_alive=True,
                 target_loaded=True,
-                has_controller=True,
+                session_state=SessionState.READY,
                 execution_state="not_started",
             ),
         )

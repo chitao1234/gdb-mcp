@@ -64,8 +64,8 @@ def test_session_inventory_and_status_are_isolated_v2(
 
         status_1 = status_query(call_gdb_tool, session_id_1)
         status_2 = status_query(call_gdb_tool, session_id_2)
-        assert dig(status_1, "result", "is_running") is True
-        assert dig(status_2, "result", "is_running") is True
+        assert dig(status_1, "result", "debugger_alive") is True
+        assert dig(status_2, "result", "debugger_alive") is True
     finally:
         stop_session(session_id_1, ignore_errors=True)
         stop_session(session_id_2, ignore_errors=True)

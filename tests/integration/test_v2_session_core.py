@@ -52,7 +52,7 @@ def test_session_lifecycle_and_status_v2(
     status = status_query(call_gdb_tool, session_id)
     assert status["status"] == "success"
     assert status["action"] == "status"
-    assert dig(status, "result", "is_running") is True
+    assert dig(status, "result", "debugger_alive") is True
     assert dig(status, "result", "target_loaded") is True
     assert dig(status, "result", "execution_state") == "not_started"
 

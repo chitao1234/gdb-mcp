@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, Mock
 import pytest
 from mcp.types import TextContent
 
+from gdb_mcp.contracts import SessionState
 from gdb_mcp.domain import (
     BreakpointInfo,
     BreakpointListInfo,
@@ -97,9 +98,9 @@ def _failure_session(manager: Mock) -> Mock:
     session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
     session.get_status.return_value = OperationSuccess(
         SessionStatusSnapshot(
-            is_running=True,
+            debugger_alive=True,
             target_loaded=True,
-            has_controller=True,
+            session_state=SessionState.READY,
             execution_state="paused",
             stop_reason="signal-received",
         )
@@ -289,10 +290,10 @@ class TestHandlerDispatch:
                 sessions=[
                     SessionSummary(
                         session_id=1,
-                        lifecycle_state="ready",
+                        session_state=SessionState.READY,
                         execution_state="paused",
                         target_loaded=True,
-                        has_controller=True,
+                        debugger_alive=True,
                         program="/tmp/a.out",
                     )
                 ],
@@ -313,7 +314,9 @@ class TestHandlerDispatch:
 
         session = _session_double()
         session.get_status.return_value = OperationSuccess(
-            SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=True)
+            SessionStatusSnapshot(
+                debugger_alive=False, target_loaded=False, session_state=SessionState.READY
+            )
         )
         manager = _manager_for(session)
 
@@ -327,7 +330,7 @@ class TestHandlerDispatch:
         session.get_status.assert_called_once()
         assert result_data["status"] == "success"
         assert result_data["action"] == "status"
-        assert dig(result_data, "result", "is_running") is False
+        assert dig(result_data, "result", "debugger_alive") is False
         assert dig(result_data, "result", "target_loaded") is False
 
     def test_tool_with_invalid_session_id_returns_error(self) -> None:
@@ -1379,7 +1382,9 @@ class TestHandlerRouting:
             session,
             "get_status",
             return_value=OperationSuccess(
-                SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=False)
+                SessionStatusSnapshot(
+                    debugger_alive=False, target_loaded=False, session_state=SessionState.CREATED
+                )
             ),
         )
         manager = _manager_for(session)
@@ -1442,7 +1447,9 @@ class TestHandlerRouting:
         workflow_lock = _workflow_lock()
         session.runtime.workflow_lock = workflow_lock
         session.get_status.return_value = OperationSuccess(
-            SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=True)
+            SessionStatusSnapshot(
+                debugger_alive=False, target_loaded=False, session_state=SessionState.READY
+            )
         )
         manager = _manager_for(session)
 
@@ -1651,11 +1658,15 @@ class TestHandlerRouting:
         manager = Mock(spec=SessionRegistry)
         session_1 = _session_double()
         session_1.get_status.return_value = OperationSuccess(
-            SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=True)
+            SessionStatusSnapshot(
+                debugger_alive=False, target_loaded=False, session_state=SessionState.READY
+            )
         )
         session_2 = _session_double()
         session_2.get_status.return_value = OperationSuccess(
-            SessionStatusSnapshot(is_running=True, target_loaded=True, has_controller=True)
+            SessionStatusSnapshot(
+                debugger_alive=True, target_loaded=True, session_state=SessionState.READY
+            )
         )
 
         def resolve_session_side_effect(session_id: int) -> Mock | OperationError:
@@ -1683,8 +1694,8 @@ class TestHandlerRouting:
         assert manager.resolve_session.call_count == 2
         session_1.get_status.assert_called_once()
         session_2.get_status.assert_called_once()
-        assert dig(result_1, "result", "is_running") is False
-        assert dig(result_2, "result", "is_running") is True
+        assert dig(result_1, "result", "debugger_alive") is False
+        assert dig(result_2, "result", "debugger_alive") is True
 
     @pytest.mark.parametrize(("thread_id", "frame"), [(2, 1), ("2", "1")])
     def test_evaluate_expression_routes_thread_and_frame_overrides(

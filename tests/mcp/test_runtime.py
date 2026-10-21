@@ -9,6 +9,7 @@ from unittest.mock import ANY, AsyncMock, MagicMock, Mock, patch
 import pytest
 from mcp.types import TextContent
 
+from gdb_mcp.contracts import SessionState
 from gdb_mcp.domain import OperationSuccess, SessionStatusSnapshot
 from gdb_mcp.mcp.runtime import ServerRuntime, create_server_runtime
 from gdb_mcp.session.registry import SessionRegistry
@@ -52,7 +53,9 @@ class TestServerRuntime:
         runtime, mock_manager = runtime_with_manager
         mock_session = _session_double()
         mock_session.get_status.return_value = OperationSuccess(
-            SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=True)
+            SessionStatusSnapshot(
+                debugger_alive=False, target_loaded=False, session_state=SessionState.READY
+            )
         )
         mock_manager.resolve_session.return_value = mock_session
 
@@ -68,7 +71,7 @@ class TestServerRuntime:
 
         assert result_data["status"] == "success"
         assert result_data["action"] == "status"
-        assert mapping(result_data["result"])["is_running"] is False
+        assert mapping(result_data["result"])["debugger_alive"] is False
         mock_manager.resolve_session.assert_called_once_with(7)
         mock_session.get_status.assert_called_once()
 

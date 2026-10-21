@@ -54,7 +54,9 @@ def _session_double() -> Mock:
     session.state = SessionState.CREATED
     session.config = None
     session.get_status.return_value = OperationSuccess(
-        SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=False)
+        SessionStatusSnapshot(
+            debugger_alive=False, target_loaded=False, session_state=SessionState.CREATED
+        )
     )
     return session
 
@@ -242,9 +244,9 @@ class TestSessionRegistry:
         session = _session_double()
         session.get_status.return_value = OperationSuccess(
             SessionStatusSnapshot(
-                is_running=True,
+                debugger_alive=True,
                 target_loaded=True,
-                has_controller=True,
+                session_state=SessionState.READY,
                 execution_state="paused",
                 stop_reason="breakpoint-hit",
                 exit_code=None,
@@ -290,7 +292,7 @@ class TestSessionRegistry:
         assert len(result.value.sessions) == 1
         summary = result.value.sessions[0]
         assert summary.session_id == session_id
-        assert summary.lifecycle_state == "ready"
+        assert summary.session_state == "ready"
         assert summary.execution_state == "paused"
         assert summary.program == "/tmp/a.out"
         assert summary.current_thread_id == 2

@@ -388,7 +388,7 @@ class TestClientCli:
             response={
                 "status": "success",
                 "action": "status",
-                "result": {"is_running": False},
+                "result": {"debugger_alive": False},
             },
         )
 
@@ -1353,7 +1353,7 @@ class TestClientCli:
             response={
                 "status": "success",
                 "action": "status",
-                "result": {"is_running": False},
+                "result": {"debugger_alive": False},
             },
         )
 

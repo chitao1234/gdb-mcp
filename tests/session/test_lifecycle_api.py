@@ -27,9 +27,9 @@ class TestLifecycleApi:
 
         status = result_to_mapping(session_service.get_status())
 
-        assert status["is_running"] is False
+        assert status["debugger_alive"] is False
         assert status["target_loaded"] is False
-        assert status["has_controller"] is False
+        assert "has_controller" not in status
         assert status["execution_state"] == "unknown"
         assert status["stop_reason"] is None
         assert status["exit_code"] is None
@@ -45,9 +45,9 @@ class TestLifecycleApi:
             status = result_to_mapping(running_session.get_status())
 
         assert status["status"] == "success"
-        assert status["is_running"] is False
+        assert status["debugger_alive"] is False
         assert status["target_loaded"] is False
-        assert status["has_controller"] is False
+        assert "has_controller" not in status
         assert status["execution_state"] == "unknown"
         assert running_session.has_controller is False
         assert running_session.state.value == "failed"

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from gdb_mcp.contracts import SessionState
 from gdb_mcp.domain import (
     BacktraceInfo,
     CommandTranscriptEntry,
@@ -53,9 +54,9 @@ def _stub_bundle_sections(
     defaults: dict[str, Callable[..., object]] = {
         "get_status": lambda: OperationSuccess(
             SessionStatusSnapshot(
-                is_running=True,
+                debugger_alive=True,
                 target_loaded=True,
-                has_controller=True,
+                session_state=SessionState.READY,
                 execution_state="paused",
                 stop_reason="breakpoint-hit",
             )
