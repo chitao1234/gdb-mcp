@@ -1,7 +1,6 @@
 """Pure helpers for parsing GDB/MI responses."""
 
 from collections.abc import Mapping
-from typing import cast
 
 from .mi_models import MiRecord, ParsedMiResponse
 
@@ -60,4 +59,4 @@ def extract_mi_result_payload(
     field is read as that type rather than re-narrowed here.
     """
 
-    return cast("Mapping[str, object] | None", command_result.get("result"))
+    return mi_payload(command_result.get("result"))

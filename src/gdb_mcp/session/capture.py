@@ -6,7 +6,6 @@ import json
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
 from ..domain import (
     CaptureArtifactInfo,
@@ -16,12 +15,11 @@ from ..domain import (
     OperationError,
     OperationResult,
     OperationSuccess,
-    StopKind,
     StructuredPayload,
     payload_to_mapping,
     result_to_mapping,
 )
-from ..domain.parsing import as_execution_state, as_text
+from ..domain.parsing import as_execution_state, as_stop_kind, as_text
 from .backends import DebuggerBackend
 
 DEFAULT_CAPTURE_MEMORY_MAX_RANGE_BYTES = 4 * 1024
@@ -304,7 +302,7 @@ class SessionCaptureService:
                 failed_sections=sorted(set(failed_sections)) or None,
                 execution_state=status_execution_state,
                 stop_reason=status_stop_reason,
-                stop_kind=cast(StopKind, status_stop_kind),
+                stop_kind=as_stop_kind(status_stop_kind),
                 last_stop_event=self._runtime.last_stop_event,
             ),
             warnings=warnings,
