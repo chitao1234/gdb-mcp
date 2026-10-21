@@ -51,8 +51,8 @@ def test_parse_session_start_input_from_namespace() -> None:
         init_commands=["set pagination off"],
         env=[("TERM", "dumb")],
         core=None,
-        gdb_path=None,
-        gdb_args=["-iex", "set pagination off"],
+        debugger_path=None,
+        debugger_args=["-iex", "set pagination off"],
         working_dir=None,
         rr_replay=None,
     )
@@ -64,8 +64,8 @@ def test_parse_session_start_input_from_namespace() -> None:
         init_commands=("set pagination off",),
         env={"TERM": "dumb"},
         core=None,
-        gdb_path=None,
-        gdb_args=("-iex", "set pagination off"),
+        debugger_path=None,
+        debugger_args=("-iex", "set pagination off"),
         working_dir=None,
         rr_replay=None,
     )
@@ -81,8 +81,8 @@ def test_build_session_start_payload_from_typed_input() -> None:
         init_commands=("set pagination off",),
         env={"TERM": "dumb"},
         core=None,
-        gdb_path=None,
-        gdb_args=(),
+        debugger_path=None,
+        debugger_args=(),
         working_dir=None,
         rr_replay=None,
     )
@@ -191,8 +191,8 @@ def test_build_execution_manage_payload_includes_reverse() -> None:
     }
 
 
-def test_build_session_start_payload_includes_gdb_args() -> None:
-    """Extra GDB arguments are forwarded under ``gdb_args``."""
+def test_build_session_start_payload_includes_debugger_args() -> None:
+    """Extra GDB arguments are forwarded under ``debugger_args``."""
 
     typed_input = SessionStartInput(
         program="/bin/true",
@@ -201,15 +201,15 @@ def test_build_session_start_payload_includes_gdb_args() -> None:
         init_commands=(),
         env=None,
         core=None,
-        gdb_path=None,
-        gdb_args=("-iex", "set pagination off"),
+        debugger_path=None,
+        debugger_args=("-iex", "set pagination off"),
         working_dir=None,
         rr_replay=None,
     )
 
     assert build_session_start_payload(typed_input) == {
         "program": "/bin/true",
-        "gdb_args": ["-iex", "set pagination off"],
+        "debugger_args": ["-iex", "set pagination off"],
     }
 
 
@@ -223,8 +223,8 @@ def test_build_session_start_payload_includes_debugger() -> None:
         init_commands=(),
         env=None,
         core=None,
-        gdb_path=None,
-        gdb_args=(),
+        debugger_path=None,
+        debugger_args=(),
         working_dir=None,
         rr_replay=None,
     )
@@ -245,8 +245,8 @@ def test_build_session_start_payload_includes_rr_replay() -> None:
         init_commands=(),
         env=None,
         core=None,
-        gdb_path=None,
-        gdb_args=(),
+        debugger_path=None,
+        debugger_args=(),
         working_dir=None,
         rr_replay="/traces/app-0",
     )
@@ -435,7 +435,7 @@ def _run_until_failure_input() -> RunUntilFailureInput:
         startup_args=(),
         startup_init_commands=("set pagination off",),
         startup_env=None,
-        startup_gdb_path=None,
+        startup_debugger_path=None,
         startup_working_dir=None,
         startup_core=None,
         setup_steps=(),

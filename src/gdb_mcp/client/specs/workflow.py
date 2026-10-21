@@ -126,7 +126,7 @@ def _configure_run_until_failure(parser: argparse.ArgumentParser) -> None:
         type=key_value_entry,
         default=[],
     )
-    parser.add_argument("--startup-gdb-path", default=None)
+    parser.add_argument("--startup-debugger-path", default=None)
     parser.add_argument("--startup-working-dir", default=None)
     parser.add_argument("--startup-core", default=None)
     parser.add_argument(

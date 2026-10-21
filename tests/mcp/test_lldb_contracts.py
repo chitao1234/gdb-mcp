@@ -17,14 +17,14 @@ def test_connect_accepts_lldb_remote_target_fields() -> None:
         endpoint="connect://127.0.0.1:12345",
         debugger="lldb",
         program="/tmp/program",
-        gdb_path="/opt/lldb/19",
+        debugger_path="/opt/lldb/19",
         init_commands=["settings set target.process.stop-on-exec false"],
     )
 
     assert args.endpoint == "connect://127.0.0.1:12345"
     assert args.debugger == "lldb"
     assert args.program == "/tmp/program"
-    assert args.gdb_path == "/opt/lldb/19"
+    assert args.debugger_path == "/opt/lldb/19"
     assert args.init_commands == ["settings set target.process.stop-on-exec false"]
 
 
@@ -33,4 +33,4 @@ def test_connect_defaults_to_gdb_for_backward_compatibility() -> None:
 
     assert args.debugger == "gdb"
     assert args.program is None
-    assert args.gdb_path is None
+    assert args.debugger_path is None

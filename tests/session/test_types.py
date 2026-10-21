@@ -28,7 +28,7 @@ class TestSessionConfig:
             args=args,
             init_commands=init_commands,
             env=env,
-            gdb_path="/usr/bin/gdb",
+            debugger_path="/usr/bin/gdb",
             working_dir="/tmp",
             core="/tmp/core",
         )
@@ -41,7 +41,7 @@ class TestSessionConfig:
         assert config.args == ("--flag", "value")
         assert config.init_commands == ("set pagination off",)
         assert config.env == {"DEBUG": "1"}
-        assert config.gdb_path == "/usr/bin/gdb"
+        assert config.debugger_path == "/usr/bin/gdb"
         assert config.working_dir == "/tmp"
         assert config.core == "/tmp/core"
 

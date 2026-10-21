@@ -67,7 +67,7 @@ def _auto_load_warnings(startup_output: str) -> list[str]:
         warnings.append(
             f"GDB declined to auto-load {script}: its directory is not on auto-load "
             "safe-path. Auto-load runs while GDB loads the program, so pass the option on "
-            "the GDB command line with gdb_args (for example ['-iex', "
+            "the GDB command line with debugger_args (for example ['-iex', "
             "'add-auto-load-safe-path <dir>']); init_commands run afterwards and are too "
             "late."
         )
@@ -75,9 +75,9 @@ def _auto_load_warnings(startup_output: str) -> list[str]:
         warnings.append(
             f"GDB could not find the auto-load script referenced by {match.group('file')} "
             "(.debug_gdb_scripts), so its pretty-printers and extensions stay inactive. For "
-            "a Rust binary, start the session with gdb_path='rust-gdb' (the rustup wrapper), "
+            "a Rust binary, start the session with debugger_path='rust-gdb' (the rustup wrapper), "
             "which both points GDB at the script directory and trusts it; otherwise pass "
-            "gdb_args=['--directory=<dir>', '-iex', 'add-auto-load-safe-path <dir>']."
+            "debugger_args=['--directory=<dir>', '-iex', 'add-auto-load-safe-path <dir>']."
         )
     return warnings
 
@@ -158,8 +158,8 @@ class SessionLifecycleService:
                 args=args,
                 init_commands=init_commands,
                 env=env,
-                gdb_path=debugger_path,
-                gdb_args=debugger_args,
+                debugger_path=debugger_path,
+                debugger_args=debugger_args,
                 working_dir=working_dir,
                 core=core,
                 endpoint=endpoint,
@@ -227,13 +227,13 @@ class SessionLifecycleService:
                     self._mirror_controller()
                 else:
                     gdb_command = self._build_start_command(
-                        gdb_path=debugger_path,
+                        debugger_path=debugger_path,
                         program=program,
                         args=args,
                         core=core,
                         rr_replay=replay,
                         rr_path=self._runtime.os_module.environ.get("RR_PATH", "rr"),
-                        gdb_args=debugger_args,
+                        debugger_args=debugger_args,
                     )
                     self._transport.start(
                         command=gdb_command,
@@ -505,33 +505,33 @@ class SessionLifecycleService:
     @staticmethod
     def _build_start_command(
         *,
-        gdb_path: str,
+        debugger_path: str,
         program: str | None,
         args: list[str] | None,
         core: str | None,
         rr_replay: str | None = None,
         rr_path: str = "rr",
-        gdb_args: list[str] | None = None,
+        debugger_args: list[str] | None = None,
     ) -> list[str]:
         """Build a GDB startup argv for the supported launch modes.
 
-        ``gdb_args`` carries caller-supplied GDB options. They are inserted before
+        ``debugger_args`` carries caller-supplied GDB options. They are inserted before
         the program, because GDB loads a target given on its command line during
         startup, so anything that has to apply before that (auto-load safe-path,
         search directories) can only arrive this way.
         """
 
-        extra_args = list(gdb_args or ())
+        extra_args = list(debugger_args or ())
 
         if rr_replay:
             # rr replays the trace itself, so it owns the target and chooses the
             # gdb that speaks MI to us. Everything after `--` goes to that gdb.
-            command = [rr_path, "replay", "--interpreter=mi", "-d", gdb_path, rr_replay]
+            command = [rr_path, "replay", "--interpreter=mi", "-d", debugger_path, rr_replay]
             if extra_args:
                 command.extend(["--", *extra_args])
             return command
 
-        command = [gdb_path, "--quiet", "--interpreter=mi", *extra_args]
+        command = [debugger_path, "--quiet", "--interpreter=mi", *extra_args]
         if core:
             if program:
                 # `--se` preserves symbol resolution for core analysis more reliably

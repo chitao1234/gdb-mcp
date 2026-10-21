@@ -209,8 +209,8 @@ Each of these has many flags; read `gdb-mcp-client campaign --help` before compo
 | `GDB_MCP_AUTH_TOKEN` | Bearer token used by both the client and a server started with it |
 | `GDB_MCP_STATE_DIR` | Where cookies, locks, and daemon logs live (defaults to the platform cache dir) |
 | `GDB_MCP_DAEMON_IDLE_SEC` | Idle timeout for client-spawned servers (default 900, `0` disables) |
-| `GDB_PATH` / `gdb_session_start.gdb_path` | GDB binary selection |
-| `--gdb-arg ARG` | Repeatable extra GDB command-line argument, applied before the program loads (auto-load `safe-path`, script directories); `start --gdb-arg=-iex --gdb-arg='add-auto-load-safe-path /dir'` |
+| `GDB_PATH` / `gdb_session_start.debugger_path` | GDB binary selection |
+| `--debugger-arg ARG` | Repeatable extra GDB command-line argument, applied before the program loads (auto-load `safe-path`, script directories); `start --debugger-arg=-iex --debugger-arg='add-auto-load-safe-path /dir'` |
 
 ## Troubleshooting
 

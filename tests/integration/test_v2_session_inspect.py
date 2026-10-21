@@ -178,7 +178,7 @@ def test_source_context_honours_substitute_path(
 
     started = start_session_payload(
         moved_program,
-        gdb_args=["-ex", f"set substitute-path {build_dir} {moved_dir}"],
+        debugger_args=["-ex", f"set substitute-path {build_dir} {moved_dir}"],
     )
     session_id = integer(started["session_id"])
 

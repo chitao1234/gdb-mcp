@@ -221,7 +221,7 @@ MIT
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `GDB_PATH` | `gdb` | GDB binary to spawn. `gdb_session_start.gdb_path` overrides it per session. |
+| `GDB_PATH` | `gdb` | GDB binary to spawn. `gdb_session_start.debugger_path` overrides it per session. |
 | `LLDB_PREFIX` / `LLDB_PATH` | discovered | LLDB installation used by `debugger="lldb"`. |
 | `LLDB_LIBRARY` | discovered | Explicit `liblldb` path or directory for the LLDB backend. |
 | `LLDB_BRIDGE_CXX` | `c++`/`g++`/`clang++` | C++ compiler used to build the LLDB SB API bridge and its layers. |

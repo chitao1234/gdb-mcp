@@ -12,8 +12,8 @@ class SessionConfig:
     args: tuple[str, ...] = ()
     init_commands: tuple[str, ...] = ()
     env: dict[str, str] = field(default_factory=dict)
-    gdb_path: str | None = None
-    gdb_args: tuple[str, ...] = ()
+    debugger_path: str | None = None
+    debugger_args: tuple[str, ...] = ()
     working_dir: str | None = None
     core: str | None = None
     endpoint: str | None = None
@@ -28,8 +28,8 @@ class SessionConfig:
         args: list[str] | None = None,
         init_commands: list[str] | None = None,
         env: dict[str, str] | None = None,
-        gdb_path: str | None = None,
-        gdb_args: list[str] | None = None,
+        debugger_path: str | None = None,
+        debugger_args: list[str] | None = None,
         working_dir: str | None = None,
         core: str | None = None,
         endpoint: str | None = None,
@@ -43,8 +43,8 @@ class SessionConfig:
             args=tuple(args or ()),
             init_commands=tuple(init_commands or ()),
             env=dict(env or {}),
-            gdb_path=gdb_path,
-            gdb_args=tuple(gdb_args or ()),
+            debugger_path=debugger_path,
+            debugger_args=tuple(debugger_args or ()),
             working_dir=working_dir,
             core=core,
             endpoint=endpoint,

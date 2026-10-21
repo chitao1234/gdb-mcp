@@ -55,23 +55,27 @@ _GDB_ARG_VALUE_OPTIONS = frozenset(
 )
 
 
-def _gdb_args_problems(values: Sequence[str]) -> list[str]:
-    """Return one message per ``gdb_args`` entry this server cannot pass through."""
+def _debugger_args_problems(values: Sequence[str]) -> list[str]:
+    """Return one message per ``debugger_args`` entry this server cannot pass through."""
 
     problems: list[str] = []
     previous = ""
     for index, raw in enumerate(values):
         entry = raw.strip()
         if not entry:
-            problems.append(f"gdb_args[{index}] must not be empty")
+            problems.append(f"debugger_args[{index}] must not be empty")
         elif entry in _GDB_ARG_CONFLICTING_OPTIONS:
-            problems.append(f"gdb_args[{index}] {entry!r} {_GDB_ARG_CONFLICTING_REASONS[entry]}")
+            problems.append(
+                f"debugger_args[{index}] {entry!r} {_GDB_ARG_CONFLICTING_REASONS[entry]}"
+            )
         elif entry.startswith(_GDB_ARG_CONFLICTING_PREFIXES):
             option = entry.split("=", 1)[0]
-            problems.append(f"gdb_args[{index}] {entry!r} {_GDB_ARG_CONFLICTING_REASONS[option]}")
+            problems.append(
+                f"debugger_args[{index}] {entry!r} {_GDB_ARG_CONFLICTING_REASONS[option]}"
+            )
         elif not entry.startswith("-") and previous not in _GDB_ARG_VALUE_OPTIONS:
             problems.append(
-                f"gdb_args[{index}] {entry!r} is a bare argument: pass it as the operand of "
+                f"debugger_args[{index}] {entry!r} is a bare argument: pass it as the operand of "
                 "a preceding option such as '-iex' or '-d', or use 'program'/'args'"
             )
         previous = entry
@@ -110,14 +114,14 @@ class StartSessionArgs(StrictArgsModel):
             "(e.g., {'LD_LIBRARY_PATH': '/custom/libs'})"
         ),
     )
-    gdb_path: str | None = Field(
+    debugger_path: str | None = Field(
         None,
         description=(
             "Path to the GDB executable (default: from GDB_PATH env var or 'gdb'). "
             "With debugger='lldb', path to an LLDB binary or installation instead."
         ),
     )
-    gdb_args: list[str] | None = Field(
+    debugger_args: list[str] | None = Field(
         None,
         description=(
             "Extra GDB command-line arguments, passed verbatim and inserted before the "
@@ -130,12 +134,12 @@ class StartSessionArgs(StrictArgsModel):
         ),
     )
 
-    @field_validator("gdb_args")
+    @field_validator("debugger_args")
     @classmethod
-    def validate_gdb_args(cls, value: list[str] | None) -> list[str] | None:
+    def validate_debugger_args(cls, value: list[str] | None) -> list[str] | None:
         if value is None:
             return None
-        problems = _gdb_args_problems(value)
+        problems = _debugger_args_problems(value)
         if problems:
             raise ValueError("; ".join(problems))
         return value
@@ -196,7 +200,7 @@ class ConnectSessionArgs(StrictArgsModel):
             "path rejects it because the external process already owns its target."
         ),
     )
-    gdb_path: str | None = Field(
+    debugger_path: str | None = Field(
         None,
         description=(
             "LLDB binary or installation path for the LLDB remote path. With GDB this is "

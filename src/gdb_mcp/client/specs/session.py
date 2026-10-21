@@ -41,16 +41,16 @@ def _configure_session_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--arg", dest="args", action="append", default=[])
     parser.add_argument("--init-command", dest="init_commands", action="append", default=[])
     parser.add_argument("--env", dest="env", action="append", type=key_value_entry, default=[])
-    parser.add_argument("--gdb-path")
+    parser.add_argument("--debugger-path")
     parser.add_argument(
-        "--gdb-arg",
-        dest="gdb_args",
+        "--debugger-arg",
+        dest="debugger_args",
         action="append",
         default=[],
         help=(
             "Extra GDB command-line argument, repeatable; inserted before the program loads "
-            "(e.g. --gdb-arg=--directory=/usr/lib/rustlib/etc "
-            "--gdb-arg=-iex --gdb-arg='add-auto-load-safe-path /usr/lib/rustlib/etc')"
+            "(e.g. --debugger-arg=--directory=/usr/lib/rustlib/etc "
+            "--debugger-arg=-iex --debugger-arg='add-auto-load-safe-path /usr/lib/rustlib/etc')"
         ),
     )
     parser.add_argument("--working-dir")

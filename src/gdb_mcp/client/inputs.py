@@ -36,8 +36,8 @@ class SessionStartInput:
     init_commands: tuple[str, ...]
     env: dict[str, str] | None
     core: str | None
-    gdb_path: str | None
-    gdb_args: tuple[str, ...]
+    debugger_path: str | None
+    debugger_args: tuple[str, ...]
     working_dir: str | None
     rr_replay: str | None
 
@@ -211,7 +211,7 @@ class RunUntilFailureInput:
     startup_args: tuple[str, ...]
     startup_init_commands: tuple[str, ...]
     startup_env: dict[str, str] | None
-    startup_gdb_path: str | None
+    startup_debugger_path: str | None
     startup_working_dir: str | None
     startup_core: str | None
     setup_steps: tuple[SessionStepInput, ...] | None

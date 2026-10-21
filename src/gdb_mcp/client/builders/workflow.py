@@ -41,8 +41,8 @@ def build_run_until_failure_payload(typed_input: RunUntilFailureInput) -> dict[s
         startup["init_commands"] = list(typed_input.startup_init_commands)
     if typed_input.startup_env is not None:
         startup["env"] = typed_input.startup_env
-    if typed_input.startup_gdb_path is not None:
-        startup["gdb_path"] = typed_input.startup_gdb_path
+    if typed_input.startup_debugger_path is not None:
+        startup["debugger_path"] = typed_input.startup_debugger_path
     if typed_input.startup_working_dir is not None:
         startup["working_dir"] = typed_input.startup_working_dir
     if typed_input.startup_core is not None:

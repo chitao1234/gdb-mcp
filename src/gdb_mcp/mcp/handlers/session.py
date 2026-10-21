@@ -60,8 +60,8 @@ def _handle_start_session(
         args=normalized_args,
         init_commands=args.init_commands,
         env=args.env,
-        gdb_path=args.gdb_path,
-        gdb_args=args.gdb_args,
+        debugger_path=args.debugger_path,
+        debugger_args=args.debugger_args,
         working_dir=args.working_dir,
         core=args.core,
         rr_replay=args.rr_replay,
@@ -83,8 +83,8 @@ def _handle_connect_session(
         kwargs["debugger"] = args.debugger
     if args.program is not None:
         kwargs["program"] = args.program
-    if args.gdb_path is not None:
-        kwargs["gdb_path"] = args.gdb_path
+    if args.debugger_path is not None:
+        kwargs["debugger_path"] = args.debugger_path
     session_id, result = session_manager.start_session(**kwargs)  # type: ignore[arg-type]
     return _publish_session_result(session_id, result)
 

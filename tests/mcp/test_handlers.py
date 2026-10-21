@@ -177,8 +177,8 @@ class TestHandlerDispatch:
             args=["--flag", "hello world"],
             init_commands=None,
             env=None,
-            gdb_path=None,
-            gdb_args=None,
+            debugger_path=None,
+            debugger_args=None,
             working_dir=None,
             core=None,
             rr_replay=None,
@@ -235,7 +235,7 @@ class TestHandlerDispatch:
                 "debugger": "lldb",
                 "endpoint": "connect://127.0.0.1:12345",
                 "program": "/tmp/app",
-                "gdb_path": "/opt/lldb/19/bin/lldb",
+                "debugger_path": "/opt/lldb/19/bin/lldb",
             },
             manager,
         )
@@ -245,7 +245,7 @@ class TestHandlerDispatch:
             init_commands=None,
             debugger="lldb",
             program="/tmp/app",
-            gdb_path="/opt/lldb/19/bin/lldb",
+            debugger_path="/opt/lldb/19/bin/lldb",
         )
         assert result_data["status"] == "success"
         assert result_data["session_id"] == 12
@@ -1621,7 +1621,7 @@ class TestHandlerRouting:
             args=None,
             init_commands=None,
             env=None,
-            gdb_path=None,
+            debugger_path=None,
             working_dir=None,
             core=None,
         )

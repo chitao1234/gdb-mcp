@@ -25,7 +25,7 @@ class TestRuntimeFoundations:
         )
 
         session_service.runtime.begin_startup(
-            SessionConfig.from_inputs(gdb_path="gdb", init_commands=["set pagination off"])
+            SessionConfig.from_inputs(debugger_path="gdb", init_commands=["set pagination off"])
         )
 
         assert session_service.runtime.last_stop_event is None

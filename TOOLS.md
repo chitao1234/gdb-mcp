@@ -296,9 +296,9 @@ Dedicated startup tool. This is not action-based.
 - `core`: optional core-dump path
 - `init_commands`: optional list of debugger commands to run after environment setup
 - `env`: optional environment mapping applied before `init_commands`
-- `gdb_path`: optional GDB binary override; for `debugger="lldb"` it selects an
+- `debugger_path`: optional GDB binary override; for `debugger="lldb"` it selects an
   LLDB binary/installation instead
-- `gdb_args`: optional extra GDB command-line arguments, inserted before the program;
+- `debugger_args`: optional extra GDB command-line arguments, inserted before the program;
   ignored by the LLDB backend
 - `working_dir`: optional working directory for the debugger process
 - `rr_replay`: optional rr trace directory to replay instead of launching a program;
@@ -310,8 +310,8 @@ Dedicated startup tool. This is not action-based.
 owns the target, so the session runs `rr replay --interpreter=mi <trace>` instead
 of a plain `gdb`; a `program` passed alongside it is ignored and reported in
 `warnings`, while `args` and `core` are rejected. The `RR_PATH` environment
-variable (default `rr`) selects the rr binary, and `gdb_path` is passed to rr as
-its `-d` debugger choice. With `rr_replay`, `gdb_args` are forwarded to the
+variable (default `rr`) selects the rr binary, and `debugger_path` is passed to rr as
+its `-d` debugger choice. With `rr_replay`, `debugger_args` are forwarded to the
 debugger rr starts, after rr's `--` separator.
 
 **LLDB and rr:** start `rr replay -s <port> <trace>` yourself, then use
@@ -322,7 +322,7 @@ no reverse-step/reverse-continue API. Connecting LLDB therefore gives up rr's
 reverse stepping; use `debugger="gdb"` with `rr_replay` when reverse execution
 matters.
 
-`gdb_args` are passed verbatim as argv elements, so an option that takes a
+`debugger_args` are passed verbatim as argv elements, so an option that takes a
 separate operand needs two entries (`["-iex", "set print elements 0"]`). GDB
 loads a `program` given on its command line during its own startup, so this is
 the only channel for settings that must apply *before* the target is read:
@@ -341,12 +341,12 @@ because rustc embeds a bare file name):
 ```json
 {
   "program": "/path/to/app",
-  "gdb_args": ["--directory=/path/to/rustlib/etc", "-iex", "add-auto-load-safe-path /path/to/rustlib/etc"]
+  "debugger_args": ["--directory=/path/to/rustlib/etc", "-iex", "add-auto-load-safe-path /path/to/rustlib/etc"]
 }
 ```
 
 Go embeds an absolute path, so the trust entry alone is enough; a kernel build
-needs `add-auto-load-safe-path` for its build tree. `gdb_path` pointing at a
+needs `add-auto-load-safe-path` for its build tree. `debugger_path` pointing at a
 wrapper such as `rust-gdb` achieves the same by injecting those options.
 
 ### Success Fields
@@ -404,7 +404,7 @@ support the same inspection, breakpoint, and execution tools as local sessions.
 - `debugger`: `gdb` (default) or `lldb`
 - `program`: executable for an LLDB remote target; the GDB/MI path rejects it
   because the external process already owns the target
-- `gdb_path`: LLDB binary/installation path for the LLDB path; ignored by GDB/MI
+- `debugger_path`: LLDB binary/installation path for the LLDB path; ignored by GDB/MI
 - `init_commands`: optional debugger commands to run right after connecting
 
 For GDB/MI, `program`, `args`, and `core` are rejected because the external
@@ -444,7 +444,7 @@ LLDB remote stub:
   "debugger": "lldb",
   "program": "/path/to/app",
   "endpoint": "connect://127.0.0.1:12345",
-  "gdb_path": "/opt/lldb/19/bin/lldb"
+  "debugger_path": "/opt/lldb/19/bin/lldb"
 }
 ```
 
@@ -568,7 +568,7 @@ Run or synchronize execution state.
 | `interrupt` | `{"session_id":7,"action":"interrupt"}` | direct execution payload under `result` |
 | `step` | `{"session_id":7,"action":"step"}` | direct execution payload under `result` |
 | `next` | `{"session_id":7,"action":"next"}` | direct execution payload under `result` |
-| `finish` | `{"session_id":7,"action":"finish"}` | `message`, `return_value`, `gdb_result_var`, `frame`, `execution_state`, `stop_reason`, `last_stop_event` |
+| `finish` | `{"session_id":7,"action":"finish"}` | `message`, `return_value`, `result_var`, `frame`, `execution_state`, `stop_reason`, `last_stop_event` |
 | `wait_for_stop` | `{"session_id":7,"action":"wait_for_stop","execution":{"timeout_sec":10,"stop_reasons":["breakpoint-hit"]}}` | `message`, `matched`, `timed_out`, `source`, `execution_state`, `stop_reason`, `reason_filter`, `last_stop_event` |
 
 ### Wait Policy

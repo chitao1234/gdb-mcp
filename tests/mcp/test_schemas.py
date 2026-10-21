@@ -43,7 +43,7 @@ class TestStartSessionArgs:
         assert args.init_commands is None
         assert args.env is None
         assert (
-            args.gdb_path is None
+            args.debugger_path is None
         )  # Default to None, actual default determined by GDB_PATH env var or "gdb"
 
     def test_full_args(self) -> None:
@@ -53,14 +53,14 @@ class TestStartSessionArgs:
             args=["-la", "/tmp"],
             init_commands=["set pagination off"],
             env={"DEBUG": "1"},
-            gdb_path="/usr/local/bin/gdb",
+            debugger_path="/usr/local/bin/gdb",
         )
 
         assert args.program == "/bin/ls"
         assert args.args == ["-la", "/tmp"]
         assert args.init_commands == ["set pagination off"]
         assert args.env == {"DEBUG": "1"}
-        assert args.gdb_path == "/usr/local/bin/gdb"
+        assert args.debugger_path == "/usr/local/bin/gdb"
 
     def test_start_session_accepts_shell_style_string_args(self) -> None:
         """Startup args should accept a shell-style string for parity with gdb_run."""
@@ -76,41 +76,41 @@ class TestStartSessionArgs:
         assert args.rr_replay == "/traces/app-0"
         assert args.program is None
 
-    def test_gdb_args_are_accepted(self) -> None:
+    def test_debugger_args_are_accepted(self) -> None:
         """Extra GDB command-line arguments pass through verbatim."""
 
         args = StartSessionArgs(
             program="/bin/ls",
-            gdb_args=["--directory=/tmp/pp", "-iex", "add-auto-load-safe-path /tmp/pp"],
+            debugger_args=["--directory=/tmp/pp", "-iex", "add-auto-load-safe-path /tmp/pp"],
         )
 
-        assert args.gdb_args == [
+        assert args.debugger_args == [
             "--directory=/tmp/pp",
             "-iex",
             "add-auto-load-safe-path /tmp/pp",
         ]
 
-    def test_gdb_args_reject_replacing_the_interpreter(self) -> None:
+    def test_debugger_args_reject_replacing_the_interpreter(self) -> None:
         """An argument that would break the MI protocol is rejected."""
 
         with pytest.raises(ValidationError) as excinfo:
-            StartSessionArgs(gdb_args=["--interpreter=console"])
+            StartSessionArgs(debugger_args=["--interpreter=console"])
 
         assert "MI interpreter" in str(excinfo.value)
 
-    def test_gdb_args_reject_a_second_target(self) -> None:
+    def test_debugger_args_reject_a_second_target(self) -> None:
         """Arguments that duplicate this server's own target wiring are rejected."""
 
         with pytest.raises(ValidationError) as excinfo:
-            StartSessionArgs(program="/bin/ls", gdb_args=["--args", "/bin/cat"])
+            StartSessionArgs(program="/bin/ls", debugger_args=["--args", "/bin/cat"])
 
         assert "conflicts with the 'program' and 'args' parameters" in str(excinfo.value)
 
-    def test_gdb_args_reject_bare_arguments(self) -> None:
+    def test_debugger_args_reject_bare_arguments(self) -> None:
         """A bare word must be the operand of an option, not a stray program."""
 
         with pytest.raises(ValidationError) as excinfo:
-            StartSessionArgs(gdb_args=["/bin/ls"])
+            StartSessionArgs(debugger_args=["/bin/ls"])
 
         assert "is a bare argument" in str(excinfo.value)
 

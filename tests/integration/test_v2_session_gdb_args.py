@@ -14,27 +14,29 @@ from .program_sources import TEST_CPP_PROGRAM
 pytestmark = pytest.mark.integration
 
 
-def test_gdb_args_reach_gdb_before_the_program_loads(
+def test_debugger_args_reach_gdb_before_the_program_loads(
     compile_program: CompileProgram,
     start_session_payload: StartSessionResult,
     call_gdb_tool: CallGdbTool,
     stop_session: StopSession,
     tmp_path: Path,
 ) -> None:
-    """gdb_args must arrive on GDB's command line and take effect.
+    """debugger_args must arrive on GDB's command line and take effect.
 
     The server inserts them before the program argument, which is the channel
     that configures GDB's own search directories and settings. Only options
     every supported GDB understands belong here.
     """
 
-    program = compile_program(TEST_CPP_PROGRAM, filename="gdb_args_program.cpp", compiler="g++")
+    program = compile_program(
+        TEST_CPP_PROGRAM, filename="debugger_args_program.cpp", compiler="g++"
+    )
     script_dir = tmp_path / "pretty-printers"
     script_dir.mkdir()
 
     started = start_session_payload(
         program,
-        gdb_args=[
+        debugger_args=[
             f"--directory={script_dir}",
             "-ex",
             "set print elements 4242",

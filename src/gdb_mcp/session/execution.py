@@ -557,13 +557,13 @@ class SessionExecutionService:
         if frame is None and self._runtime.last_stop_event is not None:
             frame = self._runtime.last_stop_event.frame
         return_value = payload_mapping.get("return-value")
-        gdb_result_var = payload_mapping.get("gdb-result-var")
+        result_var = payload_mapping.get("gdb-result-var")
 
         return OperationSuccess(
             FinishInfo(
                 message="Frame finished",
                 return_value=return_value if isinstance(return_value, str) else None,
-                gdb_result_var=gdb_result_var if isinstance(gdb_result_var, str) else None,
+                result_var=result_var if isinstance(result_var, str) else None,
                 frame=frame,
                 execution_state=self._runtime.execution_state,
                 stop_reason=self._runtime.stop_reason,

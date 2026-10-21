@@ -358,7 +358,7 @@ class FinishInfo:
 
     message: str
     return_value: str | None = None
-    gdb_result_var: str | None = None
+    result_var: str | None = None
     frame: FrameRecord | None = None
     execution_state: ExecutionState | None = None
     stop_reason: str | None = None

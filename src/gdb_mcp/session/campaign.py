@@ -68,7 +68,7 @@ class RunUntilFailureRequest:
     args: tuple[str, ...] = ()
     init_commands: tuple[str, ...] = ()
     env: dict[str, str] = field(default_factory=dict)
-    gdb_path: str | None = None
+    debugger_path: str | None = None
     working_dir: str | None = None
     core: str | None = None
     setup_steps: tuple[BatchStepTemplate, ...] = ()
@@ -115,7 +115,7 @@ class RunUntilFailureService:
                     args=list(request.args) or None,
                     init_commands=list(request.init_commands) or None,
                     env=dict(request.env) or None,
-                    gdb_path=request.gdb_path,
+                    debugger_path=request.debugger_path,
                     working_dir=request.working_dir,
                     core=request.core,
                 )

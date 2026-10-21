@@ -85,8 +85,8 @@ def parse_session_start_input(namespace: argparse.Namespace) -> SessionStartInpu
         init_commands=tuple(namespace.init_commands),
         env=collapse_key_value_entries(namespace.env),
         core=namespace.core,
-        gdb_path=namespace.gdb_path,
-        gdb_args=tuple(namespace.gdb_args),
+        debugger_path=namespace.debugger_path,
+        debugger_args=tuple(namespace.debugger_args),
         working_dir=namespace.working_dir,
         rr_replay=namespace.rr_replay,
     )
@@ -419,7 +419,7 @@ def parse_run_until_failure_input(namespace: argparse.Namespace) -> RunUntilFail
         startup_args=tuple(namespace.startup_args),
         startup_init_commands=tuple(namespace.startup_init_commands),
         startup_env=collapse_key_value_entries(namespace.startup_env),
-        startup_gdb_path=namespace.startup_gdb_path,
+        startup_debugger_path=namespace.startup_debugger_path,
         startup_working_dir=namespace.startup_working_dir,
         startup_core=namespace.startup_core,
         setup_steps=parse_step_inputs(

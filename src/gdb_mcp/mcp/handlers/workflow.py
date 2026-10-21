@@ -101,7 +101,7 @@ def _handle_run_until_failure(
             args=tuple(args.startup.args or ()),
             init_commands=tuple(args.startup.init_commands or ()),
             env=dict(args.startup.env or {}),
-            gdb_path=args.startup.gdb_path,
+            debugger_path=args.startup.debugger_path,
             working_dir=args.startup.working_dir,
             core=args.startup.core,
             setup_steps=tuple(step_templates.value),

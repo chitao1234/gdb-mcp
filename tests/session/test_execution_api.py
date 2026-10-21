@@ -355,7 +355,7 @@ class TestExecutionApi:
 
         assert result["status"] == "success"
         assert result["return_value"] == "42"
-        assert result["gdb_result_var"] == "$1"
+        assert result["result_var"] == "$1"
         assert dig(result, "frame", "func") == "caller"
 
     def test_wait_for_stop_returns_existing_stop_immediately(

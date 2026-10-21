@@ -28,7 +28,7 @@ def _configure_session_connect(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--debugger", choices=["gdb", "lldb"], default="gdb")
     parser.add_argument("--program", help="Executable for an LLDB remote target")
-    parser.add_argument("--gdb-path", help="LLDB binary or installation path")
+    parser.add_argument("--debugger-path", help="LLDB binary or installation path")
     parser.add_argument("--init-command", dest="init_commands", action="append", default=[])
 
 
@@ -41,8 +41,8 @@ def _build_session_connect(namespace: argparse.Namespace) -> dict[str, object]:
         payload["debugger"] = namespace.debugger
     if namespace.program is not None:
         payload["program"] = namespace.program
-    if namespace.gdb_path is not None:
-        payload["gdb_path"] = namespace.gdb_path
+    if namespace.debugger_path is not None:
+        payload["debugger_path"] = namespace.debugger_path
     return validate_model_payload(ConnectSessionArgs, payload)
 
 

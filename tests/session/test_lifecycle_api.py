@@ -83,10 +83,10 @@ class TestLifecycleApi:
         assert result["execution_state"] == "not_started"
         assert start_session.service.is_running is True
 
-    def test_start_session_with_custom_gdb_path(self, start_session: StartHarness) -> None:
-        """Explicit gdb_path should be forwarded into process startup."""
+    def test_start_session_with_custom_debugger_path(self, start_session: StartHarness) -> None:
+        """Explicit debugger_path should be forwarded into process startup."""
 
-        result = start_session(program="/bin/ls", gdb_path="/usr/local/bin/gdb-custom")
+        result = start_session(program="/bin/ls", debugger_path="/usr/local/bin/gdb-custom")
         command = start_session.command_of()
 
         assert command[0] == "/usr/local/bin/gdb-custom"
@@ -119,14 +119,14 @@ class TestLifecycleApi:
         assert command[-1] == "/traces/app-0"
         assert "-d" in command
 
-    def test_start_session_passes_gdb_args_before_the_program(
+    def test_start_session_passes_debugger_args_before_the_program(
         self, start_session: StartHarness
     ) -> None:
-        """gdb_args must reach GDB's command line ahead of the program."""
+        """debugger_args must reach GDB's command line ahead of the program."""
 
         result = start_session(
             program="/bin/ls",
-            gdb_args=["--directory=/tmp/pp", "-iex", "add-auto-load-safe-path /tmp/pp"],
+            debugger_args=["--directory=/tmp/pp", "-iex", "add-auto-load-safe-path /tmp/pp"],
         )
 
         assert result["status"] == "success"
@@ -140,14 +140,14 @@ class TestLifecycleApi:
             "/bin/ls",
         ]
 
-    def test_start_session_forwards_gdb_args_to_rr_replay(
+    def test_start_session_forwards_debugger_args_to_rr_replay(
         self, start_session: StartHarness
     ) -> None:
-        """rr replay receives gdb_args after '--', so its gdb gets them."""
+        """rr replay receives debugger_args after '--', so its gdb gets them."""
 
         result = start_session(
             rr_replay="/traces/app-0",
-            gdb_args=["-iex", "set pagination off"],
+            debugger_args=["-iex", "set pagination off"],
         )
         command = start_session.command_of()
 
@@ -216,8 +216,8 @@ class TestLifecycleApi:
         assert start_session.service.runtime.debugger == "gdb"
 
     @patch.dict(os.environ, {"GDB_PATH": "/custom/path/to/gdb"})
-    def test_start_session_with_gdb_path_env_var(self, start_session: StartHarness) -> None:
-        """GDB_PATH should be used when gdb_path is not provided."""
+    def test_start_session_with_debugger_path_env_var(self, start_session: StartHarness) -> None:
+        """GDB_PATH should be used when debugger_path is not provided."""
 
         result = start_session(program="/bin/ls")
         command = start_session.command_of()
@@ -230,9 +230,9 @@ class TestLifecycleApi:
     def test_start_session_explicit_path_overrides_env_var(
         self, start_session: StartHarness
     ) -> None:
-        """An explicit gdb_path should override GDB_PATH."""
+        """An explicit debugger_path should override GDB_PATH."""
 
-        result = start_session(program="/bin/ls", gdb_path="/explicit/gdb")
+        result = start_session(program="/bin/ls", debugger_path="/explicit/gdb")
         command = start_session.command_of()
 
         assert command[0] == "/explicit/gdb"
