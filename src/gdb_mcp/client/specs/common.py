@@ -11,6 +11,7 @@ from gdb_mcp.mcp.schemas import (
     build_tool_definitions,
 )
 
+from ..namespace import NamespaceLike
 from ..parsers import (
     CliUsageError,
 )
@@ -24,7 +25,7 @@ class ToolCliSpec(Generic[_ToolInputT]):
 
     name: str
     configure_parser: Callable[[argparse.ArgumentParser], None]
-    parse_input: Callable[[argparse.Namespace], _ToolInputT]
+    parse_input: Callable[[NamespaceLike], _ToolInputT]
     build_arguments: Callable[[_ToolInputT], dict[str, object]]
     render_human: Callable[[dict[str, object]], str]
 
@@ -35,7 +36,7 @@ class RegisteredToolCliSpec:
 
     name: str
     configure_parser: Callable[[argparse.ArgumentParser], None]
-    build_arguments: Callable[[argparse.Namespace], dict[str, object]]
+    build_arguments: Callable[[NamespaceLike], dict[str, object]]
     render_human: Callable[[dict[str, object]], str]
 
 
@@ -46,12 +47,12 @@ for _tool in build_tool_definitions():
     TOOL_HELP_DESCRIPTIONS[_tool.name] = (_tool.description or "").replace("%", "%%")
 
 
-def _parse_namespace(namespace: argparse.Namespace) -> argparse.Namespace:
+def _parse_namespace(namespace: NamespaceLike) -> NamespaceLike:
     return namespace
 
 
 def _register_tool_spec(spec: ToolCliSpec[_ToolInputT]) -> RegisteredToolCliSpec:
-    def build_arguments(namespace: argparse.Namespace) -> dict[str, object]:
+    def build_arguments(namespace: NamespaceLike) -> dict[str, object]:
         return spec.build_arguments(spec.parse_input(namespace))
 
     return RegisteredToolCliSpec(

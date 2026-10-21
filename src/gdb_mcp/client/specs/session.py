@@ -20,7 +20,7 @@ from ..inputs import (
     SessionQueryInput,
     SessionStartInput,
 )
-from ..namespace import one_of, optional_integer, snapshot
+from ..namespace import NamespaceLike, one_of, optional_integer, snapshot
 from ..parsers import (
     CliUsageError,
     key_value_entry,
@@ -88,7 +88,7 @@ def _configure_session_manage(parser: argparse.ArgumentParser) -> None:
     _add_action(parser, choices=SESSION_MANAGE_ACTIONS)
 
 
-def _build_session_manage(namespace: argparse.Namespace) -> dict[str, object]:
+def _build_session_manage(namespace: NamespaceLike) -> dict[str, object]:
     values = snapshot(namespace)
     return validate_model_payload(
         SessionManageArgs,

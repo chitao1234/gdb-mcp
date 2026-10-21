@@ -38,6 +38,7 @@ from .daemon import (
     stop_daemon,
 )
 from .facade import FACADE_COMMANDS, FACADE_GROUPS, FacadeCommand
+from .namespace import NamespaceLike
 from .parsers import CliUsageError, format_validation_error, validate_model_payload
 from .results import ToolEnvelope
 from .runtime import invoke_tool
@@ -324,15 +325,53 @@ def _select_parser(argv: Sequence[str] | None) -> tuple[argparse.ArgumentParser,
     return (build_payload_parser(), True) if payload_mode else (build_parser(), False)
 
 
+class CliNamespace(NamespaceLike, Protocol):
+    """Options shared by the facade and tool surfaces."""
+
+    tool_name: str
+    command: str
+    session_command: str | None
+    daemon_command: str | None
+    session_id: int | None
+    server_url: str | None
+    json: bool
+    payload_json: str | None
+    force: bool
+    facade_command: FacadeCommand | None
+    action: str | None
+    breakpoint_kind: str | None
+    program: str | None
+    endpoint: str | None
+    pid: int | None
+    frame: int | None
+    address: str | None
+    location: str | None
+    number: int | None
+    expression: str | None
+    event: str | None
+    function_call: str | None
+    _program: str | None
+    _endpoint: str | None
+    _pid: int | None
+    _frame: int | None
+    _address: str | None
+    _location: str | None
+    _number: int | None
+    _expression: str | None
+    _event: str | None
+    _function_call: str | None
+    _command: str | None
+
+
 def parse_client_args(
     argv: Sequence[str] | None = None,
     *,
     parser: argparse.ArgumentParser | None = None,
-) -> argparse.Namespace:
+) -> CliNamespace:
     """Parse top-level CLI arguments."""
 
     arg_parser = build_parser() if parser is None else parser
-    args = arg_parser.parse_args(argv)
+    args: CliNamespace = arg_parser.parse_args(argv)
     if not args.server_url:
         args.server_url = os.environ.get(_SERVER_URL_ENV)
     return args
@@ -345,7 +384,7 @@ def _duplicate_facade_field(flag: str) -> CliUsageError:
 
 
 def _merge_facade_positional(
-    args: argparse.Namespace,
+    args: CliNamespace,
     argument: str,
     flag: str,
 ) -> None:
@@ -421,7 +460,7 @@ def _merge_facade_positional(
         raise CliUsageError(f"unsupported facade positional: {argument}")
 
 
-def _apply_facade_metadata(args: argparse.Namespace, command: FacadeCommand) -> None:
+def _apply_facade_metadata(args: CliNamespace, command: FacadeCommand) -> None:
     """Fold a facade command's positionals and implied fields into the namespace."""
 
     for argument, flag in command.positionals:
@@ -447,7 +486,7 @@ def _session_id_error(exc: ValidationError) -> bool:
 
 def _build_payload(
     spec: RegisteredToolCliSpec,
-    args: argparse.Namespace,
+    args: CliNamespace,
     resolved: ResolvedServer,
 ) -> dict[str, object]:
     """Build one tool payload, filling a remembered session id when needed."""
@@ -474,7 +513,7 @@ def _session_id_from_payload(payload: dict[str, object]) -> int | None:
 
 
 async def _ensure_attach_session(
-    args: argparse.Namespace,
+    args: CliNamespace,
     resolved: ResolvedServer,
     http_client: httpx.AsyncClient | None,
 ) -> None:
@@ -511,7 +550,7 @@ async def _ensure_attach_session(
 
 
 def _default_session_annotation(
-    args: argparse.Namespace,
+    args: CliNamespace,
     payload: dict[str, object],
     resolved: ResolvedServer,
 ) -> str:
@@ -535,7 +574,7 @@ def _default_session_annotation(
 
 
 async def _run_session_command(
-    args: argparse.Namespace,
+    args: CliNamespace,
     output: TextIO,
     error_output: TextIO,
 ) -> int:
@@ -549,6 +588,10 @@ async def _run_session_command(
         output.write(f"{session_id}\n")
         return 0
 
+    session_id = args.session_id
+    if session_id is None:
+        error_output.write("gdb-mcp-client: error: session_id is required\n")
+        return 1
     try:
         resolved = await resolve_server(explicit_url=args.server_url)
     except DaemonError as exc:
@@ -564,7 +607,7 @@ async def _run_session_command(
         response = await invoke_tool(
             resolved.url,
             TOOL_SESSION_QUERY,
-            {"action": ACTION_STATUS, "session_id": args.session_id},
+            {"action": ACTION_STATUS, "session_id": session_id},
             auth_token=resolved.token,
         )
     except Exception as exc:
@@ -579,12 +622,12 @@ async def _run_session_command(
         message = response.envelope().message or "request failed"
         error_output.write(f"gdb-mcp-client: error: {message}\n")
         return 1
-    remember_session_id(args.session_id)
-    output.write(f"default session: {args.session_id}\n")
+    remember_session_id(session_id)
+    output.write(f"default session: {session_id}\n")
     return 0
 
 
-async def _run_daemon_command(args: argparse.Namespace, output: TextIO) -> int:
+async def _run_daemon_command(args: CliNamespace, output: TextIO) -> int:
     """Handle the daemon meta commands."""
 
     if args.daemon_command == "status":
@@ -647,6 +690,8 @@ async def main(
                 error_output.write(f"gdb-mcp-client: error: {_format_runtime_error(exc)}\n")
                 return 1
         if payload_mode:
+            if args.payload_json is None:
+                parser.error("--payload-json is required")
             payload = _payload_from_json(args.tool_name, args.payload_json, parser)
         else:
             try:

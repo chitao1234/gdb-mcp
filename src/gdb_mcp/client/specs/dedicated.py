@@ -13,6 +13,7 @@ from gdb_mcp.mcp.schemas import (
 )
 
 from ..namespace import (
+    NamespaceLike,
     integer,
     one_of,
     optional_integer,
@@ -42,7 +43,7 @@ def _configure_session_connect(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--init-command", dest="init_commands", action="append", default=[])
 
 
-def _build_session_connect(namespace: argparse.Namespace) -> dict[str, object]:
+def _build_session_connect(namespace: NamespaceLike) -> dict[str, object]:
     values = snapshot(namespace)
     payload: dict[str, object] = {
         "endpoint": text(values, "endpoint"),
@@ -64,7 +65,7 @@ def _configure_execute_command(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--command", required=True)
 
 
-def _build_execute_command(namespace: argparse.Namespace) -> dict[str, object]:
+def _build_execute_command(namespace: NamespaceLike) -> dict[str, object]:
     values = snapshot(namespace)
     return validate_model_payload(
         ExecuteCommandArgs,
@@ -81,7 +82,7 @@ def _configure_attach_process(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--pid", type=int, required=True)
 
 
-def _build_attach_process(namespace: argparse.Namespace) -> dict[str, object]:
+def _build_attach_process(namespace: NamespaceLike) -> dict[str, object]:
     values = snapshot(namespace)
     return validate_model_payload(
         AttachProcessArgs,
@@ -98,7 +99,7 @@ def _configure_call_function(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--function-call", required=True)
 
 
-def _build_call_function(namespace: argparse.Namespace) -> dict[str, object]:
+def _build_call_function(namespace: NamespaceLike) -> dict[str, object]:
     values = snapshot(namespace)
     return validate_model_payload(
         CallFunctionArgs,

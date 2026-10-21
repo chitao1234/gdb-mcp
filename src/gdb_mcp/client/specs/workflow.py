@@ -15,7 +15,15 @@ from ..inputs import (
     RunUntilFailureInput,
     WorkflowBatchInput,
 )
-from ..namespace import boolean, integer, optional_integer, optional_text, snapshot, text_tuple
+from ..namespace import (
+    NamespaceLike,
+    boolean,
+    integer,
+    optional_integer,
+    optional_text,
+    snapshot,
+    text_tuple,
+)
 from ..parsers import (
     AppendTaggedValue,
     add_boolean_flag,
@@ -61,7 +69,7 @@ def _configure_capture_bundle(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_capture_bundle(namespace: argparse.Namespace) -> dict[str, object]:
+def _build_capture_bundle(namespace: NamespaceLike) -> dict[str, object]:
     values = snapshot(namespace)
     return validate_model_payload(
         CaptureBundleArgs,

@@ -9,7 +9,7 @@ import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Protocol
 
 from .mcp import (
     ServerRuntime,
@@ -20,6 +20,18 @@ from .session.registry import SessionRegistry
 logger = logging.getLogger(__name__)
 TransportKind = Literal["stdio", "streamable-http"]
 _AUTH_TOKEN_ENV = "GDB_MCP_AUTH_TOKEN"
+
+
+class _ServerCliNamespace(Protocol):
+    """Options parsed by the server entrypoint."""
+
+    transport: str
+    host: str | None
+    port: int | None
+    path: str | None
+    auth_token: str | None
+    ready_file: str | None
+    idle_timeout_sec: float | None
 
 
 @dataclass(frozen=True)
@@ -77,7 +89,7 @@ def parse_server_config(argv: Sequence[str] | None = None) -> ServerCliConfig:
     parser.add_argument("--auth-token")
     parser.add_argument("--ready-file")
     parser.add_argument("--idle-timeout-sec", type=float)
-    args = parser.parse_args(argv)
+    args: _ServerCliNamespace = parser.parse_args(argv)
 
     if args.idle_timeout_sec is not None and args.idle_timeout_sec < 0:
         parser.error("--idle-timeout-sec must be >= 0")

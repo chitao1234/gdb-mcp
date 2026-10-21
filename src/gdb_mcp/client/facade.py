@@ -38,7 +38,7 @@ class FacadeCommand:
     tool: str
     action: str | None = None
     positionals: tuple[tuple[str, str], ...] = ()
-    fixed: Mapping[str, object] = field(default_factory=dict)
+    fixed: Mapping[str, str] = field(default_factory=dict)
     relax: tuple[str, ...] = ()
     help: str = ""
 

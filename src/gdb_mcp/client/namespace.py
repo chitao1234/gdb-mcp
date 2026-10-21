@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
-import argparse
 from collections.abc import Mapping
-from typing import TypeVar
+from typing import Protocol, TypeVar
 
 from .parsers import CliUsageError
 
 ChoiceT = TypeVar("ChoiceT", bound=str)
 
 
-def snapshot(namespace: argparse.Namespace) -> Mapping[str, object]:
+class NamespaceLike(Protocol):
+    """A parsed namespace carrying its options in ``__dict__``."""
+
+    __dict__: dict[str, object]
+
+
+def snapshot(namespace: NamespaceLike) -> Mapping[str, object]:
     """Return one namespace's attributes as an ``object`` mapping."""
 
     attributes: Mapping[str, object] = vars(namespace)

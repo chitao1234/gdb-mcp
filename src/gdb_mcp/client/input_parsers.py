@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 from collections.abc import Mapping
 from typing import cast
 
@@ -52,6 +51,7 @@ from .inputs import (
     WorkflowBatchInput,
 )
 from .namespace import (
+    NamespaceLike,
     boolean,
     choice,
     integer_tuple,
@@ -94,7 +94,7 @@ def _normalize_step_tool_name(tool_name: str) -> str:
     return tool_name
 
 
-def parse_session_start_input(namespace: argparse.Namespace) -> SessionStartInput:
+def parse_session_start_input(namespace: NamespaceLike) -> SessionStartInput:
     """Parse one session-start namespace into a typed input object."""
 
     values = snapshot(namespace)
@@ -112,7 +112,7 @@ def parse_session_start_input(namespace: argparse.Namespace) -> SessionStartInpu
     )
 
 
-def parse_session_query_input(namespace: argparse.Namespace) -> SessionQueryInput:
+def parse_session_query_input(namespace: NamespaceLike) -> SessionQueryInput:
     """Parse one session-query namespace into a typed input object."""
 
     values = snapshot(namespace)
@@ -122,7 +122,7 @@ def parse_session_query_input(namespace: argparse.Namespace) -> SessionQueryInpu
     )
 
 
-def parse_inferior_query_input(namespace: argparse.Namespace) -> InferiorQueryInput:
+def parse_inferior_query_input(namespace: NamespaceLike) -> InferiorQueryInput:
     """Parse one inferior-query namespace into a typed input object."""
 
     values = snapshot(namespace)
@@ -132,7 +132,7 @@ def parse_inferior_query_input(namespace: argparse.Namespace) -> InferiorQueryIn
     )
 
 
-def parse_inferior_manage_input(namespace: argparse.Namespace) -> InferiorManageInput:
+def parse_inferior_manage_input(namespace: NamespaceLike) -> InferiorManageInput:
     """Parse one inferior-manage namespace into a typed input object."""
 
     values = snapshot(namespace)
@@ -147,7 +147,7 @@ def parse_inferior_manage_input(namespace: argparse.Namespace) -> InferiorManage
     )
 
 
-def parse_execution_manage_input(namespace: argparse.Namespace) -> ExecutionManageInput:
+def parse_execution_manage_input(namespace: NamespaceLike) -> ExecutionManageInput:
     """Parse one execution-manage namespace into a typed input object."""
 
     values = snapshot(namespace)
@@ -162,7 +162,7 @@ def parse_execution_manage_input(namespace: argparse.Namespace) -> ExecutionMana
     )
 
 
-def parse_context_query_input(namespace: argparse.Namespace) -> ContextQueryInput:
+def parse_context_query_input(namespace: NamespaceLike) -> ContextQueryInput:
     """Parse one context-query namespace into a typed input object."""
 
     values = snapshot(namespace)
@@ -175,7 +175,7 @@ def parse_context_query_input(namespace: argparse.Namespace) -> ContextQueryInpu
     )
 
 
-def parse_context_manage_input(namespace: argparse.Namespace) -> ContextManageInput:
+def parse_context_manage_input(namespace: NamespaceLike) -> ContextManageInput:
     """Parse one context-manage namespace into a typed input object."""
 
     values = snapshot(namespace)
@@ -323,7 +323,7 @@ def parse_step_inputs(
     return tuple(validated_steps)
 
 
-def parse_breakpoint_query_input(namespace: argparse.Namespace) -> BreakpointQueryInput:
+def parse_breakpoint_query_input(namespace: NamespaceLike) -> BreakpointQueryInput:
     """Parse one breakpoint-query namespace into a typed input object."""
 
     values = snapshot(namespace)
@@ -336,7 +336,7 @@ def parse_breakpoint_query_input(namespace: argparse.Namespace) -> BreakpointQue
     )
 
 
-def parse_breakpoint_manage_input(namespace: argparse.Namespace) -> BreakpointManageInput:
+def parse_breakpoint_manage_input(namespace: NamespaceLike) -> BreakpointManageInput:
     """Parse one breakpoint-manage namespace into a typed input object."""
 
     values = snapshot(namespace)
@@ -385,7 +385,7 @@ def parse_breakpoint_manage_input(namespace: argparse.Namespace) -> BreakpointMa
     )
 
 
-def parse_inspect_query_input(namespace: argparse.Namespace) -> InspectQueryInput:
+def parse_inspect_query_input(namespace: NamespaceLike) -> InspectQueryInput:
     """Parse one inspect-query namespace into a typed input object."""
 
     values = snapshot(namespace)
@@ -434,7 +434,7 @@ def parse_inspect_query_input(namespace: argparse.Namespace) -> InspectQueryInpu
     )
 
 
-def parse_workflow_batch_input(namespace: argparse.Namespace) -> WorkflowBatchInput:
+def parse_workflow_batch_input(namespace: NamespaceLike) -> WorkflowBatchInput:
     """Parse one workflow-batch namespace into a typed input object."""
 
     values = snapshot(namespace)
@@ -453,7 +453,7 @@ def parse_workflow_batch_input(namespace: argparse.Namespace) -> WorkflowBatchIn
     )
 
 
-def parse_run_until_failure_input(namespace: argparse.Namespace) -> RunUntilFailureInput:
+def parse_run_until_failure_input(namespace: NamespaceLike) -> RunUntilFailureInput:
     """Parse one run-until-failure namespace into a typed input object."""
 
     values = snapshot(namespace)
