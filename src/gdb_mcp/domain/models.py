@@ -7,7 +7,7 @@ from typing import Literal, TypeAlias
 
 from typing_extensions import TypeAliasType
 
-from ..contracts import DisassemblyMode, ExecutionState, LocationKind
+from ..contracts import DisassemblyMode, ExecutionState, LocationKind, SessionState
 from .records import (
     BreakpointRecord,
     DisassemblyInstructionRecord,
@@ -58,9 +58,9 @@ class StructuredOutput:
 class SessionStatusSnapshot(StructuredOutput):
     """Serializable snapshot of the externally visible session status."""
 
-    is_running: bool
+    debugger_alive: bool
     target_loaded: bool
-    has_controller: bool
+    session_state: SessionState
     execution_state: ExecutionState = "unknown"
     state_detail: Literal["crashed"] | None = None
     stop_reason: str | None = None
@@ -85,10 +85,10 @@ class SessionSummary(StructuredOutput):
     """Structured summary of one active debugger session."""
 
     session_id: int
-    lifecycle_state: str
+    session_state: SessionState
     execution_state: ExecutionState
     target_loaded: bool
-    has_controller: bool
+    debugger_alive: bool
     program: str | None = None
     core: str | None = None
     working_dir: str | None = None

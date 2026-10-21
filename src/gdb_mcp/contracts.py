@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import Enum
 from typing import Final, Literal, TypeAlias, get_args
 
 TOOL_SESSION_START = "gdb_session_start"
@@ -31,6 +32,18 @@ DebuggerName: TypeAlias = Literal["gdb", "lldb"]
 DEBUGGER_NAMES: tuple[DebuggerName, ...] = get_args(DebuggerName)
 
 ExecutionState: TypeAlias = Literal["unknown", "not_started", "running", "paused", "exited"]
+
+
+class SessionState(str, Enum):
+    """Lifecycle of the debugger session, independent of inferior execution."""
+
+    CREATED = "created"
+    STARTING = "starting"
+    READY = "ready"
+    CLOSING = "closing"
+    FAILED = "failed"
+    STOPPED = "stopped"
+
 
 ACTION_LIST = "list"
 ActionListName: TypeAlias = Literal["list"]

@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable
 
-from ..contracts import DEBUGGER_GDB
+from ..contracts import DEBUGGER_GDB, SessionState
 from ..domain import (
     OperationError,
     OperationSuccess,
@@ -201,16 +201,14 @@ class SessionRegistry:
             status = session.get_status().value
             config = session.config
             runtime = session.runtime
-            lifecycle_state = session.state.value
-            if closing:
-                lifecycle_state = "closing"
+            session_state = SessionState.CLOSING if closing else session.state
 
             return SessionSummary(
                 session_id=session_id,
-                lifecycle_state=lifecycle_state,
+                session_state=session_state,
                 execution_state=status.execution_state,
                 target_loaded=status.target_loaded,
-                has_controller=status.has_controller,
+                debugger_alive=status.debugger_alive,
                 program=config.program if config is not None else None,
                 core=config.core if config is not None else None,
                 working_dir=config.working_dir if config is not None else None,

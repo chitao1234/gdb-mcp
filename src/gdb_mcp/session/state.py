@@ -1,13 +1,5 @@
 """Session lifecycle state definitions."""
 
-from enum import Enum
+from ..contracts import SessionState
 
-
-class SessionState(str, Enum):
-    """Lifecycle states for a debugger session."""
-
-    CREATED = "created"
-    STARTING = "starting"
-    READY = "ready"
-    FAILED = "failed"
-    STOPPED = "stopped"
+__all__ = ["SessionState"]

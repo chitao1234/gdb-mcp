@@ -461,9 +461,9 @@ class SessionLifecycleService:
             )
 
         snapshot = SessionStatusSnapshot(
-            is_running=self._runtime.is_running,
+            debugger_alive=self._runtime.is_running,
             target_loaded=self._runtime.target_loaded,
-            has_controller=self._runtime.has_controller,
+            session_state=self._runtime.state,
             execution_state=self._runtime.execution_state,
             state_detail=(
                 self._runtime.last_stop_event.state_detail

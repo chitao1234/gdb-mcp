@@ -186,9 +186,9 @@ class LldbSbBackend:
         self.runtime.is_running = True
         self._record_stop(payload, execution)
         return SessionStatusSnapshot(
-            is_running=True,
+            debugger_alive=True,
             target_loaded=target_loaded,
-            has_controller=self.runtime.has_controller,
+            session_state=self.runtime.state,
             execution_state=execution,
             state_detail=self._state_detail,
             stop_reason=reason,
@@ -550,9 +550,9 @@ class LldbSbBackend:
         if self._client is None:
             return OperationSuccess(
                 SessionStatusSnapshot(
-                    is_running=False,
+                    debugger_alive=False,
                     target_loaded=False,
-                    has_controller=False,
+                    session_state=self.runtime.state,
                     execution_state="unknown",
                 )
             )
@@ -564,9 +564,9 @@ class LldbSbBackend:
                 self.runtime.mark_failed(str(exc))
             return OperationSuccess(
                 SessionStatusSnapshot(
-                    is_running=self.runtime.is_running,
+                    debugger_alive=self.runtime.is_running,
                     target_loaded=self.runtime.target_loaded,
-                    has_controller=self.runtime.has_controller,
+                    session_state=self.runtime.state,
                     execution_state=self.runtime.execution_state,
                     state_detail=self._state_detail,
                     stop_reason=self.runtime.stop_reason,
