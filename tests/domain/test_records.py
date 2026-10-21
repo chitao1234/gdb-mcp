@@ -18,6 +18,7 @@ from gdb_mcp.domain.records import (
     ThreadRecord,
     VariableRecord,
 )
+from gdb_mcp.domain.results import payload_to_mapping
 
 _RECORD_MODELS: tuple[type[RecordModel], ...] = (
     BreakpointRecord,
@@ -58,12 +59,17 @@ class TestRecordRoundTrip:
         assert model.from_payload({}).to_payload() == {}
 
     def test_hyphenated_payload_keys_are_read_by_alias(self) -> None:
-        """MI spells some fields with hyphens; the record exposes them as attributes."""
+        """MI spells some fields with hyphens; the record exposes and re-emits them."""
 
         record = BreakpointRecord.from_payload({"original-location": "main"})
 
         assert record.original_location == "main"
         assert record.to_payload() == {"original-location": "main"}
+
+        thread = ThreadRecord.from_payload({"id": "1", "target-id": "Thread 0x1"})
+
+        assert thread.target_id == "Thread 0x1"
+        assert payload_to_mapping(thread) == {"id": "1", "target-id": "Thread 0x1"}
 
     def test_a_dap_spelled_key_is_read_by_alias(self) -> None:
         """DAP spells the same idea in camel case; the record accepts both."""
