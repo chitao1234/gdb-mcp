@@ -1028,6 +1028,14 @@ Json status_json(const char *forced_reason = nullptr, bool *timed_out = nullptr)
       out.object["current_frame"] = Json::integer_value(level);
       out.object["frame"] = frame_json(frame, level);
     }
+    SBValue return_value = thread.GetStopReturnValue();
+    if (return_value.IsValid()) {
+      std::string text = S(return_value.GetValue());
+      if (text.empty())
+        text = S(return_value.GetSummary());
+      if (!text.empty())
+        out.object["return_value"] = Json::string_value(text);
+    }
   }
   return out;
 }

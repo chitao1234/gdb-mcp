@@ -827,6 +827,7 @@ class LldbSbBackend:
             return OperationSuccess(
                 FinishInfo(
                     message="LLDB finish",
+                    return_value=self._text(result, "return_value"),
                     frame=self._frame(result.get("frame")),
                     execution_state=snapshot.execution_state,
                     stop_reason=snapshot.stop_reason,

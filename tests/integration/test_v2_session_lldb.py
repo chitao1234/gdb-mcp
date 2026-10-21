@@ -64,5 +64,9 @@ def test_lldb_start_breakpoint_run_and_status(compile_program: CompileProgram) -
         variables = backend.get_variables()
         assert isinstance(variables, OperationSuccess)
         assert {variable.name for variable in variables.value.variables} >= {"left", "right"}
+
+        finished = backend.finish(timeout_sec=10)
+        assert isinstance(finished, OperationSuccess)
+        assert finished.value.return_value == "5"
     finally:
         backend.stop()

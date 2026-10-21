@@ -89,6 +89,7 @@ class FakeBridge:
                 },
                 "stop_data": [11],
                 "pid": 123,
+                "return_value": "5",
             }
         if operation == "breakpoint_create":
             number = self.next_breakpoint
@@ -201,6 +202,15 @@ def test_lldb_rr_replay_points_to_connect_mode_and_reverse_caveat() -> None:
     assert "gdb_session_connect" in result.message
     assert "connect://" in result.message
     assert "debugger='gdb'" in result.message
+
+
+def test_finish_publishes_the_return_value() -> None:
+    backend, _ = _backend()
+
+    finished = _value(backend.finish(timeout_sec=1))
+
+    assert finished.return_value == "5"
+    assert finished.stop_reason == "signal"
 
 
 def test_status_enriches_crash_and_stop_event() -> None:
