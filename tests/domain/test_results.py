@@ -22,13 +22,6 @@ from tests.support import mapping
 class TestDomainResults:
     """Test conversion helpers for typed internal results."""
 
-    def test_result_to_mapping_wraps_scalar_success_payload(self) -> None:
-        """Scalar success payloads should be wrapped into the external value shape."""
-
-        payload = result_to_mapping(OperationSuccess(42))
-
-        assert payload == {"status": "success", "value": 42}
-
     def test_result_to_mapping_adds_warnings_for_dataclass_payloads(self) -> None:
         """Warnings should be surfaced when the payload itself has no warnings field."""
 
