@@ -334,7 +334,7 @@ class CliNamespace(NamespaceLike, Protocol):
     """Options shared by the facade and tool surfaces."""
 
     tool_name: str
-    command: str
+    command: str | None
     session_command: str | None
     daemon_command: str | None
     session_id: int | None
