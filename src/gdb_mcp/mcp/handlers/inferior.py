@@ -26,10 +26,6 @@ from ..schemas import (
     InferiorQueryCurrentAction,
     InferiorQueryListAction,
 )
-from .common import (
-    _unsupported_action,
-    _unwrap_action_args,
-)
 
 
 def _handle_inferior_query(
@@ -37,7 +33,7 @@ def _handle_inferior_query(
 ) -> OperationResult[InferiorListInfo | InferiorCurrentInfo]:
     """Route v2 inferior query actions to the inspection service."""
 
-    action_args = _unwrap_action_args(args)
+    action_args = args.root
     match action_args:
         case InferiorQueryListAction():
             return session.list_inferiors()
@@ -62,7 +58,6 @@ def _handle_inferior_query(
                     details={"current_inferior_id": current_inferior_id},
                 )
             return OperationSuccess(InferiorCurrentInfo(inferior=current_inferior))
-    return _unsupported_action("inferior query action", action_args)
 
 
 def _handle_inferior_manage(
@@ -76,7 +71,7 @@ def _handle_inferior_manage(
 ]:
     """Route v2 inferior mutation actions to the inspection/execution services."""
 
-    action_args = _unwrap_action_args(args)
+    action_args = args.root
     match action_args:
         case InferiorManageCreateAction():
             create_payload = action_args.inferior
@@ -92,4 +87,3 @@ def _handle_inferior_manage(
             return session.set_follow_fork_mode(mode=action_args.inferior.mode)
         case InferiorManageDetachOnForkAction():
             return session.set_detach_on_fork(enabled=action_args.inferior.enabled)
-    return _unsupported_action("inferior manage action", action_args)

@@ -31,8 +31,6 @@ from ..schemas import (
 from .common import (
     LocationArgs,
     LocationSelection,
-    _unsupported_action,
-    _unwrap_action_args,
 )
 
 
@@ -62,7 +60,6 @@ def _location_selection(location: LocationArgs) -> LocationSelection:
                 start_line=location.start_line,
                 end_line=location.end_line,
             )
-    return LocationSelection()  # pragma: no cover - exhaustive over LocationArgs
 
 
 def _context_selector(context: ThreadFrameContextArgs | None) -> tuple[int | None, int | None]:
@@ -85,7 +82,7 @@ def _handle_inspect_query(
 ]:
     """Route v2 inspect query actions to the inspection service."""
 
-    action_args = _unwrap_action_args(args)
+    action_args = args.root
     match action_args:
         case InspectEvaluateAction():
             evaluate_query = action_args.query
@@ -155,4 +152,3 @@ def _handle_inspect_query(
                 context_before=source_query.context_before,
                 context_after=source_query.context_after,
             )
-    return _unsupported_action("inspect query action", action_args)

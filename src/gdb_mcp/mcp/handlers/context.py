@@ -20,10 +20,6 @@ from ..schemas import (
     ContextQueryFrameAction,
     ContextQueryThreadsAction,
 )
-from .common import (
-    _unsupported_action,
-    _unwrap_action_args,
-)
 
 
 def _handle_context_query(
@@ -31,7 +27,7 @@ def _handle_context_query(
 ) -> OperationResult[ThreadListInfo | BacktraceInfo | FrameInfo]:
     """Route v2 context query actions to the inspection service."""
 
-    action_args = _unwrap_action_args(args)
+    action_args = args.root
     match action_args:
         case ContextQueryThreadsAction():
             return session.get_threads()
@@ -45,7 +41,6 @@ def _handle_context_query(
                 thread_id=action_args.query.thread_id,
                 frame=action_args.query.frame,
             )
-    return _unsupported_action("context query action", action_args)
 
 
 def _handle_context_manage(
@@ -53,10 +48,9 @@ def _handle_context_manage(
 ) -> OperationResult[ThreadSelectionInfo | FrameSelectionInfo]:
     """Route v2 context mutation actions to the inspection service."""
 
-    action_args = _unwrap_action_args(args)
+    action_args = args.root
     match action_args:
         case ContextManageSelectThreadAction():
             return session.select_thread(thread_id=action_args.context.thread_id)
         case ContextManageSelectFrameAction():
             return session.select_frame(frame_number=action_args.context.frame)
-    return _unsupported_action("context manage action", action_args)

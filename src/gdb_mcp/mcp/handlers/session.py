@@ -19,7 +19,6 @@ from ...session.registry import SessionRegistry
 from ..schemas import (
     ConnectSessionArgs,
     SessionManageArgs,
-    SessionManageStopAction,
     SessionQueryArgs,
     SessionQueryListAction,
     SessionQueryStatusAction,
@@ -28,8 +27,6 @@ from ..schemas import (
 from .common import (
     ToolContext,
     _normalize_run_args,
-    _unsupported_action,
-    _unwrap_action_args,
 )
 
 
@@ -99,7 +96,7 @@ def _handle_session_query(
     contract rejects ``list`` before dispatch).
     """
 
-    action_args = _unwrap_action_args(args)
+    action_args = args.root
 
     match action_args:
         case SessionQueryListAction():
@@ -115,7 +112,6 @@ def _handle_session_query(
                 session = resolved
             with session_workflow_context(session):
                 return session.get_status()
-    return _unsupported_action("session query action", action_args)
 
 
 def _handle_session_manage(
@@ -124,9 +120,4 @@ def _handle_session_manage(
 ) -> OperationResult[SessionMessage]:
     """Route one v2 session lifecycle mutation."""
 
-    action_args = _unwrap_action_args(args)
-
-    match action_args:
-        case SessionManageStopAction():
-            return session_manager.close_session(action_args.session_id)
-    return _unsupported_action("session manage action", action_args)
+    return session_manager.close_session(args.root.session_id)

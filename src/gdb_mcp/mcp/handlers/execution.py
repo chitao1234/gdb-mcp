@@ -24,8 +24,6 @@ from ..schemas import (
 from .common import (
     _execution_wait_policy,
     _normalize_run_args,
-    _unsupported_action,
-    _unwrap_action_args,
 )
 
 
@@ -34,7 +32,7 @@ def _handle_execution_manage(
 ) -> OperationResult[CommandExecutionInfo | MessageResult | FinishInfo | WaitForStopInfo]:
     """Route v2 execution actions to the session execution API."""
 
-    action_args = _unwrap_action_args(args)
+    action_args = args.root
 
     match action_args:
         case ExecutionRunAction():
@@ -92,4 +90,3 @@ def _handle_execution_manage(
                 timeout_sec=action_args.execution.timeout_sec,
                 stop_reasons=tuple(action_args.execution.stop_reasons),
             )
-    return _unsupported_action("execution action", action_args)

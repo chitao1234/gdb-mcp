@@ -24,10 +24,6 @@ from ..schemas import (
     BreakpointQueryListAction,
     BreakpointWatchCreateArgs,
 )
-from .common import (
-    _unsupported_action,
-    _unwrap_action_args,
-)
 
 
 def _handle_breakpoint_query(
@@ -35,7 +31,7 @@ def _handle_breakpoint_query(
 ) -> OperationResult[BreakpointListInfo | BreakpointInfo]:
     """Route v2 breakpoint query actions to the breakpoint service."""
 
-    action_args = _unwrap_action_args(args)
+    action_args = args.root
     match action_args:
         case BreakpointQueryListAction():
             result = session.list_breakpoints()
@@ -73,7 +69,6 @@ def _handle_breakpoint_query(
             )
         case BreakpointQueryGetAction():
             return session.get_breakpoint(action_args.query.number)
-    return _unsupported_action("breakpoint query action", action_args)
 
 
 def _handle_breakpoint_manage(
@@ -81,7 +76,7 @@ def _handle_breakpoint_manage(
 ) -> OperationResult[BreakpointInfo | SessionMessage]:
     """Route v2 breakpoint mutation actions to the breakpoint service."""
 
-    action_args = _unwrap_action_args(args)
+    action_args = args.root
     match action_args:
         case BreakpointManageCreateAction():
             payload = action_args.breakpoint
@@ -103,7 +98,6 @@ def _handle_breakpoint_manage(
                         argument=payload.argument,
                         temporary=payload.temporary,
                     )
-            return _unsupported_action("breakpoint create payload", payload)
         case BreakpointManageUpdateAction():
             selector = action_args.breakpoint
             changes = action_args.changes
@@ -114,10 +108,11 @@ def _handle_breakpoint_manage(
             )
         case BreakpointManageNumberAction():
             number = action_args.breakpoint.number
-            if action_args.action == shared_contracts.ACTION_DELETE:
-                return session.delete_breakpoint(number=number)
-            if action_args.action == shared_contracts.ACTION_ENABLE:
-                return session.enable_breakpoint(number=number)
-            if action_args.action == shared_contracts.ACTION_DISABLE:
-                return session.disable_breakpoint(number=number)
-    return _unsupported_action("breakpoint manage action", action_args)
+            action = action_args.action
+            match action:
+                case shared_contracts.ACTION_DELETE:
+                    return session.delete_breakpoint(number=number)
+                case shared_contracts.ACTION_ENABLE:
+                    return session.enable_breakpoint(number=number)
+                case shared_contracts.ACTION_DISABLE:
+                    return session.disable_breakpoint(number=number)
