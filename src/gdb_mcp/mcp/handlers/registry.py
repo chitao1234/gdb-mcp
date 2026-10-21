@@ -48,7 +48,7 @@ from .breakpoint import (
     _handle_breakpoint_query,
 )
 from .common import (
-    ToolSpec,
+    RegisteredToolSpec,
     context_tool_spec,
     registry_tool_spec,
     session_tool_spec,
@@ -80,7 +80,7 @@ from .workflow import (
     _handle_run_until_failure,
 )
 
-TOOL_SPECS: dict[str, ToolSpec] = {
+TOOL_SPECS: dict[str, RegisteredToolSpec] = {
     # Registry-scoped tools: no session is pre-resolved; the handler owns it.
     TOOL_SESSION_START: registry_tool_spec(StartSessionArgs, _handle_start_session),
     TOOL_SESSION_CONNECT: registry_tool_spec(ConnectSessionArgs, _handle_connect_session),
@@ -107,6 +107,6 @@ TOOL_SPECS: dict[str, ToolSpec] = {
 
 # Batch-executable tools: every tool allowed as a workflow step, plus the batch
 # tool itself (rejected as a step but still resolved by the batch machinery).
-SESSION_TOOL_SPECS: dict[str, ToolSpec] = {
+SESSION_TOOL_SPECS: dict[str, RegisteredToolSpec] = {
     name: TOOL_SPECS[name] for name in (*BATCH_STEP_TOOL_NAMES, TOOL_WORKFLOW_BATCH)
 }

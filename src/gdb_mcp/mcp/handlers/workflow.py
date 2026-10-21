@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import cast
 
 from pydantic import BaseModel
 
@@ -28,10 +27,9 @@ from ..schemas import (
     RunUntilFailureArgs,
 )
 from .common import (
-    ToolArguments,
+    RegisteredToolSpec,
     ToolContext,
     ToolResult,
-    ToolSpec,
     _memory_capture_ranges,
     _normalize_run_args,
     _workflow_step_validation_error,
@@ -164,7 +162,7 @@ def _build_batch_step_templates(
             )
         resolved_tool_spec = tool_spec
 
-        step_arguments = cast(ToolArguments, {"session_id": session_id, **step.arguments})
+        step_arguments: dict[str, object] = {"session_id": session_id, **step.arguments}
 
         try:
             validated_args = resolved_tool_spec.model.model_validate(step_arguments)
@@ -176,12 +174,12 @@ def _build_batch_step_templates(
 
         def execute_step(
             session: SessionService,
-            tool_spec: ToolSpec = resolved_tool_spec,
+            tool_spec: RegisteredToolSpec = resolved_tool_spec,
             validated_args: BaseModel = validated_args,
         ) -> ToolResult:
             return _wrap_action_result_for(
                 validated_args,
-                tool_spec.handler(ToolContext(session=session), validated_args),
+                tool_spec.invoke(ToolContext(session=session), validated_args),
             )
 
         templates.append(

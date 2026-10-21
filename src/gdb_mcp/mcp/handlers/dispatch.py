@@ -51,7 +51,7 @@ def _dispatch_tool(
     if spec is None:
         return OperationError(message=f"Unknown tool: {name}", code="unknown_tool")
 
-    validated_args = spec.model.model_validate(arguments)
+    validated_args = spec.validate(arguments)
 
     if spec.scope == "session":
         session_args = cast(SessionArgsProtocol, _unwrap_action_args(validated_args))
@@ -59,12 +59,12 @@ def _dispatch_tool(
         if isinstance(session, OperationError):
             return _wrap_action_result_for(validated_args, session)
         with session_workflow_context(session):
-            result = spec.handler(
+            result = spec.invoke(
                 ToolContext(registry=session_manager, session=session), validated_args
             )
         result = _annotate_session_failure(result, session, session_id=session_args.session_id)
     else:
-        result = spec.handler(ToolContext(registry=session_manager), validated_args)
+        result = spec.invoke(ToolContext(registry=session_manager), validated_args)
 
     return _wrap_action_result_for(validated_args, result)
 
