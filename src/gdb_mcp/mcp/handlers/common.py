@@ -6,9 +6,9 @@ import re
 import shlex
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Generic, Literal, Protocol, TypeAlias, TypeVar, cast, runtime_checkable
+from typing import Generic, Literal, Protocol, TypeAlias, TypeVar
 
-from pydantic import BaseModel, RootModel
+from pydantic import BaseModel
 
 from ... import contracts as shared_contracts
 from ...contracts import (
@@ -39,13 +39,6 @@ from ..schemas import (
 )
 
 
-@runtime_checkable
-class SessionArgsProtocol(Protocol):
-    """Validated MCP argument models that carry a session_id."""
-
-    session_id: int
-
-
 class MemoryRangeArgsProtocol(Protocol):
     """Validated MCP range models used for bundle memory capture."""
 
@@ -53,19 +46,6 @@ class MemoryRangeArgsProtocol(Protocol):
     count: int
     offset: int
     name: str | None
-
-
-@runtime_checkable
-class ActionArgsProtocol(Protocol):
-    """Validated MCP argument models that expose an action selector.
-
-    The selector is read-only here on purpose: every action model narrows
-    ``action`` to its own literal, and a read-only property keeps that narrowing
-    assignable to this protocol.
-    """
-
-    @property
-    def action(self) -> str: ...
 
 
 ToolArguments: TypeAlias = StructuredPayload
@@ -91,54 +71,35 @@ ToolScope: TypeAlias = Literal["session", "registry"]
 
 
 @dataclass(frozen=True)
-class ToolContext:
-    """Invocation context handed to a tool handler.
+class SessionToolInvocation:
+    """Validated request bound to its session handler."""
 
-    Session-scoped handlers read ``session``; registry-scoped handlers read
-    ``registry``. Batch execution builds a context with ``session`` only.
-    """
+    session_id: int
+    action: str | None
+    execute: Callable[[SessionService], ToolResult]
 
-    registry: SessionRegistry | None = None
-    session: SessionService | None = None
+
+@dataclass(frozen=True)
+class RegistryToolInvocation:
+    """Validated request bound to its registry handler."""
+
+    action: str | None
+    execute: Callable[[SessionRegistry], ToolResult]
 
 
 ToolArgsT = TypeVar("ToolArgsT", bound=BaseModel)
 PayloadT = TypeVar("PayloadT")
+ToolInvocation: TypeAlias = SessionToolInvocation | RegistryToolInvocation
+InvocationT_co = TypeVar("InvocationT_co", bound=ToolInvocation, covariant=True)
 
 
 @dataclass(frozen=True)
-class ToolSpec(Generic[ToolArgsT]):
-    """Declarative definition for one MCP tool, kept with its request model."""
-
-    model: type[ToolArgsT]
-    handler: Callable[[ToolContext, ToolArgsT], ToolResult]
-    scope: ToolScope
-
-
-@dataclass(frozen=True)
-class RegisteredToolSpec:
-    """Type-erased spec held by the tool registry and dispatcher."""
+class RegisteredToolSpec(Generic[InvocationT_co]):
+    """Validate a request while keeping its concrete arguments in a closure."""
 
     model: type[BaseModel]
-    handler: Callable[[ToolContext, BaseModel], ToolResult]
     scope: ToolScope
-
-    def validate(self, arguments: object) -> BaseModel:
-        """Validate raw tool arguments against this spec's request model."""
-
-        return self.model.model_validate(arguments)
-
-    def invoke(self, context: ToolContext, args: BaseModel) -> ToolResult:
-        """Invoke the handler with already-validated arguments."""
-
-        return self.handler(context, args)
-
-
-def _register(spec: ToolSpec[ToolArgsT]) -> RegisteredToolSpec:
-    def invoke(context: ToolContext, args: BaseModel) -> ToolResult:
-        return spec.handler(context, cast(ToolArgsT, args))
-
-    return RegisteredToolSpec(model=spec.model, handler=invoke, scope=spec.scope)
+    prepare: Callable[[object], InvocationT_co]
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,34 +119,40 @@ class LocationSelection:
 def session_tool_spec(
     model: type[ToolArgsT],
     handler: Callable[[SessionService, ToolArgsT], ToolResult],
-) -> RegisteredToolSpec:
+    *,
+    session_id: Callable[[ToolArgsT], int],
+    action: Callable[[ToolArgsT], str | None] = lambda args: None,
+) -> RegisteredToolSpec[SessionToolInvocation]:
     """Wrap a ``(session, args)`` handler as a session-scoped tool spec."""
 
-    def invoke(context: ToolContext, args: ToolArgsT) -> ToolResult:
-        return handler(cast(SessionService, context.session), args)
+    def prepare(arguments: object) -> SessionToolInvocation:
+        args = model.model_validate(arguments)
 
-    return _register(ToolSpec(model=model, handler=invoke, scope="session"))
+        def execute(session: SessionService) -> ToolResult:
+            return handler(session, args)
+
+        return SessionToolInvocation(session_id(args), action(args), execute)
+
+    return RegisteredToolSpec(model=model, scope="session", prepare=prepare)
 
 
 def registry_tool_spec(
     model: type[ToolArgsT],
     handler: Callable[[ToolArgsT, SessionRegistry], ToolResult],
-) -> RegisteredToolSpec:
+    *,
+    action: Callable[[ToolArgsT], str | None] = lambda args: None,
+) -> RegisteredToolSpec[RegistryToolInvocation]:
     """Wrap an ``(args, registry)`` handler as a registry-scoped tool spec."""
 
-    def invoke(context: ToolContext, args: ToolArgsT) -> ToolResult:
-        return handler(args, cast(SessionRegistry, context.registry))
+    def prepare(arguments: object) -> RegistryToolInvocation:
+        args = model.model_validate(arguments)
 
-    return _register(ToolSpec(model=model, handler=invoke, scope="registry"))
+        def execute(registry: SessionRegistry) -> ToolResult:
+            return handler(args, registry)
 
+        return RegistryToolInvocation(action(args), execute)
 
-def context_tool_spec(
-    model: type[ToolArgsT],
-    handler: Callable[[ToolContext, ToolArgsT], ToolResult],
-) -> RegisteredToolSpec:
-    """Register a handler that needs the full context (for example action-polymorphic tools)."""
-
-    return _register(ToolSpec(model=model, handler=handler, scope="registry"))
+    return RegisteredToolSpec(model=model, scope="registry", prepare=prepare)
 
 
 def _normalize_arguments(arguments: object) -> ToolArguments:
@@ -203,18 +170,13 @@ def _normalize_arguments(arguments: object) -> ToolArguments:
     return payload
 
 
-def _unwrap_action_args(args: BaseModel) -> BaseModel:
-    """Return the discriminated action payload for root-model tool schemas."""
-
-    if isinstance(args, RootModel):
-        return cast(BaseModel, args.root)
-    return args
-
-
 def _wrap_action_result(
-    action: str, result: OperationResult[PayloadT]
+    action: str | None, result: OperationResult[PayloadT]
 ) -> OperationResult[PayloadT]:
     """Wrap a tool result in the v2 action envelope."""
+
+    if action is None:
+        return result
 
     if isinstance(result, OperationError):
         details = dict(result.details)
@@ -227,17 +189,6 @@ def _wrap_action_result(
         )
 
     return OperationSuccess(result.value, warnings=result.warnings, action=action)
-
-
-def _wrap_action_result_for(
-    validated_args: BaseModel, result: OperationResult[PayloadT]
-) -> OperationResult[PayloadT]:
-    """Wrap one raw tool result in the action envelope when the request has an action."""
-
-    action_args = _unwrap_action_args(validated_args)
-    if isinstance(action_args, ActionArgsProtocol):
-        return _wrap_action_result(action_args.action, result)
-    return result
 
 
 # GDB reports these conditions as free-form text and this server forwards the

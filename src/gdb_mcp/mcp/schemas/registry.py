@@ -51,6 +51,7 @@ from .inspect import InspectQueryArgs
 from .session import (
     SessionManageArgs,
     SessionQueryArgs,
+    SessionQueryStatusAction,
 )
 from .workflow import (
     BatchArgs,
@@ -83,3 +84,4 @@ TOOL_MODELS: dict[str, type[BaseModel]] = {
 BATCH_STEP_TOOL_MODELS: dict[str, type[BaseModel]] = {
     name: TOOL_MODELS[name] for name in BATCH_STEP_TOOL_NAMES
 }
+BATCH_STEP_TOOL_MODELS[TOOL_SESSION_QUERY] = SessionQueryStatusAction

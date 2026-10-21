@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from pydantic import BaseModel
+from pydantic import ValidationError
 
 from ... import contracts as shared_contracts
 from ...domain import (
@@ -31,13 +31,12 @@ from ..schemas import (
     RunUntilFailureArgs,
 )
 from .common import (
-    RegisteredToolSpec,
-    ToolContext,
+    SessionToolInvocation,
     ToolResult,
     _memory_capture_ranges,
     _normalize_run_args,
     _workflow_step_validation_error,
-    _wrap_action_result_for,
+    _wrap_action_result,
 )
 
 
@@ -160,19 +159,12 @@ def _build_batch_step_templates(
         if issue is not None:
             return _workflow_step_validation_error(step.tool, issue, index=index)
 
-        tool_spec = SESSION_TOOL_SPECS.get(step.tool)
-        if tool_spec is None:
-            return OperationError(
-                message=f"Unsupported batch step tool: {step.tool}",
-                code="unknown_tool",
-            )
-        resolved_tool_spec = tool_spec
-
-        step_arguments: dict[str, object] = {"session_id": session_id, **step.arguments}
+        tool_spec = SESSION_TOOL_SPECS[step.tool]
+        step_arguments = {"session_id": session_id, **step.arguments}
 
         try:
-            validated_args = resolved_tool_spec.model.model_validate(step_arguments)
-        except Exception as exc:
+            invocation = tool_spec.prepare(step_arguments)
+        except ValidationError as exc:
             return OperationError(
                 message=f"Invalid batch step {index} ({step.tool}): {exc}",
                 code="validation_error",
@@ -180,13 +172,9 @@ def _build_batch_step_templates(
 
         def execute_step(
             session: SessionService,
-            tool_spec: RegisteredToolSpec = resolved_tool_spec,
-            validated_args: BaseModel = validated_args,
+            invocation: SessionToolInvocation = invocation,
         ) -> ToolResult:
-            return _wrap_action_result_for(
-                validated_args,
-                tool_spec.invoke(ToolContext(session=session), validated_args),
-            )
+            return _wrap_action_result(invocation.action, invocation.execute(session))
 
         templates.append(
             BatchStepTemplate(

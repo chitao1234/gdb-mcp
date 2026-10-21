@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import cast
 
 from ...domain import (
     OperationError,
@@ -14,18 +13,16 @@ from ...domain import (
     SessionStartInfo,
     SessionStatusSnapshot,
 )
-from ...session.locking import session_workflow_context
 from ...session.registry import SessionRegistry
+from ...session.service import SessionService
 from ..schemas import (
     ConnectSessionArgs,
     SessionManageArgs,
-    SessionQueryArgs,
     SessionQueryListAction,
     SessionQueryStatusAction,
     StartSessionArgs,
 )
 from .common import (
-    ToolContext,
     _normalize_run_args,
 )
 
@@ -86,32 +83,20 @@ def _handle_connect_session(
     return _publish_session_result(session_id, result)
 
 
-def _handle_session_query(
-    context: ToolContext, args: SessionQueryArgs
-) -> OperationResult[SessionListInfo | SessionStatusSnapshot]:
-    """Route one v2 session query action.
+def _handle_session_list(
+    args: SessionQueryListAction, session_manager: SessionRegistry
+) -> OperationResult[SessionListInfo]:
+    """List the sessions in the registry."""
 
-    Direct calls arrive without a session and resolve it for the status action;
-    batch execution supplies the session and only permits status (the batch
-    contract rejects ``list`` before dispatch).
-    """
+    return session_manager.list_sessions()
 
-    action_args = args.root
 
-    match action_args:
-        case SessionQueryListAction():
-            return cast(SessionRegistry, context.registry).list_sessions()
-        case SessionQueryStatusAction():
-            session = context.session
-            if session is None:
-                resolved = cast(SessionRegistry, context.registry).resolve_session(
-                    action_args.session_id
-                )
-                if isinstance(resolved, OperationError):
-                    return resolved
-                session = resolved
-            with session_workflow_context(session):
-                return session.get_status()
+def _handle_session_status(
+    session: SessionService, args: SessionQueryStatusAction
+) -> OperationResult[SessionStatusSnapshot]:
+    """Read the status of a session resolved by dispatch."""
+
+    return session.get_status()
 
 
 def _handle_session_manage(

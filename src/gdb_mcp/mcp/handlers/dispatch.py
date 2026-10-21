@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import cast
 
 from mcp.types import CallToolResult
 from pydantic import BaseModel, ValidationError
@@ -19,14 +18,12 @@ from ..schemas import (
 from ..serializer import serialize_exception, serialize_result
 from ..validation_errors import build_validation_error
 from .common import (
-    SessionArgsProtocol,
+    SessionToolInvocation,
     ToolArguments,
-    ToolContext,
     ToolResult,
     _annotate_session_failure,
     _normalize_arguments,
-    _unwrap_action_args,
-    _wrap_action_result_for,
+    _wrap_action_result,
 )
 from .registry import TOOL_SPECS
 
@@ -51,22 +48,19 @@ def _dispatch_tool(
     if spec is None:
         return OperationError(message=f"Unknown tool: {name}", code="unknown_tool")
 
-    validated_args = spec.validate(arguments)
+    invocation = spec.prepare(arguments)
 
-    if spec.scope == "session":
-        session_args = cast(SessionArgsProtocol, _unwrap_action_args(validated_args))
-        session = session_manager.resolve_session(session_args.session_id)
+    if isinstance(invocation, SessionToolInvocation):
+        session = session_manager.resolve_session(invocation.session_id)
         if isinstance(session, OperationError):
-            return _wrap_action_result_for(validated_args, session)
+            return _wrap_action_result(invocation.action, session)
         with session_workflow_context(session):
-            result = spec.invoke(
-                ToolContext(registry=session_manager, session=session), validated_args
-            )
-        result = _annotate_session_failure(result, session, session_id=session_args.session_id)
+            result = invocation.execute(session)
+        result = _annotate_session_failure(result, session, session_id=invocation.session_id)
     else:
-        result = spec.invoke(ToolContext(registry=session_manager), validated_args)
+        result = invocation.execute(session_manager)
 
-    return _wrap_action_result_for(validated_args, result)
+    return _wrap_action_result(invocation.action, result)
 
 
 async def dispatch_tool_call(
