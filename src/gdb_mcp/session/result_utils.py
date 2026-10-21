@@ -8,4 +8,4 @@ from ..domain import CommandExecutionInfo, OperationSuccess, StructuredPayload
 def command_result_payload(result: OperationSuccess[CommandExecutionInfo]) -> StructuredPayload:
     """Extract the MI command-result container from a successful execution result."""
 
-    return result.value.debugger_result or {}
+    return result.value.backend_data.data

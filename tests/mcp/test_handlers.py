@@ -12,8 +12,9 @@ from unittest.mock import MagicMock, Mock
 import pytest
 from mcp.types import TextContent
 
-from gdb_mcp.contracts import SessionState
+from gdb_mcp.contracts import DEBUGGER_GDB, DEBUGGER_LLDB, DebuggerName, SessionState
 from gdb_mcp.domain import (
+    BackendData,
     BreakpointInfo,
     BreakpointListInfo,
     CommandExecutionInfo,
@@ -32,6 +33,7 @@ from gdb_mcp.domain import (
     SessionStatusSnapshot,
     SessionSummary,
     SourceContextInfo,
+    StartupDiagnostics,
     StopEvent,
     ThreadSelectionInfo,
     VariablesInfo,
@@ -43,6 +45,16 @@ from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.registry import SessionRegistry
 from gdb_mcp.session.service import SessionService
 from tests.support import dig, mapping, mapping_list, text
+
+
+def _startup_diagnostics(debugger: DebuggerName = DEBUGGER_GDB) -> StartupDiagnostics:
+    """Return the explicit diagnostics every successful startup publishes."""
+
+    return StartupDiagnostics(
+        environment_results=[],
+        initialization_results=[],
+        backend_data=BackendData(debugger=debugger, console_output="", data={}),
+    )
 
 
 def _workflow_lock() -> MagicMock:
@@ -82,6 +94,15 @@ def _manager_for(session: object) -> Mock:
     return manager
 
 
+def _command_result(command: str, *, console_output: str = "") -> CommandExecutionInfo:
+    """Return one explicitly tagged GDB command result for a handler double."""
+
+    return CommandExecutionInfo(
+        command=command,
+        backend_data=BackendData(debugger=DEBUGGER_GDB, console_output=console_output, data={}),
+    )
+
+
 def _stub(session: object, name: str, **kwargs: object) -> Mock:
     """Install a Mock method on a test double and return it."""
 
@@ -95,7 +116,7 @@ def _failure_session(manager: Mock) -> Mock:
 
     session = _session_double()
     session.start.return_value = OperationSuccess(SessionMessage(message="started"))
-    session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
+    session.run.return_value = OperationSuccess(_command_result("-exec-run"))
     session.get_status.return_value = OperationSuccess(
         SessionStatusSnapshot(
             debugger_alive=True,
@@ -132,7 +153,7 @@ def _continue_side_effect(
             thread_id=2,
         )
         session.runtime.record_stop_event(stop_event)
-        return OperationSuccess(CommandExecutionInfo(command="-exec-continue"))
+        return OperationSuccess(_command_result("-exec-continue"))
 
     return continue_side_effect
 
@@ -161,7 +182,11 @@ class TestHandlerDispatch:
 
         manager = Mock(spec=SessionRegistry)
         manager.start_session.return_value = OperationSuccess(
-            SessionStartInfo(session_id=42, message="Session started"),
+            SessionStartInfo(
+                session_id=42,
+                message="Session started",
+                diagnostics=_startup_diagnostics(),
+            ),
             warnings=("symbols missing",),
         )
 
@@ -177,7 +202,11 @@ class TestHandlerDispatch:
 
         manager = Mock(spec=SessionRegistry)
         manager.start_session.return_value = OperationSuccess(
-            SessionStartInfo(session_id=7, message="Session started"),
+            SessionStartInfo(
+                session_id=7,
+                message="Session started",
+                diagnostics=_startup_diagnostics(),
+            ),
         )
 
         dispatch(
@@ -215,7 +244,11 @@ class TestHandlerDispatch:
 
         manager = Mock(spec=SessionRegistry)
         manager.start_session.return_value = OperationSuccess(
-            SessionStartInfo(session_id=11, message="GDB session started"),
+            SessionStartInfo(
+                session_id=11,
+                message="GDB session started",
+                diagnostics=_startup_diagnostics(),
+            ),
         )
 
         result_data = dispatch(
@@ -239,7 +272,11 @@ class TestHandlerDispatch:
 
         manager = Mock(spec=SessionRegistry)
         manager.start_session.return_value = OperationSuccess(
-            SessionStartInfo(session_id=12, message="LLDB session started"),
+            SessionStartInfo(
+                session_id=12,
+                message="LLDB session started",
+                diagnostics=_startup_diagnostics(DEBUGGER_LLDB),
+            ),
         )
 
         result_data = dispatch(
@@ -552,7 +589,7 @@ class TestHandlerRouting:
 
         session = _session_double()
         session.execute_command.return_value = OperationSuccess(
-            CommandExecutionInfo(command="info threads", output="Thread info")
+            _command_result("info threads", console_output="Thread info")
         )
         manager = _manager_for(session)
 
@@ -569,7 +606,7 @@ class TestHandlerRouting:
         """Execution manage run should translate wait policy into session arguments."""
 
         session = _session_double()
-        session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
+        session.run.return_value = OperationSuccess(_command_result("-exec-run"))
         manager = _manager_for(session)
 
         dispatch(
@@ -597,7 +634,7 @@ class TestHandlerRouting:
         """Run should work without an explicit execution payload."""
 
         session = _session_double()
-        session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
+        session.run.return_value = OperationSuccess(_command_result("-exec-run"))
         manager = _manager_for(session)
 
         dispatch(
@@ -612,7 +649,7 @@ class TestHandlerRouting:
         """String-form run args should be shell-split before forwarding."""
 
         session = _session_double()
-        session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
+        session.run.return_value = OperationSuccess(_command_result("-exec-run"))
         manager = _manager_for(session)
 
         dispatch(
@@ -751,9 +788,7 @@ class TestHandlerRouting:
         """Attach requests should forward pid and timeout."""
 
         session = _session_double()
-        session.attach_process.return_value = OperationSuccess(
-            CommandExecutionInfo(command="attach 42")
-        )
+        session.attach_process.return_value = OperationSuccess(_command_result("attach 42"))
         manager = _manager_for(session)
 
         dispatch(
@@ -1702,7 +1737,7 @@ class TestHandlerRouting:
 
         session = _session_double()
         session.evaluate_expression.return_value = OperationSuccess(
-            CommandExecutionInfo(command="-data-evaluate-expression")
+            _command_result("-data-evaluate-expression")
         )
         manager = _manager_for(session)
 
@@ -1726,7 +1761,7 @@ class TestHandlerRouting:
 
         session = _session_double()
         session.get_registers.return_value = OperationSuccess(
-            CommandExecutionInfo(command="-data-list-register-values x")
+            _command_result("-data-list-register-values x")
         )
         manager = _manager_for(session)
 
@@ -1755,7 +1790,7 @@ class TestHandlerRouting:
 
         session = _session_double()
         session.get_registers.return_value = OperationSuccess(
-            CommandExecutionInfo(command="-data-list-register-values N")
+            _command_result("-data-list-register-values N")
         )
         manager = _manager_for(session)
 
@@ -1789,9 +1824,7 @@ class TestHandlerRouting:
         """Backtrace requests should accept numeric-string thread IDs."""
 
         session = _session_double()
-        session.get_backtrace.return_value = OperationSuccess(
-            CommandExecutionInfo(command="-stack-list-frames")
-        )
+        session.get_backtrace.return_value = OperationSuccess(_command_result("-stack-list-frames"))
         manager = _manager_for(session)
 
         dispatch(

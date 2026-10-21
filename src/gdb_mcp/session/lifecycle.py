@@ -8,14 +8,16 @@ from typing import TypeAlias
 
 from ..contracts import DEBUGGER_GDB, DEBUGGER_NAMES
 from ..domain import (
+    BackendData,
     OperationError,
     OperationSuccess,
     SessionMessage,
     SessionStartupInfo,
     SessionStatusSnapshot,
+    StartupDiagnostics,
     StructuredPayload,
     payload_to_mapping,
-    result_to_mapping,
+    result_to_envelope,
 )
 from ..transport import (
     EndpointError,
@@ -326,11 +328,16 @@ class SessionLifecycleService:
                     startup_output=startup_output_lower,
                 )
 
-                env_output = self._apply_environment(env)
+                startup_backend_data = BackendData(
+                    debugger=DEBUGGER_GDB,
+                    console_output=self._startup_console_text(startup_result),
+                    data=self._startup_raw_data(startup_result),
+                )
+                env_output = self._apply_environment(env, startup_backend_data)
                 if isinstance(env_output, OperationError):
                     return env_output
 
-                init_output: list[SerializedResultMapping] = []
+                initialization_results: list[SerializedResultMapping] = []
                 if init_commands:
                     for cmd in init_commands:
                         try:
@@ -347,7 +354,7 @@ class SessionLifecycleService:
                             result = self._command_runner.execute_command_result(
                                 cmd, timeout_sec=timeout
                             )
-                            init_output.append(result_to_mapping(result))
+                            initialization_results.append(result_to_envelope(result))
 
                             if cmd_lower.startswith("core-file "):
                                 self._runtime.time_module.sleep(INIT_COMMAND_DELAY_SEC)
@@ -369,13 +376,23 @@ class SessionLifecycleService:
                                 return OperationError(
                                     message=f"Init command '{cmd}' failed: {error_msg}",
                                     fatal=result.fatal,
-                                    details={"init_output": payload_to_mapping(init_output)},
+                                    details={
+                                        "diagnostics": payload_to_mapping(
+                                            StartupDiagnostics(
+                                                environment_results=env_output,
+                                                initialization_results=initialization_results,
+                                                backend_data=startup_backend_data,
+                                            )
+                                        )
+                                    },
                                 )
 
                         except Exception as exc:
                             logger.exception("Exception during init command '%s'", cmd)
-                            init_output.append(
-                                {"status": "error", "command": cmd, "message": str(exc)}
+                            initialization_results.append(
+                                result_to_envelope(
+                                    OperationError(message=str(exc), details={"command": cmd})
+                                )
                             )
 
                             if not self._command_runner.is_gdb_alive():
@@ -385,7 +402,15 @@ class SessionLifecycleService:
                             )
                             return OperationError(
                                 message=f"Init command '{cmd}' raised an exception: {exc!s}",
-                                details={"init_output": payload_to_mapping(init_output)},
+                                details={
+                                    "diagnostics": payload_to_mapping(
+                                        StartupDiagnostics(
+                                            environment_results=env_output,
+                                            initialization_results=initialization_results,
+                                            backend_data=startup_backend_data,
+                                        )
+                                    )
+                                },
                             )
 
                 target_loaded_probe = self._probe_target_loaded()
@@ -416,9 +441,11 @@ class SessionLifecycleService:
                         stop_reason=self._runtime.stop_reason,
                         stop_kind=self._runtime.stop_kind,
                         exit_code=self._runtime.exit_code,
-                        startup_output=startup_output_text.strip() or None,
-                        env_output=env_output or None,
-                        init_output=init_output or None,
+                        diagnostics=StartupDiagnostics(
+                            environment_results=env_output,
+                            initialization_results=initialization_results,
+                            backend_data=startup_backend_data,
+                        ),
                         endpoint=endpoint,
                         rr_replay=replay,
                     ),
@@ -547,7 +574,7 @@ class SessionLifecycleService:
         return command
 
     def _apply_environment(
-        self, env: dict[str, str] | None
+        self, env: dict[str, str] | None, startup_backend_data: BackendData
     ) -> list[SerializedResultMapping] | OperationError:
         """Apply inferior environment variables before startup commands run."""
 
@@ -559,13 +586,24 @@ class SessionLifecycleService:
             validation_error = _environment_validation_error(var_name, var_value)
             if validation_error is not None:
                 self._cleanup_failed_start(validation_error)
-                return OperationError(message=validation_error)
+                return OperationError(
+                    message=validation_error,
+                    details={
+                        "diagnostics": payload_to_mapping(
+                            StartupDiagnostics(
+                                environment_results=env_output,
+                                initialization_results=[],
+                                backend_data=startup_backend_data,
+                            )
+                        )
+                    },
+                )
 
             env_cmd = f"set environment {var_name} {var_value}"
             result = self._command_runner.execute_command_result(
                 env_cmd, timeout_sec=DEFAULT_TIMEOUT_SEC
             )
-            env_output.append(result_to_mapping(result))
+            env_output.append(result_to_envelope(result))
 
             if isinstance(result, OperationError):
                 self._cleanup_failed_start(
@@ -574,7 +612,15 @@ class SessionLifecycleService:
                 return OperationError(
                     message=f"Failed to set environment variable {var_name}: {result.message}",
                     fatal=result.fatal,
-                    details={"env_output": payload_to_mapping(env_output)},
+                    details={
+                        "diagnostics": payload_to_mapping(
+                            StartupDiagnostics(
+                                environment_results=env_output,
+                                initialization_results=[],
+                                backend_data=startup_backend_data,
+                            )
+                        )
+                    },
                 )
 
         return env_output
@@ -594,6 +640,26 @@ class SessionLifecycleService:
         streams.extend(item for item in startup_result.log if isinstance(item, str))
         streams.extend(item for item in startup_result.output if isinstance(item, str))
         return "".join(streams)
+
+    @staticmethod
+    def _startup_console_text(startup_result: ParsedMiResponse) -> str:
+        """Join only GDB's console stream for the public console output field."""
+
+        return "".join(item for item in startup_result.console if isinstance(item, str)).strip()
+
+    @staticmethod
+    def _startup_raw_data(startup_result: ParsedMiResponse) -> StructuredPayload:
+        """Keep non-console MI records in the tagged backend payload."""
+
+        return payload_to_mapping(
+            {
+                "log": startup_result.log,
+                "output": startup_result.output,
+                "result": startup_result.result,
+                "result_class": startup_result.result_class,
+                "notify": startup_result.notify,
+            }
+        )
 
     @staticmethod
     def _startup_target_loaded(
@@ -627,7 +693,7 @@ class SessionLifecycleService:
             logger.debug("Unable to refresh target_loaded from GDB: %s", result.message)
             return result
 
-        output = (result.value.output or "").strip()
+        output = result.value.backend_data.console_output.strip()
         if not output or output == "(no output)":
             return False
 

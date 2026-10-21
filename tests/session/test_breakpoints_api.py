@@ -423,7 +423,7 @@ class TestBreakpointApi:
         assert result["status"] == "error"
         assert "did not return breakpoint 3" in text(result["message"])
         assert dig(result, "details", "created_breakpoint_number") == 3
-        assert dig(result, "details", "create_output") == "Catchpoint 3 (fork)"
+        assert dig(result, "details", "create_console_output") == "Catchpoint 3 (fork)"
         assert dig(result, "details", "refreshed_breakpoints") == [
             {
                 "number": "7",

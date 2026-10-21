@@ -222,7 +222,7 @@ Run these checks immediately after `gdb_session_start`, `gdb_session_connect`, o
 - `result.target_loaded`: must be `true` before trusting later inspection
 - top-level `warnings`: treat missing symbols, bad executables, or load failures as real blockers
 - `result.execution_state`: tells you whether the inferior is `not_started`, `running`, `paused`, `exited`, or `unknown`
-- `result.env_output` and `result.init_output`: read these when startup configuration or symbol-path setup mattered
+- `result.diagnostics.environment_results` and `result.diagnostics.initialization_results`: read these when startup configuration or symbol-path setup mattered
 - `result.stop_reason`: important when startup leaves the inferior paused
 
 Treat these outcomes as hard gates:

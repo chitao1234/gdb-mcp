@@ -11,7 +11,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from gdb_mcp.contracts import DEBUGGER_GDB
 from gdb_mcp.domain import (
+    BackendData,
     CommandExecutionInfo,
     OperationResult,
     OperationSuccess,
@@ -236,7 +238,14 @@ def command_result() -> CommandResultBuilder:
         output: str | None = None,
     ) -> OperationSuccess[CommandExecutionInfo]:
         return OperationSuccess(
-            CommandExecutionInfo(command=command, debugger_result=result, output=output)
+            CommandExecutionInfo(
+                command=command,
+                backend_data=BackendData(
+                    debugger=DEBUGGER_GDB,
+                    console_output="" if output is None else output,
+                    data={} if result is None else result,
+                ),
+            )
         )
 
     return build

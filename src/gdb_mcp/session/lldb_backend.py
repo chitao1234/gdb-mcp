@@ -47,6 +47,7 @@ from ..domain import (
     SessionStatusSnapshot,
     SourceContextInfo,
     SourceLineRecord,
+    StartupDiagnostics,
     StopEvent,
     StructuredPayload,
     ThreadListInfo,
@@ -58,7 +59,7 @@ from ..domain import (
     WatchpointAccessType,
 )
 from ..domain.parsing import as_execution_state, as_stop_kind
-from ..domain.results import payload_to_mapping
+from ..domain.results import payload_to_mapping, result_to_envelope
 from .backends import BackendCapabilities
 from .config import SessionConfig
 from .constants import DEFAULT_TIMEOUT_SEC
@@ -88,8 +89,6 @@ class LldbSbBackend:
         self._capabilities = BackendCapabilities.full_surface(DEBUGGER_LLDB)
         self._state_detail: Literal["crashed"] | None = None
         self._last_stop_key: tuple[object, ...] | None = None
-        self._init_output: list[StructuredPayload] = []
-        self._startup_output: str | None = None
         # Public breakpoint numbers are one namespace. Native LLDB breakpoint
         # and watchpoint ids are separate, so each public number records the
         # native kind and id.
@@ -281,7 +280,9 @@ class LldbSbBackend:
             breakpoint_number=breakpoint_number,
             exit_code=self._integer(payload, "exit_code"),
             timestamp=time.time(),
-            backend_data=BackendData(debugger="lldb", data=details) if details else None,
+            backend_data=(
+                BackendData(debugger="lldb", console_output="", data=details) if details else None
+            ),
         )
         self.runtime.record_stop_event(event)
 
@@ -444,9 +445,6 @@ class LldbSbBackend:
                 self._client = client
                 self.runtime.controller = client
                 initialized = client.request("initialize")
-                self._startup_output = "LLDB " + str(
-                    initialized.get("version") or "session started"
-                )
                 env_entries = [f"{key}={value}" for key, value in (env or {}).items()]
                 client.request(
                     "configure_launch",
@@ -463,20 +461,29 @@ class LldbSbBackend:
                     client.request("load_core", path=core)
                 if endpoint:
                     client.request("connect_remote", endpoint=endpoint)
-                init_output: list[StructuredPayload] = []
+                initialization_results: list[StructuredPayload] = []
                 for command in init_commands or ():
-                    result = client.request("command", command=command)
-                    init_output.append(_structured(result))
-                    if not bool(result.get("succeeded")):
-                        message = str(
-                            result.get("error") or result.get("output") or "command failed"
-                        )
+                    result = self.execute_command(command)
+                    initialization_results.append(result_to_envelope(result))
+                    if isinstance(result, OperationError):
+                        message = result.message
                         self._cleanup_failed_start(f"Init command {command!r} failed: {message}")
                         return OperationError(
                             message=f"Init command {command!r} failed: {message}",
-                            details={"init_output": payload_to_mapping(init_output)},
+                            details={
+                                "diagnostics": payload_to_mapping(
+                                    StartupDiagnostics(
+                                        environment_results=[],
+                                        initialization_results=initialization_results,
+                                        backend_data=BackendData(
+                                            debugger=DEBUGGER_LLDB,
+                                            console_output="",
+                                            data=payload_to_mapping(initialized),
+                                        ),
+                                    )
+                                )
+                            },
                         )
-                self._init_output = init_output
                 status = client.request("status")
                 snapshot = self._apply_status(status)
                 self.runtime.mark_ready()
@@ -498,8 +505,15 @@ class LldbSbBackend:
                         stop_reason=snapshot.stop_reason,
                         stop_kind=snapshot.stop_kind,
                         exit_code=snapshot.exit_code,
-                        startup_output=self._startup_output,
-                        init_output=init_output or None,
+                        diagnostics=StartupDiagnostics(
+                            environment_results=[],
+                            initialization_results=initialization_results,
+                            backend_data=BackendData(
+                                debugger=DEBUGGER_LLDB,
+                                console_output="",
+                                data=payload_to_mapping(initialized),
+                            ),
+                        ),
                         endpoint=endpoint,
                     )
                 )
@@ -606,9 +620,23 @@ class LldbSbBackend:
             if not succeeded:
                 return OperationError(
                     message=output.strip() or "LLDB command failed",
-                    details={"output": output},
                 )
-            return OperationSuccess(CommandExecutionInfo(command=command, output=output))
+            return OperationSuccess(
+                CommandExecutionInfo(
+                    command=command,
+                    backend_data=BackendData(
+                        debugger=DEBUGGER_LLDB,
+                        console_output=output,
+                        data=_structured(
+                            {
+                                name: value
+                                for name, value in result.items()
+                                if name not in {"output", "error", "succeeded"}
+                            }
+                        ),
+                    ),
+                )
+            )
         except BridgeError as exc:
             return _operation_error(exc)
 
@@ -631,7 +659,12 @@ class LldbSbBackend:
             self._apply_status(result)
             return OperationSuccess(
                 CommandExecutionInfo(
-                    command="run", output="LLDB run started", debugger_result=_structured(result)
+                    command="run",
+                    backend_data=BackendData(
+                        debugger=DEBUGGER_LLDB,
+                        console_output="",
+                        data=_structured(result),
+                    ),
                 )
             )
         except BridgeError as exc:
@@ -688,8 +721,11 @@ class LldbSbBackend:
             return OperationSuccess(
                 CommandExecutionInfo(
                     command="attach",
-                    output=f"Attached to pid {pid}",
-                    debugger_result=_structured(result),
+                    backend_data=BackendData(
+                        debugger=DEBUGGER_LLDB,
+                        console_output="",
+                        data=_structured(result),
+                    ),
                 )
             )
         except BridgeError as exc:
@@ -740,8 +776,11 @@ class LldbSbBackend:
             return OperationSuccess(
                 CommandExecutionInfo(
                     command="continue",
-                    output="LLDB continue",
-                    debugger_result=_structured(result),
+                    backend_data=BackendData(
+                        debugger=DEBUGGER_LLDB,
+                        console_output="",
+                        data=_structured(result),
+                    ),
                 )
             )
         except BridgeError as exc:
@@ -807,8 +846,11 @@ class LldbSbBackend:
             return OperationSuccess(
                 CommandExecutionInfo(
                     command=kind,
-                    output=f"LLDB step {kind}",
-                    debugger_result=_structured(result),
+                    backend_data=BackendData(
+                        debugger=DEBUGGER_LLDB,
+                        console_output="",
+                        data=_structured(result),
+                    ),
                 )
             )
         except BridgeError as exc:
@@ -852,7 +894,14 @@ class LldbSbBackend:
             result = self._request("interrupt")
             self._apply_status(result)
             return OperationSuccess(
-                MessageResult(message="LLDB interrupted", debugger_result=_structured(result))
+                MessageResult(
+                    message="LLDB interrupted",
+                    backend_data=BackendData(
+                        debugger=DEBUGGER_LLDB,
+                        console_output="",
+                        data=_structured(result),
+                    ),
+                )
             )
         except BridgeError as exc:
             return _operation_error(exc)

@@ -61,10 +61,10 @@ debugger is behind the session:
 - `times` (breakpoints) is an integer hit count; GDB reports a string
 - `level` (frames) is an integer; GDB reports a string
 - `number` (registers) is an integer index; GDB reports a string
-- `is_current` (source lines, disassembly instructions, inferiors) is a boolean;
+- `is_current` (source lines and disassembly instructions) is a boolean;
   it is derived by this server rather than reported by the debugger, so a line,
-  instruction, or inferior that is not the current one says `false` instead of
-  omitting the field
+  instruction that is not current says `false` instead of omitting the field;
+  inferior selection is represented by `current_inferior_id` on the inventory
 - `stop_kind` accompanies every `stop_reason` (and `final_stop_kind` every
   `final_stop_reason`) with the canonical meaning: `breakpoint`, `watchpoint`,
   `step`, `signal`, `exception`, `exit`, `entry`, `pause`, `fork`, `vfork`,
@@ -72,10 +72,11 @@ debugger is behind the session:
   kept as-is; `stop_reasons` request filters keep matching that native string
 - `state_detail` is `"crashed"` when a paused inferior stopped on a fatal signal
   or LLDB reported a crashed process; the execution state itself stays `paused`
-- stop events may add `signal_name`, `signal_meaning`, `signal_code`,
-  `fault_address`, and a compact `crash` object when the backend can obtain
-  siginfo or structured crash information. A fault address of `0x0` is kept when
-  the signal identifies one; the field is not invented for ordinary breaks
+- stop events expose portable signal fields once: `signal_name`,
+  `signal_meaning`, `signal_code`, and `fault_address`. Remaining debugger data
+  is namespaced under `backend_data` with its `debugger` tag; LLDB crash
+  extensions are kept there. A fault address of `0x0` is kept when the signal
+  identifies one; the field is not invented for ordinary breaks
 - `source` lines carry an optional `column`; only the current line normally has
   one, since source files do not record a column for every line
 - `variables` carry `summary`, `address`, and `children_count` when the backend
@@ -134,8 +135,9 @@ Action-based tools return:
   "status": "success",
   "action": "status",
   "result": {
-    "is_running": true,
+    "debugger_alive": true,
     "target_loaded": true,
+    "session_state": "ready",
     "execution_state": "paused"
   }
 }
@@ -376,12 +378,17 @@ wrapper such as `rust-gdb` achieves the same by injecting those options.
 - `execution_state`
 - `stop_reason`
 - `exit_code`
-- `startup_output`
-- `env_output`
-- `init_output`
+- `diagnostics`
 
 These fields are inside the success envelope's `result` object. Any `warnings`
 array is at the envelope root.
+
+`diagnostics` contains `environment_results` and `initialization_results`, each
+an array of complete tool-result envelopes, plus `backend_data`. The tagged
+`backend_data` object contains `debugger`, `console_output`, and `data`; the
+last field holds debugger-specific structured startup data. Both result arrays
+are always present; a backend may apply startup configuration without producing
+separate per-command result envelopes.
 
 ### Example
 
@@ -523,7 +530,7 @@ Query session inventory or inspect one live session.
 | Action | Request Shape | Success `result` |
 | --- | --- | --- |
 | `list` | `{"action":"list","query":{}}` | `sessions` |
-| `status` | `{"session_id":7,"action":"status","query":{}}` | `is_running`, `target_loaded`, `has_controller`, `execution_state`, `stop_reason`, `exit_code`, `current_inferior_id`, `inferior_count`, `inferior_states`, `follow_fork_mode`, `detach_on_fork` |
+| `status` | `{"session_id":7,"action":"status","query":{}}` | `debugger_alive`, `target_loaded`, `session_state`, `execution_state`, `stop_reason`, `exit_code`, `current_inferior_id`, `inferior_count`, `inferior_states`, `follow_fork_mode`, `detach_on_fork` |
 
 ### Example
 
@@ -564,9 +571,9 @@ Create, remove, select, or reconfigure inferiors.
 
 | Action | Request Shape | Success `result` |
 | --- | --- | --- |
-| `create` | `{"session_id":7,"action":"create","inferior":{"executable":"/path/app","make_current":true}}` | `inferior_id`, `is_current`, `display`, `description`, `connection`, `executable`, `current_inferior_id`, `inferior_count`, `message` |
+| `create` | `{"session_id":7,"action":"create","inferior":{"executable":"/path/app","make_current":true}}` | `inferior_id`, `display`, `description`, `connection`, `executable`, `current_inferior_id`, `inferior_count`, `message` |
 | `remove` | `{"session_id":7,"action":"remove","inferior":{"inferior_id":2}}` | `inferior_id`, `current_inferior_id`, `inferior_count`, `message` |
-| `select` | `{"session_id":7,"action":"select","inferior":{"inferior_id":2}}` | `inferior_id`, `is_current`, `display`, `description`, `connection`, `executable`, `message` |
+| `select` | `{"session_id":7,"action":"select","inferior":{"inferior_id":2}}` | `inferior_id`, `display`, `description`, `connection`, `executable`, `message` |
 | `set_follow_fork_mode` | `{"session_id":7,"action":"set_follow_fork_mode","inferior":{"mode":"child"}}` | `mode`, `message` |
 | `set_detach_on_fork` | `{"session_id":7,"action":"set_detach_on_fork","inferior":{"enabled":false}}` | `enabled`, `message` |
 
@@ -582,11 +589,11 @@ Run or synchronize execution state.
 
 | Action | Request Shape | Success `result` |
 | --- | --- | --- |
-| `run` | `{"session_id":7,"action":"run"}` | `command`, optional `output`, optional `debugger_result` |
-| `continue` | `{"session_id":7,"action":"continue"}` | `command`, optional `output`, optional `debugger_result` |
-| `interrupt` | `{"session_id":7,"action":"interrupt"}` | `message`, `debugger_result` |
-| `step` | `{"session_id":7,"action":"step"}` | `command`, optional `output`, optional `debugger_result` |
-| `next` | `{"session_id":7,"action":"next"}` | `command`, optional `output`, optional `debugger_result` |
+| `run` | `{"session_id":7,"action":"run"}` | `command`, `backend_data` |
+| `continue` | `{"session_id":7,"action":"continue"}` | `command`, `backend_data` |
+| `interrupt` | `{"session_id":7,"action":"interrupt"}` | `message`, `backend_data` |
+| `step` | `{"session_id":7,"action":"step"}` | `command`, `backend_data` |
+| `next` | `{"session_id":7,"action":"next"}` | `command`, `backend_data` |
 | `finish` | `{"session_id":7,"action":"finish"}` | `message`, `return_value`, `result_var`, `frame`, `execution_state`, `stop_reason`, `last_stop_event` |
 | `wait_for_stop` | `{"session_id":7,"action":"wait_for_stop","execution":{"timeout_sec":10,"stop_reasons":["breakpoint-hit"]}}` | `message`, `matched`, `timed_out`, `source`, `execution_state`, `stop_reason`, `reason_filter`, `last_stop_event` |
 
@@ -613,7 +620,7 @@ started with `record`/`target record-full`. `run`, `interrupt`, and
 
 ### Notes
 
-- `run`, `continue`, `step`, and `next` return `command`, optional text `output`, and optional machine-readable `debugger_result` inside the success `result` object. `interrupt` uses the same envelope and may include top-level `warnings` when no stop notification arrives.
+- `run`, `continue`, `step`, `next`, and `interrupt` return tagged `backend_data` inside the success `result` object. It contains `debugger`, `console_output`, and debugger-specific `data`. `interrupt` may include top-level `warnings` when no stop notification arrives.
 - `wait_for_stop` is the structured replacement for manual polling.
 
 ### Reverse Debugging
@@ -962,17 +969,9 @@ Repeat fresh debugger sessions until failure predicates match or the iteration l
 ### Success Fields
 
 - `message`
-- `matched_failure`
 - `iterations_requested`
-- `iterations_completed`
-- `failure_iteration`
-- `trigger`
-- `execution_state`
-- `stop_reason`
-- `exit_code`
 - `capture_bundle`
 - `capture_error`
-- `last_result`
 - `iterations`
 
 These fields are inside the success envelope's `result` object. Any `warnings`
@@ -981,13 +980,18 @@ array is at the envelope root.
 Each `iterations[]` entry contains:
 
 - `iteration`
-- `status`
+- `phase`
+- `result` (the complete envelope from the operation for this phase)
 - `execution_state`
 - `stop_reason`
+- `stop_kind`
 - `exit_code`
 - `matched_failure`
 - `trigger`
-- `message`
+
+The completed count is the length of `iterations`. State and stop information
+belongs to each iteration, so the campaign result does not repeat a potentially
+different final state at its root.
 
 ## `gdb_execute_command`
 
@@ -1002,8 +1006,10 @@ Escape hatch for CLI or MI commands. This is not action-based.
 ### Success Fields
 
 - `command`
-- `output`
-- `debugger_result`
+- `backend_data`
+
+`backend_data` contains the `debugger` tag, `console_output`, and the raw
+debugger-specific `data` object.
 
 These fields are inside the success envelope's `result` object.
 
@@ -1022,8 +1028,7 @@ Attach to a running process by PID. This is a privileged tool.
 ### Success Fields
 
 - `command`
-- `output`
-- `debugger_result`
+- `backend_data`
 
 These fields are inside the success envelope's `result` object.
 

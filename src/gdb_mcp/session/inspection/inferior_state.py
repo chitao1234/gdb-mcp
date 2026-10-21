@@ -32,7 +32,7 @@ class InspectionInferiorState:
         if isinstance(result, OperationError):
             return result
 
-        payload = self._parse_inferiors_output(result.value.output or "")
+        payload = self._parse_inferiors_output(result.value.backend_data.console_output)
         self._runtime.update_inferior_inventory(
             current_inferior_id=payload.current_inferior_id,
             count=len(payload.inferiors),

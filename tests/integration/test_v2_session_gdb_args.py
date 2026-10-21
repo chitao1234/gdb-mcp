@@ -57,5 +57,5 @@ def test_debugger_args_reach_gdb_before_the_program_loads(
     finally:
         stop_session(session_id)
 
-    assert "4242" in text(dig(elements, "result", "output"))
-    assert str(script_dir) in text(dig(directories, "result", "output"))
+    assert "4242" in text(dig(elements, "result", "backend_data", "console_output"))
+    assert str(script_dir) in text(dig(directories, "result", "backend_data", "console_output"))

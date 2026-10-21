@@ -7,7 +7,9 @@ from typing import cast
 
 import pytest
 
+from gdb_mcp.contracts import DEBUGGER_GDB
 from gdb_mcp.domain import (
+    BackendData,
     JsonObject,
     MessageResult,
     OperationError,
@@ -99,10 +101,16 @@ class TestDomainResults:
 
         inner: JsonObject = {"nested": [1, 2]}
 
-        payload = mapping(payload_to_mapping(MessageResult(message="m", debugger_result=inner)))
+        payload = mapping(
+            payload_to_mapping(
+                MessageResult(message="m", backend_data=BackendData(DEBUGGER_GDB, "", inner))
+            )
+        )
 
-        assert payload["debugger_result"] == {"nested": [1, 2]}
-        assert payload["debugger_result"] is not inner
+        backend_data = mapping(payload["backend_data"])
+        assert backend_data["console_output"] == ""
+        assert backend_data["data"] == {"nested": [1, 2]}
+        assert backend_data["data"] is not inner
 
     def test_payload_to_mapping_rejects_non_serializable_dataclass_field(self) -> None:
         """A dataclass holding a non-JSON field should fail during conversion."""
@@ -112,4 +120,6 @@ class TestDomainResults:
         bad_payload = cast(JsonObject, {"bad": {1, 2}})
 
         with pytest.raises(TypeError):
-            payload_to_mapping(MessageResult(message="m", debugger_result=bad_payload))
+            payload_to_mapping(
+                MessageResult(message="m", backend_data=BackendData(DEBUGGER_GDB, "", bad_payload))
+            )

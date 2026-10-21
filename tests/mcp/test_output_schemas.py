@@ -24,6 +24,7 @@ from gdb_mcp.contracts import (
     TOOL_BREAKPOINT_QUERY,
     TOOL_CAPTURE_BUNDLE,
     TOOL_CONTEXT_QUERY,
+    TOOL_INFERIOR_MANAGE,
     TOOL_INFERIOR_QUERY,
     TOOL_INSPECT_QUERY,
     TOOL_SESSION_QUERY,
@@ -153,7 +154,25 @@ def test_success_warnings_are_an_optional_array(
     """Warnings are omitted when empty and otherwise always an array."""
 
     schema = output_schemas["gdb_session_start"]
-    jsonschema.validate({"status": "success", "result": {"session_id": 1}, "warnings": []}, schema)
+    jsonschema.validate(
+        {
+            "status": "success",
+            "result": {
+                "session_id": 1,
+                "diagnostics": {
+                    "environment_results": [],
+                    "initialization_results": [],
+                    "backend_data": {
+                        "debugger": "gdb",
+                        "console_output": "",
+                        "data": {},
+                    },
+                },
+            },
+            "warnings": [],
+        },
+        schema,
+    )
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(
             {"status": "success", "result": {"session_id": 1}, "warnings": None}, schema
@@ -305,19 +324,19 @@ def test_a_nullable_enum_keeps_its_null_alternative(
     assert [mapping(item) for item in sequence(stop_kind["anyOf"])][1] == {"type": "null"}
 
 
-def test_arbitrary_debugger_data_publishes_as_a_recursive_reference(
+def test_backend_data_is_tagged_and_keeps_a_recursive_native_payload(
     output_schemas: dict[str, dict[str, object]],
 ) -> None:
-    """An MI result payload is described by a recursive definition, not a guess."""
+    """Opaque debugger replies are explicitly tagged and recursively described."""
 
     schema = output_schemas["gdb_execute_command"]
     success = _variants(schema)[0]
 
     payload = _resolve(schema, mapping(success["properties"])["result"])
-    assert dig(payload, "properties", "debugger_result", "anyOf") == [
-        {"$ref": "#/$defs/JsonObject"},
-        {"type": "null"},
-    ]
+    backend_data = _resolve(schema, dig(payload, "properties", "backend_data"))
+    assert dig(backend_data, "properties", "debugger", "enum") == ["gdb", "lldb"]
+    assert dig(backend_data, "properties", "data", "$ref") == "#/$defs/JsonObject"
+    assert "backend_data" in sequence(payload["required"])
     assert {"JsonObject", "JsonValue"} <= set(mapping(schema["$defs"]))
 
     jsonschema.validate(
@@ -325,11 +344,114 @@ def test_arbitrary_debugger_data_publishes_as_a_recursive_reference(
             "status": "success",
             "result": {
                 "command": "-break-list",
-                "output": None,
-                "debugger_result": {"x": [1]},
+                "backend_data": {
+                    "debugger": "gdb",
+                    "console_output": "",
+                    "data": {"x": [1]},
+                },
             },
         },
         schema,
+    )
+
+
+def test_output_schemas_exclude_removed_duplicate_and_ambiguous_fields(
+    output_schemas: dict[str, dict[str, object]],
+) -> None:
+    """Published result models do not restore fields removed from the contract."""
+
+    serialized = json.dumps(output_schemas)
+    for removed in (
+        "debugger_result",
+        "startup_output",
+        "env_output",
+        "init_output",
+        "is_running",
+        "has_controller",
+        "lifecycle_state",
+        "iterations_completed",
+        "last_result",
+        "artifact_count",
+        "block_count",
+    ):
+        assert f'"{removed}"' not in serialized
+    assert '"create_output"' not in serialized
+
+    session_status = next(
+        variant
+        for variant in _variants(output_schemas[TOOL_SESSION_QUERY])
+        if dig(variant, "properties", "action", "enum") == ["status"]
+    )
+    status_result = _resolve(
+        output_schemas[TOOL_SESSION_QUERY], dig(session_status, "properties", "result")
+    )
+    assert {"debugger_alive", "session_state"} <= set(mapping(status_result["properties"]))
+
+    stop_event = mapping(mapping(output_schemas["gdb_workflow_batch"]["$defs"])["StopEvent"])
+    stop_properties = mapping(stop_event["properties"])
+    assert {"signal_name", "signal_meaning", "signal_code", "fault_address"} <= set(stop_properties)
+    assert "backend_data" in stop_properties
+    assert not {"crash", "details"} & set(stop_properties)
+
+    start = _variants(output_schemas["gdb_session_start"])[0]
+    start_result = _resolve(output_schemas["gdb_session_start"], dig(start, "properties", "result"))
+    diagnostics = _resolve(
+        output_schemas["gdb_session_start"], dig(start_result, "properties", "diagnostics")
+    )
+    assert {"environment_results", "initialization_results", "backend_data"} <= set(
+        mapping(diagnostics["properties"])
+    )
+    assert {"environment_results", "initialization_results", "backend_data"} <= set(
+        sequence(diagnostics["required"])
+    )
+
+    inferior_schema = output_schemas[TOOL_INFERIOR_QUERY]
+    inferior_list = next(
+        variant
+        for variant in _variants(inferior_schema)
+        if dig(variant, "properties", "action", "enum") == [ACTION_LIST]
+    )
+    inferiors = _resolve(
+        inferior_schema,
+        dig(
+            _resolve(inferior_schema, dig(inferior_list, "properties", "result")),
+            "properties",
+            "inferiors",
+        ),
+    )
+    inferior_item = _resolve(inferior_schema, inferiors["items"])
+    assert "is_current" not in mapping(inferior_item["properties"])
+    for variant in _variants(output_schemas[TOOL_INFERIOR_MANAGE]):
+        if dig(variant, "properties", "status", "enum") != ["success"]:
+            continue
+        result = _resolve(
+            output_schemas[TOOL_INFERIOR_MANAGE], dig(variant, "properties", "result")
+        )
+        assert "is_current" not in mapping(result["properties"])
+
+    batch = _resolve(
+        output_schemas["gdb_workflow_batch"],
+        dig(_variants(output_schemas["gdb_workflow_batch"])[0], "properties", "result"),
+    )
+    step = _resolve(output_schemas["gdb_workflow_batch"], dig(batch, "properties", "steps"))
+    step_payload = _resolve(output_schemas["gdb_workflow_batch"], step["items"])
+    assert not {"status", "action", "code"} & set(mapping(step_payload["properties"]))
+
+    campaign_schema = output_schemas["gdb_run_until_failure"]
+    campaign = _resolve(campaign_schema, dig(_variants(campaign_schema)[0], "properties", "result"))
+    campaign_properties = mapping(campaign["properties"])
+    assert not {
+        "iterations_completed",
+        "execution_state",
+        "stop_reason",
+        "stop_kind",
+        "exit_code",
+        "matched_failure",
+        "trigger",
+        "last_result",
+    } & set(campaign_properties)
+    assert "result" in mapping(
+        _resolve(campaign_schema, mapping(campaign_properties["iterations"])["items"])["properties"]
     )
 
 
@@ -360,6 +482,15 @@ def test_the_start_payload_documents_the_session_id(
                 "message": "GDB session started successfully",
                 "target_loaded": True,
                 "execution_state": "not_started",
+                "diagnostics": {
+                    "environment_results": [],
+                    "initialization_results": [],
+                    "backend_data": {
+                        "debugger": "gdb",
+                        "console_output": "",
+                        "data": {},
+                    },
+                },
             },
         },
         output_schemas["gdb_session_start"],

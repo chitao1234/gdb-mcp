@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, Mock
 
-from gdb_mcp.contracts import SessionState
+from gdb_mcp.contracts import DEBUGGER_GDB, SessionState
 from gdb_mcp.domain import (
+    BackendData,
     BatchExecutionInfo,
     BatchStepResult,
     CaptureBundleInfo,
@@ -17,6 +18,7 @@ from gdb_mcp.domain import (
     SessionMessage,
     SessionStartupInfo,
     SessionStatusSnapshot,
+    StartupDiagnostics,
     StopEvent,
 )
 from gdb_mcp.session.campaign import (
@@ -37,8 +39,22 @@ def _fake_session(
     """Build a session double with the surface the campaign runner drives."""
 
     session = Mock(spec=SessionService)
-    session.start.return_value = OperationSuccess(SessionStartupInfo(message="started"))
-    session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
+    session.start.return_value = OperationSuccess(
+        SessionStartupInfo(
+            message="started",
+            diagnostics=StartupDiagnostics(
+                environment_results=[],
+                initialization_results=[],
+                backend_data=BackendData(DEBUGGER_GDB, "", {}),
+            ),
+        )
+    )
+    session.run.return_value = OperationSuccess(
+        CommandExecutionInfo(
+            command="-exec-run",
+            backend_data=BackendData(debugger=DEBUGGER_GDB, console_output="", data={}),
+        )
+    )
     if status is not None:
         session.get_status.return_value = OperationSuccess(status)
     session.last_stop_event = stop_event

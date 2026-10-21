@@ -118,7 +118,8 @@ class TestExecutionApi:
             result = result_to_mapping(running_session.continue_execution(wait_for_stop=False))
 
         assert result["status"] == "success"
-        assert dig(result, "debugger_result", "result_class") == "running"
+        assert dig(result, "backend_data", "debugger") == "gdb"
+        assert dig(result, "backend_data", "data", "result_class") == "running"
         assert "warnings" in result
         status = result_to_mapping(running_session.get_status())
         assert status["execution_state"] == "running"
@@ -523,7 +524,7 @@ class TestExecutionApi:
         result = result_to_mapping(session.execute_command("info threads"))
 
         assert result["status"] == "success"
-        assert "Thread 1" in text(result["output"])
+        assert "Thread 1" in text(dig(result, "backend_data", "console_output"))
         assert '-interpreter-exec console "info threads"' in controller.decoded_writes[0]
 
     def test_execute_command_accepts_timeout_override(
@@ -551,7 +552,7 @@ class TestExecutionApi:
         result = result_to_mapping(session.execute_command("-thread-info"))
 
         assert result["status"] == "success"
-        assert "result" in mapping(result["debugger_result"])
+        assert "result" in mapping(mapping(result["backend_data"])["data"])
         assert controller.decoded_writes[0].endswith("-thread-info\n")
 
     def test_execute_command_mi_error_result(

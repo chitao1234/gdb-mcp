@@ -177,7 +177,19 @@ class SessionCommandRunner:
                 return OperationSuccess(
                     CommandExecutionInfo(
                         command=command,
-                        debugger_result=payload_to_mapping(parsed.to_dict()),
+                        backend_data=BackendData(
+                            debugger="gdb",
+                            console_output="".join(
+                                item for item in parsed.console if isinstance(item, str)
+                            ),
+                            data={
+                                "log": payload_to_mapping(parsed.log),
+                                "output": payload_to_mapping(parsed.output),
+                                "result": payload_to_mapping(parsed.result),
+                                "result_class": parsed.result_class,
+                                "notify": payload_to_mapping(parsed.notify),
+                            },
+                        ),
                     ),
                     warnings=(
                         (
@@ -221,19 +233,22 @@ class SessionCommandRunner:
             parsed=parsed,
         )
 
-        if cli_command:
-            console_output = "".join(item for item in parsed.console if isinstance(item, str))
-            return OperationSuccess(
-                CommandExecutionInfo(
-                    command=command,
-                    output=console_output.strip() if console_output else "(no output)",
-                )
-            )
-
         return OperationSuccess(
             CommandExecutionInfo(
                 command=command,
-                debugger_result=payload_to_mapping(parsed.to_dict()),
+                backend_data=BackendData(
+                    debugger="gdb",
+                    console_output="".join(
+                        item for item in parsed.console if isinstance(item, str)
+                    ),
+                    data={
+                        "log": payload_to_mapping(parsed.log),
+                        "output": payload_to_mapping(parsed.output),
+                        "result": payload_to_mapping(parsed.result),
+                        "result_class": parsed.result_class,
+                        "notify": payload_to_mapping(parsed.notify),
+                    },
+                ),
             )
         )
 
@@ -576,7 +591,9 @@ class SessionCommandRunner:
             exit_code=exit_code,
             timestamp=self._runtime.time_module.time(),
             backend_data=(
-                BackendData(debugger="gdb", data=backend_details) if backend_details else None
+                BackendData(debugger="gdb", console_output="", data=backend_details)
+                if backend_details
+                else None
             ),
         )
 

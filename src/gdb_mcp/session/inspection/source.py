@@ -20,8 +20,8 @@ from .base import (
 
 _LIST_LINE_RE = re.compile(r"^(?P<line>\d+)\t(?P<text>.*)$")
 
-# `CommandExecutionInfo.output` strips trailing whitespace, so a final blank
-# source line arrives without its tab ("12\t" becomes "12").
+# `CommandExecutionInfo.console_output` preserves trailing whitespace, so the
+# final blank source line still has its delimiter ("12\t").
 _LIST_TRAILING_BLANK_RE = re.compile(r"^(?P<line>\d+)$")
 
 
@@ -199,7 +199,7 @@ class InspectionSource:
         if isinstance(result, OperationError):
             return result
 
-        listed = _parse_list_output(result.value.output or "")
+        listed = _parse_list_output(result.value.backend_data.console_output)
         if not listed:
             return OperationError(message=f"Source file not found: {file_selector}")
 

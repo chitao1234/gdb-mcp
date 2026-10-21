@@ -7,6 +7,7 @@ import re
 from collections.abc import Mapping
 
 from ..domain import (
+    BackendData,
     BreakpointInfo,
     BreakpointListInfo,
     BreakpointRecord,
@@ -225,20 +226,28 @@ class SessionBreakpointService:
         if isinstance(result, OperationError):
             return result
 
-        number = self._extract_catchpoint_number(result.value.output or "")
+        number = self._extract_catchpoint_number(result.value.backend_data.console_output)
         if number is None:
             number = self._infer_new_catchpoint_number(previous_catchpoints)
         if number is None:
             return OperationError(
                 message=f"Catchpoint {kind} set, but GDB did not report its number",
-                details={"output": result.value.output or ""},
+                details={
+                    "backend_data": payload_to_mapping(
+                        BackendData(
+                            debugger="gdb",
+                            console_output=result.value.backend_data.console_output,
+                            data={},
+                        )
+                    )
+                },
             )
 
         return self._breakpoint_info_for_number(
             number,
             create_details={
                 "created_breakpoint_number": number,
-                "create_output": (result.value.output or "").strip(),
+                "create_console_output": result.value.backend_data.console_output.strip(),
             },
         )
 

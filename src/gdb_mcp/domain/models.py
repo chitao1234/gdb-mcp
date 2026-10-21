@@ -56,10 +56,20 @@ class StructuredOutput:
 
 @dataclass(slots=True, frozen=True)
 class BackendData(StructuredOutput):
-    """Debugger-specific data, explicitly identified and outside the portable contract."""
+    """Debugger response data tagged by source, with captured console text."""
 
     debugger: DebuggerName
+    console_output: str
     data: StructuredPayload
+
+
+@dataclass(slots=True, frozen=True)
+class StartupDiagnostics(StructuredOutput):
+    """Startup backend data and environment/initialization result envelopes."""
+
+    environment_results: list[StructuredPayload]
+    initialization_results: list[StructuredPayload]
+    backend_data: BackendData
 
 
 @dataclass(slots=True, frozen=True)
@@ -135,9 +145,7 @@ class SessionStartupInfo(StructuredOutput):
     stop_reason: str | None = None
     stop_kind: StopKind | None = None
     exit_code: int | None = None
-    startup_output: str | None = None
-    env_output: list[StructuredPayload] | None = None
-    init_output: list[StructuredPayload] | None = None
+    diagnostics: StartupDiagnostics = field(kw_only=True)
     endpoint: str | None = None
     rr_replay: str | None = None
 
@@ -391,7 +399,7 @@ class MessageResult(StructuredOutput):
     """Message plus structured result payload."""
 
     message: str
-    debugger_result: StructuredPayload
+    backend_data: BackendData
 
 
 @dataclass(slots=True, frozen=True)
@@ -399,8 +407,7 @@ class CommandExecutionInfo(StructuredOutput):
     """Structured result for command execution."""
 
     command: str
-    output: str | None = None
-    debugger_result: StructuredPayload | None = None
+    backend_data: BackendData
 
 
 @dataclass(slots=True, frozen=True)

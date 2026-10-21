@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, Mock
 import pytest
 
 from gdb_mcp.domain import (
+    BackendData,
     InferiorStateRecord,
     OperationError,
     OperationSuccess,
@@ -17,6 +18,7 @@ from gdb_mcp.domain import (
     SessionMessage,
     SessionStartupInfo,
     SessionStatusSnapshot,
+    StartupDiagnostics,
 )
 from gdb_mcp.session import registry as registry_module
 from gdb_mcp.session.config import SessionConfig
@@ -61,10 +63,23 @@ def _session_double() -> Mock:
     return session
 
 
+def _startup_info() -> SessionStartupInfo:
+    """Return a complete successful GDB startup result for registry tests."""
+
+    return SessionStartupInfo(
+        message="started",
+        diagnostics=StartupDiagnostics(
+            environment_results=[],
+            initialization_results=[],
+            backend_data=BackendData("gdb", "", {}),
+        ),
+    )
+
+
 def _publish_session(manager: SessionRegistry, session: Mock, *, program: str = "/bin/ls") -> int:
     """Publish one session through the public start_session path."""
 
-    session.start.return_value = OperationSuccess(SessionStartupInfo(message="started"))
+    session.start.return_value = OperationSuccess(_startup_info())
     result = manager.start_session(program=program)
     assert isinstance(result, OperationSuccess)
     return result.value.session_id
@@ -98,7 +113,7 @@ class TestSessionRegistry:
 
         sessions = [_session_double(), _session_double(), _session_double()]
         for session in sessions:
-            session.start.return_value = OperationSuccess(SessionStartupInfo(message="started"))
+            session.start.return_value = OperationSuccess(_startup_info())
 
         manager = SessionRegistry(session_factory=_session_factory_from(sessions))
 
@@ -328,7 +343,7 @@ class TestSessionRegistry:
 
         sessions = [_session_double() for _ in range(10)]
         for session in sessions:
-            session.start.return_value = OperationSuccess(SessionStartupInfo(message="started"))
+            session.start.return_value = OperationSuccess(_startup_info())
 
         index_lock = threading.Lock()
 
@@ -372,7 +387,7 @@ class TestSessionRegistry:
         """Atomic startup should publish the session only after success."""
 
         session = _session_double()
-        session.start.return_value = OperationSuccess(SessionStartupInfo(message="started"))
+        session.start.return_value = OperationSuccess(_startup_info())
         manager = SessionRegistry(session_factory=lambda _debugger: session)
 
         result = manager.start_session(program="/bin/ls")
@@ -386,7 +401,7 @@ class TestSessionRegistry:
 
         sessions = [_session_double(), _session_double()]
         for session in sessions:
-            session.start.return_value = OperationSuccess(SessionStartupInfo(message="started"))
+            session.start.return_value = OperationSuccess(_startup_info())
             session.has_controller = True
             session.stop.return_value = OperationSuccess(SessionMessage(message="stopped"))
 

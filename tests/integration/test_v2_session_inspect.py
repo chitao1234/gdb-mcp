@@ -345,7 +345,7 @@ def test_execute_command_escape_hatch_v2(session_id: int, call_gdb_tool: CallGdb
     )
     assert result["status"] == "success"
     assert dig(result, "result", "command") == "info functions"
-    assert isinstance(dig(result, "result", "output"), str)
+    assert isinstance(dig(result, "result", "backend_data", "console_output"), str)
 
 
 @pytest.mark.integration

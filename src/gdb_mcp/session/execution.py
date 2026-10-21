@@ -7,6 +7,7 @@ import signal
 from collections.abc import Mapping
 
 from ..domain import (
+    BackendData,
     CommandExecutionInfo,
     CommandTranscriptEntry,
     DetachOnForkInfo,
@@ -635,7 +636,7 @@ class SessionExecutionService:
             return OperationSuccess(
                 MessageResult(
                     message="Interrupt sent",
-                    debugger_result=parsed_result,
+                    backend_data=BackendData(debugger="gdb", console_output="", data=parsed_result),
                 ),
                 warnings=("Interrupt sent but no stopped notification received",),
             )
@@ -655,7 +656,10 @@ class SessionExecutionService:
             )
         )
         return OperationSuccess(
-            MessageResult(message="Program interrupted (paused)", debugger_result=parsed_result)
+            MessageResult(
+                message="Program interrupted (paused)",
+                backend_data=BackendData(debugger="gdb", console_output="", data=parsed_result),
+            )
         )
 
     def call_function(
@@ -811,7 +815,7 @@ class SessionExecutionService:
         if isinstance(result, OperationError):
             return result
 
-        payload = self._parse_inferiors_output(result.value.output or "")
+        payload = self._parse_inferiors_output(result.value.backend_data.console_output)
         self._runtime.update_inferior_inventory(
             current_inferior_id=payload.current_inferior_id,
             count=len(payload.inferiors),

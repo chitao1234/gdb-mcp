@@ -277,7 +277,7 @@ class CodeLocationResolver:
         if isinstance(result, OperationError):
             return result
 
-        output = result.value.output or ""
+        output = result.value.backend_data.console_output
         match = _INFO_LINE_RE.search(output)
         if match is not None:
             start_address: str | None = match.group("start")
