@@ -5,16 +5,13 @@ from __future__ import annotations
 import logging
 
 from mcp.types import CallToolResult
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 from ...domain import (
     OperationError,
 )
 from ...session.locking import session_workflow_context
 from ...session.registry import SessionRegistry
-from ..schemas import (
-    TOOL_MODELS,
-)
 from ..serializer import serialize_exception, serialize_result
 from ..validation_errors import build_validation_error
 from .common import (
@@ -26,15 +23,6 @@ from .common import (
     _wrap_action_result,
 )
 from .registry import TOOL_SPECS
-
-
-def _validation_model(name: str) -> type[BaseModel] | None:
-    """Resolve one tool's request model from the authoritative registry."""
-
-    spec = TOOL_SPECS.get(name)
-    if spec is not None:
-        return spec.model
-    return TOOL_MODELS.get(name)
 
 
 def _dispatch_tool(
@@ -92,7 +80,7 @@ async def dispatch_tool_call(
         return serialize_result(_dispatch_tool(name, normalized_args, session_manager))
     except ValidationError as exc:
         return serialize_result(
-            build_validation_error(exc, tool_name=name, model=_validation_model(name))
+            build_validation_error(exc, tool_name=name, model=TOOL_SPECS[name].model)
         )
     except Exception as exc:
         logger.exception("Error executing tool %s", name)

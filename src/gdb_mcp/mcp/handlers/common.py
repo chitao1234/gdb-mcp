@@ -223,15 +223,14 @@ def _session_state_details(session: SessionService) -> StructuredPayload:
     """Return the JSON-safe execution state of one live session."""
 
     runtime = session.runtime
-    details: StructuredPayload = {}
+    details: StructuredPayload = {"execution_state": runtime.execution_state}
     for name, value in (
-        ("execution_state", runtime.execution_state),
         ("stop_reason", runtime.stop_reason),
         ("stop_kind", runtime.stop_kind),
     ):
-        if isinstance(value, str):
+        if value is not None:
             details[name] = value
-    if isinstance(runtime.exit_code, int):
+    if runtime.exit_code is not None:
         details["exit_code"] = runtime.exit_code
     return details
 
@@ -341,10 +340,10 @@ def _memory_capture_ranges(
 
         normalized.append(
             MemoryCaptureRange(
-                address=str(memory_range.address),
-                count=int(memory_range.count),
-                offset=int(memory_range.offset),
-                name=str(memory_range.name) if memory_range.name is not None else None,
+                address=memory_range.address,
+                count=memory_range.count,
+                offset=memory_range.offset,
+                name=memory_range.name,
             )
         )
 
