@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TypeAlias, cast
+from typing import TypeAlias
 
 from ..contracts import DEBUGGER_GDB, DEBUGGER_NAMES
 from ..domain import (
@@ -347,9 +347,7 @@ class SessionLifecycleService:
                             result = self._command_runner.execute_command_result(
                                 cmd, timeout_sec=timeout
                             )
-                            init_output.append(
-                                cast(SerializedResultMapping, result_to_mapping(result))
-                            )
+                            init_output.append(result_to_mapping(result))
 
                             if cmd_lower.startswith("core-file "):
                                 self._runtime.time_module.sleep(INIT_COMMAND_DELAY_SEC)
@@ -567,7 +565,7 @@ class SessionLifecycleService:
             result = self._command_runner.execute_command_result(
                 env_cmd, timeout_sec=DEFAULT_TIMEOUT_SEC
             )
-            env_output.append(cast(SerializedResultMapping, result_to_mapping(result)))
+            env_output.append(result_to_mapping(result))
 
             if isinstance(result, OperationError):
                 self._cleanup_failed_start(
