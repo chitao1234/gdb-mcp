@@ -17,7 +17,7 @@ class StrictArgsModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-SessionId = Annotated[int, Field(gt=0, description="Session ID from gdb_session_start")]
+SessionId = Annotated[int, Field(gt=0, description="Session ID from the session tools")]
 
 
 def _coerce_int_like(

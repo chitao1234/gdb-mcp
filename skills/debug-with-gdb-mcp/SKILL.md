@@ -79,8 +79,8 @@ When referring to an action-based tool below, use the full form such as `gdb_exe
 | `env` | Inferior environment variables | Applied before `init_commands`; use for `LD_LIBRARY_PATH`, feature flags, ports, and test modes |
 | `init_commands` | GDB settings or commands not covered by dedicated tools | Keep launch config in structured fields when possible |
 | `core` | Post-mortem debugging | Do not combine with `args` |
-| `debugger_path` | Non-default GDB binary | Use when a specific GDB version or build matters; with `rr_replay` it becomes rr's `-d` debugger; `rust-gdb` also loads Rust's pretty-printers |
-| `debugger_args` | Extra GDB command-line arguments, applied before the program loads | The only channel for pre-load settings such as auto-load `safe-path` and script directories; each argument is one list entry |
+| `debugger_path` | Non-default debugger binary | For GDB: pick a specific version or build (with `rr_replay` it becomes rr's `-d` debugger, and `rust-gdb` also loads Rust's pretty-printers). For LLDB: an LLDB binary or installation |
+| `debugger_args` | Extra startup arguments for the selected debugger, applied before the program loads | The only channel for GDB pre-load settings such as auto-load `safe-path` and script directories; each argument is one list entry. The native LLDB backend currently ignores them |
 | `rr_replay` | Replay an rr trace instead of launching a program | GDB only. `program` is ignored with a warning; `args` and `core` are rejected; enables `execution.reverse`. LLDB rejects this field; connect it to an external `rr replay -s` server for forward replay only |
 
 ### Environment and Launch Setup Rules

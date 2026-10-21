@@ -116,11 +116,11 @@ class RunUntilFailureFailureArgs(StrictArgsModel):
 
     failure_on_error: bool = Field(
         True,
-        description="Treat an error result from gdb_run or session startup as a matching failure.",
+        description="Treat an error result from execution or session startup as a matching failure.",
     )
     failure_on_timeout: bool = Field(
         True,
-        description="Treat a timeout from gdb_run as a matching failure.",
+        description="Treat an execution timeout as a matching failure.",
     )
     stop_reasons: list[str] = Field(
         default_factory=lambda: ["signal-received", "exited-signalled"],
@@ -180,16 +180,16 @@ class RunUntilFailureArgs(StrictArgsModel):
     )
     setup_steps: list[BatchStepInput] = Field(
         default_factory=list,
-        description="Optional structured setup steps run after startup and before gdb_run.",
+        description="Optional structured setup steps run after startup and before execution.",
     )
     run_args: list[str] | str | None = Field(
         None,
         description=(
-            "Arguments passed to gdb_run for each iteration. "
+            "Arguments passed to the run action for each iteration. "
             "Accepts either an explicit argv list or one shell-style string."
         ),
     )
-    run_timeout_sec: int = Field(30, gt=0, description="Timeout for each gdb_run attempt.")
+    run_timeout_sec: int = Field(30, gt=0, description="Timeout for each execution attempt.")
     max_iterations: int = Field(1, gt=0, description="Maximum number of iterations to attempt.")
     failure: RunUntilFailureFailureArgs = Field(
         default_factory=lambda: RunUntilFailureFailureArgs.model_validate({}),

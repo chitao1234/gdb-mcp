@@ -23,7 +23,7 @@ from .selectors import EmptyQuery
 class ExecutionWaitPolicy(StrictArgsModel):
     wait_until: ExecutionWaitUntil = Field(
         "stop",
-        description="Whether to return when GDB acknowledges running or when a stop is observed.",
+        description="Whether to return when the debugger acknowledges running or when a stop is observed.",
     )
     timeout_sec: int | None = Field(
         None,

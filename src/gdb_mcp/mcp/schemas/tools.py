@@ -74,9 +74,9 @@ def build_tool_definitions() -> list[Tool]:
                 "Available parameters: program (executable path), debugger (backend to drive: "
                 "'gdb' or 'lldb'), args (program arguments), "
                 "core (core dump path - uses --core flag for proper symbol resolution), "
-                "init_commands (GDB commands to run after environment setup), "
-                "env (environment variables applied before init_commands), debugger_path (GDB binary path), "
-                "debugger_args (extra GDB command-line arguments inserted before the program loads), "
+                "init_commands (debugger commands to run after environment setup), "
+                "env (environment variables applied before init_commands), debugger_path (debugger executable or installation path), "
+                "debugger_args (extra startup arguments for the selected debugger; GDB/MI validates and forwards them), "
                 "working_dir (directory to run program from), "
                 "rr_replay (GDB only: rr trace directory to replay with 'rr replay', which "
                 "brings reverse execution; LLDB rejects it and requires gdb_session_connect "
@@ -85,11 +85,11 @@ def build_tool_definitions() -> list[Tool]:
                 "'rr_replay' a 'program' is ignored with a warning while 'args', 'core', and "
                 "'endpoint' are rejected. "
                 "The success response includes 'target_loaded' so callers can distinguish "
-                "between 'GDB started' and 'requested target actually loaded'. "
+                "between 'debugger started' and 'requested target actually loaded'. "
                 "IMPORTANT for core dump debugging: Set 'sysroot' and 'solib-search-path' AFTER "
                 "loading the core (either via 'core' parameter or 'core-file' init_command) "
                 "for symbols to resolve correctly. "
-                "Returns a session_id integer that must be passed to all other GDB tools."
+                "Returns a session_id integer that must be passed to the other debugger tools."
             ),
             outputSchema=public_output_schema(TOOL_SESSION_START),
             inputSchema=public_input_schema(StartSessionArgs),
@@ -105,7 +105,7 @@ def build_tool_definitions() -> list[Tool]:
                 "how LLDB connects to an external 'rr replay -s' server, but LLDB cannot "
                 "reverse-step rr; use GDB with 'rr_replay' when reverse execution matters. "
                 "The external process owns the target; stopping the session only detaches "
-                "from it. Returns a session_id integer that must be passed to all other GDB tools."
+                "from it. Returns a session_id integer that must be passed to the other debugger tools."
             ),
             outputSchema=public_output_schema(TOOL_SESSION_CONNECT),
             inputSchema=public_input_schema(
@@ -209,7 +209,7 @@ def build_tool_definitions() -> list[Tool]:
         Tool(
             name=TOOL_WORKFLOW_BATCH,
             description=(
-                "Execute a structured sequence of session-scoped GDB tools atomically within one session. "
+                "Execute a structured sequence of session-scoped debugger tools atomically within one session. "
                 "Each step names an existing tool plus tool-specific arguments excluding "
                 "session_id, which is inherited from the enclosing batch request."
             ),
@@ -241,7 +241,7 @@ def build_tool_definitions() -> list[Tool]:
                 "Run fresh debugger sessions repeatedly until a failure predicate matches or the "
                 "iteration limit is reached. "
                 "Each iteration uses the same startup configuration, optional structured setup "
-                "steps, and one gdb_execution_manage(action='run') invocation. "
+                "steps, and one execution run invocation. "
                 "When a failure matches, the tool can automatically write a capture bundle to "
                 "disk and return the bundle metadata, including any explicitly requested memory "
                 "ranges."
@@ -255,7 +255,7 @@ def build_tool_definitions() -> list[Tool]:
         Tool(
             name=TOOL_EXECUTE_COMMAND,
             description=(
-                "Execute a GDB command. Supports both CLI and MI commands. "
+                "Execute a debugger command. Supports CLI and, for GDB/MI sessions, MI commands. "
                 "CLI commands (like 'info breakpoints', 'list', 'print x') are automatically "
                 "handled and their output is formatted for readability. "
                 "MI commands (starting with '-', like '-break-list', '-exec-run') return "

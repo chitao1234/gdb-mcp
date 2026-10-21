@@ -73,12 +73,12 @@ class InferiorIdPayload(StrictArgsModel):
 class InferiorFollowForkPayload(StrictArgsModel):
     mode: InferiorFollowForkMode = Field(
         ...,
-        description="Whether GDB should follow the parent or child after fork/vfork.",
+        description="Whether the debugger should follow the parent or child after fork/vfork.",
     )
 
 
 class InferiorDetachOnForkPayload(StrictArgsModel):
-    enabled: bool = Field(..., description="Whether GDB should detach from the non-followed fork.")
+    enabled: bool = Field(..., description="Whether the debugger should detach from the non-followed fork.")
 
 
 class InferiorManageCreateAction(StrictArgsModel):

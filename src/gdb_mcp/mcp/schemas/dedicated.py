@@ -117,20 +117,19 @@ class StartSessionArgs(StrictArgsModel):
     debugger_path: str | None = Field(
         None,
         description=(
-            "Path to the GDB executable (default: from GDB_PATH env var or 'gdb'). "
-            "With debugger='lldb', path to an LLDB binary or installation instead."
+            "Path to the debugger executable or installation. For debugger='gdb', the "
+            "default is from GDB_PATH or 'gdb'; for debugger='lldb', provide an LLDB "
+            "binary or installation instead."
         ),
     )
     debugger_args: list[str] | None = Field(
         None,
         description=(
-            "Extra GDB command-line arguments, passed verbatim and inserted before the "
-            "program is loaded. Use this for settings that must apply before GDB reads the "
-            "target, for example '--directory=<dir>' and "
-            "'-iex add-auto-load-safe-path <dir>' to let GDB run the scripts a binary embeds "
-            "for its language (Rust pretty-printers, the Go runtime helpers, a kernel's "
-            "vmlinux-gdb.py). With 'rr_replay' the entries are forwarded to the debugger rr "
-            "starts."
+            "Extra startup arguments for the selected debugger, passed verbatim before the "
+            "program is loaded. GDB/MI sessions validate and forward GDB options such as "
+            "'--directory=<dir>' and '-iex add-auto-load-safe-path <dir>'; with 'rr_replay' "
+            "they are forwarded to the debugger rr starts. The native LLDB backend currently "
+            "does not consume command-line arguments through this field."
         ),
     )
 
@@ -147,10 +146,10 @@ class StartSessionArgs(StrictArgsModel):
     working_dir: str | None = Field(
         None,
         description=(
-            "Working directory to use when starting GDB. "
+            "Working directory to use when starting the debugger. "
             "Use this when debugging programs that need to be run from a specific directory, "
             "or when the program expects to find files (config, data, etc.) relative to its working directory. "
-            "GDB will be started in this directory. "
+            "The debugger will be started in this directory. "
             "Example: If debugging a server that loads config from './config.json', set working_dir to the server's directory."
         ),
     )
@@ -223,7 +222,7 @@ class ConnectSessionArgs(StrictArgsModel):
 
 class ExecuteCommandArgs(StrictArgsModel):
     session_id: SessionId
-    command: str = Field(..., description="GDB command to execute")
+    command: str = Field(..., description="Debugger CLI or machine-interface command to execute")
     timeout_sec: int = Field(30, gt=0, description="Timeout in seconds")
 
 
