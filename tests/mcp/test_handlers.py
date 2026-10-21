@@ -17,6 +17,7 @@ from gdb_mcp.domain import (
     BreakpointListInfo,
     CommandExecutionInfo,
     DisassemblyInfo,
+    ExecutionState,
     FrameInfo,
     InferiorListInfo,
     InferiorRecord,
@@ -39,7 +40,6 @@ from gdb_mcp.mcp.handlers import TOOL_SPECS, dispatch_tool_call
 from gdb_mcp.mcp.schemas import build_tool_definitions
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.registry import SessionRegistry
-from gdb_mcp.session.runtime import SessionRuntime
 from gdb_mcp.session.service import SessionService
 from tests.support import dig, mapping, mapping_list, text
 
@@ -53,11 +53,21 @@ def _workflow_lock() -> MagicMock:
     return workflow_lock
 
 
-def _session_double(**runtime_state: object) -> Mock:
+def _session_double(
+    *,
+    execution_state: ExecutionState = "unknown",
+    stop_reason: str | None = None,
+    exit_code: int | None = None,
+) -> Mock:
     """Create a handler test double that satisfies the workflow-lock contract."""
 
     session = Mock(spec=SessionService)
-    session.runtime = Mock(spec=SessionRuntime, workflow_lock=_workflow_lock(), **runtime_state)
+    runtime = create_default_session_service().runtime
+    runtime.execution_state = execution_state
+    runtime.stop_reason = stop_reason
+    runtime.exit_code = exit_code
+    runtime.workflow_lock = _workflow_lock()
+    session.runtime = runtime
     session.has_controller = False
     session.is_running = False
     return session
@@ -369,11 +379,18 @@ class TestHandlerRouting:
     # Session-scoped failures should carry the state the caller needs to recover.
 
     def _dispatch_backtrace_failure(
-        self, message: str, **runtime_state: object
+        self,
+        message: str,
+        *,
+        execution_state: ExecutionState = "unknown",
+        stop_reason: str | None = None,
+        exit_code: int | None = None,
     ) -> dict[str, object]:
         """Dispatch a backtrace failure with the supplied runtime state."""
 
-        session = _session_double(**runtime_state)
+        session = _session_double(
+            execution_state=execution_state, stop_reason=stop_reason, exit_code=exit_code
+        )
         session.get_backtrace.return_value = OperationError(
             message=message, details={"command": "-stack-list-frames 0 1"}
         )
@@ -1432,7 +1449,7 @@ class TestHandlerRouting:
 
         session = _session_double()
         workflow_lock = _workflow_lock()
-        session.runtime = Mock(spec=SessionRuntime, workflow_lock=workflow_lock)
+        session.runtime.workflow_lock = workflow_lock
         session.get_status.return_value = OperationSuccess(
             SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=True)
         )
