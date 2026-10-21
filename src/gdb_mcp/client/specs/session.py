@@ -58,7 +58,10 @@ def _configure_session_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--rr-replay",
         dest="rr_replay",
-        help="rr trace directory to replay (starts 'rr replay', enables reverse execution)",
+        help=(
+            "GDB only: rr trace directory to replay (starts 'rr replay', enables reverse "
+            "execution). For LLDB, start 'rr replay -s PORT TRACE' and use 'connect'."
+        ),
     )
 
 

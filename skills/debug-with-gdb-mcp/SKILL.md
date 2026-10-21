@@ -67,7 +67,7 @@ When referring to an action-based tool below, use the full form such as `gdb_exe
 | Core dump analysis | `gdb_session_start` with `core`, preferably also `program` | Expect startup to leave the target `paused` |
 | GDB already running elsewhere | `gdb_session_connect` with an `endpoint` | gdb-mcp never spawns gdb; stop only detaches |
 | LLDB remote stub | `gdb_session_connect` with `debugger="lldb"`, `endpoint="connect://host:port"`, and `program` | stop only detaches; `args` and `core` are rejected |
-| Reverse debugging an rr recording | `gdb_session_start` with `rr_replay` | GDB only; the trace owns the target |
+| Reverse debugging an rr recording | `gdb_session_start` with `rr_replay` | GDB only; the trace owns the target. LLDB cannot reverse-step rr; use `gdb_session_connect` to an external `rr replay -s` server only for forward replay |
 
 ### Configure Startup Fields Deliberately
 
@@ -81,7 +81,7 @@ When referring to an action-based tool below, use the full form such as `gdb_exe
 | `core` | Post-mortem debugging | Do not combine with `args` |
 | `gdb_path` | Non-default GDB binary | Use when a specific GDB version or build matters; with `rr_replay` it becomes rr's `-d` debugger; `rust-gdb` also loads Rust's pretty-printers |
 | `gdb_args` | Extra GDB command-line arguments, applied before the program loads | The only channel for pre-load settings such as auto-load `safe-path` and script directories; each argument is one list entry |
-| `rr_replay` | Replay an rr trace instead of launching a program | `program` is ignored with a warning; `args` and `core` are rejected; enables `execution.reverse` |
+| `rr_replay` | Replay an rr trace instead of launching a program | GDB only. `program` is ignored with a warning; `args` and `core` are rejected; enables `execution.reverse`. LLDB rejects this field; connect it to an external `rr replay -s` server for forward replay only |
 
 ### Environment and Launch Setup Rules
 

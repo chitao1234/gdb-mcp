@@ -302,7 +302,9 @@ Dedicated startup tool. This is not action-based.
   ignored by the LLDB backend
 - `working_dir`: optional working directory for the debugger process
 - `rr_replay`: optional rr trace directory to replay instead of launching a program;
-  GDB only
+  GDB only. LLDB rejects this field because auto-starting rr would hide the loss
+  of reverse stepping; use `gdb_session_connect` instead when forward replay is
+  enough
 
 `args` and `core` are mutually exclusive. With `rr_replay` the recording already
 owns the target, so the session runs `rr replay --interpreter=mi <trace>` instead
@@ -311,6 +313,14 @@ of a plain `gdb`; a `program` passed alongside it is ignored and reported in
 variable (default `rr`) selects the rr binary, and `gdb_path` is passed to rr as
 its `-d` debugger choice. With `rr_replay`, `gdb_args` are forwarded to the
 debugger rr starts, after rr's `--` separator.
+
+**LLDB and rr:** start `rr replay -s <port> <trace>` yourself, then use
+`gdb_session_connect` with `debugger="lldb"`,
+`endpoint="connect://127.0.0.1:<port>"`, and `program` set to the trace's
+executable. LLDB can follow rr's forward replay and inspect stops, but LLDB has
+no reverse-step/reverse-continue API. Connecting LLDB therefore gives up rr's
+reverse stepping; use `debugger="gdb"` with `rr_replay` when reverse execution
+matters.
 
 `gdb_args` are passed verbatim as argv elements, so an option that takes a
 separate operand needs two entries (`["-iex", "set print elements 0"]`). GDB
@@ -437,6 +447,22 @@ LLDB remote stub:
   "gdb_path": "/opt/lldb/19/bin/lldb"
 }
 ```
+
+LLDB remote is also the only LLDB path to rr. Start rr in server-only mode:
+
+```bash
+rr replay -s 6099 /path/to/trace
+# then:
+gdb_session_connect {
+  "debugger": "lldb",
+  "program": "/path/to/app",
+  "endpoint": "connect://127.0.0.1:6099"
+}
+```
+
+This is forward replay only. LLDB's SB API exposes no reverse-continue or
+reverse-step operation, so connecting LLDB to rr gives up rr's reverse stepping.
+Use `debugger="gdb"` with `rr_replay` when reverse execution is required.
 
 ## LLDB Backend
 
@@ -585,6 +611,10 @@ Two ways to get a reversible session:
 Reverse stepping goes through `gdb_execution_manage` with
 `"execution": {"reverse": true}`; the escape hatch
 (`gdb_execute_command {"command": "reverse-step"}`) remains available.
+
+This reverse path is GDB-only. An LLDB session connected to an rr server can
+inspect the replayed trace and run forward to breakpoints, but `reverse: true`
+returns `unsupported_combination` because LLDB's SB API has no reverse stepping.
 
 ## `gdb_breakpoint_query`
 

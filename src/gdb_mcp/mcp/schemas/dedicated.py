@@ -153,10 +153,13 @@ class StartSessionArgs(StrictArgsModel):
     rr_replay: str | None = Field(
         None,
         description=(
-            "Path to an rr trace directory (or 'latest-trace') to replay instead of "
-            "launching a program. Starts 'rr replay --interpreter=mi', which brings "
-            "reverse execution. The trace owns the target, so a 'program' here is "
-            "ignored with a warning; 'args' and 'core' are rejected."
+            "GDB only. Path to an rr trace directory (or 'latest-trace') to replay "
+            "instead of launching a program. Starts 'rr replay --interpreter=mi', which "
+            "brings reverse execution. The trace owns the target, so a 'program' here is "
+            "ignored with a warning; 'args' and 'core' are rejected. LLDB rejects this "
+            "field: connect LLDB to an externally started 'rr replay -s' server with "
+            "gdb_session_connect, but that gives up rr's reverse stepping. Use debugger='gdb' "
+            "when reverse execution matters."
         ),
     )
     core: str | None = Field(
@@ -178,7 +181,8 @@ class ConnectSessionArgs(StrictArgsModel):
             "Endpoint of an externally owned target. For 'gdb', a GDB/MI stream: "
             "'tcp://host:port', 'unix:///path/to/socket', or 'pty:///dev/pts/N'. "
             "For 'lldb', a remote stub URL accepted by SBTarget::ConnectRemote, "
-            "for example 'connect://host:port'."
+            "for example 'connect://host:port'. An 'rr replay -s PORT TRACE' server is "
+            "also such a stub; connecting LLDB to it gives up rr's reverse stepping."
         ),
     )
     debugger: DebuggerName = Field(

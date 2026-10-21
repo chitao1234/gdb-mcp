@@ -78,8 +78,9 @@ def build_tool_definitions() -> list[Tool]:
                 "env (environment variables applied before init_commands), gdb_path (GDB binary path), "
                 "gdb_args (extra GDB command-line arguments inserted before the program loads), "
                 "working_dir (directory to run program from), "
-                "rr_replay (rr trace directory to replay with 'rr replay', which brings reverse "
-                "execution). "
+                "rr_replay (GDB only: rr trace directory to replay with 'rr replay', which "
+                "brings reverse execution; LLDB rejects it and requires gdb_session_connect "
+                "to an external rr server, which cannot reverse-step). "
                 "NOTE: 'args' and 'core' are mutually exclusive in one startup request; with "
                 "'rr_replay' a 'program' is ignored with a warning while 'args', 'core', and "
                 "'endpoint' are rejected. "
@@ -100,9 +101,11 @@ def build_tool_definitions() -> list[Tool]:
                 "gdb-mcp spawn its own debugger. For debugger='gdb', endpoint is a GDB/MI "
                 "stream: 'tcp://host:port', 'unix:///path/to/socket', or 'pty:///dev/pts/N'. "
                 "For debugger='lldb', endpoint is a remote stub URL such as "
-                "'connect://host:port', with 'program' naming the executable. The external "
-                "process owns the target; stopping the session only detaches from it. "
-                "Returns a session_id integer that must be passed to all other GDB tools."
+                "'connect://host:port', with 'program' naming the executable. This is also "
+                "how LLDB connects to an external 'rr replay -s' server, but LLDB cannot "
+                "reverse-step rr; use GDB with 'rr_replay' when reverse execution matters. "
+                "The external process owns the target; stopping the session only detaches "
+                "from it. Returns a session_id integer that must be passed to all other GDB tools."
             ),
             outputSchema=public_output_schema(TOOL_SESSION_CONNECT),
             inputSchema=public_input_schema(

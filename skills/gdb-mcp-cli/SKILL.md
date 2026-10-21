@@ -83,6 +83,11 @@ For an LLDB remote stub, pass the LLDB backend and the executable:
 gdb-mcp-client connect connect://127.0.0.1:12345 --debugger lldb --program ./build/app
 ```
 
+This is also how LLDB reaches rr: start `rr replay -s PORT TRACE` yourself, then
+connect to `connect://127.0.0.1:PORT`. That gives up rr's reverse stepping because
+LLDB has no reverse-step API; use the GDB backend with `rr_replay` when reverse
+execution matters.
+
 For GDB/MI, use the endpoint forms in the next section.
 
 ```bash
