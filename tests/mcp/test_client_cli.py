@@ -8,9 +8,11 @@ import pytest
 
 import gdb_mcp.client.specs as client_specs
 from gdb_mcp.client.cli import build_parser, parse_client_args
+from gdb_mcp.client.input_parsers import parse_workflow_batch_input
 from gdb_mcp.client.parsers import serialize_model
 from gdb_mcp.client.renderers import render_action_payload
 from gdb_mcp.client.specs import CLIENT_TOOL_SPECS
+from gdb_mcp.contracts import ACTION_BACKTRACE, ACTION_THREADS, TOOL_CONTEXT_QUERY
 from tests.support import json_object
 
 from .cli_support import SERVER_URL, invoke_cli
@@ -19,6 +21,25 @@ SESSION_ID = 7
 
 
 class TestClientCli:
+    def test_reusing_the_parser_keeps_workflow_steps_independent(self) -> None:
+        """A second parse must not inherit steps or arguments from the first."""
+
+        parser = build_parser()
+        first = parse_client_args(
+            ["batch", "--step", TOOL_CONTEXT_QUERY, "--step-arg", f"action={ACTION_THREADS}"],
+            parser=parser,
+        )
+        second = parse_client_args(
+            ["batch", "--step", TOOL_CONTEXT_QUERY, "--step-arg", f"action={ACTION_BACKTRACE}"],
+            parser=parser,
+        )
+
+        first_steps = parse_workflow_batch_input(first).steps
+        second_steps = parse_workflow_batch_input(second).steps
+        assert len(first_steps) == len(second_steps) == 1
+        assert first_steps[0].arguments["action"] == ACTION_THREADS
+        assert second_steps[0].arguments["action"] == ACTION_BACKTRACE
+
     def test_render_action_payload_preserves_top_level_fields_on_key_collision(self) -> None:
         """Preserve top-level fields when a nested result reuses their names."""
 
