@@ -301,7 +301,7 @@ class TestClientCli:
                 "12",
                 "--no-include-registers",
             ],
-            response={"status": "success", "result": {"artifact_count": 3}},
+            response={"status": "success", "result": {"artifacts": []}},
         )
 
         assert result.exit_code == 0
@@ -745,7 +745,7 @@ class TestClientCli:
             response={
                 "status": "success",
                 "action": "backtrace",
-                "result": {"count": 3},
+                "result": {"frames": []},
             },
         )
 
@@ -852,7 +852,7 @@ class TestClientCli:
             response={
                 "status": "success",
                 "action": "list",
-                "result": {"count": 0},
+                "result": {"breakpoints": []},
             },
         )
 
@@ -879,7 +879,7 @@ class TestClientCli:
             response={
                 "status": "success",
                 "action": "list",
-                "result": {"count": 1},
+                "result": {"breakpoints": []},
             },
         )
 
@@ -909,7 +909,7 @@ class TestClientCli:
                 "status": "success",
                 "action": "list",
                 "warnings": ["deprecated-filter", "partial-symbols"],
-                "result": {"count": 0},
+                "result": {"breakpoints": []},
             },
         )
 
@@ -1246,7 +1246,7 @@ class TestClientCli:
             response={
                 "status": "success",
                 "action": "disassembly",
-                "result": {"count": 4},
+                "result": {"instructions": []},
             },
         )
 
@@ -1302,7 +1302,7 @@ class TestClientCli:
             response={
                 "status": "success",
                 "action": "disassembly",
-                "result": {"count": 4},
+                "result": {"instructions": []},
             },
         )
 
@@ -1441,7 +1441,7 @@ class TestClientCli:
                             "result": {
                                 "status": "success",
                                 "action": "backtrace",
-                                "result": {"count": 1},
+                                "result": {"frames": []},
                             },
                         }
                     ],

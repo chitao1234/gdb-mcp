@@ -284,7 +284,7 @@ class TestSessionRegistry:
 
         assert isinstance(result, OperationSuccess)
         assert isinstance(result.value, SessionListInfo)
-        assert result.value.count == 1
+        assert len(result.value.sessions) == 1
         summary = result.value.sessions[0]
         assert summary.session_id == session_id
         assert summary.lifecycle_state == "ready"

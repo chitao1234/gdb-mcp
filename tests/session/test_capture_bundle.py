@@ -64,11 +64,10 @@ def _stub_bundle_sections(
             ThreadListInfo(
                 threads=thread_records({"threads": [{"id": "1", "state": "stopped"}]}),
                 current_thread_id="1",
-                count=1,
             )
         ),
         "get_backtrace": lambda thread_id=None, max_frames=100: OperationSuccess(
-            BacktraceInfo(thread_id=thread_id, frames=[_FRAME], count=1)
+            BacktraceInfo(thread_id=thread_id, frames=[_FRAME])
         ),
         "get_frame_info": lambda: OperationSuccess(FrameInfo(frame=_FRAME)),
         "get_variables": lambda thread_id=None, frame=0: OperationSuccess(
@@ -89,7 +88,7 @@ def _stub_bundle_sections(
         "read_memory": lambda address, count, offset=0: OperationSuccess(
             MemoryReadInfo(
                 address=address,
-                count=count,
+                requested_bytes=count,
                 offset=offset,
                 blocks=memory_block_records(
                     {
@@ -103,7 +102,6 @@ def _stub_bundle_sections(
                         ]
                     }
                 ),
-                block_count=1,
                 captured_bytes=4,
             )
         ),
@@ -148,7 +146,7 @@ class TestCaptureBundle:
         bundle = result.value
         assert bundle.bundle_name == "bundle"
         assert bundle.bundle_dir == str((tmp_path / "bundle").resolve())
-        assert bundle.artifact_count >= 8
+        assert len(bundle.artifacts) >= 8
 
         manifest_path = tmp_path / "bundle" / "manifest.json"
         assert manifest_path.exists()

@@ -31,7 +31,7 @@ def test_parses_connection_column() -> None:
         _MODERN_HEADER + "".join(_MODERN_ROWS), current_inferior_id=None
     )
 
-    assert payload.count == 2
+    assert len(payload.inferiors) == 2
     assert payload.current_inferior_id == 1
     first, second = payload.inferiors
     assert first.inferior_id == 1
@@ -105,6 +105,6 @@ def test_reports_known_current_when_no_marker() -> None:
 def test_no_inferiors_outputs_empty_inventory() -> None:
     payload = parse_inferiors_output("No inferiors.\n", current_inferior_id=1)
 
-    assert payload.count == 0
+    assert len(payload.inferiors) == 0
     assert payload.inferiors == []
     assert payload.current_inferior_id == 1

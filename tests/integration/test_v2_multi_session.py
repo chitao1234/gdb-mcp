@@ -94,8 +94,8 @@ def test_breakpoints_are_isolated_between_sessions_v2(
             "gdb_breakpoint_query",
             {"session_id": session_id_2, "action": "list", "query": {}},
         )
-        assert dig(listed_1, "result", "count") == 1
-        assert dig(listed_2, "result", "count") == 0
+        assert len(mapping_list(dig(listed_1, "result", "breakpoints"))) == 1
+        assert len(mapping_list(dig(listed_2, "result", "breakpoints"))) == 0
     finally:
         stop_session(session_id_1, ignore_errors=True)
         stop_session(session_id_2, ignore_errors=True)
@@ -126,8 +126,8 @@ def test_execution_state_and_backtrace_are_isolated_v2(
             "gdb_context_query",
             {"session_id": session_id_2, "action": "backtrace", "query": {}},
         )
-        assert integer(dig(backtrace_1, "result", "count")) > 0
-        assert integer(dig(backtrace_2, "result", "count")) > 0
+        assert len(mapping_list(dig(backtrace_1, "result", "frames"))) > 0
+        assert len(mapping_list(dig(backtrace_2, "result", "frames"))) > 0
     finally:
         stop_session(session_id_1, ignore_errors=True)
         stop_session(session_id_2, ignore_errors=True)

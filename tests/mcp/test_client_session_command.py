@@ -81,7 +81,7 @@ def test_status_marks_the_default_session(managed_server: ResolvedServer) -> Non
         response={
             "status": "success",
             "action": "list",
-            "result": {"sessions": [{"session_id": 3}], "count": 1},
+            "result": {"sessions": [{"session_id": 3}]},
         },
     )
 
@@ -98,7 +98,7 @@ def test_status_marks_a_session_that_is_gone(managed_server: ResolvedServer) -> 
     result = invoke_cli(
         ["status"],
         resolved=managed_server,
-        response={"status": "success", "action": "list", "result": {"sessions": [], "count": 0}},
+        response={"status": "success", "action": "list", "result": {"sessions": []}},
     )
 
     assert result.exit_code == 0

@@ -55,7 +55,6 @@ def _bundle() -> OperationSuccess[CaptureBundleInfo]:
             bundle_name="bundle",
             manifest_path="/tmp/bundle/manifest.json",
             artifacts=[],
-            artifact_count=0,
         )
     )
 

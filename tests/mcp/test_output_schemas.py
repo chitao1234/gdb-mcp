@@ -13,7 +13,21 @@ import json
 import jsonschema
 import pytest
 
-from gdb_mcp.contracts import PUBLIC_TOOL_NAMES
+from gdb_mcp.contracts import (
+    ACTION_BACKTRACE,
+    ACTION_DISASSEMBLY,
+    ACTION_LIST,
+    ACTION_MEMORY,
+    ACTION_SOURCE,
+    ACTION_THREADS,
+    PUBLIC_TOOL_NAMES,
+    TOOL_BREAKPOINT_QUERY,
+    TOOL_CAPTURE_BUNDLE,
+    TOOL_CONTEXT_QUERY,
+    TOOL_INFERIOR_QUERY,
+    TOOL_INSPECT_QUERY,
+    TOOL_SESSION_QUERY,
+)
 from gdb_mcp.mcp.schemas import build_tool_definitions
 from gdb_mcp.mcp.schemas.outputs import TOOL_OUTPUT_PAYLOADS, public_output_schema
 from tests.support import dig, json_object, mapping, sequence, unsupported_schema_keys
@@ -177,6 +191,68 @@ def test_a_dedicated_tool_nests_its_payload_under_result(
     result = _resolve(output_schemas["gdb_session_start"], mapping(success["properties"])["result"])
     assert {"session_id", "message", "target_loaded", "execution_state"} <= set(
         mapping(result["properties"])
+    )
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "action", "collection", "removed_field"),
+    [
+        (TOOL_SESSION_QUERY, ACTION_LIST, "sessions", "count"),
+        (TOOL_INFERIOR_QUERY, ACTION_LIST, "inferiors", "count"),
+        (TOOL_BREAKPOINT_QUERY, ACTION_LIST, "breakpoints", "count"),
+        (TOOL_CONTEXT_QUERY, ACTION_THREADS, "threads", "count"),
+        (TOOL_CONTEXT_QUERY, ACTION_BACKTRACE, "frames", "count"),
+        (TOOL_INSPECT_QUERY, ACTION_DISASSEMBLY, "instructions", "count"),
+        (TOOL_INSPECT_QUERY, ACTION_SOURCE, "lines", "count"),
+        (TOOL_INSPECT_QUERY, ACTION_MEMORY, "blocks", "block_count"),
+        (TOOL_CAPTURE_BUNDLE, None, "artifacts", "artifact_count"),
+    ],
+)
+def test_collection_results_publish_arrays_without_duplicate_counts(
+    output_schemas: dict[str, dict[str, object]],
+    tool_name: str,
+    action: str | None,
+    collection: str,
+    removed_field: str,
+) -> None:
+    """Clients count returned items from the array itself."""
+
+    schema = output_schemas[tool_name]
+    success = next(
+        variant
+        for variant in _variants(schema)
+        if dig(variant, "properties", "status", "enum") == ["success"]
+        and (action is None or dig(variant, "properties", "action", "enum") == [action])
+    )
+    properties = mapping(_resolve(schema, dig(success, "properties", "result"))["properties"])
+
+    assert _resolve(schema, properties[collection])["type"] == "array"
+    assert removed_field not in properties
+
+
+def test_memory_result_distinguishes_requested_and_captured_bytes(
+    output_schemas: dict[str, dict[str, object]],
+) -> None:
+    """A partial read must preserve the request length independently of the data."""
+
+    schema = output_schemas[TOOL_INSPECT_QUERY]
+    success = next(
+        variant
+        for variant in _variants(schema)
+        if dig(variant, "properties", "action", "enum") == [ACTION_MEMORY]
+    )
+    result = _resolve(schema, dig(success, "properties", "result"))
+    properties = mapping(result["properties"])
+
+    assert "requested_bytes" in sequence(result["required"])
+    assert "count" not in properties
+    jsonschema.validate(
+        {
+            "status": "success",
+            "action": ACTION_MEMORY,
+            "result": {"address": "buffer", "requested_bytes": 64, "captured_bytes": 4},
+        },
+        schema,
     )
 
 

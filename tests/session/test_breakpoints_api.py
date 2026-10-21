@@ -26,9 +26,7 @@ class _StubBreakpointService(SessionBreakpointService):
         self._records = records
 
     def list_breakpoints(self) -> OperationSuccess[BreakpointListInfo]:
-        return OperationSuccess(
-            BreakpointListInfo(breakpoints=self._records, count=len(self._records))
-        )
+        return OperationSuccess(BreakpointListInfo(breakpoints=self._records))
 
 
 def test_insert_blocked_warning_omits_unknown_breakpoint_number() -> None:
@@ -184,7 +182,6 @@ class TestBreakpointApi:
         result = result_to_mapping(session.list_breakpoints())
 
         assert result["status"] == "success"
-        assert result["count"] == 2
         assert len(sequence(result["breakpoints"])) == 2
         assert controller.decoded_writes[0].endswith("-break-list\n")
 

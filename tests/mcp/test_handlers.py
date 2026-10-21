@@ -295,7 +295,6 @@ class TestHandlerDispatch:
                         program="/tmp/a.out",
                     )
                 ],
-                count=1,
             )
         )
 
@@ -305,7 +304,7 @@ class TestHandlerDispatch:
         manager.resolve_session.assert_not_called()
         assert result_data["status"] == "success"
         assert result_data["action"] == "list"
-        assert dig(result_data, "result", "count") == 1
+        assert len(mapping_list(dig(result_data, "result", "sessions"))) == 1
         assert mapping_list(dig(result_data, "result", "sessions"))[0]["session_id"] == 1
 
     def test_tool_with_valid_session_id_works(self) -> None:
@@ -800,7 +799,7 @@ class TestHandlerRouting:
 
         session = _session_double()
         session.get_threads.return_value = OperationSuccess(
-            {"threads": [{"id": "1"}], "current_thread_id": "1", "count": 1}
+            {"threads": [{"id": "1"}], "current_thread_id": "1"}
         )
         manager = _manager_for(session)
 
@@ -854,7 +853,6 @@ class TestHandlerRouting:
                 end_address=None,
                 mode="mixed",
                 instructions=[],
-                count=0,
             )
         )
         manager = _manager_for(session)
@@ -924,7 +922,6 @@ class TestHandlerRouting:
                 start_line=10,
                 end_line=12,
                 lines=[],
-                count=0,
             )
         )
         manager = _manager_for(session)
@@ -988,7 +985,6 @@ class TestHandlerRouting:
                     breakpoint_record({"number": "1", "type": "breakpoint", "enabled": "y"}),
                     breakpoint_record({"number": "2", "type": "watchpoint", "enabled": "n"}),
                 ],
-                count=2,
             )
         )
         manager = _manager_for(session)
@@ -1005,7 +1001,7 @@ class TestHandlerRouting:
 
         session.list_breakpoints.assert_called_once_with()
         assert result_data["action"] == "list"
-        assert dig(result_data, "result", "count") == 1
+        assert len(mapping_list(dig(result_data, "result", "breakpoints"))) == 1
         assert mapping_list(dig(result_data, "result", "breakpoints"))[0]["number"] == "1"
 
     def test_breakpoint_manage_update_routes_changes(self) -> None:
@@ -1052,7 +1048,6 @@ class TestHandlerRouting:
                         {"inferior_id": 2, "is_current": False, "display": "i2"}
                     ),
                 ],
-                count=2,
                 current_inferior_id=1,
             )
         )
@@ -1211,7 +1206,7 @@ class TestHandlerRouting:
         """Inferior inventory requests should route to the resolved session."""
 
         session = _session_double()
-        session.list_inferiors.return_value = OperationSuccess({"count": 1, "inferiors": []})
+        session.list_inferiors.return_value = OperationSuccess({"inferiors": []})
         manager = _manager_for(session)
 
         dispatch(
@@ -1799,7 +1794,7 @@ class TestHandlerRouting:
         """Disassembly requests should forward normalized selector values."""
 
         session = _session_double()
-        session.disassemble.return_value = OperationSuccess({"count": 0, "instructions": []})
+        session.disassemble.return_value = OperationSuccess({"instructions": []})
         manager = _manager_for(session)
 
         dispatch(
@@ -1853,7 +1848,7 @@ class TestHandlerRouting:
         """Source-context requests should forward normalized selector values."""
 
         session = _session_double()
-        session.get_source_context.return_value = OperationSuccess({"count": 0, "lines": []})
+        session.get_source_context.return_value = OperationSuccess({"lines": []})
         manager = _manager_for(session)
 
         dispatch(

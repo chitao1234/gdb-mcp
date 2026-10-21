@@ -57,7 +57,7 @@ class TestThreadAndStackInspectionApi:
     def test_get_threads_success(
         self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
     ) -> None:
-        """Thread inspection should surface thread count and current thread."""
+        """Thread inspection should return the threads and current selection."""
 
         session, controller = scripted_running_session(
             [
@@ -76,7 +76,7 @@ class TestThreadAndStackInspectionApi:
         result = result_to_mapping(session.get_threads())
 
         assert result["status"] == "success"
-        assert result["count"] == 2
+        assert len(sequence(result["threads"])) == 2
         assert result["current_thread_id"] == "1"
         assert controller.decoded_writes[0].endswith("-thread-info\n")
 
@@ -120,7 +120,7 @@ class TestThreadAndStackInspectionApi:
         result = result_to_mapping(session.list_inferiors())
 
         assert result["status"] == "success"
-        assert result["count"] == 2
+        assert len(mapping_list(result["inferiors"])) == 2
         assert result["current_inferior_id"] == 1
         inferiors = mapping_list(result["inferiors"])
         assert inferiors[0]["inferior_id"] == 1
@@ -190,7 +190,7 @@ class TestThreadAndStackInspectionApi:
     def test_get_backtrace_default(
         self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
     ) -> None:
-        """Backtrace requests should return frame count for the current thread."""
+        """Backtrace requests should return frames for the current thread."""
 
         session, controller = scripted_running_session(
             [mi_result({"stack": [{"level": "0", "func": "main", "file": "test.c"}]})]
@@ -200,7 +200,7 @@ class TestThreadAndStackInspectionApi:
         result = result_to_mapping(session.get_backtrace())
 
         assert result["status"] == "success"
-        assert result["count"] == 1
+        assert len(mapping_list(result["frames"])) == 1
         assert result["thread_id"] == 7
         assert controller.decoded_writes[0].endswith("-stack-list-frames 0 99\n")
 
@@ -349,7 +349,7 @@ class TestStructuredCodeInspectionApi:
         result = result_to_mapping(session.disassemble(instruction_count=2, mode="assembly"))
 
         assert result["status"] == "success"
-        assert result["count"] == 2
+        assert len(mapping_list(result["instructions"])) == 2
         assert mapping_list(result["instructions"])[0]["address"] == "0x401000"
         assert result["mode"] == "assembly"
 
@@ -400,7 +400,7 @@ class TestStructuredCodeInspectionApi:
         result = result_to_mapping(session.disassemble(function="add", instruction_count=1))
 
         assert result["status"] == "success"
-        assert result["count"] == 1
+        assert len(mapping_list(result["instructions"])) == 1
         written = controller.decoded_writes
         assert any(command.endswith("-list-features\n") for command in written)
         assert any("disassemble add" in command for command in written)
@@ -948,9 +948,9 @@ class TestStructuredCodeInspectionApi:
 
         assert result["status"] == "success"
         assert result["address"] == "&value"
-        assert result["count"] == 4
+        assert result["requested_bytes"] == 4
         assert result["offset"] == 1
-        assert result["block_count"] == 1
+        assert len(mapping_list(result["blocks"])) == 1
         assert result["captured_bytes"] == 4
         assert "warnings" not in result
         assert controller.decoded_writes[-1].endswith('-data-read-memory-bytes -o 1 "&value" 4\n')
@@ -978,7 +978,7 @@ class TestStructuredCodeInspectionApi:
 
         assert result["status"] == "success"
         assert result["captured_bytes"] == 4
-        assert result["block_count"] == 1
+        assert len(mapping_list(result["blocks"])) == 1
         block = mapping_list(result["blocks"])[0]
         assert block["contents"] == "01020304"
         assert block["begin"] == "0x1000"
@@ -1078,7 +1078,7 @@ class TestStructuredCodeInspectionApi:
         result = result_to_mapping(session.read_memory("&buffer", 64))
 
         assert result["status"] == "success"
-        assert result["block_count"] == 2
+        assert len(mapping_list(result["blocks"])) == 2
         assert result["captured_bytes"] == 8
         warnings = [str(item) for item in sequence(result["warnings"])]
         assert warnings == [

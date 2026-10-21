@@ -16,7 +16,7 @@ from gdb_mcp.client.cli import main
 from gdb_mcp.mcp.app import create_streamable_http_app
 from gdb_mcp.mcp.runtime import ServerRuntime
 from tests.integration.program_sources import CRASHING_C_PROGRAM, TEST_CPP_PROGRAM
-from tests.support import dig, integer, json_object, mapping_list, text
+from tests.support import dig, json_object, mapping_list, text
 
 from .conftest import CompileProgram, StartSession
 
@@ -191,7 +191,7 @@ def test_cli_calls_real_streamable_http_workflow_batch_with_nested_step_args(
     assert dig(steps[1], "stop_event", "reason") == "breakpoint-hit"
     assert steps[2]["label"] == "stack"
     assert dig(steps[2], "result", "action") == "backtrace"
-    assert integer(dig(steps[2], "result", "result", "count")) >= 1
+    assert len(mapping_list(dig(steps[2], "result", "result", "frames"))) >= 1
 
 
 @pytest.mark.integration

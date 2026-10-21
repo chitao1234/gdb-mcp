@@ -74,7 +74,7 @@ def test_context_and_inspect_queries_v2(session_id: int, call_gdb_tool: CallGdbT
     )
     assert threads["status"] == "success"
     assert threads["action"] == "threads"
-    assert integer(dig(threads, "result", "count")) >= 1
+    assert len(mapping_list(dig(threads, "result", "threads"))) >= 1
 
     backtrace = call_gdb_tool(
         "gdb_context_query",
@@ -82,7 +82,7 @@ def test_context_and_inspect_queries_v2(session_id: int, call_gdb_tool: CallGdbT
     )
     assert backtrace["status"] == "success"
     assert backtrace["action"] == "backtrace"
-    assert integer(dig(backtrace, "result", "count")) > 0
+    assert len(mapping_list(dig(backtrace, "result", "frames"))) > 0
 
     frame = call_gdb_tool(
         "gdb_context_query",
@@ -134,7 +134,7 @@ def test_source_and_disassembly_queries_v2(session_id: int, call_gdb_tool: CallG
     )
     assert disassembly["status"] == "success"
     assert disassembly["action"] == "disassembly"
-    assert integer(dig(disassembly, "result", "count")) > 0
+    assert len(mapping_list(dig(disassembly, "result", "instructions"))) > 0
 
     source = call_gdb_tool(
         "gdb_inspect_query",
@@ -150,7 +150,7 @@ def test_source_and_disassembly_queries_v2(session_id: int, call_gdb_tool: CallG
     )
     assert source["status"] == "success"
     assert source["action"] == "source"
-    assert integer(dig(source, "result", "count")) > 0
+    assert len(mapping_list(dig(source, "result", "lines"))) > 0
     assert any(line.get("is_current") for line in mapping_list(dig(source, "result", "lines")))
 
 
@@ -233,7 +233,7 @@ def test_disassembly_fallback_without_a_option_v2(
     )
     assert disassembly["status"] == "success", disassembly
     assert disassembly["action"] == "disassembly"
-    assert integer(dig(disassembly, "result", "count")) > 0
+    assert len(mapping_list(dig(disassembly, "result", "instructions"))) > 0
 
 
 @pytest.mark.integration

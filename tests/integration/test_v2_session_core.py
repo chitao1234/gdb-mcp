@@ -81,7 +81,7 @@ def test_breakpoint_query_run_and_status_v2(session_id: int, call_gdb_tool: Call
     )
     assert listed["status"] == "success"
     assert listed["action"] == "list"
-    assert dig(listed, "result", "count") == 1
+    assert len(mapping_list(dig(listed, "result", "breakpoints"))) == 1
 
     execution = run(call_gdb_tool, session_id)
     assert execution["status"] == "success"
@@ -124,7 +124,7 @@ def test_breakpoint_manage_flow_v2(session_id: int, call_gdb_tool: CallGdbTool) 
         "gdb_breakpoint_query",
         {"session_id": session_id, "action": "list", "query": {}},
     )
-    assert dig(listed, "result", "count") == 1
+    assert len(mapping_list(dig(listed, "result", "breakpoints"))) == 1
 
 
 @pytest.mark.integration
@@ -170,7 +170,7 @@ def test_workflow_batch_v2(session_id: int, call_gdb_tool: CallGdbTool) -> None:
     assert dig(steps[1], "stop_event", "reason") == "breakpoint-hit"
     assert steps[2]["tool"] == "gdb_context_query"
     assert dig(steps[2], "result", "action") == "backtrace"
-    assert integer(dig(steps[2], "result", "result", "count")) > 0
+    assert len(mapping_list(dig(steps[2], "result", "result", "frames"))) > 0
 
 
 @pytest.mark.integration
@@ -185,7 +185,7 @@ def test_capture_bundle_v2(session_id: int, tmp_path: Path, call_gdb_tool: CallG
         {"session_id": session_id, "output_dir": str(tmp_path), "bundle_name": "capture"},
     )
     assert bundle["status"] == "success"
-    assert integer(dig(bundle, "result", "artifact_count")) > 0
+    assert len(mapping_list(dig(bundle, "result", "artifacts"))) > 0
     manifest = json_object(Path(text(dig(bundle, "result", "manifest_path"))).read_text())
     assert manifest["bundle_name"] == "capture"
     assert manifest["stop_reason"] == "breakpoint-hit"
@@ -349,7 +349,7 @@ def test_inferior_and_fork_controls_v2(session_id: int, call_gdb_tool: CallGdbTo
         {"session_id": session_id, "action": "list", "query": {}},
     )
     assert listed["status"] == "success"
-    assert integer(dig(listed, "result", "count")) >= 2
+    assert len(mapping_list(dig(listed, "result", "inferiors"))) >= 2
 
     follow = call_gdb_tool(
         "gdb_inferior_manage",
@@ -406,4 +406,4 @@ def test_inferior_create_falls_back_to_cli_v2(
         {"session_id": session_id, "action": "list", "query": {}},
     )
     assert listed["status"] == "success"
-    assert integer(dig(listed, "result", "count")) >= 2
+    assert len(mapping_list(dig(listed, "result", "inferiors"))) >= 2
