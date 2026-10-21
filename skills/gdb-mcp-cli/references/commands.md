@@ -31,14 +31,26 @@ Boolean flags come in `--flag` / `--no-flag` pairs (for example `--fail-fast` / 
 | `step` | step | |
 | `next` | next | |
 | `finish` | finish | |
+| `jump LOCATION` | jump | Relocate and resume; location is a string like code breakpoints. |
+| `until LOCATION` | until | Execute with the debugger's frame-return boundary; location is a string like code breakpoints. |
 | `wait-stop` | wait_for_stop | Blocks until the next stop event. |
 
-All of them accept `--wait-until stop|acknowledged` (default `stop`), `--timeout-sec N`, and
-`--stop-reason R` (repeatable).
+`run`, `continue`, `step`, `next`, `finish`, `jump`, and `until` accept
+`--wait-until stop|acknowledged` (default `stop`) and `--timeout-sec N`.
+`wait-stop` accepts `--timeout-sec N` and repeatable `--stop-reason R`.
+`interrupt` takes no execution options.
+
+`jump` and `until` require a location string, positionally or with `--location`:
+`worker`, `worker.c:42`, `42`, or `'*0x4012ab'`. Structured location objects and
+the execution-specific `--location-kind`, `--file`, `--line`, and `--address`
+flags are unsupported. The debugger resolves and validates the location;
+native errors are preserved. Jumps may cross function boundaries
+without an extra flag. Both actions use the native debugger stop behavior;
+an until target need not be reached before its starting frame returns.
 
 `continue`, `step`, `next`, and `finish` also accept `--reverse` to run backwards; it needs a
-reversible target (an `--rr-replay` session, or gdb `record`). `run`, `interrupt`, and
-`wait-stop` reject `--reverse`.
+reversible target (an `--rr-replay` session, or gdb `record`). `run`, `interrupt`,
+`jump`, `until`, and `wait-stop` reject `--reverse`.
 
 `attach PID` → `gdb_attach_process`: attach into a session (`--session-id`, `--timeout-sec`).
 

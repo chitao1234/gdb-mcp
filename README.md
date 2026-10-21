@@ -12,6 +12,8 @@ keeps one background server per project, so a debug session survives between
 commands and reads like an ordinary debugger.
 
 - Structured GDB and LLDB control with machine-readable success and error payloads
+- Native `jump` (relocate and resume) and frame-scoped `until` with explicit
+  function, source-line, or address-expression destinations on both backends
 - Several concurrent sessions, addressed explicitly by `session_id`
 - Multi-inferior workflows, including fork-follow controls
 - LLDB remote targets through `gdb_session_connect` with `debugger="lldb"`
@@ -122,6 +124,7 @@ gdb-mcp-client break add main
 gdb-mcp-client run
 gdb-mcp-client bt
 gdb-mcp-client locals
+gdb-mcp-client until 60
 gdb-mcp-client continue
 gdb-mcp-client exec "info files"     # anything without a dedicated command
 gdb-mcp-client stop

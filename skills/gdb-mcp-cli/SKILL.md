@@ -45,7 +45,7 @@ Prefer the structured MCP tools directly when the environment does not grant she
 | Start / list / stop sessions | `start`, `status`, `stop` |
 | Connect to an externally started gdb | `connect ENDPOINT` |
 | Default session | `session use ID`, `session current` |
-| Run control | `run`, `continue`, `interrupt`, `step`, `next`, `finish`, `wait-stop` (`--reverse` for reverse execution) |
+| Run control | `run`, `continue`, `interrupt`, `step`, `next`, `finish`, `jump`, `until`, `wait-stop` (`--reverse` on continue/step/next/finish) |
 | Attach to a PID | `attach PID` |
 | Threads, frames, backtrace | `threads`, `frame N`, `bt` |
 | Variables, registers, memory, source, assembly | `locals`, `regs`, `memory ADDR`, `list`, `disasm` |
@@ -58,6 +58,24 @@ Prefer the structured MCP tools directly when the environment does not grant she
 | Background server | `daemon status`, `daemon stop [--force]` |
 
 Exact flags, positionals, and the underlying tool for each command: [`references/commands.md`](references/commands.md).
+
+## Jump And Until
+
+```bash
+gdb-mcp-client jump worker.c:42
+gdb-mcp-client until 60
+gdb-mcp-client until --location '*$pc + 4' --wait-until acknowledged
+```
+
+These commands call `gdb_execution_manage` with `action="jump"` or
+`action="until"` and work on both debugger backends. `jump` relocates and resumes;
+`until` executes normally with the debugger's frame-return boundary. The
+debugger resolves the destination and reports unsupported locations or states.
+Locations use the same plain string form as code breakpoints; pass one
+positionally or with `--location`. Structured location objects are unsupported.
+Cross-function jumps need no extra flag. Neither action accepts `--reverse`.
+Check the returned state and stop event: a breakpoint or frame return can stop
+execution before the destination. A timeout does not pause the inferior.
 
 ## The Escape Hatch
 

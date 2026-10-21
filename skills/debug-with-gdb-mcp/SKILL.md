@@ -31,7 +31,7 @@ Use a different approach when the task is not GDB-based or when some other debug
 | Check session inventory or status | `gdb_session_query` |
 | Stop a session | `gdb_session_manage` |
 | Manage inferiors and fork policy | `gdb_inferior_query`, `gdb_inferior_manage` |
-| Run, continue, interrupt, step, next, step_instruction, next_instruction, return, finish, wait | `gdb_execution_manage` |
+| Run, continue, interrupt, step, next, step_instruction, next_instruction, return, finish, jump, until, wait | `gdb_execution_manage` |
 | Create or mutate breakpoints, watchpoints, catchpoints | `gdb_breakpoint_manage` |
 | Query breakpoint inventory | `gdb_breakpoint_query` |
 | Read thread and frame state | `gdb_context_query` |
@@ -50,11 +50,38 @@ When referring to an action-based tool below, use the full form such as `gdb_exe
 1. Choose the right startup mode with `gdb_session_start`: live launch, empty attach bootstrap, or core-dump analysis.
 2. Validate startup immediately with `result.target_loaded`, top-level `warnings`, `result.execution_state`, and startup outputs.
 3. Configure stop conditions before resuming: `gdb_breakpoint_manage(action="create")` and, when needed, `gdb_inferior_manage(action="set_follow_fork_mode" | "set_detach_on_fork")`.
-4. Transition execution with `gdb_execution_manage(action="run" | "continue" | "step" | "next" | "step_instruction" | "next_instruction" | "return" | "finish" | "interrupt")`.
+4. Transition execution with `gdb_execution_manage(action="run" | "continue" | "step" | "next" | "step_instruction" | "next_instruction" | "return" | "finish" | "jump" | "until" | "interrupt")`.
 5. Synchronize explicitly with `gdb_execution_manage(action="wait_for_stop")` when execution remains live.
 6. Inspect state with `gdb_context_query`, `gdb_context_manage`, and `gdb_inspect_query`.
 7. Capture artifacts with `gdb_capture_bundle` when the stop matters.
 8. End with `gdb_session_manage(action="stop")`.
+
+## Jump And Until
+
+Use `gdb_execution_manage(action="jump")` to relocate and resume, or
+`gdb_execution_manage(action="until")` to execute normally toward a destination
+with the debugger's starting-frame return boundary. Both work with GDB and LLDB
+and require a plain `execution.location` string, just like code breakpoints:
+
+```json
+{"session_id":7,"action":"jump","execution":{"location":"worker.c:42"}}
+{"session_id":7,"action":"until","execution":{"location":"60"}}
+{"session_id":7,"action":"until","execution":{"location":"*0x4012ab","wait_until":"acknowledged"}}
+```
+
+The debugger resolves the string and decides which destinations and states it
+supports. There is no server-enforced function boundary or opt-in flag for
+cross-function jumps. Native failures retain their debugger text; LLDB may
+reject an outside-function `until` target. `jump` does not initialize a call
+frame or restore prior variable values.
+
+Read `result.execution_state` and `result.last_stop_event` after either action:
+an intervening breakpoint or a frame return can stop execution before the
+destination. `result.location` echoes the location string, not a resolved destination;
+stop fields are `null` if this call observed no new stop. Both accept the
+existing wait policy and timeout; neither accepts `reverse`. A timeout does
+not interrupt the inferior. A jump failure with `details.relocated=true` means
+LLDB moved execution before its resume attempt failed.
 
 ## Startup Configuration
 

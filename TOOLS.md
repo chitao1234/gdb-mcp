@@ -287,7 +287,7 @@ In practice, string shorthand is most useful for dedicated tools with empty or d
 | `gdb_session_manage` | Mutate session lifecycle |
 | `gdb_inferior_query` | Query inferior inventory or current inferior |
 | `gdb_inferior_manage` | Create, remove, select, or reconfigure inferiors |
-| `gdb_execution_manage` | Run, continue, interrupt, step, next, finish, or wait |
+| `gdb_execution_manage` | Run, continue, interrupt, step, next, jump, until, finish, or wait |
 | `gdb_breakpoint_query` | List or fetch breakpoints |
 | `gdb_breakpoint_manage` | Create, update, delete, enable, or disable breakpoints |
 | `gdb_context_query` | List threads, backtraces, or frame info |
@@ -598,12 +598,16 @@ Run or synchronize execution state.
 | `next_instruction` | `{"session_id":7,"action":"next_instruction","execution":{"reverse":false}}` | `command`, `backend_data` |
 | `return` | `{"session_id":7,"action":"return","execution":{"value":"42"}}` | `command`, `backend_data` (including `return_value`) |
 | `finish` | `{"session_id":7,"action":"finish"}` | `message`, `return_value`, `result_var`, `frame`, `execution_state`, `stop_reason`, `last_stop_event` |
+| `jump` | `{"session_id":7,"action":"jump","execution":{"location":"worker.c:42"}}` | `command`, `location`, `execution_state`, `stop_reason`, `stop_kind`, `last_stop_event`, `backend_data` |
+| `until` | `{"session_id":7,"action":"until","execution":{"location":"60"}}` | `command`, `location`, `execution_state`, `stop_reason`, `stop_kind`, `last_stop_event`, `backend_data` |
 | `wait_for_stop` | `{"session_id":7,"action":"wait_for_stop","execution":{"timeout_sec":10,"stop_reasons":["breakpoint-hit"]}}` | `message`, `matched`, `timed_out`, `source`, `execution_state`, `stop_reason`, `reason_filter`, `last_stop_event` |
 
 ### Wait Policy
 
 `run`, `continue`, `step`, `next`, `step_instruction`, `next_instruction`, and
-`finish` accept an optional `execution` payload with a flattened wait policy:
+`finish` accept an optional `execution` payload with a flattened wait policy.
+`jump` and `until` accept the same fields alongside their required
+`execution.location`:
 
 ```json
 {
@@ -621,12 +625,70 @@ also accept `"reverse": true`, which runs the command backwards
 (`-exec-continue --reverse`, `-exec-step-instruction --reverse`, and friends).
 It requires a target that can execute in reverse: an `rr_replay` session, or a
 gdb recording started with `record`/`target record-full`. `run`, `interrupt`,
-`return`, and `wait_for_stop` reject the flag. LLDB has no reverse execution and
+`return`, `jump`, `until`, and `wait_for_stop` reject the flag. LLDB has no reverse execution and
 returns `code="unsupported_combination"` when `reverse` is true.
 
 `return` does not resume execution. It pops the selected frame to its caller and
 optionally sets the return value from `execution.value`; omit `value` for a void
 return.
+
+### Jump And Until
+
+Both actions require `execution.location` as a non-empty string, just like code
+breakpoints. Structured location objects are not accepted. Examples:
+
+| Location | Meaning |
+| --- | --- |
+| `"worker"` | Function name |
+| `"60"` | Line in the source context selected by the debugger |
+| `"worker.c:60"` | Source file and line |
+| `"*0x4012ab"` | Instruction address |
+| `"*$pc + 4"` | Address expression in the debugger's syntax |
+
+The server validates the request shape and passes the location to the debugger.
+It does not preflight the execution state, inspect line tables, check address
+readability, reject ambiguous destinations, or enforce a function boundary.
+Line numbers and address expressions are interpreted by the selected debugger;
+native failures retain their debugger text. Addresses may be expressions such
+as `$pc + 4`, subject to that debugger's expression syntax.
+
+`jump` relocates execution and resumes. Destinations may be in another function;
+there is no `allow_cross_function` flag. GDB uses `-exec-jump`. LLDB uses
+`thread jump --force` followed by continue, since its jump command alone stays
+paused. Jumping does not establish a function-call frame or restore earlier
+memory and variable values. The debugger determines the next stop.
+
+`until` executes normally using the debugger's native frame-scoped until:
+the destination must be reached in the starting frame to satisfy that operation,
+and returning from that frame also stops execution. Breakpoints, signals, or
+other debugger stops can interrupt it first. Native restrictions are preserved:
+LLDB can reject a destination outside the current function. `until` is not
+implemented as an unrestricted run-to-address. A destination is required; the
+GDB-only no-argument form is not exposed by this action.
+
+The success `location` echoes the requested location string; it does not claim a
+resolved destination. `execution_state` reports the state actually observed.
+`stop_reason`, `stop_kind`, and `last_stop_event` describe only a new stop or exit
+observed during this request and are `null` when none was observed. Native stop
+reasons are preserved; GDB's `location-reached` has canonical `stop_kind="step"`.
+`command` describes the backend command or SB API operation, and `backend_data`
+retains the native payload and console output.
+
+`wait_until="acknowledged"` returns after command acceptance, possibly already
+stopped or exited if execution completed quickly. `wait_until="stop"` waits for
+the next stop or exit, not necessarily the requested destination. Reaching a
+breakpoint before the destination is a successful call. A wait timeout returns
+`command_timeout` without implicitly interrupting the inferior. If LLDB
+relocates but fails to resume, the failure includes `details.relocated=true`
+and the resulting execution state.
+
+CLI examples:
+
+```bash
+gdb-mcp-client jump worker.c:42
+gdb-mcp-client until 60
+gdb-mcp-client until --location '*0x4012ab' --wait-until acknowledged
+```
 
 ### Notes
 
