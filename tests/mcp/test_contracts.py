@@ -24,6 +24,7 @@ from gdb_mcp.contracts import (
     INFERIOR_FOLLOW_FORK_MODES,
     PUBLIC_TOOL_NAMES,
     REGISTER_VALUE_FORMATS,
+    TOOL_SESSION_QUERY,
     TOOL_WORKFLOW_BATCH,
     BatchStepToolName,
 )
@@ -213,11 +214,14 @@ def test_batch_step_tool_names_match_workflow_allowlists() -> None:
 
 
 def test_session_tool_specs_share_the_public_request_models() -> None:
-    """Session handler specs must reuse the shared public request models."""
+    """Session specs reuse public models, narrowed to status for session queries."""
 
     assert set(SESSION_TOOL_SPECS) <= set(TOOL_MODELS)
     for tool_name, spec in SESSION_TOOL_SPECS.items():
-        assert spec.model is TOOL_MODELS[tool_name]
+        expected_model = (
+            SessionQueryStatusAction if tool_name == TOOL_SESSION_QUERY else TOOL_MODELS[tool_name]
+        )
+        assert spec.model is expected_model
 
 
 def test_every_public_tool_has_one_dispatch_spec() -> None:
