@@ -31,7 +31,7 @@ Use a different approach when the task is not GDB-based or when some other debug
 | Check session inventory or status | `gdb_session_query` |
 | Stop a session | `gdb_session_manage` |
 | Manage inferiors and fork policy | `gdb_inferior_query`, `gdb_inferior_manage` |
-| Run, continue, interrupt, step, next, finish, wait | `gdb_execution_manage` |
+| Run, continue, interrupt, step, next, step_instruction, next_instruction, return, finish, wait | `gdb_execution_manage` |
 | Create or mutate breakpoints, watchpoints, catchpoints | `gdb_breakpoint_manage` |
 | Query breakpoint inventory | `gdb_breakpoint_query` |
 | Read thread and frame state | `gdb_context_query` |
@@ -50,7 +50,7 @@ When referring to an action-based tool below, use the full form such as `gdb_exe
 1. Choose the right startup mode with `gdb_session_start`: live launch, empty attach bootstrap, or core-dump analysis.
 2. Validate startup immediately with `result.target_loaded`, top-level `warnings`, `result.execution_state`, and startup outputs.
 3. Configure stop conditions before resuming: `gdb_breakpoint_manage(action="create")` and, when needed, `gdb_inferior_manage(action="set_follow_fork_mode" | "set_detach_on_fork")`.
-4. Transition execution with `gdb_execution_manage(action="run" | "continue" | "step" | "next" | "finish" | "interrupt")`.
+4. Transition execution with `gdb_execution_manage(action="run" | "continue" | "step" | "next" | "step_instruction" | "next_instruction" | "return" | "finish" | "interrupt")`.
 5. Synchronize explicitly with `gdb_execution_manage(action="wait_for_stop")` when execution remains live.
 6. Inspect state with `gdb_context_query`, `gdb_context_manage`, and `gdb_inspect_query`.
 7. Capture artifacts with `gdb_capture_bundle` when the stop matters.
@@ -239,6 +239,8 @@ Treat these outcomes as hard gates:
 - Use `gdb_execution_manage(action="wait_for_stop")` after a background run or continue when you expect a later stop event and want a blocking handoff point.
 - Use `gdb_execution_manage(action="interrupt")` before inspection when the inferior is still running.
 - Use `gdb_execution_manage(action="step")` and `gdb_execution_manage(action="next")` only when execution is paused.
+- Use `step_instruction`/`next_instruction` for assembly-level stepping; GDB supports `reverse=true` on a reversible target, LLDB rejects it.
+- Use `gdb_execution_manage(action="return", execution.value="...")` to force the selected frame to return without executing its remaining code.
 - Use `gdb_execution_manage(action="finish")` when you want to step out of the current frame and stop in the caller.
 - Use `gdb_inspect_query(action="disassembly")` and `gdb_inspect_query(action="source")` instead of raw `disassemble` or `list`.
 - Use `gdb_inferior_manage(action="create" | "remove" | "select")` when explicit inferior lifecycle management matters.

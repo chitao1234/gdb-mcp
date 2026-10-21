@@ -594,12 +594,16 @@ Run or synchronize execution state.
 | `interrupt` | `{"session_id":7,"action":"interrupt"}` | `message`, `backend_data` |
 | `step` | `{"session_id":7,"action":"step"}` | `command`, `backend_data` |
 | `next` | `{"session_id":7,"action":"next"}` | `command`, `backend_data` |
+| `step_instruction` | `{"session_id":7,"action":"step_instruction","execution":{"reverse":false}}` | `command`, `backend_data` |
+| `next_instruction` | `{"session_id":7,"action":"next_instruction","execution":{"reverse":false}}` | `command`, `backend_data` |
+| `return` | `{"session_id":7,"action":"return","execution":{"value":"42"}}` | `command`, `backend_data` (including `return_value`) |
 | `finish` | `{"session_id":7,"action":"finish"}` | `message`, `return_value`, `result_var`, `frame`, `execution_state`, `stop_reason`, `last_stop_event` |
 | `wait_for_stop` | `{"session_id":7,"action":"wait_for_stop","execution":{"timeout_sec":10,"stop_reasons":["breakpoint-hit"]}}` | `message`, `matched`, `timed_out`, `source`, `execution_state`, `stop_reason`, `reason_filter`, `last_stop_event` |
 
 ### Wait Policy
 
-`run`, `continue`, `step`, `next`, and `finish` accept an optional `execution` payload with a flattened wait policy:
+`run`, `continue`, `step`, `next`, `step_instruction`, `next_instruction`, and
+`finish` accept an optional `execution` payload with a flattened wait policy:
 
 ```json
 {
@@ -612,15 +616,21 @@ Run or synchronize execution state.
 
 `wait_until` can be `acknowledged` or `stop` (default `stop`). Omitting `execution` entirely is equivalent to `wait_until="stop"` with the default timeout. For `run`, `execution.args` may also override the inferior argv as an explicit list or one shell-style string.
 
-`continue`, `step`, `next`, and `finish` also accept `"reverse": true`, which
-runs the command backwards (`-exec-continue --reverse` and friends). It requires
-a target that can execute in reverse: an `rr_replay` session, or a gdb recording
-started with `record`/`target record-full`. `run`, `interrupt`, and
-`wait_for_stop` reject the flag.
+`continue`, `step`, `next`, `step_instruction`, `next_instruction`, and `finish`
+also accept `"reverse": true`, which runs the command backwards
+(`-exec-continue --reverse`, `-exec-step-instruction --reverse`, and friends).
+It requires a target that can execute in reverse: an `rr_replay` session, or a
+gdb recording started with `record`/`target record-full`. `run`, `interrupt`,
+`return`, and `wait_for_stop` reject the flag. LLDB has no reverse execution and
+returns `code="unsupported_combination"` when `reverse` is true.
+
+`return` does not resume execution. It pops the selected frame to its caller and
+optionally sets the return value from `execution.value`; omit `value` for a void
+return.
 
 ### Notes
 
-- `run`, `continue`, `step`, `next`, and `interrupt` return tagged `backend_data` inside the success `result` object. It contains `debugger`, `console_output`, and debugger-specific `data`. `interrupt` may include top-level `warnings` when no stop notification arrives.
+- `run`, `continue`, `step`, `next`, `step_instruction`, `next_instruction`, `return`, and `interrupt` return tagged `backend_data` inside the success `result` object. It contains `debugger`, `console_output`, and debugger-specific `data`. `interrupt` may include top-level `warnings` when no stop notification arrives.
 - `wait_for_stop` is the structured replacement for manual polling.
 
 ### Reverse Debugging
