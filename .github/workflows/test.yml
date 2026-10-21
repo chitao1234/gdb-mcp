@@ -28,10 +28,10 @@ jobs:
         python -m pip install --upgrade pip
         pip install -e ".[dev]"
 
-    - name: Install GDB, GCC, and rr
+    - name: Install GDB, GCC, rr, and LLDB
       run: |
         sudo apt-get update
-        sudo apt-get install -y gdb g++ rr
+        sudo apt-get install -y gdb g++ rr lldb-18 liblldb-18-dev
 
     # rr records with perf events, so it needs a low perf_event_paranoid and an
     # unrestricted kptr. These are enough on a self-hosted runner, but the
@@ -48,6 +48,8 @@ jobs:
           || echo "::warning::rr cannot record on this runner; the rr integration test will skip"
 
     - name: Run unit tests
+      env:
+        LLDB_PREFIX: /usr/lib/llvm-18
       run: |
         pytest tests/ -v --tb=short -n auto -rs
 

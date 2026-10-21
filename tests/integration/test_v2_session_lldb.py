@@ -1,13 +1,13 @@
-"""Real LLDB coverage, enabled when an LLDB installation is selected.
+"""Real LLDB integration coverage.
 
-The native bridge is built on first use, so this test is skipped unless
-``LLDB_PREFIX`` (or another discovery variable) points at an installation.
+The native bridge is built on first use. The caller must select the LLDB
+installation with ``LLDB_PREFIX`` or ``LLDB_LIBRARY``; a missing selection is a
+test failure, not a skip, so LLDB has the same coverage status as GDB.
 """
 
 from __future__ import annotations
 
 import os
-import shutil
 import time
 from typing import cast
 
@@ -19,10 +19,8 @@ from gdb_mcp.session.protocols import OsModuleProtocol, TimeModuleProtocol
 
 from .conftest import CompileProgram
 
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("LLDB_PREFIX") or shutil.which("gcc") is None,
-    reason="set LLDB_PREFIX to run real LLDB integration coverage",
-)
+LLDB_PREFIX = os.environ.get("LLDB_PREFIX")
+LLDB_LIBRARY = os.environ.get("LLDB_LIBRARY")
 
 _LLDB_PROGRAM = """
 #include <stdio.h>
@@ -32,12 +30,17 @@ int main(void) { printf("%d\\n", add(2, 3)); return 0; }
 
 
 def test_lldb_start_breakpoint_run_and_status(compile_program: CompileProgram) -> None:
+    if LLDB_PREFIX is None and LLDB_LIBRARY is None:
+        pytest.fail(
+            "LLDB_PREFIX or LLDB_LIBRARY must select the LLDB installation; "
+            "LLDB integration coverage is not optional"
+        )
     program = compile_program(_LLDB_PROGRAM, filename="lldb_demo.c", compiler="gcc")
     backend = LldbSbBackend(
         os_module=cast(OsModuleProtocol, os), time_module=cast(TimeModuleProtocol, time)
     )
     try:
-        started = backend.start(program=program, debugger="lldb")
+        started = backend.start(program=program, debugger="lldb", debugger_path=LLDB_PREFIX)
         assert isinstance(started, OperationSuccess)
         assert started.value.target_loaded is True
 
