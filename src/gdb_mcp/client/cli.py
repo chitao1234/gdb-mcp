@@ -198,10 +198,10 @@ def _configure_facade_command(parser: argparse.ArgumentParser, command: FacadeCo
         )
 
 
-def _add_facade_commands(subparsers: argparse._SubParsersAction) -> None:
+def _add_facade_commands(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register every facade command, including grouped ones such as break add."""
 
-    groups: dict[str, argparse._SubParsersAction] = {}
+    groups: dict[str, argparse._SubParsersAction[argparse.ArgumentParser]] = {}
     for name, command in FACADE_COMMANDS.items():
         words = name.split(" ")
         if len(words) == 1:
@@ -222,7 +222,7 @@ def _add_facade_commands(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _add_tool_command(
-    container: argparse._SubParsersAction,
+    container: argparse._SubParsersAction[argparse.ArgumentParser],
     tool_name: str,
     spec: RegisteredToolCliSpec,
 ) -> None:
