@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Any, cast
+from typing import TypeVar, cast
 
-from gdb_mcp.domain import OperationError, OperationSuccess
+from gdb_mcp.domain import OperationError, OperationResult, OperationSuccess
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.lldb_backend import LldbSbBackend
 from gdb_mcp.session.lldb_bridge import BridgeClient
@@ -20,13 +20,13 @@ from gdb_mcp.session.protocols import OsModuleProtocol, TimeModuleProtocol
 
 class FakeBridge:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, dict[str, Any]]] = []
-        self.breakpoints: list[dict[str, Any]] = []
-        self.watchpoints: list[dict[str, Any]] = []
+        self.calls: list[tuple[str, dict[str, object]]] = []
+        self.breakpoints: list[dict[str, object]] = []
+        self.watchpoints: list[dict[str, object]] = []
         self.next_breakpoint = 1
         self.next_watchpoint = 1
 
-    def _breakpoint_payload(self, number: int, *, catchpoint: bool = False) -> dict[str, Any]:
+    def _breakpoint_payload(self, number: int, *, catchpoint: bool = False) -> dict[str, object]:
         return {
             "number": str(number),
             "type": "catchpoint" if catchpoint else "breakpoint",
@@ -50,7 +50,7 @@ class FakeBridge:
             ),
         }
 
-    def _watchpoint_payload(self, number: int) -> dict[str, Any]:
+    def _watchpoint_payload(self, number: int) -> dict[str, object]:
         return {
             "number": str(number),
             "type": "watchpoint",
@@ -62,7 +62,9 @@ class FakeBridge:
             "watch": {"access": "write", "address": "0x7ffffff0", "size": 4, "spec": "sum"},
         }
 
-    def request(self, operation: str, *, timeout_sec: int = 30, **payload: Any) -> dict[str, Any]:
+    def request(
+        self, operation: str, *, timeout_sec: int = 30, **payload: object
+    ) -> dict[str, object]:
         self.calls.append((operation, payload))
         if operation in {"status", "wait"}:
             return {
@@ -171,7 +173,10 @@ class FakeBridge:
         return {}
 
 
-def _value(result: OperationSuccess[Any] | OperationError) -> Any:
+_PayloadT = TypeVar("_PayloadT")
+
+
+def _value(result: OperationResult[_PayloadT]) -> _PayloadT:
     assert isinstance(result, OperationSuccess)
     return result.value
 
