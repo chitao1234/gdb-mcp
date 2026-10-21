@@ -190,6 +190,19 @@ def test_factory_selects_the_lldb_backend() -> None:
     assert isinstance(service.backend, LldbSbBackend)
 
 
+def test_lldb_rr_replay_points_to_connect_mode_and_reverse_caveat() -> None:
+    backend, _ = _backend()
+
+    result = backend.start(debugger="lldb", replay="/tmp/rr-trace")
+
+    assert isinstance(result, OperationError)
+    assert result.code == "unsupported_combination"
+    assert "reverse" in result.message
+    assert "gdb_session_connect" in result.message
+    assert "connect://" in result.message
+    assert "debugger='gdb'" in result.message
+
+
 def test_status_enriches_crash_and_stop_event() -> None:
     backend, _ = _backend()
 

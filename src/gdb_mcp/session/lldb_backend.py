@@ -397,7 +397,15 @@ class LldbSbBackend:
                 )
             if replay:
                 return OperationError(
-                    message="LLDB sessions do not support rr replay; use LLDB's own replay tools.",
+                    message=(
+                        "LLDB cannot start rr replay itself, and connecting LLDB to rr "
+                        "disables rr's reverse stepping. Use debugger='gdb' when you need "
+                        "rr reverse execution. If forward replay is enough, start "
+                        "`rr replay -s <port> <trace>` yourself, then call "
+                        "gdb_session_connect with debugger='lldb', "
+                        "endpoint='connect://127.0.0.1:<port>', and program set to the "
+                        "trace's executable."
+                    ),
                     code="unsupported_combination",
                 )
             if endpoint and (args or core):
