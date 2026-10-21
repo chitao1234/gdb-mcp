@@ -11,7 +11,7 @@ from pygdbmi.gdbcontroller import GdbController
 from pygdbmi.IoManager import IoManager
 
 from ..contracts import DEBUGGER_GDB, DEBUGGER_LLDB
-from ..transport.protocols import GdbControllerFactoryProtocol, GdbControllerProtocol
+from ..transport.protocols import GdbControllerProtocol
 from .backends import DebuggerBackend
 from .constants import (
     INITIAL_COMMAND_TOKEN,
@@ -19,7 +19,7 @@ from .constants import (
 )
 from .gdb_backend import GdbMiBackend
 from .lldb_backend import LldbSbBackend
-from .protocols import OsModuleProtocol, TimeModuleProtocol
+from .protocols import OsModuleProtocol
 from .service import SessionService
 
 logger = logging.getLogger(__name__)
@@ -131,13 +131,13 @@ def create_default_session_service(debugger: str = DEBUGGER_GDB) -> SessionServi
     if debugger == DEBUGGER_LLDB:
         backend = LldbSbBackend(
             os_module=cast(OsModuleProtocol, os),
-            time_module=cast(TimeModuleProtocol, time),
+            time_module=time,
         )
     else:
         backend = GdbMiBackend(
-            controller_factory=cast(GdbControllerFactoryProtocol, create_gdb_controller),
+            controller_factory=create_gdb_controller,
             os_module=cast(OsModuleProtocol, os),
-            time_module=cast(TimeModuleProtocol, time),
+            time_module=time,
             initial_command_token=INITIAL_COMMAND_TOKEN,
             poll_timeout_sec=POLL_TIMEOUT_SEC,
         )

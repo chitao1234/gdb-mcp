@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import cast
-
 from ...domain import (
     DisassemblyInfo,
     ExpressionValueInfo,
@@ -107,7 +105,7 @@ def _handle_inspect_query(
         case InspectRegistersAction():
             registers_query = action_args.query
             thread_id, frame = _context_selector(registers_query.context)
-            register_numbers = cast(list[int], list(registers_query.register_numbers))
+            register_numbers = [int(number) for number in registers_query.register_numbers]
             register_names = list(registers_query.register_names)
             return session.get_registers(
                 thread_id=thread_id,

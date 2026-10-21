@@ -11,7 +11,7 @@ from __future__ import annotations
 import functools
 import json
 from collections.abc import Mapping
-from typing import Literal, cast
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
@@ -198,11 +198,11 @@ TOOL_OUTPUT_PAYLOADS: dict[str, tuple[tuple[str | None, type[object]], ...]] = {
 def public_output_schema(tool_name: str) -> Schema:
     """Return a fresh, published JSON Schema for one tool's output."""
 
-    return cast(Schema, thaw_schema(_cached_output_schema(tool_name)))
+    return thaw_schema(_cached_output_schema(tool_name))
 
 
 @functools.cache
-def _cached_output_schema(tool_name: str) -> object:
+def _cached_output_schema(tool_name: str) -> Mapping[str, object]:
     """Return the immutable schema for one tool, computed once per process."""
 
     return freeze_schema(build_output_schema(tool_name))

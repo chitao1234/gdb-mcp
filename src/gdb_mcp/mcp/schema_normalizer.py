@@ -17,7 +17,7 @@ from __future__ import annotations
 import functools
 from collections.abc import Mapping, Sequence
 from types import MappingProxyType
-from typing import cast
+from typing import overload
 
 from pydantic import BaseModel
 
@@ -31,12 +31,20 @@ def normalize_schema(schema: Schema) -> Schema:
     payload objects does not say that on its own, so the root declares it.
     """
 
-    published = cast(Schema, _normalize_node(schema))
+    published = _normalize_node(schema)
     definitions = published.get("$defs")
     defs = definitions if isinstance(definitions, Mapping) else {}
     if "type" not in published and _describes_object(published, defs):
         published["type"] = "object"
     return published
+
+
+@overload
+def freeze_schema(value: Mapping[str, object]) -> Mapping[str, object]: ...
+
+
+@overload
+def freeze_schema(value: object) -> object: ...
 
 
 def freeze_schema(value: object) -> object:
@@ -47,6 +55,14 @@ def freeze_schema(value: object) -> object:
     if isinstance(value, list | tuple):
         return tuple(freeze_schema(item) for item in value)
     return value
+
+
+@overload
+def thaw_schema(value: Mapping[str, object]) -> Schema: ...
+
+
+@overload
+def thaw_schema(value: object) -> object: ...
 
 
 def thaw_schema(value: object) -> object:
@@ -60,7 +76,7 @@ def thaw_schema(value: object) -> object:
 
 
 @functools.cache
-def _cached_input_schema(model: type[BaseModel]) -> object:
+def _cached_input_schema(model: type[BaseModel]) -> Mapping[str, object]:
     """Return the immutable published schema for a model, computed once per process."""
 
     return freeze_schema(normalize_schema(model.model_json_schema()))
@@ -77,7 +93,7 @@ def public_input_schema(
     independent copy that callers may freely mutate.
     """
 
-    schema = cast(Schema, thaw_schema(_cached_input_schema(model)))
+    schema = thaw_schema(_cached_input_schema(model))
     if examples:
         schema["examples"] = [dict(example) for example in examples]
     return schema
@@ -98,6 +114,14 @@ def _describes_object(node: object, defs: Mapping[str, object]) -> bool:
         and bool(alternatives)
         and all(_describes_object(alternative, defs) for alternative in alternatives)
     )
+
+
+@overload
+def _normalize_node(node: Mapping[str, object]) -> Schema: ...
+
+
+@overload
+def _normalize_node(node: object) -> object: ...
 
 
 def _normalize_node(node: object) -> object:
