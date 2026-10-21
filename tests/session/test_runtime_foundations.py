@@ -9,6 +9,12 @@ from gdb_mcp.session.config import SessionConfig
 from gdb_mcp.session.service import SessionService
 
 
+def _stop_kind(session: SessionService) -> str:
+    """Return the runtime's current canonical stop kind."""
+
+    return session.runtime.stop_kind
+
+
 class TestRuntimeFoundations:
     """Test bounded runtime state used by higher-level workflow tools."""
 
@@ -97,10 +103,10 @@ class TestRuntimeFoundations:
         runtime = session_service.runtime
 
         runtime.mark_inferior_paused("breakpoint", stop_kind="watchpoint")
-        assert runtime.stop_kind == "watchpoint"
+        assert _stop_kind(session_service) == "watchpoint"
 
         runtime.mark_inferior_paused("breakpoint-hit")
-        assert runtime.stop_kind == "breakpoint"
+        assert _stop_kind(session_service) == "breakpoint"
 
     def test_update_inferior_inventory_reconciles_state_map(
         self, session_service: SessionService
