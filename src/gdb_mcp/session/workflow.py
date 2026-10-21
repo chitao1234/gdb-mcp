@@ -15,7 +15,6 @@ from ..domain import (
     StopEvent,
     result_to_envelope,
 )
-from ..domain.parsing import as_text
 from .runtime import SessionRuntime
 
 if TYPE_CHECKING:
@@ -58,18 +57,11 @@ class SessionWorkflowService:
         """Execute a validated step sequence atomically within one session."""
 
         results: list[BatchStepResult] = []
-        error_count = 0
-        stopped_early = False
-        failure_step_index: int | None = None
 
         for index, step in enumerate(steps):
             previous_stop_history_size = len(self._runtime.stop_history)
             step_result = step.execute()
             serialized_result = result_to_envelope(step_result)
-            step_status = serialized_result.get("status")
-            if not isinstance(step_status, str):
-                step_status = "error" if isinstance(step_result, OperationError) else "success"
-
             stop_event = None
             if capture_stop_events:
                 stop_event = self._step_stop_event(previous_stop_history_size)
@@ -79,29 +71,18 @@ class SessionWorkflowService:
                     index=index,
                     tool=step.tool,
                     label=step.label,
-                    status=step_status,
-                    action=as_text(serialized_result.get("action")),
-                    code=as_text(serialized_result.get("code")),
                     result=serialized_result,
                     stop_event=stop_event,
                 )
             )
 
-            if isinstance(step_result, OperationError):
-                error_count += 1
-                if fail_fast:
-                    stopped_early = True
-                    failure_step_index = index
-                    break
+            if isinstance(step_result, OperationError) and fail_fast:
+                break
 
         return OperationSuccess(
             BatchExecutionInfo(
                 steps=results,
-                count=len(steps),
-                completed_steps=len(results),
-                error_count=error_count,
-                stopped_early=stopped_early,
-                failure_step_index=failure_step_index,
+                requested_steps=len(steps),
                 final_execution_state=self._runtime.execution_state,
                 final_stop_reason=self._runtime.stop_reason,
                 final_stop_kind=self._runtime.stop_kind,

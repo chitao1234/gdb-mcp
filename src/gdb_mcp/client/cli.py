@@ -9,7 +9,7 @@ import os
 import sys
 from collections.abc import Sequence
 from contextlib import redirect_stderr
-from typing import Protocol, TextIO, runtime_checkable
+from typing import Literal, Protocol, TextIO, TypedDict, cast, runtime_checkable
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -23,6 +23,7 @@ from gdb_mcp.contracts import (
     TOOL_SESSION_MANAGE,
     TOOL_SESSION_QUERY,
     TOOL_SESSION_START,
+    TOOL_WORKFLOW_BATCH,
 )
 from gdb_mcp.mcp.schemas import TOOL_MODELS
 from gdb_mcp.mcp.tool_examples import TOOL_EXAMPLES
@@ -171,10 +172,28 @@ def _payload_from_json(
 
 
 def _payload_reports_step_failures(payload: dict[str, object]) -> bool:
-    """Batch envelopes keep status=success while individual steps fail."""
+    """Return whether any completed workflow step returned an error envelope."""
 
-    error_count = ToolEnvelope.from_payload(payload).error_count
-    return error_count is not None and error_count > 0
+    batch = cast(WorkflowBatchEnvelope, payload["result"])
+    return any(step["result"]["status"] == "error" for step in batch["steps"])
+
+
+class WorkflowStepEnvelope(TypedDict):
+    """The status-bearing part of a nested tool result."""
+
+    status: Literal["success", "error"]
+
+
+class WorkflowStep(TypedDict):
+    """One completed workflow step as published in its result array."""
+
+    result: WorkflowStepEnvelope
+
+
+class WorkflowBatchEnvelope(TypedDict):
+    """The workflow fields the CLI reads from a successful result."""
+
+    steps: list[WorkflowStep]
 
 
 def _normalize_tool_name(tool_name: str) -> str | None:
@@ -750,7 +769,7 @@ async def main(
 
     if response.is_error:
         return 1
-    if _payload_reports_step_failures(response.payload):
+    if args.tool_name == TOOL_WORKFLOW_BATCH and _payload_reports_step_failures(response.payload):
         return 1
     return 0
 

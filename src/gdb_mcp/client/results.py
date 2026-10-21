@@ -11,7 +11,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import cast
 
+from gdb_mcp.domain import ToolResultStatus
 from gdb_mcp.domain.parsing import as_int, as_text
 
 _ACTION_LIST = "list"
@@ -21,7 +23,7 @@ _ACTION_LIST = "list"
 class ToolEnvelope:
     """Narrowed view over one MCP tool result payload."""
 
-    status: str | None
+    status: ToolResultStatus
     action: str | None
     code: str | None
     message: str | None
@@ -29,21 +31,15 @@ class ToolEnvelope:
     session_id: int | None
     target_loaded: bool | None
     execution_state: str | None
-    error_count: int | None
     result: Mapping[str, object] | None
 
     @classmethod
     def from_payload(cls, payload: Mapping[str, object]) -> ToolEnvelope:
         """Build a typed envelope from a raw tool payload."""
 
-        status = as_text(payload.get("status"))
+        status = cast(ToolResultStatus, payload["status"])
         if status == "success":
-            if "result" not in payload:
-                raise TypeError("Successful tool results require an object payload")
-            result_value = payload["result"]
-            if not isinstance(result_value, Mapping):
-                raise TypeError("Successful tool results must contain an object payload")
-            result: Mapping[str, object] | None = result_value
+            result: Mapping[str, object] | None = cast(Mapping[str, object], payload["result"])
         else:
             result = None
         message = (
@@ -60,7 +56,6 @@ class ToolEnvelope:
             session_id=as_int(result.get("session_id")) if result is not None else None,
             target_loaded=_as_bool(result.get("target_loaded")) if result is not None else None,
             execution_state=as_text(result.get("execution_state")) if result is not None else None,
-            error_count=as_int(result.get("error_count")) if result is not None else None,
             result=result,
         )
 

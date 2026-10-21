@@ -30,6 +30,7 @@ JsonValue = TypeAliasType("JsonValue", "JsonScalar | dict[str, JsonValue] | list
 JsonObject = TypeAliasType("JsonObject", "dict[str, JsonValue]")
 JsonArray = TypeAliasType("JsonArray", "list[JsonValue]")
 StructuredPayload: TypeAlias = JsonObject
+ToolResultStatus: TypeAlias = Literal["success", "error"]
 FollowForkMode: TypeAlias = Literal["parent", "child"]
 WatchpointAccessType: TypeAlias = Literal["write", "read", "access"]
 ExecutionState: TypeAlias = Literal["unknown", "not_started", "running", "paused", "exited"]
@@ -175,11 +176,8 @@ class BatchStepResult:
 
     index: int
     tool: str
-    status: str
     result: StructuredPayload
     label: str | None = None
-    action: str | None = None
-    code: str | None = None
     stop_event: StopEvent | None = None
 
 
@@ -188,15 +186,17 @@ class BatchExecutionInfo:
     """Structured result for one workflow batch executed in a session."""
 
     steps: list[BatchStepResult]
-    count: int
-    completed_steps: int
-    error_count: int
-    stopped_early: bool = False
-    failure_step_index: int | None = None
+    requested_steps: int
     final_execution_state: ExecutionState | None = None
     final_stop_reason: str | None = None
     final_stop_kind: StopKind | None = None
     last_stop_event: StopEvent | None = None
+
+    @property
+    def has_errors(self) -> bool:
+        """Return whether any completed batch step returned an error envelope."""
+
+        return any(step.result["status"] == "error" for step in self.steps)
 
 
 @dataclass(slots=True, frozen=True)
@@ -231,7 +231,7 @@ class RunUntilFailureIterationInfo:
     """Structured summary for one iteration of a campaign run."""
 
     iteration: int
-    status: str
+    status: ToolResultStatus
     execution_state: ExecutionState | None = None
     stop_reason: str | None = None
     stop_kind: StopKind | None = None

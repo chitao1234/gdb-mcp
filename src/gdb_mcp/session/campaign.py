@@ -8,6 +8,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from re import Pattern
+from typing import cast
 
 from ..domain import (
     CaptureBundleInfo,
@@ -19,6 +20,7 @@ from ..domain import (
     SessionStatusSnapshot,
     StopEvent,
     StructuredPayload,
+    ToolResultStatus,
     result_to_envelope,
 )
 from .locking import session_workflow_context
@@ -147,7 +149,7 @@ class RunUntilFailureService:
                         fail_fast=True,
                         capture_stop_events=True,
                     )
-                    if setup_result.value.error_count > 0:
+                    if setup_result.value.has_errors:
                         matched_info = _MatchedFailure(
                             iteration=iteration,
                             trigger="setup_error",
@@ -232,7 +234,7 @@ class RunUntilFailureService:
                 iteration_summaries.append(
                     RunUntilFailureIterationInfo(
                         iteration=iteration,
-                        status=str(run_payload.get("status", "success")),
+                        status=cast(ToolResultStatus, run_payload["status"]),
                         execution_state=status_snapshot.execution_state,
                         stop_reason=status_snapshot.stop_reason,
                         stop_kind=status_snapshot.stop_kind,
