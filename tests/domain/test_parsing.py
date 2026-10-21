@@ -7,7 +7,21 @@ import logging
 import pytest
 
 from gdb_mcp.domain.adapters import frame_info_from_payload
-from gdb_mcp.domain.parsing import as_mapping, as_optional_mapping, as_record_list
+from gdb_mcp.domain.parsing import (
+    as_mapping,
+    as_optional_mapping,
+    as_record_list,
+    as_stop_kind,
+)
+
+
+def test_as_stop_kind_accepts_only_canonical_values() -> None:
+    """A stop kind outside the published literals is treated as unrecognized."""
+
+    assert as_stop_kind("breakpoint") == "breakpoint"
+    assert as_stop_kind("vfork-done") is None
+    assert as_stop_kind(None) is None
+    assert as_stop_kind(3) is None
 
 
 def test_as_mapping_falls_back_to_an_empty_mapping() -> None:

@@ -21,10 +21,12 @@ from collections.abc import Mapping
 from typing import cast, get_args
 
 from .models import ExecutionState
+from .stop_kinds import StopKind
 
 logger = logging.getLogger(__name__)
 
 _EXECUTION_STATES: frozenset[str] = frozenset(get_args(ExecutionState))
+_STOP_KINDS: frozenset[str] = frozenset(get_args(StopKind))
 
 
 def as_mapping(value: object) -> Mapping[str, object]:
@@ -110,4 +112,13 @@ def as_execution_state(value: object) -> ExecutionState | None:
     text = as_text(value)
     if text is not None and text in _EXECUTION_STATES:
         return cast(ExecutionState, text)
+    return None
+
+
+def as_stop_kind(value: object) -> StopKind | None:
+    """Parse a canonical stop-kind string, or ``None`` when unrecognized."""
+
+    text = as_text(value)
+    if text is not None and text in _STOP_KINDS:
+        return cast(StopKind, text)
     return None

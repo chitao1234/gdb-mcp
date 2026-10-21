@@ -56,6 +56,8 @@ from ..domain import (
     WaitForStopInfo,
     WatchpointAccessType,
 )
+from ..domain.parsing import as_execution_state, as_stop_kind
+from ..domain.results import payload_to_mapping
 from .backends import BackendCapabilities
 from .config import SessionConfig
 from .constants import DEFAULT_TIMEOUT_SEC
@@ -73,7 +75,7 @@ def _operation_error(exc: BridgeError) -> OperationError:
 
 
 def _structured(value: Mapping[str, object]) -> StructuredPayload:
-    return cast(StructuredPayload, dict(value))
+    return payload_to_mapping(value)
 
 
 class LldbSbBackend:
@@ -153,12 +155,11 @@ class LldbSbBackend:
         return ThreadRecord.from_payload(mapping) if mapping else None
 
     def _apply_status(self, payload: Mapping[str, object]) -> SessionStatusSnapshot:
-        execution = self._text(payload, "execution_state") or "unknown"
+        execution = as_execution_state(self._text(payload, "execution_state")) or "unknown"
         detail = self._text(payload, "state_detail")
         self._state_detail = "crashed" if detail == "crashed" else None
         reason = self._text(payload, "stop_reason")
-        kind = self._text(payload, "stop_kind")
-        stop_kind = cast(object, kind) if kind else None
+        stop_kind = as_stop_kind(payload.get("stop_kind"))
         exit_code = self._integer(payload, "exit_code")
         target_loaded = bool(payload.get("target_loaded"))
         current_inferior = self._integer(payload, "current_inferior_id")
@@ -175,7 +176,7 @@ class LldbSbBackend:
         self.runtime.mark_thread_selected(current_thread)
         self.runtime.mark_frame_selected(current_frame)
         if execution == "paused":
-            self.runtime.mark_inferior_paused(reason, stop_kind=stop_kind)  # type: ignore[arg-type]
+            self.runtime.mark_inferior_paused(reason, stop_kind=stop_kind)
         elif execution == "running":
             self.runtime.mark_inferior_running()
         elif execution == "exited":
@@ -188,10 +189,10 @@ class LldbSbBackend:
             is_running=True,
             target_loaded=target_loaded,
             has_controller=self.runtime.has_controller,
-            execution_state=cast(ExecutionState, execution),
+            execution_state=execution,
             state_detail=self._state_detail,
             stop_reason=reason,
-            stop_kind=cast(object, kind) if kind else None,  # type: ignore[arg-type]
+            stop_kind=stop_kind,
             exit_code=exit_code,
             current_inferior_id=current_inferior,
             inferior_count=inferior_count,
@@ -200,7 +201,7 @@ class LldbSbBackend:
             detach_on_fork=self.runtime.detach_on_fork,
         )
 
-    def _record_stop(self, payload: Mapping[str, object], execution: str) -> None:
+    def _record_stop(self, payload: Mapping[str, object], execution: ExecutionState) -> None:
         if execution not in {"paused", "exited"}:
             return
         reason = self._text(payload, "stop_reason")
@@ -229,9 +230,9 @@ class LldbSbBackend:
             except (ValueError, AttributeError):
                 signal_meaning = None
         crash = payload.get("crash")
-        crash_mapping = cast(StructuredPayload, crash) if isinstance(crash, dict) else None
+        crash_mapping = _structured(crash) if isinstance(crash, dict) else None
         if self._state_detail == "crashed" and not crash_mapping:
-            compact: dict[str, object] = {}
+            compact: StructuredPayload = {}
             if signal_number is not None:
                 compact["signal"] = signal_number
             if signal_name is not None:
@@ -243,11 +244,11 @@ class LldbSbBackend:
             if fault_address is not None:
                 compact["fault_address"] = fault_address
             if compact:
-                crash_mapping = cast(StructuredPayload, compact)
-        details: dict[str, object] = {}
+                crash_mapping = compact
+        details: StructuredPayload = {}
         for name in ("stop_data", "pid"):
             if name in payload:
-                details[name] = payload[name]
+                details[name] = payload_to_mapping(payload[name])
         if breakpoint_id is not None:
             details["native_breakpoint_id"] = breakpoint_id
         if watchpoint_id is not None:
@@ -262,10 +263,10 @@ class LldbSbBackend:
                 self._native_public.get(("breakpoint", breakpoint_id), breakpoint_id)
             )
         event = StopEvent(
-            execution_state=cast(ExecutionState, execution),
+            execution_state=execution,
             state_detail=self._state_detail,
             reason=reason,
-            stop_kind=cast(object, self._text(payload, "stop_kind")),  # type: ignore[arg-type]
+            stop_kind=as_stop_kind(payload.get("stop_kind")),
             inferior_id=self._integer(payload, "current_inferior_id"),
             thread_id=self._integer(payload, "current_thread_id"),
             frame=frame,
@@ -470,7 +471,7 @@ class LldbSbBackend:
                         self._cleanup_failed_start(f"Init command {command!r} failed: {message}")
                         return OperationError(
                             message=f"Init command {command!r} failed: {message}",
-                            details=cast(StructuredPayload, {"init_output": init_output}),
+                            details={"init_output": payload_to_mapping(init_output)},
                         )
                 self._init_output = init_output
                 status = client.request("status")

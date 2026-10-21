@@ -210,7 +210,9 @@ BREAKPOINT_QUERY_ACTIONS: tuple[BreakpointQueryAction, ...] = get_args(Breakpoin
 BreakpointManageAction: TypeAlias = Literal["create", "update", "delete", "enable", "disable"]
 BREAKPOINT_MANAGE_ACTIONS: tuple[BreakpointManageAction, ...] = get_args(BreakpointManageAction)
 BreakpointManageNumberActionName: TypeAlias = Literal["delete", "enable", "disable"]
-BREAKPOINT_MANAGE_NUMBER_ACTIONS: tuple[BreakpointManageNumberActionName, ...] = get_args(BreakpointManageNumberActionName)
+BREAKPOINT_MANAGE_NUMBER_ACTIONS: tuple[BreakpointManageNumberActionName, ...] = get_args(
+    BreakpointManageNumberActionName
+)
 
 LocationKind: TypeAlias = Literal[
     "current",
