@@ -151,14 +151,14 @@ BatchStepToolName: TypeAlias = Literal[
     "gdb_attach_process",
     "gdb_call_function",
 ]
-BATCH_STEP_TOOL_NAMES = get_args(BatchStepToolName)
+BATCH_STEP_TOOL_NAMES: tuple[BatchStepToolName, ...] = get_args(BatchStepToolName)
 
 SessionQueryAction: TypeAlias = Literal["list", "status"]
-SESSION_QUERY_ACTIONS = get_args(SessionQueryAction)
-SESSION_MANAGE_ACTIONS = get_args(ActionStopName)
+SESSION_QUERY_ACTIONS: tuple[SessionQueryAction, ...] = get_args(SessionQueryAction)
+SESSION_MANAGE_ACTIONS: tuple[ActionStopName, ...] = get_args(ActionStopName)
 
 InferiorQueryAction: TypeAlias = Literal["list", "current"]
-INFERIOR_QUERY_ACTIONS = get_args(InferiorQueryAction)
+INFERIOR_QUERY_ACTIONS: tuple[InferiorQueryAction, ...] = get_args(InferiorQueryAction)
 InferiorManageAction: TypeAlias = Literal[
     "create",
     "remove",
@@ -166,12 +166,12 @@ InferiorManageAction: TypeAlias = Literal[
     "set_follow_fork_mode",
     "set_detach_on_fork",
 ]
-INFERIOR_MANAGE_ACTIONS = get_args(InferiorManageAction)
+INFERIOR_MANAGE_ACTIONS: tuple[InferiorManageAction, ...] = get_args(InferiorManageAction)
 InferiorFollowForkMode: TypeAlias = Literal["parent", "child"]
-INFERIOR_FOLLOW_FORK_MODES = get_args(InferiorFollowForkMode)
+INFERIOR_FOLLOW_FORK_MODES: tuple[InferiorFollowForkMode, ...] = get_args(InferiorFollowForkMode)
 
 ExecutionWaitUntil: TypeAlias = Literal["acknowledged", "stop"]
-EXECUTION_WAIT_UNTIL_VALUES = get_args(ExecutionWaitUntil)
+EXECUTION_WAIT_UNTIL_VALUES: tuple[ExecutionWaitUntil, ...] = get_args(ExecutionWaitUntil)
 ExecutionManageAction: TypeAlias = Literal[
     "run",
     "continue",
@@ -181,17 +181,17 @@ ExecutionManageAction: TypeAlias = Literal[
     "finish",
     "wait_for_stop",
 ]
-EXECUTION_MANAGE_ACTIONS = get_args(ExecutionManageAction)
+EXECUTION_MANAGE_ACTIONS: tuple[ExecutionManageAction, ...] = get_args(ExecutionManageAction)
 
 ContextQueryAction: TypeAlias = Literal["threads", "backtrace", "frame"]
-CONTEXT_QUERY_ACTIONS = get_args(ContextQueryAction)
+CONTEXT_QUERY_ACTIONS: tuple[ContextQueryAction, ...] = get_args(ContextQueryAction)
 ContextManageAction: TypeAlias = Literal["select_thread", "select_frame"]
-CONTEXT_MANAGE_ACTIONS = get_args(ContextManageAction)
+CONTEXT_MANAGE_ACTIONS: tuple[ContextManageAction, ...] = get_args(ContextManageAction)
 
 BreakpointKind: TypeAlias = Literal["code", "watch", "catch"]
-BREAKPOINT_KINDS = get_args(BreakpointKind)
+BREAKPOINT_KINDS: tuple[BreakpointKind, ...] = get_args(BreakpointKind)
 BreakpointAccess: TypeAlias = Literal["write", "read", "access"]
-BREAKPOINT_ACCESS_VALUES = get_args(BreakpointAccess)
+BREAKPOINT_ACCESS_VALUES: tuple[BreakpointAccess, ...] = get_args(BreakpointAccess)
 BreakpointEvent: TypeAlias = Literal[
     "throw",
     "rethrow",
@@ -204,13 +204,13 @@ BreakpointEvent: TypeAlias = Literal[
     "signal",
     "syscall",
 ]
-BREAKPOINT_EVENTS = get_args(BreakpointEvent)
+BREAKPOINT_EVENTS: tuple[BreakpointEvent, ...] = get_args(BreakpointEvent)
 BreakpointQueryAction: TypeAlias = Literal["list", "get"]
-BREAKPOINT_QUERY_ACTIONS = get_args(BreakpointQueryAction)
+BREAKPOINT_QUERY_ACTIONS: tuple[BreakpointQueryAction, ...] = get_args(BreakpointQueryAction)
 BreakpointManageAction: TypeAlias = Literal["create", "update", "delete", "enable", "disable"]
-BREAKPOINT_MANAGE_ACTIONS = get_args(BreakpointManageAction)
+BREAKPOINT_MANAGE_ACTIONS: tuple[BreakpointManageAction, ...] = get_args(BreakpointManageAction)
 BreakpointManageNumberActionName: TypeAlias = Literal["delete", "enable", "disable"]
-BREAKPOINT_MANAGE_NUMBER_ACTIONS = get_args(BreakpointManageNumberActionName)
+BREAKPOINT_MANAGE_NUMBER_ACTIONS: tuple[BreakpointManageNumberActionName, ...] = get_args(BreakpointManageNumberActionName)
 
 LocationKind: TypeAlias = Literal[
     "current",
@@ -220,7 +220,7 @@ LocationKind: TypeAlias = Literal[
     "file_line",
     "file_range",
 ]
-LOCATION_KINDS = get_args(LocationKind)
+LOCATION_KINDS: tuple[LocationKind, ...] = get_args(LocationKind)
 CLI_LOCATION_KIND_CHOICES = (
     "current",
     "function",
@@ -238,11 +238,11 @@ InspectQueryAction: TypeAlias = Literal[
     "disassembly",
     "source",
 ]
-INSPECT_QUERY_ACTIONS = get_args(InspectQueryAction)
+INSPECT_QUERY_ACTIONS: tuple[InspectQueryAction, ...] = get_args(InspectQueryAction)
 RegisterValueFormat: TypeAlias = Literal["hex", "natural"]
-REGISTER_VALUE_FORMATS = get_args(RegisterValueFormat)
+REGISTER_VALUE_FORMATS: tuple[RegisterValueFormat, ...] = get_args(RegisterValueFormat)
 DisassemblyMode: TypeAlias = Literal["assembly", "mixed"]
-DISASSEMBLY_MODES = get_args(DisassemblyMode)
+DISASSEMBLY_MODES: tuple[DisassemblyMode, ...] = get_args(DisassemblyMode)
 
 WorkflowStepValidationKind: TypeAlias = Literal[
     "session_id_not_allowed",
