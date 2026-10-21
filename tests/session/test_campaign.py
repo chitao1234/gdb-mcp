@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, Mock
 
 from gdb_mcp.domain import (
     BatchExecutionInfo,
+    BatchStepResult,
     CaptureBundleInfo,
     CommandExecutionInfo,
     MemoryCaptureRange,
@@ -154,12 +155,14 @@ class TestRunUntilFailureService:
         )
         session.execute_batch_templates.return_value = OperationSuccess(
             BatchExecutionInfo(
-                steps=[],
-                count=1,
-                completed_steps=1,
-                error_count=1,
-                stopped_early=True,
-                failure_step_index=0,
+                steps=[
+                    BatchStepResult(
+                        index=0,
+                        tool="gdb_execute_command",
+                        result={"status": "error", "code": "error", "message": "setup failed"},
+                    )
+                ],
+                requested_steps=1,
             )
         )
 

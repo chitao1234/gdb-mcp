@@ -1343,17 +1343,15 @@ class TestHandlerRouting:
         )
 
         assert result_data["status"] == "success"
-        assert dig(result_data, "result", "count") == 2
-        assert dig(result_data, "result", "completed_steps") == 2
-        assert dig(result_data, "result", "error_count") == 0
-        assert dig(result_data, "result", "stopped_early") is False
+        assert dig(result_data, "result", "requested_steps") == 2
+        assert len(mapping_list(dig(result_data, "result", "steps"))) == 2
         steps = mapping_list(dig(result_data, "result", "steps"))
         assert steps[0]["tool"] == "gdb_breakpoint_manage"
-        assert steps[0]["action"] == "create"
+        assert mapping(steps[0]["result"])["action"] == "create"
         assert steps[0]["label"] == "break main"
-        assert steps[0]["status"] == "success"
+        assert mapping(steps[0]["result"])["status"] == "success"
         assert steps[1]["tool"] == "gdb_execution_manage"
-        assert steps[1]["action"] == "continue"
+        assert mapping(steps[1]["result"])["action"] == "continue"
         assert mapping(steps[1]["stop_event"])["reason"] == "breakpoint-hit"
         assert dig(result_data, "result", "last_stop_event", "reason") == "breakpoint-hit"
         set_breakpoint.assert_called_once_with(
@@ -1402,11 +1400,10 @@ class TestHandlerRouting:
         )
 
         assert result_data["status"] == "success"
-        assert dig(result_data, "result", "completed_steps") == 1
-        assert dig(result_data, "result", "error_count") == 1
-        assert dig(result_data, "result", "stopped_early") is True
-        assert dig(result_data, "result", "failure_step_index") == 0
-        assert mapping_list(dig(result_data, "result", "steps"))[0]["status"] == "error"
+        assert dig(result_data, "result", "requested_steps") == 2
+        steps = mapping_list(dig(result_data, "result", "steps"))
+        assert len(steps) == 1
+        assert mapping(steps[0]["result"])["status"] == "error"
         execute_command.assert_called_once_with(command="info threads", timeout_sec=30)
         get_status.assert_not_called()
 
@@ -1431,7 +1428,7 @@ class TestHandlerRouting:
         )
 
         assert result_data["status"] == "success"
-        assert dig(result_data, "result", "completed_steps") == 1
+        assert len(mapping_list(dig(result_data, "result", "steps"))) == 1
         assert mapping_list(dig(result_data, "result", "steps"))[0]["tool"] == "gdb_capture_bundle"
         capture_bundle.assert_called_once()
 

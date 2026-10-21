@@ -157,7 +157,13 @@ def test_batch_step_failures_set_a_nonzero_exit_code(
             "--payload-json",
             '{"session_id": 7, "steps": [{"tool": "gdb_capture_bundle"}]}',
         ],
-        response={"status": "success", "result": {"count": 2, "error_count": 1}},
+        response={
+            "status": "success",
+            "result": {
+                "requested_steps": 2,
+                "steps": [{"result": {"status": "error", "code": "error", "message": "failed"}}],
+            },
+        },
     )
 
     assert result.exit_code == 1

@@ -1354,7 +1354,7 @@ class TestClientCli:
                 "--step-arg",
                 "action=threads",
             ],
-            response={"status": "success", "result": {"count": 1, "error_count": 0}},
+            response={"status": "success", "result": {"requested_steps": 1, "steps": []}},
         )
 
         assert result.exit_code == 0
@@ -1392,7 +1392,7 @@ class TestClientCli:
                 "query.expression=counter",
                 "--no-fail-fast",
             ],
-            response={"status": "success", "result": {"count": 2, "error_count": 0}},
+            response={"status": "success", "result": {"requested_steps": 2, "steps": []}},
         )
 
         assert result.exit_code == 0
@@ -1433,14 +1433,11 @@ class TestClientCli:
             response={
                 "status": "success",
                 "result": {
-                    "count": 1,
-                    "error_count": 0,
+                    "requested_steps": 1,
                     "steps": [
                         {
                             "tool": "gdb_context_query",
                             "label": "stack",
-                            "action": "backtrace",
-                            "status": "success",
                             "result": {
                                 "status": "success",
                                 "action": "backtrace",
@@ -1514,7 +1511,7 @@ class TestClientCli:
                 "--step-arg",
                 "query.expression=123",
             ],
-            response={"status": "success", "result": {"count": 1, "error_count": 0}},
+            response={"status": "success", "result": {"requested_steps": 1, "steps": []}},
         )
 
         assert result.exit_code == 0
@@ -1552,7 +1549,7 @@ class TestClientCli:
                 "--step-arg",
                 "execution.wait_until=stop",
             ],
-            response={"status": "success", "result": {"count": 1, "error_count": 0}},
+            response={"status": "success", "result": {"requested_steps": 1, "steps": []}},
         )
 
         assert result.exit_code == 0
@@ -1589,7 +1586,7 @@ class TestClientCli:
                 "--step-arg",
                 "query.kinds=code",
             ],
-            response={"status": "success", "result": {"count": 1, "error_count": 0}},
+            response={"status": "success", "result": {"requested_steps": 1, "steps": []}},
         )
 
         assert result.exit_code == 0

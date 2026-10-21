@@ -199,11 +199,7 @@ def test_a_nullable_result_field_keeps_its_null_alternative(
             "status": "success",
             "result": {
                 "steps": [],
-                "count": 0,
-                "completed_steps": 0,
-                "error_count": 0,
-                "stopped_early": False,
-                "failure_step_index": None,
+                "requested_steps": 0,
                 "final_execution_state": None,
                 "final_stop_reason": None,
                 "final_stop_kind": None,

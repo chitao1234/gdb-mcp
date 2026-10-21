@@ -123,10 +123,10 @@ def test_cli_calls_real_streamable_http_workflow_batch(
 
     assert exit_code == 0
     assert payload["status"] == "success"
-    assert dig(payload, "result", "count") == 1
+    assert dig(payload, "result", "requested_steps") == 1
     steps = mapping_list(dig(payload, "result", "steps"))
     assert steps[0]["tool"] == "gdb_session_query"
-    assert steps[0]["action"] == "status"
+    assert dig(steps[0], "result", "action") == "status"
 
 
 @pytest.mark.integration
@@ -184,13 +184,13 @@ def test_cli_calls_real_streamable_http_workflow_batch_with_nested_step_args(
 
     assert exit_code == 0
     assert payload["status"] == "success"
-    assert dig(payload, "result", "count") == 3
+    assert dig(payload, "result", "requested_steps") == 3
     steps = mapping_list(dig(payload, "result", "steps"))
     assert steps[0]["label"] == "break-main"
     assert steps[1]["label"] == "run"
     assert dig(steps[1], "stop_event", "reason") == "breakpoint-hit"
     assert steps[2]["label"] == "stack"
-    assert steps[2]["action"] == "backtrace"
+    assert dig(steps[2], "result", "action") == "backtrace"
     assert integer(dig(steps[2], "result", "result", "count")) >= 1
 
 
@@ -229,10 +229,10 @@ def test_cli_calls_real_streamable_http_workflow_batch_with_single_list_step_arg
 
     assert exit_code == 0
     assert payload["status"] == "success"
-    assert dig(payload, "result", "count") == 1
+    assert dig(payload, "result", "requested_steps") == 1
     steps = mapping_list(dig(payload, "result", "steps"))
     assert steps[0]["tool"] == "gdb_breakpoint_query"
-    assert steps[0]["action"] == "list"
+    assert dig(steps[0], "result", "action") == "list"
 
 
 @pytest.mark.integration

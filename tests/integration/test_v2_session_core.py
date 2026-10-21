@@ -159,14 +159,17 @@ def test_workflow_batch_v2(session_id: int, call_gdb_tool: CallGdbTool) -> None:
     )
 
     assert batch["status"] == "success"
-    assert dig(batch, "result", "count") == 3
-    assert dig(batch, "result", "error_count") == 0
+    assert dig(batch, "result", "requested_steps") == 3
+    assert all(
+        dig(step, "result", "status") == "success"
+        for step in mapping_list(dig(batch, "result", "steps"))
+    )
     steps = mapping_list(dig(batch, "result", "steps"))
     assert steps[0]["tool"] == "gdb_breakpoint_manage"
     assert steps[1]["tool"] == "gdb_execution_manage"
     assert dig(steps[1], "stop_event", "reason") == "breakpoint-hit"
     assert steps[2]["tool"] == "gdb_context_query"
-    assert steps[2]["action"] == "backtrace"
+    assert dig(steps[2], "result", "action") == "backtrace"
     assert integer(dig(steps[2], "result", "result", "count")) > 0
 
 
