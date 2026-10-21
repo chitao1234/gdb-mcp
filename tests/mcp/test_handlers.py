@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Callable
-from typing import Any, cast
+from typing import cast
 from unittest.mock import MagicMock, Mock
 
 import pytest
@@ -71,10 +71,12 @@ def _manager_for(session: object) -> Mock:
     return manager
 
 
-def _stub(session: object, name: str, **kwargs: object) -> None:
-    """Install a Mock method on a test double without a method-assign ignore."""
+def _stub(session: object, name: str, **kwargs: object) -> Mock:
+    """Install a Mock method on a test double and return it."""
 
-    setattr(session, name, Mock(**kwargs))
+    recorder = Mock(**kwargs)
+    setattr(session, name, recorder)
+    return recorder
 
 
 def _failure_session(manager: Mock) -> Mock:
@@ -101,7 +103,7 @@ def _failure_session(manager: Mock) -> Mock:
 
 
 def _continue_side_effect(
-    session: Mock,
+    session: SessionService | Mock,
 ) -> Callable[..., OperationSuccess[CommandExecutionInfo]]:
     """Build a continue stub that records a breakpoint stop on the session runtime."""
 
@@ -1302,8 +1304,8 @@ class TestHandlerRouting:
     def test_workflow_batch_routes_validated_steps_and_captures_stop_event(self) -> None:
         """Workflow batch requests should execute validated session steps atomically."""
 
-        session: Any = create_default_session_service()
-        _stub(
+        session: SessionService = create_default_session_service()
+        set_breakpoint = _stub(
             session,
             "set_breakpoint",
             return_value=OperationSuccess(
@@ -1312,7 +1314,9 @@ class TestHandlerRouting:
                 )
             ),
         )
-        _stub(session, "continue_execution", side_effect=_continue_side_effect(session))
+        continue_execution = _stub(
+            session, "continue_execution", side_effect=_continue_side_effect(session)
+        )
         manager = _manager_for(session)
 
         result_data = dispatch(
@@ -1352,25 +1356,25 @@ class TestHandlerRouting:
         assert steps[1]["action"] == "continue"
         assert mapping(steps[1]["stop_event"])["reason"] == "breakpoint-hit"
         assert dig(result_data, "result", "last_stop_event", "reason") == "breakpoint-hit"
-        session.set_breakpoint.assert_called_once_with(
+        set_breakpoint.assert_called_once_with(
             location="main",
             condition=None,
             temporary=False,
         )
-        session.continue_execution.assert_called_once_with(
+        continue_execution.assert_called_once_with(
             wait_for_stop=True, timeout_sec=30, reverse=False
         )
 
     def test_workflow_batch_stops_on_first_error_by_default(self) -> None:
         """Fail-fast workflow batches should stop before executing later steps."""
 
-        session: Any = create_default_session_service()
-        _stub(
+        session: SessionService = create_default_session_service()
+        execute_command = _stub(
             session,
             "execute_command",
             return_value=OperationError(message="boom", details={"command": "info threads"}),
         )
-        _stub(
+        get_status = _stub(
             session,
             "get_status",
             return_value=OperationSuccess(
@@ -1403,14 +1407,14 @@ class TestHandlerRouting:
         assert dig(result_data, "result", "stopped_early") is True
         assert dig(result_data, "result", "failure_step_index") == 0
         assert mapping_list(dig(result_data, "result", "steps"))[0]["status"] == "error"
-        session.execute_command.assert_called_once_with(command="info threads", timeout_sec=30)
-        session.get_status.assert_not_called()
+        execute_command.assert_called_once_with(command="info threads", timeout_sec=30)
+        get_status.assert_not_called()
 
     def test_workflow_batch_accepts_string_step_shorthand(self) -> None:
         """Workflow batch requests should allow shorthand step strings."""
 
-        session: Any = create_default_session_service()
-        _stub(
+        session: SessionService = create_default_session_service()
+        capture_bundle = _stub(
             session,
             "capture_bundle",
             return_value=OperationSuccess(SessionMessage(message="bundle written")),
@@ -1429,7 +1433,7 @@ class TestHandlerRouting:
         assert result_data["status"] == "success"
         assert dig(result_data, "result", "completed_steps") == 1
         assert mapping_list(dig(result_data, "result", "steps"))[0]["tool"] == "gdb_capture_bundle"
-        session.capture_bundle.assert_called_once()
+        capture_bundle.assert_called_once()
 
     def test_session_tool_dispatch_uses_workflow_lock(self) -> None:
         """Session-scoped tools should serialize through the workflow lock."""
