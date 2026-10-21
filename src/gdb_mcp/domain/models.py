@@ -284,7 +284,6 @@ class InferiorSelectionInfo(StructuredOutput):
     """Structured response for inferior selection."""
 
     inferior_id: int
-    is_current: bool = True
     display: str | None = None
     description: str | None = None
     connection: str | None = None
@@ -297,7 +296,6 @@ class InferiorAddInfo(StructuredOutput):
     """Structured response for inferior creation."""
 
     inferior_id: int
-    is_current: bool = False
     display: str | None = None
     description: str | None = None
     connection: str | None = None

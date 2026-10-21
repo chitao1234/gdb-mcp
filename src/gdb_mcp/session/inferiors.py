@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 from ..domain import InferiorListInfo, InferiorRecord
 
@@ -17,24 +18,32 @@ _ROW_RE = re.compile(r"^(?P<current>\*)?\s*(?P<inferior_id>\d+)\s+(?P<columns>.*
 _COLUMN_SPLIT_RE = re.compile(r"\s{2,}")
 
 
+@dataclass(frozen=True)
+class _InferiorRow:
+    """Parsed native selection marker, kept out of public inferior records."""
+
+    record: InferiorRecord
+    selected: bool
+
+
 def parse_inferiors_output(output: str, *, current_inferior_id: int | None) -> InferiorListInfo:
     """Parse `info inferiors` CLI output into a structured inventory snapshot."""
 
     lines = output.splitlines()
     header = _header_offsets(lines)
     if header is None:
-        records = _parse_rows_by_whitespace(lines)
+        rows = _parse_rows_by_whitespace(lines)
     else:
         header_index, offsets = header
-        records = _parse_rows_by_columns(lines[header_index + 1 :], offsets)
+        rows = _parse_rows_by_columns(lines[header_index + 1 :], offsets)
 
     resolved_current_inferior_id = current_inferior_id
-    for record in records:
-        if record.is_current and record.inferior_id is not None:
-            resolved_current_inferior_id = record.inferior_id
+    for row in rows:
+        if row.selected:
+            resolved_current_inferior_id = row.record.inferior_id
 
     return InferiorListInfo(
-        inferiors=records,
+        inferiors=[row.record for row in rows],
         current_inferior_id=resolved_current_inferior_id,
     )
 
@@ -76,7 +85,7 @@ def _header_offsets(lines: Iterable[str]) -> tuple[int, dict[str, int]] | None:
     return None
 
 
-def _parse_rows_by_columns(lines: Iterable[str], offsets: dict[str, int]) -> list[InferiorRecord]:
+def _parse_rows_by_columns(lines: Iterable[str], offsets: dict[str, int]) -> list[_InferiorRow]:
     """Slice each row at the header's column offsets, measured from the number.
 
     The caller strips the whole CLI output, so the header loses its leading
@@ -90,7 +99,7 @@ def _parse_rows_by_columns(lines: Iterable[str], offsets: dict[str, int]) -> lis
     columns = [(label, relative[label]) for label in _HEADER_COLUMNS if label in relative]
     description_gap = relative["Description"]
 
-    records: list[InferiorRecord] = []
+    records: list[_InferiorRow] = []
     for line in lines:
         if not line.strip():
             continue
@@ -107,7 +116,6 @@ def _parse_rows_by_columns(lines: Iterable[str], offsets: dict[str, int]) -> lis
                     if char.isdigit()
                 )
             ),
-            "is_current": line[:number_start].strip() == "*",
             "display": line[number_start + description_gap :].strip(),
         }
 
@@ -130,14 +138,16 @@ def _parse_rows_by_columns(lines: Iterable[str], offsets: dict[str, int]) -> lis
             elif label == "Executable":
                 record["executable"] = value
 
-        records.append(InferiorRecord.from_payload(record))
+        records.append(
+            _InferiorRow(InferiorRecord.from_payload(record), line[:number_start].strip() == "*")
+        )
     return records
 
 
-def _parse_rows_by_whitespace(lines: Iterable[str]) -> list[InferiorRecord]:
+def _parse_rows_by_whitespace(lines: Iterable[str]) -> list[_InferiorRow]:
     """Fallback parser for rows when no recognizable header is present."""
 
-    records: list[InferiorRecord] = []
+    records: list[_InferiorRow] = []
     for raw_line in lines:
         line = raw_line.rstrip()
         if not line.strip():
@@ -152,7 +162,6 @@ def _parse_rows_by_whitespace(lines: Iterable[str]) -> list[InferiorRecord]:
         ]
         record: dict[str, object] = {
             "inferior_id": int(match.group("inferior_id")),
-            "is_current": match.group("current") == "*",
             "display": match.group("columns").strip(),
         }
         if columns:
@@ -165,5 +174,7 @@ def _parse_rows_by_whitespace(lines: Iterable[str]) -> list[InferiorRecord]:
         elif len(columns) >= 3:
             record["connection"] = columns[1]
             record["executable"] = columns[2]
-        records.append(InferiorRecord.from_payload(record))
+        records.append(
+            _InferiorRow(InferiorRecord.from_payload(record), match.group("current") == "*")
+        )
     return records

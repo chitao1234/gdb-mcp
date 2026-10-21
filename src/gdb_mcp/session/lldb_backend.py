@@ -645,7 +645,6 @@ class LldbSbBackend:
             return OperationSuccess(
                 InferiorAddInfo(
                     inferior_id=self._integer(result, "inferior_id") or 0,
-                    is_current=bool(result.get("is_current")),
                     display=self._text(result, "display"),
                     description=self._text(result, "description"),
                     executable=self._text(result, "executable"),
@@ -880,7 +879,9 @@ class LldbSbBackend:
         targets = self._mappings(response.get("targets"))
         records: list[InferiorRecord] = []
         for payload in targets:
-            record = InferiorRecord.from_payload(payload)
+            record = InferiorRecord.from_payload(
+                {key: value for key, value in payload.items() if key != "is_current"}
+            )
             records.append(record)
         current = self._integer(response, "current_inferior_id")
         count = len(records)
@@ -930,7 +931,6 @@ class LldbSbBackend:
             return OperationSuccess(
                 InferiorSelectionInfo(
                     inferior_id=inferior_id,
-                    is_current=True,
                     display=self._text(payload, "display"),
                     description=self._text(payload, "description"),
                     executable=self._text(payload, "executable"),

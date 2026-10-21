@@ -159,7 +159,6 @@ class InferiorRecord(RecordModel):
     """One inferior from the inventory."""
 
     inferior_id: int | None = None
-    is_current: bool | None = None
     display: str | None = None
     description: str | None = None
     connection: str | None = None
@@ -174,7 +173,6 @@ class InferiorStateRecord(RecordModel):
     """Execution state of one inferior."""
 
     inferior_id: int | None = None
-    is_current: bool | None = None
     execution_state: ExecutionState | None = None
     stop_reason: str | None = None
     stop_kind: StopKind | None = None

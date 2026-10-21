@@ -91,7 +91,7 @@ class InspectionInferiorState:
                 ),
             )
 
-        return OperationSuccess(self._inferior_selection_info(selected_record))
+        return OperationSuccess(self._inferior_selection_info(inferior_id, selected_record))
 
     def _parse_inferiors_output(self, output: str) -> InferiorListInfo:
         """Parse `info inferiors` CLI output into a structured inferior list."""
@@ -102,10 +102,9 @@ class InspectionInferiorState:
         )
 
     @staticmethod
-    def _inferior_selection_info(record: InferiorRecord) -> InferiorSelectionInfo:
+    def _inferior_selection_info(inferior_id: int, record: InferiorRecord) -> InferiorSelectionInfo:
         """Convert one inferior record into a selection response."""
 
-        inferior_id = record.inferior_id if record.inferior_id is not None else 0
         display = record.display
         description = record.description
         connection = record.connection
@@ -113,14 +112,11 @@ class InspectionInferiorState:
 
         return InferiorSelectionInfo(
             inferior_id=inferior_id,
-            is_current=bool(record.is_current),
             display=display,
             description=description,
             connection=connection,
             executable=executable,
-            message=(
-                f"Inferior {inferior_id} selected" if inferior_id > 0 else "Inferior selected"
-            ),
+            message=f"Inferior {inferior_id} selected",
         )
 
     def _enrich_inferiors_with_runtime_state(

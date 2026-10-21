@@ -172,7 +172,6 @@ class SessionExecutionService:
             return OperationSuccess(
                 InferiorAddInfo(
                     inferior_id=inferior_id,
-                    is_current=make_current,
                     executable=executable,
                     current_inferior_id=inventory_result.value.current_inferior_id,
                     inferior_count=len(inventory_result.value.inferiors),
@@ -186,7 +185,6 @@ class SessionExecutionService:
         return OperationSuccess(
             InferiorAddInfo(
                 inferior_id=inferior_id,
-                is_current=bool(record.is_current),
                 display=record.display,
                 description=record.description,
                 connection=record.connection,

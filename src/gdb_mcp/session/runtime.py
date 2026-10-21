@@ -349,7 +349,6 @@ class SessionRuntime:
                 records.append(
                     InferiorStateRecord(
                         inferior_id=inferior_id,
-                        is_current=inferior_id == self.current_inferior_id,
                         execution_state=state.execution_state,
                         stop_reason=state.stop_reason,
                         exit_code=state.exit_code,
