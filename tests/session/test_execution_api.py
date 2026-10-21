@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gdb_mcp.domain import StopEvent, result_to_mapping
+from gdb_mcp.domain import StopEvent, payload_to_mapping, result_to_mapping
 from gdb_mcp.session.service import SessionService
 from gdb_mcp.transport.protocols import GdbControllerProtocol
 from tests.support import (
@@ -58,6 +58,7 @@ class TestExecutionApi:
                         "reason": "breakpoint-hit",
                         "thread-id": "2",
                         "bkptno": "1",
+                        "stopped-threads": "all",
                         "frame": {
                             "level": "0",
                             "func": "main",
@@ -84,6 +85,12 @@ class TestExecutionApi:
         assert stop_event.command == "-exec-continue"
         assert stop_event.frame is not None
         assert stop_event.frame.func == "main"
+        assert stop_event.backend_data is not None
+        assert stop_event.backend_data.debugger == "gdb"
+        assert stop_event.backend_data.data == {"stopped-threads": "all"}
+        serialized_stop = payload_to_mapping(stop_event)
+        assert "crash" not in serialized_stop
+        assert "details" not in serialized_stop
         assert session.runtime.stop_history[-1] == stop_event
         transcript_entry = session.command_transcript[-1]
         assert transcript_entry.command == "-exec-continue"

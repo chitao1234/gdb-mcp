@@ -81,7 +81,12 @@ class FakeBridge:
                 "signal_name": "SIGSEGV",
                 "signal_code": 1,
                 "fault_address": "0x0",
-                "crash": {"exception": "EXC_BAD_ACCESS"},
+                "crash": {
+                    "exception": "EXC_BAD_ACCESS",
+                    "code": 1,
+                    "fault_address": "0x0",
+                    "signal_name": "SIGSEGV",
+                },
                 "frame": {
                     "level": 0,
                     "addr": "0x401000",
@@ -232,7 +237,11 @@ def test_status_enriches_crash_and_stop_event() -> None:
     assert event.signal_code == 1
     assert event.fault_address == "0x0"
     assert event.signal_meaning == "Segmentation fault"
-    assert event.crash == {"exception": "EXC_BAD_ACCESS"}
+    assert event.backend_data is not None
+    assert event.backend_data.debugger == "lldb"
+    assert event.backend_data.data["exception"] == {"exception": "EXC_BAD_ACCESS"}
+    assert "signal_code" not in event.backend_data.data
+    assert "fault_address" not in event.backend_data.data
     assert event.frame is not None and event.frame.func == "main"
 
 
