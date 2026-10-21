@@ -82,6 +82,7 @@ class ExecutionManageInput:
     timeout_sec: int | None
     stop_reasons: tuple[str, ...]
     reverse: bool
+    value: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

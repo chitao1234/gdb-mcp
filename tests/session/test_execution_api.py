@@ -375,6 +375,100 @@ class TestExecutionApi:
         assert result["result_var"] == "$1"
         assert dig(result, "frame", "func") == "caller"
 
+    @pytest.mark.parametrize(
+        ("operation", "expected_command"),
+        [
+            ("step_instruction", "-exec-step-instruction\n"),
+            ("next_instruction", "-exec-next-instruction\n"),
+        ],
+    )
+    def test_instruction_steps_emit_their_mi_commands(
+        self,
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_result: MiRecordBuilder,
+        mi_notify: MiNotifyBuilder,
+        operation: str,
+        expected_command: str,
+    ) -> None:
+        session, controller = scripted_running_session(
+            [
+                mi_result(message="running"),
+                mi_notify("stopped", {"reason": "end-stepping-range"}),
+            ]
+        )
+
+        if operation == "step_instruction":
+            response = session.step_instruction()
+        else:
+            response = session.next_instruction()
+        result = result_to_mapping(response)
+
+        assert result["status"] == "success"
+        assert controller.decoded_writes[0].endswith(expected_command)
+
+    @pytest.mark.parametrize(
+        ("operation", "expected_command"),
+        [
+            (
+                "step_instruction",
+                "-exec-step-instruction --reverse\n",
+            ),
+            (
+                "next_instruction",
+                "-exec-next-instruction --reverse\n",
+            ),
+        ],
+    )
+    def test_instruction_steps_support_reverse(
+        self,
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_result: MiRecordBuilder,
+        mi_notify: MiNotifyBuilder,
+        operation: str,
+        expected_command: str,
+    ) -> None:
+        session, controller = scripted_running_session(
+            [
+                mi_result(message="running"),
+                mi_notify("stopped", {"reason": "end-stepping-range"}),
+            ]
+        )
+
+        if operation == "step_instruction":
+            response = session.step_instruction(reverse=True)
+        else:
+            response = session.next_instruction(reverse=True)
+        result = result_to_mapping(response)
+
+        assert result["status"] == "success"
+        assert controller.decoded_writes[0].endswith(expected_command)
+
+    def test_return_emits_mi_return_with_optional_value(
+        self,
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_result: MiRecordBuilder,
+    ) -> None:
+        session, controller = scripted_running_session(
+            [mi_result({"frame": {"level": "0", "func": "caller", "file": "main.c", "line": "12"}})]
+        )
+
+        result = result_to_mapping(session.return_from_frame(value="42"))
+
+        assert result["status"] == "success"
+        assert '-exec-return "42"' in controller.decoded_writes[0]
+
+    def test_return_without_value_emits_bare_mi_command(
+        self,
+        scripted_running_session: ScriptedSessionBuilder,
+        mi_result: MiRecordBuilder,
+    ) -> None:
+        session, controller = scripted_running_session([mi_result({"frame": {"level": "0"}})])
+
+        result = result_to_mapping(session.return_from_frame())
+
+        assert result["status"] == "success"
+        assert controller.decoded_writes[0].endswith("-exec-return\n")
+
     def test_wait_for_stop_returns_existing_stop_immediately(
         self, session_service: SessionService
     ) -> None:

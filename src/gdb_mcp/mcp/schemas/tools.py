@@ -154,10 +154,12 @@ def build_tool_definitions() -> list[Tool]:
         Tool(
             name=TOOL_EXECUTION_MANAGE,
             description=(
-                "Run, continue, interrupt, step, next, finish, or wait for stop events "
-                "using action-scoped execution payloads. Continue, step, next, and finish "
-                "accept 'reverse: true' to run backwards on a target that supports it "
-                "(an 'rr replay' session, or gdb's record mode)."
+                "Run, continue, interrupt, step, next, step_instruction, "
+                "next_instruction, return, finish, or wait for stop events using "
+                "action-scoped execution payloads. Continue, step, next, step_instruction, "
+                "next_instruction, and finish accept 'reverse: true' to run backwards on a "
+                "target that supports it (an 'rr replay' session, or gdb's record mode). "
+                "LLDB has no reverse execution."
             ),
             outputSchema=public_output_schema(TOOL_EXECUTION_MANAGE),
             inputSchema=public_input_schema(

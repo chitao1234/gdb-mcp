@@ -62,6 +62,9 @@ BackendOperation: TypeAlias = Literal[
     "continue",
     "step",
     "next",
+    "step_instruction",
+    "next_instruction",
+    "return_from_frame",
     "finish",
     "interrupt",
     "wait_for_stop",
@@ -213,6 +216,26 @@ class DebuggerBackend(Protocol):
         wait_for_stop: bool = True,
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
         reverse: bool = False,
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError: ...
+
+    def step_instruction(
+        self,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        reverse: bool = False,
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError: ...
+
+    def next_instruction(
+        self,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        reverse: bool = False,
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError: ...
+
+    def return_from_frame(
+        self, *, value: str | None = None
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError: ...
 
     def finish(

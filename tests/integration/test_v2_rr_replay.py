@@ -155,6 +155,73 @@ def test_rr_replay_session_supports_reverse_execution(
         stop_session(session_id, ignore_errors=True)
 
 
+def test_rr_replay_session_supports_reverse_instruction_steps(
+    rr_trace: str,
+    call_gdb_tool: CallGdbTool,
+    stop_session: StopSession,
+) -> None:
+    """rr sessions should accept both directions for instruction stepping."""
+
+    start = call_gdb_tool("gdb_session_start", {"rr_replay": rr_trace})
+    assert start["status"] == "success", start
+    session_id = integer(dig(start, "result", "session_id"))
+    try:
+        created = call_gdb_tool(
+            "gdb_breakpoint_manage",
+            {
+                "session_id": session_id,
+                "action": "create",
+                "breakpoint": {"kind": "code", "location": "main"},
+            },
+        )
+        assert created["status"] == "success", created
+        continued = call_gdb_tool(
+            "gdb_execution_manage",
+            {"session_id": session_id, "action": "continue", "execution": {"wait_until": "stop"}},
+        )
+        assert continued["status"] == "success", continued
+
+        forward_step = call_gdb_tool(
+            "gdb_execution_manage",
+            {
+                "session_id": session_id,
+                "action": "step_instruction",
+                "execution": {"wait_until": "stop"},
+            },
+        )
+        assert forward_step["status"] == "success", forward_step
+        reverse_step = call_gdb_tool(
+            "gdb_execution_manage",
+            {
+                "session_id": session_id,
+                "action": "step_instruction",
+                "execution": {"reverse": True, "wait_until": "stop"},
+            },
+        )
+        assert reverse_step["status"] == "success", reverse_step
+
+        forward_next = call_gdb_tool(
+            "gdb_execution_manage",
+            {
+                "session_id": session_id,
+                "action": "next_instruction",
+                "execution": {"wait_until": "stop"},
+            },
+        )
+        assert forward_next["status"] == "success", forward_next
+        reverse_next = call_gdb_tool(
+            "gdb_execution_manage",
+            {
+                "session_id": session_id,
+                "action": "next_instruction",
+                "execution": {"reverse": True, "wait_until": "stop"},
+            },
+        )
+        assert reverse_next["status"] == "success", reverse_next
+    finally:
+        stop_session(session_id, ignore_errors=True)
+
+
 def test_rr_replay_ignores_a_program_alongside_the_trace(
     rr_trace: str,
     call_gdb_tool: CallGdbTool,

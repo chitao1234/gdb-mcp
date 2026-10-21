@@ -104,6 +104,46 @@ class ExecutionNextAction(StrictArgsModel):
     )
 
 
+class ExecutionStepInstructionAction(StrictArgsModel):
+    session_id: SessionId
+    action: shared_contracts.ActionStepInstructionName = Field(
+        ...,
+        description="Step into one machine instruction",
+    )
+    execution: ExecutionControlPayload = Field(
+        default_factory=lambda: ExecutionControlPayload.model_validate({})
+    )
+
+
+class ExecutionNextInstructionAction(StrictArgsModel):
+    session_id: SessionId
+    action: shared_contracts.ActionNextInstructionName = Field(
+        ...,
+        description="Step over one machine instruction",
+    )
+    execution: ExecutionControlPayload = Field(
+        default_factory=lambda: ExecutionControlPayload.model_validate({})
+    )
+
+
+class ExecutionReturnPayload(StrictArgsModel):
+    value: str | None = Field(
+        None,
+        description="Optional expression for the value the current frame returns.",
+    )
+
+
+class ExecutionReturnAction(StrictArgsModel):
+    session_id: SessionId
+    action: shared_contracts.ActionReturnName = Field(
+        ...,
+        description="Force the current frame to return to its caller",
+    )
+    execution: ExecutionReturnPayload = Field(
+        default_factory=lambda: ExecutionReturnPayload.model_validate({})
+    )
+
+
 class ExecutionFinishAction(StrictArgsModel):
     session_id: SessionId
     action: shared_contracts.ActionFinishName = Field(..., description="Finish the current frame")
@@ -131,6 +171,9 @@ class ExecutionManageArgs(
             | ExecutionInterruptAction
             | ExecutionStepAction
             | ExecutionNextAction
+            | ExecutionStepInstructionAction
+            | ExecutionNextInstructionAction
+            | ExecutionReturnAction
             | ExecutionFinishAction
             | ExecutionWaitForStopAction,
             Field(discriminator="action"),

@@ -26,6 +26,13 @@ def build_execution_manage_payload(typed_input: ExecutionManageInput) -> dict[st
         payload["execution"] = wait_for_stop_payload
         return payload
 
+    if typed_input.action == "return":
+        return_payload: dict[str, object] = {}
+        if typed_input.value is not None:
+            return_payload["value"] = typed_input.value
+        payload["execution"] = return_payload
+        return payload
+
     execution_payload: dict[str, object] = {}
     if typed_input.action == "run" and typed_input.args:
         execution_payload["args"] = list(typed_input.args)

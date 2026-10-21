@@ -278,6 +278,39 @@ class SessionService:
             wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
         )
 
+    def step_instruction(
+        self,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        reverse: bool = False,
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        """Delegate instruction-step to the execution service."""
+
+        return self._backend.step_instruction(
+            wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
+        )
+
+    def next_instruction(
+        self,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        reverse: bool = False,
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        """Delegate instruction-step-over to the execution service."""
+
+        return self._backend.next_instruction(
+            wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
+        )
+
+    def return_from_frame(
+        self, *, value: str | None = None
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        """Delegate force-return to the execution service."""
+
+        return self._backend.return_from_frame(value=value)
+
     def finish(
         self,
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,

@@ -191,6 +191,43 @@ def test_build_execution_manage_payload_includes_reverse() -> None:
     }
 
 
+def test_build_instruction_step_payload_includes_reverse() -> None:
+    typed_input = ExecutionManageInput(
+        action="step_instruction",
+        session_id=7,
+        args=(),
+        wait_until="stop",
+        timeout_sec=None,
+        stop_reasons=(),
+        reverse=True,
+    )
+
+    assert build_execution_manage_payload(typed_input) == {
+        "session_id": 7,
+        "action": "step_instruction",
+        "execution": {"wait_until": "stop", "reverse": True},
+    }
+
+
+def test_build_return_payload_includes_value() -> None:
+    typed_input = ExecutionManageInput(
+        action="return",
+        session_id=7,
+        args=(),
+        wait_until=None,
+        timeout_sec=None,
+        stop_reasons=(),
+        reverse=False,
+        value="42",
+    )
+
+    assert build_execution_manage_payload(typed_input) == {
+        "session_id": 7,
+        "action": "return",
+        "execution": {"value": "42"},
+    }
+
+
 def test_build_session_start_payload_includes_debugger_args() -> None:
     """Extra GDB arguments are forwarded under ``debugger_args``."""
 

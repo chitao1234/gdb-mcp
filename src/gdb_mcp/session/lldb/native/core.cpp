@@ -1126,7 +1126,11 @@ Json step_thread(const std::string &kind) {
   ensure_thread(thread, frame, false);
   if (!thread.IsValid())
     throw BridgeError("No thread is selected", "no_stack_frame");
-  int code = kind == "into" ? 0 : kind == "over" ? 1 : 2;
+  int code = kind == "into" ? 0
+             : kind == "over" ? 1
+             : kind == "out" ? 2
+             : kind == "instruction_into" ? 3
+                                            : 4;
   if (g_bridge->layer7.loaded() && g_bridge->layer7.api->step != nullptr) {
     char error[2048] = {0};
     if (!g_bridge->layer7.api->step(&thread, code, error, sizeof(error)))
@@ -1136,10 +1140,44 @@ Json step_thread(const std::string &kind) {
       thread.StepInto(eOnlyThisThread);
     else if (code == 1)
       thread.StepOver(eOnlyThisThread);
-    else
+    else if (code == 2)
       thread.StepOut();
+    else if (code == 3)
+      thread.StepInstruction(false);
+    else
+      thread.StepInstruction(true);
   }
   return status_json();
+}
+
+Json return_from_frame(const Json &request) {
+  SBThread thread;
+  SBFrame frame;
+  ensure_thread(thread, frame, false);
+  if (!thread.IsValid() || !frame.IsValid())
+    throw BridgeError("No frame is selected", "no_stack_frame");
+  std::string expression = as_string(member(request, "value"));
+  SBValue value;
+  if (!expression.empty()) {
+    value = frame.EvaluateExpression(expression.c_str());
+    SBError evaluation = value.GetError();
+    if (!value.IsValid() || evaluation.Fail())
+      throw BridgeError(
+          evaluation.Fail() ? S(evaluation.GetCString())
+                            : "return value did not evaluate");
+  }
+  SBError error = thread.ReturnFromFrame(frame, value);
+  if (error.Fail())
+    throw BridgeError(S(error.GetCString()));
+  Json out = status_json();
+  if (value.IsValid()) {
+    std::string text = S(value.GetValue());
+    if (text.empty())
+      text = S(value.GetSummary());
+    if (!text.empty())
+      out.object["return_value"] = Json::string_value(text);
+  }
+  return out;
 }
 
 Json connect_remote(const Json &request) {
@@ -2280,6 +2318,8 @@ Json dispatch(const std::string &operation, const Json &request) {
   }
   if (operation == "step")
     return step_thread(as_string(member(request, "kind"), "into"));
+  if (operation == "return_from_frame")
+    return return_from_frame(request);
   if (operation == "interrupt") {
     SBProcess process = current_process();
     if (!process.IsValid())

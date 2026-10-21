@@ -531,6 +531,46 @@ class SessionExecutionService:
             allow_running_timeout=not wait_for_stop,
         )
 
+    def step_instruction(
+        self,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        reverse: bool = False,
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        """Step into one machine instruction, forward or backward."""
+        return self._command_runner.execute_command_result(
+            _exec_command("-exec-step-instruction", reverse=reverse),
+            timeout_sec=timeout_sec,
+            allow_running_timeout=not wait_for_stop,
+        )
+
+    def next_instruction(
+        self,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        reverse: bool = False,
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        """Step over one machine instruction, forward or backward."""
+        return self._command_runner.execute_command_result(
+            _exec_command("-exec-next-instruction", reverse=reverse),
+            timeout_sec=timeout_sec,
+            allow_running_timeout=not wait_for_stop,
+        )
+
+    def return_from_frame(
+        self, *, value: str | None = None
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        """Force the selected frame to return, optionally with a value."""
+        command = "-exec-return"
+        if value:
+            command += " " + quote_mi_string(value)
+        return self._command_runner.execute_command_result(
+            command,
+            timeout_sec=DEFAULT_TIMEOUT_SEC,
+        )
+
     def finish(
         self,
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,

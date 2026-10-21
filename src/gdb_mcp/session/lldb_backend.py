@@ -856,6 +856,43 @@ class LldbSbBackend:
         except BridgeError as exc:
             return _operation_error(exc)
 
+    def step_instruction(
+        self,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        reverse: bool = False,
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        return self._step("instruction_into", wait_for_stop, timeout_sec, reverse)
+
+    def next_instruction(
+        self,
+        *,
+        wait_for_stop: bool = True,
+        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        reverse: bool = False,
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        return self._step("instruction_over", wait_for_stop, timeout_sec, reverse)
+
+    def return_from_frame(
+        self, *, value: str | None = None
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        try:
+            result = self._request("return_from_frame", value=value or "")
+            self._apply_status(result)
+            return OperationSuccess(
+                CommandExecutionInfo(
+                    command="return",
+                    backend_data=BackendData(
+                        debugger=DEBUGGER_LLDB,
+                        console_output="",
+                        data=_structured(result),
+                    ),
+                )
+            )
+        except BridgeError as exc:
+            return _operation_error(exc)
+
     def finish(
         self,
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,

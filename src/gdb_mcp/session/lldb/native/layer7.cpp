@@ -47,8 +47,12 @@ int layer_step(void *thread_ptr, int kind, char *error, size_t error_size) {
     thread->StepInto(nullptr, UINT32_MAX, lldb_error, lldb::eOnlyThisThread);
   else if (kind == 1)
     thread->StepOver(lldb::eOnlyThisThread, lldb_error);
-  else
+  else if (kind == 2)
     thread->StepOut(lldb_error);
+  else if (kind == 3)
+    thread->StepInstruction(false, lldb_error);
+  else
+    thread->StepInstruction(true, lldb_error);
   if (lldb_error.Fail()) {
     copy_error(lldb_error.GetCString(), error, error_size);
     return 0;

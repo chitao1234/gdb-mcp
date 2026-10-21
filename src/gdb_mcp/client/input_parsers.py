@@ -159,6 +159,7 @@ def parse_execution_manage_input(namespace: NamespaceLike) -> ExecutionManageInp
         timeout_sec=optional_integer(values, "timeout_sec"),
         stop_reasons=text_tuple(values, "stop_reasons"),
         reverse=boolean(values, "reverse"),
+        value=optional_text(values, "value"),
     )
 
 

@@ -17,8 +17,11 @@ from ..schemas import (
     ExecutionInterruptAction,
     ExecutionManageArgs,
     ExecutionNextAction,
+    ExecutionNextInstructionAction,
+    ExecutionReturnAction,
     ExecutionRunAction,
     ExecutionStepAction,
+    ExecutionStepInstructionAction,
     ExecutionWaitForStopAction,
 )
 from .common import (
@@ -76,6 +79,26 @@ def _handle_execution_manage(
                 timeout_sec=timeout_sec,
                 reverse=action_args.execution.reverse,
             )
+        case ExecutionStepInstructionAction():
+            timeout_sec, wait_for_stop = _execution_wait_policy(
+                action_args.execution.wait_until, action_args.execution.timeout_sec
+            )
+            return session.step_instruction(
+                wait_for_stop=wait_for_stop,
+                timeout_sec=timeout_sec,
+                reverse=action_args.execution.reverse,
+            )
+        case ExecutionNextInstructionAction():
+            timeout_sec, wait_for_stop = _execution_wait_policy(
+                action_args.execution.wait_until, action_args.execution.timeout_sec
+            )
+            return session.next_instruction(
+                wait_for_stop=wait_for_stop,
+                timeout_sec=timeout_sec,
+                reverse=action_args.execution.reverse,
+            )
+        case ExecutionReturnAction():
+            return session.return_from_frame(value=action_args.execution.value)
         case ExecutionFinishAction():
             timeout_sec, wait_for_stop = _execution_wait_policy(
                 action_args.execution.wait_until, action_args.execution.timeout_sec

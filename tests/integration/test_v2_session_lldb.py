@@ -13,7 +13,7 @@ from typing import cast
 
 import pytest
 
-from gdb_mcp.domain import OperationSuccess
+from gdb_mcp.domain import OperationError, OperationSuccess
 from gdb_mcp.session.lldb_backend import LldbSbBackend
 from gdb_mcp.session.protocols import OsModuleProtocol, TimeModuleProtocol
 
@@ -68,5 +68,43 @@ def test_lldb_start_breakpoint_run_and_status(compile_program: CompileProgram) -
         finished = backend.finish(timeout_sec=10)
         assert isinstance(finished, OperationSuccess)
         assert finished.value.return_value == "5"
+    finally:
+        backend.stop()
+
+
+def test_lldb_instruction_steps_and_return(
+    compile_program: CompileProgram,
+) -> None:
+    program = compile_program(_LLDB_PROGRAM, filename="lldb_instruction.c", compiler="gcc")
+    backend = LldbSbBackend(
+        os_module=cast(OsModuleProtocol, os), time_module=cast(TimeModuleProtocol, time)
+    )
+    try:
+        started = backend.start(program=program, debugger="lldb", debugger_path=LLDB_PREFIX)
+        assert isinstance(started, OperationSuccess)
+        backend.set_breakpoint("add")
+        ran = backend.run(timeout_sec=10)
+        assert isinstance(ran, OperationSuccess)
+
+        step_into = backend.step_instruction(wait_for_stop=True, timeout_sec=10)
+        assert isinstance(step_into, OperationSuccess)
+        status = backend.get_status()
+        assert isinstance(status, OperationSuccess)
+        assert status.value.execution_state == "paused"
+
+        step_over = backend.next_instruction(wait_for_stop=True, timeout_sec=10)
+        assert isinstance(step_over, OperationSuccess)
+
+        returned = backend.return_from_frame(value="42")
+        assert isinstance(returned, OperationSuccess)
+        assert returned.value.backend_data is not None
+        assert returned.value.backend_data.data.get("return_value") == "42"
+
+        reverse_step = backend.step_instruction(reverse=True)
+        assert isinstance(reverse_step, OperationError)
+        assert reverse_step.code == "unsupported_combination"
+        reverse_next = backend.next_instruction(reverse=True)
+        assert isinstance(reverse_next, OperationError)
+        assert reverse_next.code == "unsupported_combination"
     finally:
         backend.stop()

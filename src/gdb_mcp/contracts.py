@@ -73,6 +73,12 @@ ACTION_STEP = "step"
 ActionStepName: TypeAlias = Literal["step"]
 ACTION_NEXT = "next"
 ActionNextName: TypeAlias = Literal["next"]
+ACTION_STEP_INSTRUCTION = "step_instruction"
+ActionStepInstructionName: TypeAlias = Literal["step_instruction"]
+ACTION_NEXT_INSTRUCTION = "next_instruction"
+ActionNextInstructionName: TypeAlias = Literal["next_instruction"]
+ACTION_RETURN = "return"
+ActionReturnName: TypeAlias = Literal["return"]
 ACTION_FINISH = "finish"
 ActionFinishName: TypeAlias = Literal["finish"]
 ACTION_WAIT_FOR_STOP = "wait_for_stop"
@@ -193,6 +199,9 @@ ExecutionManageAction: TypeAlias = Literal[
     "interrupt",
     "step",
     "next",
+    "step_instruction",
+    "next_instruction",
+    "return",
     "finish",
     "wait_for_stop",
 ]

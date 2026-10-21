@@ -44,6 +44,7 @@ TextOption: TypeAlias = Literal[
     "startup_program",
     "startup_working_dir",
     "value_format",
+    "value",
     "wait_until",
     "working_dir",
 ]

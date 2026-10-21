@@ -19,6 +19,7 @@ from gdb_mcp.mcp.schemas import (
     ExecuteCommandArgs,
     ExecutionControlPayload,
     ExecutionManageArgs,
+    ExecutionReturnPayload,
     ExecutionRunPayload,
     InferiorCreatePayload,
     InferiorManageArgs,
@@ -373,6 +374,45 @@ class TestV2ActionArgs:
         assert isinstance(execution, ExecutionControlPayload)
         assert execution.wait_until == "acknowledged"
         assert execution.timeout_sec == 5
+
+    def test_execution_step_instruction_accepts_reverse_direction(self) -> None:
+        args = _validate(
+            ExecutionManageArgs,
+            {
+                "session_id": SESSION_ID,
+                "action": "step_instruction",
+                "execution": {"reverse": True},
+            },
+        )
+
+        execution = args.root.execution
+        assert isinstance(execution, ExecutionControlPayload)
+        assert execution.reverse is True
+
+    def test_execution_return_accepts_optional_value(self) -> None:
+        args = _validate(
+            ExecutionManageArgs,
+            {
+                "session_id": SESSION_ID,
+                "action": "return",
+                "execution": {"value": "42"},
+            },
+        )
+
+        execution = args.root.execution
+        assert isinstance(execution, ExecutionReturnPayload)
+        assert execution.value == "42"
+
+    def test_execution_return_rejects_wait_policy(self) -> None:
+        with pytest.raises(ValidationError):
+            _validate(
+                ExecutionManageArgs,
+                {
+                    "session_id": SESSION_ID,
+                    "action": "return",
+                    "execution": {"wait_until": "stop"},
+                },
+            )
 
     def test_inferior_create_accepts_omitted_inferior_payload(self) -> None:
         """Inferior creation should default its payload when omitted."""

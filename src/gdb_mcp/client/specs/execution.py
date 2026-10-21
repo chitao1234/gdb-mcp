@@ -29,6 +29,9 @@ from .common import (
 def _validate_execution_manage_input(typed_input: ExecutionManageInput) -> None:
     invalid_flags: list[str] = []
 
+    if typed_input.action != "return" and typed_input.value is not None:
+        invalid_flags.append("--value")
+
     if typed_input.action == "interrupt":
         if typed_input.args:
             invalid_flags.append("--arg")
@@ -40,11 +43,29 @@ def _validate_execution_manage_input(typed_input: ExecutionManageInput) -> None:
             invalid_flags.append("--stop-reason")
         if typed_input.reverse:
             invalid_flags.append("--reverse")
-    elif typed_input.action in {"continue", "step", "next", "finish"}:
+    elif typed_input.action in {
+        "continue",
+        "step",
+        "next",
+        "step_instruction",
+        "next_instruction",
+        "finish",
+    }:
         if typed_input.args:
             invalid_flags.append("--arg")
         if typed_input.stop_reasons:
             invalid_flags.append("--stop-reason")
+    elif typed_input.action == "return":
+        if typed_input.args:
+            invalid_flags.append("--arg")
+        if typed_input.wait_until is not None:
+            invalid_flags.append("--wait-until")
+        if typed_input.timeout_sec is not None:
+            invalid_flags.append("--timeout-sec")
+        if typed_input.stop_reasons:
+            invalid_flags.append("--stop-reason")
+        if typed_input.reverse:
+            invalid_flags.append("--reverse")
     elif typed_input.action == "run":
         if typed_input.reverse:
             invalid_flags.append("--reverse")
@@ -72,6 +93,7 @@ def _configure_execution_manage(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--timeout-sec", type=int, default=None)
     parser.add_argument("--stop-reason", dest="stop_reasons", action="append", default=None)
+    parser.add_argument("--value", help="Return value expression for action=return")
     parser.add_argument(
         "--reverse",
         action="store_true",
