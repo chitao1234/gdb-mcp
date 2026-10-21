@@ -9,7 +9,6 @@ the declared ones.
 from __future__ import annotations
 
 import json
-from typing import Any
 
 import jsonschema
 import pytest
@@ -21,23 +20,23 @@ from tests.support import dig, mapping, sequence, unsupported_schema_keys
 
 
 @pytest.fixture(scope="module")
-def output_schemas() -> dict[str, dict[str, Any]]:
+def output_schemas() -> dict[str, dict[str, object]]:
     """Return each published tool's output schema, keyed by tool name."""
 
-    schemas: dict[str, dict[str, Any]] = {}
+    schemas: dict[str, dict[str, object]] = {}
     for tool in build_tool_definitions():
         assert tool.outputSchema is not None, tool.name
         schemas[tool.name] = tool.outputSchema
     return schemas
 
 
-def _variants(schema: dict[str, Any]) -> list[dict[str, Any]]:
+def _variants(schema: dict[str, object]) -> list[dict[str, object]]:
     """Return the alternatives one published schema offers."""
 
     return [mapping(item) for item in sequence(schema["anyOf"])]
 
 
-def _resolve(schema: dict[str, Any], node: object) -> dict[str, Any]:
+def _resolve(schema: dict[str, object], node: object) -> dict[str, object]:
     """Follow one ``$ref`` inside a schema document."""
 
     target = mapping(node)
@@ -48,7 +47,7 @@ def _resolve(schema: dict[str, Any], node: object) -> dict[str, Any]:
 
 
 def test_every_public_tool_publishes_an_output_schema(
-    output_schemas: dict[str, dict[str, Any]],
+    output_schemas: dict[str, dict[str, object]],
 ) -> None:
     """A tool without an output schema would leave its payload undocumented."""
 
@@ -57,7 +56,7 @@ def test_every_public_tool_publishes_an_output_schema(
 
 
 def test_every_output_schema_has_no_unsupported_construct(
-    output_schemas: dict[str, dict[str, Any]],
+    output_schemas: dict[str, dict[str, object]],
 ) -> None:
     """Output schemas follow the same publication policy as input schemas."""
 
@@ -66,7 +65,7 @@ def test_every_output_schema_has_no_unsupported_construct(
 
 
 def test_every_output_schema_is_json_serializable(
-    output_schemas: dict[str, dict[str, Any]],
+    output_schemas: dict[str, dict[str, object]],
 ) -> None:
     """Every published schema must survive a JSON round trip unchanged."""
 
@@ -74,7 +73,7 @@ def test_every_output_schema_is_json_serializable(
 
 
 def test_every_output_schema_describes_an_object(
-    output_schemas: dict[str, dict[str, Any]],
+    output_schemas: dict[str, dict[str, object]],
 ) -> None:
     """MCP output schemas are object schemas, so the root has to say so."""
 
@@ -83,7 +82,7 @@ def test_every_output_schema_describes_an_object(
 
 
 def test_every_output_schema_offers_success_and_error_alternatives(
-    output_schemas: dict[str, dict[str, Any]],
+    output_schemas: dict[str, dict[str, object]],
 ) -> None:
     """A client needs to validate both outcomes of every tool."""
 
@@ -97,7 +96,7 @@ def test_every_output_schema_offers_success_and_error_alternatives(
 
 
 def test_every_success_alternative_accepts_extra_fields(
-    output_schemas: dict[str, dict[str, Any]],
+    output_schemas: dict[str, dict[str, object]],
 ) -> None:
     """A debugger-specific field must not be rejected by the published schema."""
 
@@ -109,7 +108,7 @@ def test_every_success_alternative_accepts_extra_fields(
 
 
 def test_every_output_schema_accepts_the_error_envelope(
-    output_schemas: dict[str, dict[str, Any]],
+    output_schemas: dict[str, dict[str, object]],
 ) -> None:
     """An error result has to validate against every tool it can come from."""
 
@@ -135,7 +134,7 @@ def test_every_output_schema_accepts_the_error_envelope(
 
 
 def test_success_warnings_are_an_optional_array(
-    output_schemas: dict[str, dict[str, Any]],
+    output_schemas: dict[str, dict[str, object]],
 ) -> None:
     """Warnings are omitted when empty and otherwise always an array."""
 
@@ -146,7 +145,7 @@ def test_success_warnings_are_an_optional_array(
 
 
 def test_an_action_tool_offers_one_alternative_per_action(
-    output_schemas: dict[str, dict[str, Any]],
+    output_schemas: dict[str, dict[str, object]],
 ) -> None:
     """Each action keeps its own alternative, with its own requirements."""
 
@@ -168,27 +167,29 @@ def test_an_action_tool_offers_one_alternative_per_action(
 
 
 def test_a_dedicated_tool_nests_its_payload_under_result(
-    output_schemas: dict[str, dict[str, Any]],
+    output_schemas: dict[str, dict[str, object]],
 ) -> None:
     """A dedicated tool publishes its payload under the uniform result field."""
 
     success = _variants(output_schemas["gdb_session_start"])[0]
 
     assert success["required"] == ["status", "result"]
-    result = _resolve(output_schemas["gdb_session_start"], success["properties"]["result"])
+    result = _resolve(output_schemas["gdb_session_start"], mapping(success["properties"])["result"])
     assert {"session_id", "message", "target_loaded", "execution_state"} <= set(
-        result["properties"]
+        mapping(result["properties"])
     )
 
 
 def test_a_nullable_result_field_keeps_its_null_alternative(
-    output_schemas: dict[str, dict[str, Any]],
+    output_schemas: dict[str, dict[str, object]],
 ) -> None:
     """A result publishes the null it really carries, unlike a request."""
 
     success = _variants(output_schemas["gdb_workflow_batch"])[0]
-    result = _resolve(output_schemas["gdb_workflow_batch"], success["properties"]["result"])
-    last_stop_event = mapping(result["properties"]["last_stop_event"])
+    result = _resolve(
+        output_schemas["gdb_workflow_batch"], mapping(success["properties"])["result"]
+    )
+    last_stop_event = mapping(mapping(result["properties"])["last_stop_event"])
 
     alternatives = [mapping(item) for item in sequence(last_stop_event["anyOf"])]
     assert alternatives == [{"$ref": "#/$defs/StopEvent"}, {"type": "null"}]
@@ -214,7 +215,7 @@ def test_a_nullable_result_field_keeps_its_null_alternative(
 
 
 def test_a_nullable_enum_keeps_its_null_alternative(
-    output_schemas: dict[str, dict[str, Any]],
+    output_schemas: dict[str, dict[str, object]],
 ) -> None:
     """A closed vocabulary still allows a result that has no value yet."""
 
@@ -225,25 +226,25 @@ def test_a_nullable_enum_keeps_its_null_alternative(
         if dig(variant, "properties", "action", "enum") == ["status"]
     )
     result = _resolve(schema, dig(status, "properties", "result"))
-    stop_kind = mapping(result["properties"]["stop_kind"])
+    stop_kind = mapping(mapping(result["properties"])["stop_kind"])
 
     assert [mapping(item) for item in sequence(stop_kind["anyOf"])][1] == {"type": "null"}
 
 
 def test_arbitrary_debugger_data_publishes_as_a_recursive_reference(
-    output_schemas: dict[str, dict[str, Any]],
+    output_schemas: dict[str, dict[str, object]],
 ) -> None:
     """An MI result payload is described by a recursive definition, not a guess."""
 
     schema = output_schemas["gdb_execute_command"]
     success = _variants(schema)[0]
 
-    payload = _resolve(schema, success["properties"]["result"])
+    payload = _resolve(schema, mapping(success["properties"])["result"])
     assert dig(payload, "properties", "debugger_result", "anyOf") == [
         {"$ref": "#/$defs/JsonObject"},
         {"type": "null"},
     ]
-    assert {"JsonObject", "JsonValue"} <= set(schema["$defs"])
+    assert {"JsonObject", "JsonValue"} <= set(mapping(schema["$defs"]))
 
     jsonschema.validate(
         {
@@ -259,13 +260,15 @@ def test_arbitrary_debugger_data_publishes_as_a_recursive_reference(
 
 
 def test_the_start_payload_documents_the_session_id(
-    output_schemas: dict[str, dict[str, Any]],
+    output_schemas: dict[str, dict[str, object]],
 ) -> None:
     """The id the registry allocates is part of the published payload."""
 
     success = _variants(output_schemas["gdb_session_start"])[0]
-    payload = _resolve(output_schemas["gdb_session_start"], success["properties"]["result"])
-    session_id = mapping(payload["properties"]["session_id"])
+    payload = _resolve(
+        output_schemas["gdb_session_start"], mapping(success["properties"])["result"]
+    )
+    session_id = mapping(mapping(payload["properties"])["session_id"])
 
     assert [mapping(item) for item in sequence(session_id["anyOf"])] == [
         {"type": "integer"},

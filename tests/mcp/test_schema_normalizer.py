@@ -9,7 +9,6 @@ own requirements, and optional fields that keep their ``null`` alternative.
 from __future__ import annotations
 
 import json
-from typing import Any
 
 import pytest
 
@@ -20,13 +19,13 @@ from tests.support import dig, mapping, mapping_list, sequence, unsupported_sche
 
 
 @pytest.fixture(scope="module")
-def tool_schemas() -> dict[str, dict[str, Any]]:
+def tool_schemas() -> dict[str, dict[str, object]]:
     """Return each published tool's input schema, keyed by tool name."""
 
     return {tool.name: tool.inputSchema for tool in build_tool_definitions()}
 
 
-def _resolve(schema: dict[str, Any], node: object) -> dict[str, Any]:
+def _resolve(schema: dict[str, object], node: object) -> dict[str, object]:
     """Follow one ``$ref`` inside a schema document."""
 
     target = mapping(node)
@@ -37,7 +36,7 @@ def _resolve(schema: dict[str, Any], node: object) -> dict[str, Any]:
 
 
 def test_every_published_tool_schema_has_no_unsupported_construct(
-    tool_schemas: dict[str, dict[str, Any]],
+    tool_schemas: dict[str, dict[str, object]],
 ) -> None:
     """No published schema may contain ``oneOf``, ``allOf``, or ``discriminator``."""
 
@@ -46,7 +45,7 @@ def test_every_published_tool_schema_has_no_unsupported_construct(
 
 
 def test_every_published_tool_schema_is_json_serializable(
-    tool_schemas: dict[str, dict[str, Any]],
+    tool_schemas: dict[str, dict[str, object]],
 ) -> None:
     """Every published schema must survive a JSON round trip unchanged."""
 
@@ -94,7 +93,7 @@ def test_public_input_schema_examples_do_not_pollute_the_cache() -> None:
 
 
 def test_a_tagged_union_publishes_one_alternative_per_action(
-    tool_schemas: dict[str, dict[str, Any]],
+    tool_schemas: dict[str, dict[str, object]],
 ) -> None:
     """Every action keeps its own alternative, with its own requirements."""
 
@@ -112,7 +111,7 @@ def test_a_tagged_union_publishes_one_alternative_per_action(
 
 
 def test_a_single_action_union_publishes_one_alternative(
-    tool_schemas: dict[str, dict[str, Any]],
+    tool_schemas: dict[str, dict[str, object]],
 ) -> None:
     """A one-action tool is still a union, so a client sees the same shape."""
 
@@ -125,7 +124,7 @@ def test_a_single_action_union_publishes_one_alternative(
 
 
 def test_an_optional_field_publishes_its_null_alternative(
-    tool_schemas: dict[str, dict[str, Any]],
+    tool_schemas: dict[str, dict[str, object]],
 ) -> None:
     """A caller may send an explicit null, so the schema allows it."""
 
@@ -136,7 +135,7 @@ def test_an_optional_field_publishes_its_null_alternative(
 
 
 def test_a_nested_union_keeps_every_alternative(
-    tool_schemas: dict[str, dict[str, Any]],
+    tool_schemas: dict[str, dict[str, object]],
 ) -> None:
     """A nested selector union publishes each selector, not just the first."""
 
@@ -155,7 +154,7 @@ def test_a_nested_union_keeps_every_alternative(
     assert kinds == set(LOCATION_KINDS)
 
 
-def test_batch_step_items_keep_the_tool_enum(tool_schemas: dict[str, dict[str, Any]]) -> None:
+def test_batch_step_items_keep_the_tool_enum(tool_schemas: dict[str, dict[str, object]]) -> None:
     """A batch step names one of the supported tools."""
 
     schema = tool_schemas["gdb_workflow_batch"]
@@ -169,7 +168,7 @@ def test_batch_step_items_keep_the_tool_enum(tool_schemas: dict[str, dict[str, A
 
 
 def test_every_published_input_schema_describes_an_object(
-    tool_schemas: dict[str, dict[str, Any]],
+    tool_schemas: dict[str, dict[str, object]],
 ) -> None:
     """MCP tool schemas are object schemas, so the root has to say so."""
 

@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol
 
 import pytest
 from mcp.types import TextContent
@@ -82,7 +82,7 @@ class StopSession(Protocol):
     def __call__(self, session_id: int, *, ignore_errors: bool = False) -> dict[str, object]: ...
 
 
-def terminate_process(process: subprocess.Popen[Any]) -> None:
+def terminate_process(process: subprocess.Popen[bytes]) -> None:
     """Terminate a child process, escalating to a kill if it does not exit."""
 
     if process.poll() is not None:
