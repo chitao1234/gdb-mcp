@@ -23,7 +23,7 @@ import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 from ..session.constants import DEFAULT_TIMEOUT_SEC
 
@@ -527,8 +527,8 @@ class BridgeClient:
         return self._process.pid
 
     def request(
-        self, operation: str, *, timeout_sec: float = DEFAULT_TIMEOUT_SEC, **payload: Any
-    ) -> dict[str, Any]:
+        self, operation: str, *, timeout_sec: float = DEFAULT_TIMEOUT_SEC, **payload: object
+    ) -> dict[str, object]:
         with self._lock:
             if self._closed or self._process.poll() is not None:
                 raise BridgeError("LLDB bridge is not running", "not_started")
@@ -570,7 +570,7 @@ class BridgeClient:
                 )
             response.pop("request_id", None)
             response.pop("ok", None)
-            return cast(dict[str, Any], response)
+            return cast(dict[str, object], response)
 
     def close(self, *, detach: bool = False) -> None:
         with self._lock:

@@ -275,15 +275,17 @@ def _failure_code(message: str) -> str | None:
 def _session_state_details(session: SessionService) -> StructuredPayload:
     """Return the JSON-safe execution state of one live session."""
 
-    runtime = getattr(session, "runtime", None)
+    runtime = session.runtime
     details: StructuredPayload = {}
-    for name in ("execution_state", "stop_reason", "stop_kind"):
-        value = getattr(runtime, name, None)
+    for name, value in (
+        ("execution_state", runtime.execution_state),
+        ("stop_reason", runtime.stop_reason),
+        ("stop_kind", runtime.stop_kind),
+    ):
         if isinstance(value, str):
             details[name] = value
-    exit_code = getattr(runtime, "exit_code", None)
-    if isinstance(exit_code, int):
-        details["exit_code"] = exit_code
+    if isinstance(runtime.exit_code, int):
+        details["exit_code"] = runtime.exit_code
     return details
 
 

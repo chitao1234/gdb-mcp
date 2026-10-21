@@ -6,7 +6,7 @@ import logging
 import signal
 import time
 from collections.abc import Mapping
-from typing import Any, Literal, cast
+from typing import Literal, cast
 
 from ..contracts import DEBUGGER_LLDB
 from ..domain import (
@@ -110,7 +110,7 @@ class LldbSbBackend:
             raise BridgeError("No active LLDB session", "not_started")
         return self._client
 
-    def _request(self, operation: str, **payload: Any) -> Mapping[str, object]:
+    def _request(self, operation: str, **payload: object) -> Mapping[str, object]:
         timeout_ms = payload.get("timeout_ms")
         request_timeout = (
             float(timeout_ms) / 1000.0 + 5.0
