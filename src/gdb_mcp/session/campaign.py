@@ -8,7 +8,6 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from re import Pattern
-from typing import cast
 
 from ..domain import (
     CaptureBundleInfo,
@@ -20,7 +19,6 @@ from ..domain import (
     SessionStatusSnapshot,
     StopEvent,
     StructuredPayload,
-    ToolResultStatus,
     result_to_envelope,
 )
 from .locking import session_workflow_context
@@ -234,7 +232,7 @@ class RunUntilFailureService:
                 iteration_summaries.append(
                     RunUntilFailureIterationInfo(
                         iteration=iteration,
-                        status=cast(ToolResultStatus, run_payload["status"]),
+                        status="error" if isinstance(run_result, OperationError) else "success",
                         execution_state=status_snapshot.execution_state,
                         stop_reason=status_snapshot.stop_reason,
                         stop_kind=status_snapshot.stop_kind,
