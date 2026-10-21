@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, cast, get_args, get_type_hints
+from typing import cast, get_args, get_type_hints
 
 import pytest
 from pydantic import BaseModel
@@ -48,18 +48,19 @@ from gdb_mcp.mcp.schemas import (
     SessionQueryStatusAction,
     build_tool_definitions,
 )
+from tests.support import mapping, sequence, text
 
 
-def _field_schema(model: type[BaseModel], field_name: str) -> dict[str, Any]:
+def _field_schema(model: type[BaseModel], field_name: str) -> dict[str, object]:
     """Return the JSON Schema fragment for one model field."""
 
-    return cast("dict[str, Any]", model.model_json_schema()["properties"][field_name])
+    return cast("dict[str, object]", model.model_json_schema()["properties"][field_name])
 
 
 def _enum_values(model: type[BaseModel], field_name: str) -> tuple[str, ...]:
     """Return the field's declared enum values as a tuple."""
 
-    return tuple(_field_schema(model, field_name)["enum"])
+    return tuple(text(item) for item in sequence(_field_schema(model, field_name)["enum"]))
 
 
 def _const_value(model: type[BaseModel], field_name: str) -> str:
@@ -71,8 +72,8 @@ def _const_value(model: type[BaseModel], field_name: str) -> str:
 def _array_item_enum_values(model: type[BaseModel], field_name: str) -> tuple[str, ...]:
     """Return the enum values of an array field's item schema."""
 
-    items = _field_schema(model, field_name)["items"]
-    return tuple(items["enum"])
+    items = mapping(_field_schema(model, field_name)["items"])
+    return tuple(text(item) for item in sequence(items["enum"]))
 
 
 @pytest.mark.parametrize(

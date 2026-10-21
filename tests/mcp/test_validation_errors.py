@@ -5,17 +5,16 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any
 from unittest.mock import Mock
 
 from mcp.types import TextContent
 
 from gdb_mcp.domain import OperationSuccess, SessionMessage
 from gdb_mcp.mcp.handlers import dispatch_tool_call
-from tests.support import dig, mapping_list
+from tests.support import dig, mapping_list, text
 
 
-def _dispatch(name: str, arguments: object) -> dict[str, Any]:
+def _dispatch(name: str, arguments: object) -> dict[str, object]:
     """Dispatch one raw payload and return the decoded error envelope."""
 
     result = asyncio.run(
@@ -34,7 +33,7 @@ def _dispatch(name: str, arguments: object) -> dict[str, Any]:
     return payload
 
 
-def _field_errors(payload: dict[str, Any]) -> list[dict[str, object]]:
+def _field_errors(payload: dict[str, object]) -> list[dict[str, object]]:
     """Return the documented field-error entries from a validation envelope."""
 
     return mapping_list(dig(payload, "details", "field_errors"))
@@ -105,8 +104,8 @@ class TestValidationErrorEnvelope:
         )
 
         assert payload["code"] == "validation_error"
-        assert payload["message"].startswith("Unknown action 'explode'")
-        assert "expected one of" in payload["message"]
+        assert text(payload["message"]).startswith("Unknown action 'explode'")
+        assert "expected one of" in text(payload["message"])
         assert _field_errors(payload)[0] == {
             "field": "action",
             "issue": "invalid",
