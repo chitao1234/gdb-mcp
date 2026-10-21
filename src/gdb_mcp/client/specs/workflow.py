@@ -15,6 +15,7 @@ from ..inputs import (
     RunUntilFailureInput,
     WorkflowBatchInput,
 )
+from ..namespace import boolean, integer, optional_integer, optional_text, snapshot, text_tuple
 from ..parsers import (
     AppendTaggedValue,
     add_boolean_flag,
@@ -61,22 +62,23 @@ def _configure_capture_bundle(parser: argparse.ArgumentParser) -> None:
 
 
 def _build_capture_bundle(namespace: argparse.Namespace) -> dict[str, object]:
+    values = snapshot(namespace)
     return validate_model_payload(
         CaptureBundleArgs,
         {
-            "session_id": namespace.session_id,
-            "output_dir": namespace.output_dir,
-            "bundle_name": namespace.bundle_name,
-            "expressions": namespace.expressions,
-            "memory_ranges": namespace.memory_ranges,
-            "max_frames": namespace.max_frames,
-            "include_threads": namespace.include_threads,
-            "include_backtraces": namespace.include_backtraces,
-            "include_frame": namespace.include_frame,
-            "include_variables": namespace.include_variables,
-            "include_registers": namespace.include_registers,
-            "include_transcript": namespace.include_transcript,
-            "include_stop_history": namespace.include_stop_history,
+            "session_id": optional_integer(values, "session_id"),
+            "output_dir": optional_text(values, "output_dir"),
+            "bundle_name": optional_text(values, "bundle_name"),
+            "expressions": list(text_tuple(values, "expressions")),
+            "memory_ranges": list(text_tuple(values, "memory_ranges")),
+            "max_frames": integer(values, "max_frames"),
+            "include_threads": boolean(values, "include_threads"),
+            "include_backtraces": boolean(values, "include_backtraces"),
+            "include_frame": boolean(values, "include_frame"),
+            "include_variables": boolean(values, "include_variables"),
+            "include_registers": boolean(values, "include_registers"),
+            "include_transcript": boolean(values, "include_transcript"),
+            "include_stop_history": boolean(values, "include_stop_history"),
         },
     )
 

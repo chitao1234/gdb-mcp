@@ -55,7 +55,7 @@ class InferiorQueryInput:
     """Parsed input for ``gdb_inferior_query``."""
 
     action: InferiorQueryAction
-    session_id: int
+    session_id: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,7 +63,7 @@ class InferiorManageInput:
     """Parsed input for ``gdb_inferior_manage``."""
 
     action: InferiorManageAction
-    session_id: int
+    session_id: int | None
     executable: str | None
     make_current: bool | None
     inferior_id: int | None
@@ -76,7 +76,7 @@ class ExecutionManageInput:
     """Parsed input for ``gdb_execution_manage``."""
 
     action: ExecutionManageAction
-    session_id: int
+    session_id: int | None
     args: tuple[str, ...]
     wait_until: ExecutionWaitUntil | None
     timeout_sec: int | None
@@ -89,7 +89,7 @@ class ContextQueryInput:
     """Parsed input for ``gdb_context_query``."""
 
     action: ContextQueryAction
-    session_id: int
+    session_id: int | None
     thread_id: int | None
     frame: int | None
     max_frames: int | None
@@ -100,7 +100,7 @@ class ContextManageInput:
     """Parsed input for ``gdb_context_manage``."""
 
     action: ContextManageAction
-    session_id: int
+    session_id: int | None
     thread_id: int | None
     frame: int | None
 
@@ -110,7 +110,7 @@ class BreakpointQueryInput:
     """Parsed input for ``gdb_breakpoint_query``."""
 
     action: BreakpointQueryAction
-    session_id: int
+    session_id: int | None
     number: int | None
     kinds: tuple[BreakpointKind, ...]
     enabled: bool | None
@@ -137,7 +137,7 @@ class BreakpointManageInput:
     """Parsed input for ``gdb_breakpoint_manage``."""
 
     action: BreakpointManageAction
-    session_id: int
+    session_id: int | None
     breakpoint: BreakpointCreateInput | None
     number: int | None
     condition: str | None
@@ -164,7 +164,7 @@ class InspectQueryInput:
     """Parsed input for ``gdb_inspect_query``."""
 
     action: InspectQueryAction
-    session_id: int
+    session_id: int | None
     thread_id: int | None
     frame: int | None
     expression: str | None
@@ -197,7 +197,7 @@ class SessionStepInput:
 class WorkflowBatchInput:
     """Parsed input for ``gdb_workflow_batch``."""
 
-    session_id: int
+    session_id: int | None
     steps: tuple[SessionStepInput, ...]
     fail_fast: bool | None
     capture_stop_events: bool | None

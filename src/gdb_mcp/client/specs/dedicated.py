@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 
+from gdb_mcp.contracts import DEBUGGER_GDB, DEBUGGER_NAMES
 from gdb_mcp.mcp.schemas import (
     AttachProcessArgs,
     CallFunctionArgs,
@@ -11,6 +12,15 @@ from gdb_mcp.mcp.schemas import (
     ExecuteCommandArgs,
 )
 
+from ..namespace import (
+    integer,
+    one_of,
+    optional_integer,
+    optional_text,
+    snapshot,
+    text,
+    text_tuple,
+)
 from ..parsers import (
     validate_model_payload,
 )
@@ -33,16 +43,19 @@ def _configure_session_connect(parser: argparse.ArgumentParser) -> None:
 
 
 def _build_session_connect(namespace: argparse.Namespace) -> dict[str, object]:
+    values = snapshot(namespace)
     payload: dict[str, object] = {
-        "endpoint": namespace.endpoint,
-        "init_commands": list(namespace.init_commands) or None,
+        "endpoint": text(values, "endpoint"),
+        "init_commands": list(text_tuple(values, "init_commands")) or None,
     }
-    if namespace.debugger != "gdb":
-        payload["debugger"] = namespace.debugger
-    if namespace.program is not None:
-        payload["program"] = namespace.program
-    if namespace.debugger_path is not None:
-        payload["debugger_path"] = namespace.debugger_path
+    if one_of(values, "debugger", DEBUGGER_NAMES) != DEBUGGER_GDB:
+        payload["debugger"] = one_of(values, "debugger", DEBUGGER_NAMES)
+    program = optional_text(values, "program")
+    if program is not None:
+        payload["program"] = program
+    debugger_path = optional_text(values, "debugger_path")
+    if debugger_path is not None:
+        payload["debugger_path"] = debugger_path
     return validate_model_payload(ConnectSessionArgs, payload)
 
 
@@ -52,12 +65,13 @@ def _configure_execute_command(parser: argparse.ArgumentParser) -> None:
 
 
 def _build_execute_command(namespace: argparse.Namespace) -> dict[str, object]:
+    values = snapshot(namespace)
     return validate_model_payload(
         ExecuteCommandArgs,
         {
-            "session_id": namespace.session_id,
-            "command": namespace.command,
-            "timeout_sec": namespace.timeout_sec,
+            "session_id": optional_integer(values, "session_id"),
+            "command": text(values, "command"),
+            "timeout_sec": integer(values, "timeout_sec"),
         },
     )
 
@@ -68,12 +82,13 @@ def _configure_attach_process(parser: argparse.ArgumentParser) -> None:
 
 
 def _build_attach_process(namespace: argparse.Namespace) -> dict[str, object]:
+    values = snapshot(namespace)
     return validate_model_payload(
         AttachProcessArgs,
         {
-            "session_id": namespace.session_id,
-            "pid": namespace.pid,
-            "timeout_sec": namespace.timeout_sec,
+            "session_id": optional_integer(values, "session_id"),
+            "pid": integer(values, "pid"),
+            "timeout_sec": integer(values, "timeout_sec"),
         },
     )
 
@@ -84,11 +99,12 @@ def _configure_call_function(parser: argparse.ArgumentParser) -> None:
 
 
 def _build_call_function(namespace: argparse.Namespace) -> dict[str, object]:
+    values = snapshot(namespace)
     return validate_model_payload(
         CallFunctionArgs,
         {
-            "session_id": namespace.session_id,
-            "function_call": namespace.function_call,
-            "timeout_sec": namespace.timeout_sec,
+            "session_id": optional_integer(values, "session_id"),
+            "function_call": text(values, "function_call"),
+            "timeout_sec": integer(values, "timeout_sec"),
         },
     )

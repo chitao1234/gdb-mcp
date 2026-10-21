@@ -189,11 +189,13 @@ def _configure_facade_command(parser: argparse.ArgumentParser, command: FacadeCo
     for action in parser._actions:
         if action.dest in {"action", "session_id"} or action.dest in command.relax:
             action.required = False
+    action_types = {action.dest: action.type for action in parser._actions}
     for argument, flag in command.positionals:
         parser.add_argument(
             f"_{argument}",
             nargs="?",
             metavar=argument.upper(),
+            type=action_types.get(argument) or str,
             help=f"shorthand for {flag}",
         )
 
