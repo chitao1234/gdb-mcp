@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Generic, TypeVar, cast
+from typing import Generic, TypeVar
 
 from gdb_mcp.mcp.schemas import (
     build_tool_definitions,
@@ -31,12 +31,11 @@ class ToolCliSpec(Generic[_ToolInputT]):
 
 @dataclass(frozen=True)
 class RegisteredToolCliSpec:
-    """Runtime CLI spec with erased parsed-input type."""
+    """Runtime CLI spec with parse and build composed behind one call."""
 
     name: str
     configure_parser: Callable[[argparse.ArgumentParser], None]
-    parse_input: Callable[[argparse.Namespace], object]
-    build_arguments: Callable[[object], dict[str, object]]
+    build_arguments: Callable[[argparse.Namespace], dict[str, object]]
     render_human: Callable[[dict[str, object]], str]
 
 
@@ -51,21 +50,14 @@ def _parse_namespace(namespace: argparse.Namespace) -> argparse.Namespace:
     return namespace
 
 
-def _erase_builder(
-    builder: Callable[[_ToolInputT], dict[str, object]],
-) -> Callable[[object], dict[str, object]]:
-    def build_arguments(parsed_input: object) -> dict[str, object]:
-        return builder(cast(_ToolInputT, parsed_input))
-
-    return build_arguments
-
-
 def _register_tool_spec(spec: ToolCliSpec[_ToolInputT]) -> RegisteredToolCliSpec:
+    def build_arguments(namespace: argparse.Namespace) -> dict[str, object]:
+        return spec.build_arguments(spec.parse_input(namespace))
+
     return RegisteredToolCliSpec(
         name=spec.name,
         configure_parser=spec.configure_parser,
-        parse_input=spec.parse_input,
-        build_arguments=_erase_builder(spec.build_arguments),
+        build_arguments=build_arguments,
         render_human=spec.render_human,
     )
 

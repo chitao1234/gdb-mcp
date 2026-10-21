@@ -451,7 +451,7 @@ def _build_payload(
     """Build one tool payload, filling a remembered session id when needed."""
 
     try:
-        return spec.build_arguments(spec.parse_input(args))
+        return spec.build_arguments(args)
     except ValidationError as exc:
         if not resolved.managed or not _session_id_error(exc):
             raise
@@ -461,7 +461,7 @@ def _build_payload(
                 "--session-id required: no debug session is recorded for this project yet"
             ) from exc
         args.session_id = remembered
-        return spec.build_arguments(spec.parse_input(args))
+        return spec.build_arguments(args)
 
 
 def _session_id_from_payload(payload: dict[str, object]) -> int | None:
