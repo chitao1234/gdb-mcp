@@ -915,7 +915,6 @@ class LldbSbBackend:
             return OperationSuccess(
                 InferiorListInfo(
                     inferiors=records,
-                    count=len(records),
                     current_inferior_id=self.runtime.current_inferior_id,
                 )
             )
@@ -955,7 +954,6 @@ class LldbSbBackend:
                 ThreadListInfo(
                     threads=records,
                     current_thread_id=str(current) if current is not None else None,
-                    count=len(records),
                 )
             )
         except BridgeError as exc:
@@ -979,7 +977,6 @@ class LldbSbBackend:
                 BacktraceInfo(
                     thread_id=self._integer(payload, "thread_id"),
                     frames=frames,
-                    count=len(frames),
                 )
             )
         except BridgeError as exc:
@@ -1137,10 +1134,9 @@ class LldbSbBackend:
             return OperationSuccess(
                 MemoryReadInfo(
                     address=address,
-                    count=count,
+                    requested_bytes=count,
                     offset=offset,
                     blocks=[block],
-                    block_count=1,
                     captured_bytes=read,
                 )
             )
@@ -1199,7 +1195,6 @@ class LldbSbBackend:
                     end_address=self._text(payload, "end_address"),
                     mode=mode,
                     instructions=instructions,
-                    count=len(instructions),
                 )
             )
         except BridgeError as exc:
@@ -1255,7 +1250,6 @@ class LldbSbBackend:
                     start_line=self._integer(payload, "start_line") or start_line or 1,
                     end_line=self._integer(payload, "end_line") or end_line or len(lines),
                     lines=lines,
-                    count=len(lines),
                 )
             )
         except BridgeError as exc:
@@ -1365,7 +1359,7 @@ class LldbSbBackend:
     def list_breakpoints(self) -> OperationSuccess[BreakpointListInfo] | OperationError:
         try:
             records = self._all_breakpoints()
-            return OperationSuccess(BreakpointListInfo(breakpoints=records, count=len(records)))
+            return OperationSuccess(BreakpointListInfo(breakpoints=records))
         except BridgeError as exc:
             return _operation_error(exc)
 

@@ -175,7 +175,7 @@ class SessionExecutionService:
                     is_current=make_current,
                     executable=executable,
                     current_inferior_id=inventory_result.value.current_inferior_id,
-                    inferior_count=inventory_result.value.count,
+                    inferior_count=len(inventory_result.value.inferiors),
                     message=f"Inferior {inferior_id} added",
                 ),
                 warnings=(
@@ -192,7 +192,7 @@ class SessionExecutionService:
                 connection=record.connection,
                 executable=record.executable,
                 current_inferior_id=inventory_result.value.current_inferior_id,
-                inferior_count=inventory_result.value.count,
+                inferior_count=len(inventory_result.value.inferiors),
                 message=f"Inferior {inferior_id} added",
             )
         )
@@ -293,7 +293,7 @@ class SessionExecutionService:
             InferiorRemoveInfo(
                 inferior_id=inferior_id,
                 current_inferior_id=inventory_result.value.current_inferior_id,
-                inferior_count=inventory_result.value.count,
+                inferior_count=len(inventory_result.value.inferiors),
                 message=f"Inferior {inferior_id} removed",
             )
         )
@@ -815,7 +815,7 @@ class SessionExecutionService:
         payload = self._parse_inferiors_output(result.value.output or "")
         self._runtime.update_inferior_inventory(
             current_inferior_id=payload.current_inferior_id,
-            count=payload.count,
+            count=len(payload.inferiors),
             inferior_ids=inferior_ids(payload),
         )
         return OperationSuccess(payload)

@@ -158,7 +158,6 @@ class InspectionSource:
                 start_line=read_result.start_line,
                 end_line=read_result.end_line,
                 lines=read_result.lines,
-                count=len(read_result.lines),
             )
         )
 

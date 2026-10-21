@@ -299,7 +299,6 @@ class SessionCaptureService:
                 bundle_name=bundle_dir.name,
                 manifest_path=manifest_artifact.path,
                 artifacts=artifacts,
-                artifact_count=len(artifacts),
                 failed_sections=sorted(set(failed_sections)) or None,
                 execution_state=status_execution_state,
                 stop_reason=status_stop_reason,

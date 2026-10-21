@@ -73,10 +73,12 @@ def _read_memory_warnings(info: MemoryReadInfo) -> tuple[str, ...]:
     """Warn when a read did not return every requested byte in one contiguous run."""
 
     warnings: list[str] = []
-    if info.block_count > 1:
-        warnings.append(f"Discontinuous read: {info.block_count} blocks returned")
-    if info.captured_bytes < info.count:
-        warnings.append(f"Partial read: captured {info.captured_bytes} of {info.count} bytes")
+    if len(info.blocks) > 1:
+        warnings.append(f"Discontinuous read: {len(info.blocks)} blocks returned")
+    if info.captured_bytes < info.requested_bytes:
+        warnings.append(
+            f"Partial read: captured {info.captured_bytes} of {info.requested_bytes} bytes"
+        )
     return tuple(warnings)
 
 
@@ -177,10 +179,9 @@ class InspectionMemory:
         return OperationSuccess(
             MemoryReadInfo(
                 address=address,
-                count=count,
+                requested_bytes=count,
                 offset=offset,
                 blocks=blocks,
-                block_count=len(blocks),
                 captured_bytes=captured_bytes,
             )
         )
@@ -213,10 +214,9 @@ class InspectionMemory:
         return OperationSuccess(
             MemoryReadInfo(
                 address=address,
-                count=count,
+                requested_bytes=count,
                 offset=offset,
                 blocks=blocks,
-                block_count=len(blocks),
                 captured_bytes=len(contents) // 2,
             )
         )

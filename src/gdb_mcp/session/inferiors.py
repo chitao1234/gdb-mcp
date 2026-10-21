@@ -35,7 +35,6 @@ def parse_inferiors_output(output: str, *, current_inferior_id: int | None) -> I
 
     return InferiorListInfo(
         inferiors=records,
-        count=len(records),
         current_inferior_id=resolved_current_inferior_id,
     )
 

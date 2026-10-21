@@ -165,7 +165,7 @@ class SessionRegistry:
                 self._summarize_session(session_id, session, closing=session_id in closing_sessions)
             )
 
-        return OperationSuccess(SessionListInfo(sessions=summaries, count=len(summaries)))
+        return OperationSuccess(SessionListInfo(sessions=summaries))
 
     def _summarize_session(
         self, session_id: int, session: SessionService, *, closing: bool

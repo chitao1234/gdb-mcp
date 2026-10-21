@@ -159,7 +159,6 @@ class InspectionDisassembly:
             end_address=location_result.end_address or self._last_instruction_address(instructions),
             mode=mode,
             instructions=instructions,
-            count=len(instructions),
         )
 
         if selection is not None:

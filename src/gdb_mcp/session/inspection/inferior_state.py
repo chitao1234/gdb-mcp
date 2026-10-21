@@ -35,13 +35,12 @@ class InspectionInferiorState:
         payload = self._parse_inferiors_output(result.value.output or "")
         self._runtime.update_inferior_inventory(
             current_inferior_id=payload.current_inferior_id,
-            count=payload.count,
+            count=len(payload.inferiors),
             inferior_ids=inferior_ids(payload),
         )
         inferiors_with_state = self._enrich_inferiors_with_runtime_state(payload.inferiors)
         payload = InferiorListInfo(
             inferiors=inferiors_with_state,
-            count=payload.count,
             current_inferior_id=payload.current_inferior_id,
         )
         return OperationSuccess(payload)

@@ -112,7 +112,6 @@ class SessionListInfo(StructuredOutput):
     """Structured list of currently registered sessions."""
 
     sessions: list[SessionSummary]
-    count: int
 
 
 @dataclass(slots=True, frozen=True)
@@ -223,7 +222,6 @@ class CaptureBundleInfo(StructuredOutput):
     bundle_name: str
     manifest_path: str
     artifacts: list[CaptureArtifactInfo]
-    artifact_count: int
     failed_sections: list[str] | None = None
     execution_state: ExecutionState | None = None
     stop_reason: str | None = None
@@ -271,7 +269,6 @@ class InferiorListInfo(StructuredOutput):
     """Structured inferior inventory for one debugger session."""
 
     inferiors: list[InferiorRecord]
-    count: int
     current_inferior_id: int | None = None
 
 
@@ -334,10 +331,9 @@ class MemoryReadInfo(StructuredOutput):
     """Structured response for one memory-read request."""
 
     address: str
-    count: int
+    requested_bytes: int
     offset: int = 0
     blocks: list[MemoryBlockRecord] = field(default_factory=list)
-    block_count: int = 0
     captured_bytes: int = 0
 
 
@@ -410,7 +406,6 @@ class ThreadListInfo(StructuredOutput):
 
     threads: list[ThreadRecord]
     current_thread_id: str | None
-    count: int
 
 
 @dataclass(slots=True, frozen=True)
@@ -428,7 +423,6 @@ class BacktraceInfo(StructuredOutput):
 
     thread_id: int | None
     frames: list[FrameRecord]
-    count: int
 
 
 @dataclass(slots=True, frozen=True)
@@ -453,7 +447,6 @@ class DisassemblyInfo(StructuredOutput):
     end_address: str | None
     mode: str
     instructions: list[DisassemblyInstructionRecord]
-    count: int
 
 
 @dataclass(slots=True, frozen=True)
@@ -471,7 +464,6 @@ class SourceContextInfo(StructuredOutput):
     start_line: int
     end_line: int
     lines: list[SourceLineRecord]
-    count: int
 
 
 @dataclass(slots=True, frozen=True)
@@ -495,7 +487,6 @@ class BreakpointListInfo(StructuredOutput):
     """Structured breakpoint-list response."""
 
     breakpoints: list[BreakpointRecord]
-    count: int
 
 
 @dataclass(slots=True, frozen=True)

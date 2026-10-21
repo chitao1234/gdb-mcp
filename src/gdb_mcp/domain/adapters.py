@@ -261,7 +261,6 @@ def thread_list_info_from_payload(payload: Mapping[str, object] | None) -> Threa
     return ThreadListInfo(
         threads=threads,
         current_thread_id=string_field(payload, "current-thread-id"),
-        count=len(threads),
     )
 
 
@@ -284,7 +283,7 @@ def backtrace_info_from_payload(
     """Build a typed backtrace payload from raw MI data."""
 
     frames = frame_records(payload)
-    return BacktraceInfo(thread_id=thread_id, frames=frames, count=len(frames))
+    return BacktraceInfo(thread_id=thread_id, frames=frames)
 
 
 def frame_info_from_payload(payload: Mapping[str, object] | None) -> FrameInfo:
@@ -319,4 +318,4 @@ def breakpoint_list_info_from_payload(payload: Mapping[str, object] | None) -> B
     """Build a typed breakpoint-list payload from raw MI data."""
 
     breakpoints = breakpoint_records(payload)
-    return BreakpointListInfo(breakpoints=breakpoints, count=len(breakpoints))
+    return BreakpointListInfo(breakpoints=breakpoints)

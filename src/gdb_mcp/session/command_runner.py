@@ -415,7 +415,7 @@ class SessionCommandRunner:
         )
         self._runtime.update_inferior_inventory(
             current_inferior_id=payload.current_inferior_id,
-            count=payload.count,
+            count=len(payload.inferiors),
             inferior_ids=inferior_ids(payload),
         )
 

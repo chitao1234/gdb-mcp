@@ -69,7 +69,6 @@ def _handle_breakpoint_query(
             return OperationSuccess(
                 BreakpointListInfo(
                     breakpoints=filtered_breakpoints,
-                    count=len(filtered_breakpoints),
                 )
             )
         case BreakpointQueryGetAction():
