@@ -15,7 +15,7 @@ import pytest
 from gdb_mcp.contracts import BATCH_STEP_TOOL_NAMES, LOCATION_KINDS
 from gdb_mcp.mcp.schema_normalizer import normalize_schema, public_input_schema
 from gdb_mcp.mcp.schemas import SessionQueryArgs, StartSessionArgs, build_tool_definitions
-from tests.support import dig, mapping, mapping_list, sequence, unsupported_schema_keys
+from tests.support import dig, json_object, mapping, mapping_list, sequence, unsupported_schema_keys
 
 
 @pytest.fixture(scope="module")
@@ -49,7 +49,7 @@ def test_every_published_tool_schema_is_json_serializable(
 ) -> None:
     """Every published schema must survive a JSON round trip unchanged."""
 
-    assert json.loads(json.dumps(tool_schemas)) == tool_schemas
+    assert json_object(json.dumps(tool_schemas)) == tool_schemas
 
 
 def test_normalization_only_affects_the_published_copy() -> None:

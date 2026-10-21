@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from unittest.mock import ANY, AsyncMock, MagicMock, Mock, patch
 
@@ -15,6 +14,7 @@ from gdb_mcp.mcp.runtime import ServerRuntime, create_server_runtime
 from gdb_mcp.session.registry import SessionRegistry
 from gdb_mcp.session.runtime import SessionRuntime
 from gdb_mcp.session.service import SessionService
+from tests.support import json_object, mapping
 
 
 def _session_double() -> Mock:
@@ -64,11 +64,11 @@ class TestServerRuntime:
         )
         content = result.content[0]
         assert isinstance(content, TextContent)
-        result_data = json.loads(content.text)
+        result_data = json_object(content.text)
 
         assert result_data["status"] == "success"
         assert result_data["action"] == "status"
-        assert result_data["result"]["is_running"] is False
+        assert mapping(result_data["result"])["is_running"] is False
         mock_manager.resolve_session.assert_called_once_with(7)
         mock_session.get_status.assert_called_once()
 

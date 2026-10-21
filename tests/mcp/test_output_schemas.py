@@ -16,7 +16,7 @@ import pytest
 from gdb_mcp.contracts import PUBLIC_TOOL_NAMES
 from gdb_mcp.mcp.schemas import build_tool_definitions
 from gdb_mcp.mcp.schemas.outputs import TOOL_OUTPUT_PAYLOADS, public_output_schema
-from tests.support import dig, mapping, sequence, unsupported_schema_keys
+from tests.support import dig, json_object, mapping, sequence, unsupported_schema_keys
 
 
 @pytest.fixture(scope="module")
@@ -69,7 +69,7 @@ def test_every_output_schema_is_json_serializable(
 ) -> None:
     """Every published schema must survive a JSON round trip unchanged."""
 
-    assert json.loads(json.dumps(output_schemas)) == output_schemas
+    assert json_object(json.dumps(output_schemas)) == output_schemas
 
 
 def test_every_output_schema_describes_an_object(

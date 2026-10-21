@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
@@ -15,7 +14,7 @@ import pytest
 
 from gdb_mcp.client.cli import main
 from gdb_mcp.client.daemon import _process_alive, daemon_paths, stop_daemon
-from tests.support import integer, mapping
+from tests.support import integer, json_object
 
 DAEMON_LIFECYCLE_IDLE_SEC = "120"
 DAEMON_IDLE_EXIT_SEC = "2"
@@ -30,7 +29,7 @@ class DaemonEnvironment(Protocol):
 
 
 def _cookie(root: Path) -> dict[str, object]:
-    return mapping(json.loads(daemon_paths(root).cookie.read_text(encoding="utf-8")))
+    return json_object(daemon_paths(root).cookie.read_text(encoding="utf-8"))
 
 
 def _wait_for_exit(pid: int, timeout: float) -> bool:

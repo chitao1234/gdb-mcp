@@ -12,7 +12,7 @@ from mcp.types import TextContent
 from gdb_mcp.domain import OperationSuccess, SessionMessage
 from gdb_mcp.mcp.handlers import dispatch_tool_call
 from gdb_mcp.session.registry import SessionRegistry
-from tests.support import dig, mapping_list, text
+from tests.support import dig, json_object, mapping_list, text
 
 
 def _dispatch(name: str, arguments: object) -> dict[str, object]:
@@ -179,5 +179,5 @@ class TestSuccessfulDispatch:
         assert result.isError is False
         content = result.content[0]
         assert isinstance(content, TextContent)
-        payload = json.loads(content.text)
+        payload = json_object(content.text)
         assert payload["status"] == "success"

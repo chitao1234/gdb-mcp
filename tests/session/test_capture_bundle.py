@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -32,7 +31,7 @@ from gdb_mcp.domain.adapters import (
 )
 from gdb_mcp.session.capture import DEFAULT_CAPTURE_MEMORY_MAX_RANGE_BYTES
 from gdb_mcp.session.service import SessionService
-from tests.support import gdb_backend
+from tests.support import gdb_backend, json_array, json_object, mapping, sequence
 
 # The fixtures are the MI-shaped payloads a session produces; the adapters turn
 # them into the records a service hands back.
@@ -153,10 +152,10 @@ class TestCaptureBundle:
 
         manifest_path = tmp_path / "bundle" / "manifest.json"
         assert manifest_path.exists()
-        manifest = json.loads(manifest_path.read_text())
+        manifest = json_object(manifest_path.read_text())
         assert manifest["execution_state"] == "paused"
-        assert manifest["last_stop_event"]["reason"] == "breakpoint-hit"
-        artifact_names = {artifact["name"] for artifact in manifest["artifacts"]}
+        assert mapping(manifest["last_stop_event"])["reason"] == "breakpoint-hit"
+        artifact_names = {mapping(artifact)["name"] for artifact in sequence(manifest["artifacts"])}
         assert {
             "session-status",
             "threads",
@@ -166,9 +165,10 @@ class TestCaptureBundle:
             "memory-ranges",
         } <= artifact_names
 
-        memory_ranges = json.loads((tmp_path / "bundle" / "memory-ranges.json").read_text())
-        assert memory_ranges[0]["requested_range"]["name"] == "value-bytes"
-        assert memory_ranges[0]["captured_bytes"] == 4
+        memory_ranges = json_array((tmp_path / "bundle" / "memory-ranges.json").read_text())
+        first_range = mapping(memory_ranges[0])
+        assert mapping(first_range["requested_range"])["name"] == "value-bytes"
+        assert first_range["captured_bytes"] == 4
 
     def test_capture_bundle_returns_success_with_warnings_for_partial_failures(
         self, session_service: SessionService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -197,8 +197,8 @@ class TestCaptureBundle:
         assert result.value.failed_sections is not None
         assert "threads" in result.value.failed_sections
         assert "thread-backtraces" in result.value.failed_sections
-        manifest = json.loads((tmp_path / "partial" / "manifest.json").read_text())
-        assert "threads" in manifest["failed_sections"]
+        manifest = json_object((tmp_path / "partial" / "manifest.json").read_text())
+        assert "threads" in sequence(manifest["failed_sections"])
 
     def test_capture_bundle_rejects_memory_ranges_that_exceed_size_limits(
         self, session_service: SessionService, tmp_path: Path

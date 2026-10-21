@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import json
-
 import pytest
 from mcp.types import CallToolResult, TextContent
 
 from gdb_mcp.domain import OperationError, OperationSuccess, SessionMessage
 from gdb_mcp.mcp.serializer import result_to_payload, serialize_exception, serialize_result
+from tests.support import json_object, mapping
 
 
 def _payload_text(result: CallToolResult) -> str:
@@ -131,7 +130,7 @@ class TestMcpSerializer:
         """Unexpected exceptions should still include the originating tool name."""
 
         contents = serialize_exception("gdb_get_status", RuntimeError("bad"))
-        payload = json.loads(_payload_text(contents))
+        payload = json_object(_payload_text(contents))
 
         assert payload == {
             "status": "error",
@@ -144,7 +143,7 @@ class TestMcpSerializer:
         """Typed payload objects should serialize through the shared result mapper."""
 
         contents = serialize_result(OperationSuccess(SessionMessage(message="ok")))
-        payload = json.loads(_payload_text(contents))
+        payload = json_object(_payload_text(contents))
 
         assert payload == {"status": "success", "result": {"message": "ok"}}
 
@@ -157,7 +156,7 @@ class TestMcpSerializer:
                 warnings=("symbols missing",),
             )
         )
-        payload = json.loads(_payload_text(contents))
+        payload = json_object(_payload_text(contents))
 
         assert payload == {
             "status": "success",
@@ -171,7 +170,7 @@ class TestMcpSerializer:
         contents = serialize_result(OperationError(message="boom"))
 
         assert contents.isError is True
-        assert json.loads(_payload_text(contents))["status"] == "error"
+        assert json_object(_payload_text(contents))["status"] == "error"
 
     def test_serialize_result_marks_success_as_non_error(self) -> None:
         """Success results should keep the MCP isError flag false."""
@@ -195,7 +194,8 @@ class TestMcpSerializer:
             "warnings": ["symbols missing"],
             "result": {"message": "ok"},
         }
-        assert json.loads(_payload_text(contents)) == contents.structuredContent
+        assert contents.structuredContent is not None
+        assert json_object(_payload_text(contents)) == mapping(contents.structuredContent)
 
     def test_serialize_error_exposes_structured_content(self) -> None:
         """Errors should be readable as structured output, not only as text."""
@@ -215,7 +215,8 @@ class TestMcpSerializer:
             "message": "No registers.",
             "details": {"execution_state": "exited"},
         }
-        assert json.loads(_payload_text(contents)) == contents.structuredContent
+        assert contents.structuredContent is not None
+        assert json_object(_payload_text(contents)) == mapping(contents.structuredContent)
 
     def test_serialize_exception_exposes_structured_content(self) -> None:
         """Unexpected exceptions should carry structured output too."""

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -29,6 +28,7 @@ from gdb_mcp.mcp.app import (
     create_streamable_http_app,
     run_streamable_http_app,
 )
+from tests.support import json_object
 
 
 @pytest.fixture
@@ -270,7 +270,7 @@ class TestStreamableHttpApp:
         with patch("gdb_mcp.mcp.app.uvicorn.Server.startup", new=AsyncMock()):
             asyncio.run(server.startup())
 
-        assert json.loads(ready_file.read_text(encoding="utf-8")) == {
+        assert json_object(ready_file.read_text(encoding="utf-8")) == {
             "host": "127.0.0.1",
             "port": 42631,
             "path": "/mcp",

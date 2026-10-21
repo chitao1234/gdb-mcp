@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import shutil
 import signal
@@ -19,7 +18,7 @@ from mcp.types import TextContent
 from gdb_mcp.mcp.runtime import ServerRuntime, create_server_runtime
 from gdb_mcp.session.registry import SessionRegistry
 
-from ..support import dig, integer, mapping
+from ..support import dig, integer, json_object
 from .program_sources import TEST_CPP_PROGRAM
 
 _PROCESS_TERMINATE_TIMEOUT_SEC = 5
@@ -194,7 +193,7 @@ def call_gdb_tool(integration_runtime: ServerRuntime) -> CallGdbTool:
         result = asyncio.run(integration_runtime.call_tool(tool_name, arguments))
         content = result.content[0]
         assert isinstance(content, TextContent), content
-        return mapping(json.loads(content.text))
+        return json_object(content.text)
 
     return invoke
 

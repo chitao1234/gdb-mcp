@@ -8,6 +8,8 @@ assertion explicit: they fail with the value that was wrong instead of passing
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from typing import TypeVar, cast
 
 from gdb_mcp.domain import OperationError, OperationResult, OperationSuccess
@@ -23,6 +25,20 @@ def mapping(value: object) -> dict[str, object]:
 
     assert isinstance(value, dict), f"expected an object, got {type(value).__name__}"
     return value
+
+
+def json_object(text: str) -> dict[str, object]:
+    """Decode one JSON object, rejecting arrays and scalars."""
+
+    decoded: object = json.loads(text)
+    return mapping(decoded)
+
+
+def json_array(text: str) -> list[object]:
+    """Decode one JSON array, rejecting objects and scalars."""
+
+    decoded: object = json.loads(text)
+    return sequence(decoded)
 
 
 def sequence(value: object) -> list[object]:
@@ -67,7 +83,7 @@ def dig(value: object, *keys: str) -> object:
 def succeeded(result: OperationResult[PayloadT]) -> PayloadT:
     """Assert a successful operation and return its payload."""
 
-    assert isinstance(result, OperationSuccess), getattr(result, "message", result)
+    assert isinstance(result, OperationSuccess), result
     return result.value
 
 
@@ -86,12 +102,14 @@ def unsupported_schema_keys(node: object, path: str = "$") -> list[str]:
 
     hits: list[str] = []
     if isinstance(node, dict):
-        for key, value in node.items():
+        entries: Mapping[str, object] = node
+        for key, value in entries.items():
             if key in _UNSUPPORTED_SCHEMA_KEYS:
                 hits.append(f"{path}.{key}")
             hits.extend(unsupported_schema_keys(value, f"{path}.{key}"))
     elif isinstance(node, list):
-        for index, value in enumerate(node):
+        items: list[object] = node
+        for index, value in enumerate(items):
             hits.extend(unsupported_schema_keys(value, f"{path}[{index}]"))
     return hits
 

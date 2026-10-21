@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import builtins
-import json
 
 import pytest
 
@@ -12,6 +11,7 @@ from gdb_mcp.client.cli import build_parser, parse_client_args
 from gdb_mcp.client.parsers import serialize_model
 from gdb_mcp.client.renderers import render_action_payload
 from gdb_mcp.client.specs import CLIENT_TOOL_SPECS
+from tests.support import json_object
 
 from .cli_support import SERVER_URL, invoke_cli
 
@@ -176,7 +176,7 @@ class TestClientCli:
         )
 
         assert result.exit_code == 0
-        assert json.loads(result.stdout) == {
+        assert json_object(result.stdout) == {
             "status": "success",
             "result": {"message": "attached"},
         }
@@ -203,7 +203,7 @@ class TestClientCli:
             "gdb_attach_process",
             {"session_id": SESSION_ID, "pid": 1234, "timeout_sec": 30},
         )
-        assert json.loads(result.stdout) == {
+        assert json_object(result.stdout) == {
             "status": "success",
             "result": {"message": "attached"},
         }

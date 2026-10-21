@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 from collections.abc import AsyncIterator, Callable, Sequence
 from io import StringIO
 from pathlib import Path
@@ -17,7 +16,7 @@ from gdb_mcp.client.cli import main
 from gdb_mcp.mcp.app import create_streamable_http_app
 from gdb_mcp.mcp.runtime import ServerRuntime
 from tests.integration.program_sources import CRASHING_C_PROGRAM, TEST_CPP_PROGRAM
-from tests.support import dig, integer, mapping_list, text
+from tests.support import dig, integer, json_object, mapping_list, text
 
 from .conftest import CompileProgram, StartSession
 
@@ -68,7 +67,7 @@ async def _run_cli(
             stdout=stdout,
             http_client=http_client,
         )
-    return exit_code, json.loads(stdout.getvalue())
+    return exit_code, json_object(stdout.getvalue())
 
 
 def _init_command_args(commands: Sequence[str]) -> list[str]:

@@ -10,6 +10,8 @@ import sys
 
 import pytest
 
+from tests.support import json_object
+
 pytestmark = pytest.mark.integration
 
 _INITIALIZE_REQUEST = {
@@ -63,7 +65,7 @@ def test_stdio_server_exits_on_sigint_after_startup() -> None:
 
         ready, _, _ = select.select([process.stdout], [], [], _STARTUP_TIMEOUT_SEC)
         assert ready, "server did not answer the initialize request"
-        response = json.loads(process.stdout.readline())
+        response = json_object(process.stdout.readline())
         assert "result" in response
 
         process.send_signal(signal.SIGINT)

@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
 from gdb_mcp.session.execution import SessionExecutionService
-from tests.support import dig, integer, mapping_list, text
+from tests.support import dig, integer, json_object, mapping_list, text
 
 from .conftest import (
     CallGdbTool,
@@ -184,7 +183,7 @@ def test_capture_bundle_v2(session_id: int, tmp_path: Path, call_gdb_tool: CallG
     )
     assert bundle["status"] == "success"
     assert integer(dig(bundle, "result", "artifact_count")) > 0
-    manifest = json.loads(Path(text(dig(bundle, "result", "manifest_path"))).read_text())
+    manifest = json_object(Path(text(dig(bundle, "result", "manifest_path"))).read_text())
     assert manifest["bundle_name"] == "capture"
     assert manifest["stop_reason"] == "breakpoint-hit"
 
