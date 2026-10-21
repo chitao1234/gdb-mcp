@@ -116,10 +116,9 @@ class SessionListInfo(StructuredOutput):
 
 
 @dataclass(slots=True, frozen=True)
-class SessionStartInfo(StructuredOutput):
-    """Structured result for a successful session start."""
+class SessionStartupInfo(StructuredOutput):
+    """Backend startup data, before the registry publishes a session."""
 
-    session_id: int | None = None
     message: str = ""
     program: str | None = None
     core: str | None = None
@@ -133,6 +132,13 @@ class SessionStartInfo(StructuredOutput):
     init_output: list[StructuredPayload] | None = None
     endpoint: str | None = None
     rr_replay: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class SessionStartInfo(SessionStartupInfo):
+    """Public startup result for a session registered under a concrete id."""
+
+    session_id: int = field(kw_only=True)
 
 
 @dataclass(slots=True, frozen=True)

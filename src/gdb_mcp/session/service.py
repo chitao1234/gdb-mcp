@@ -41,7 +41,7 @@ from ..domain import (
     OperationSuccess,
     RegistersInfo,
     SessionMessage,
-    SessionStartInfo,
+    SessionStartupInfo,
     SessionStatusSnapshot,
     SourceContextInfo,
     StopEvent,
@@ -153,7 +153,7 @@ class SessionService:
         core: str | None = None,
         endpoint: str | None = None,
         rr_replay: str | None = None,
-    ) -> OperationSuccess[SessionStartInfo] | OperationError:
+    ) -> OperationSuccess[SessionStartupInfo] | OperationError:
         """Delegate session startup to the debugger backend."""
 
         return self._backend.start(

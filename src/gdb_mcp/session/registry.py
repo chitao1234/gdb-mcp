@@ -73,12 +73,12 @@ class SessionRegistry:
         core: str | None = None,
         endpoint: str | None = None,
         rr_replay: str | None = None,
-    ) -> tuple[int | None, OperationSuccess[SessionStartInfo] | OperationError]:
+    ) -> OperationSuccess[SessionStartInfo] | OperationError:
         """
         Start a session and only publish it if startup succeeds.
 
         Returns:
-            A tuple of `(session_id, result)` where `session_id` is `None` on failure.
+            A startup result carrying the registered session id, or the startup error.
         """
 
         session_id = self._allocate_session_id()
@@ -98,12 +98,32 @@ class SessionRegistry:
         )
 
         if isinstance(result, OperationError):
-            return None, result
+            return result
 
         with self._lock:
             self._sessions[session_id] = session
 
-        return session_id, result
+        startup = result.value
+        return OperationSuccess(
+            SessionStartInfo(
+                session_id=session_id,
+                message=startup.message,
+                program=startup.program,
+                core=startup.core,
+                target_loaded=startup.target_loaded,
+                execution_state=startup.execution_state,
+                stop_reason=startup.stop_reason,
+                stop_kind=startup.stop_kind,
+                exit_code=startup.exit_code,
+                startup_output=startup.startup_output,
+                env_output=startup.env_output,
+                init_output=startup.init_output,
+                endpoint=startup.endpoint,
+                rr_replay=startup.rr_replay,
+            ),
+            warnings=result.warnings,
+            action=result.action,
+        )
 
     def get_session(self, session_id: int) -> SessionService | None:
         """Retrieve a session by ID."""

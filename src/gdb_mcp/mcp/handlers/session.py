@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
-
 from ...domain import (
     OperationError,
     OperationResult,
-    OperationSuccess,
     SessionListInfo,
     SessionMessage,
     SessionStartInfo,
@@ -27,21 +24,6 @@ from .common import (
 )
 
 
-def _publish_session_result(
-    session_id: int | None, result: OperationResult[SessionStartInfo]
-) -> OperationResult[SessionStartInfo]:
-    """Record the allocated session id in a successful session-start payload."""
-
-    if session_id is None or not isinstance(result, OperationSuccess):
-        return result
-
-    return OperationSuccess(
-        replace(result.value, session_id=session_id),
-        warnings=result.warnings,
-        action=result.action,
-    )
-
-
 def _handle_start_session(
     args: StartSessionArgs,
     session_manager: SessionRegistry,
@@ -52,7 +34,7 @@ def _handle_start_session(
     if isinstance(normalized_args, OperationError):
         return normalized_args
 
-    session_id, result = session_manager.start_session(
+    return session_manager.start_session(
         program=args.program,
         debugger=args.debugger,
         args=normalized_args,
@@ -64,7 +46,6 @@ def _handle_start_session(
         core=args.core,
         rr_replay=args.rr_replay,
     )
-    return _publish_session_result(session_id, result)
 
 
 def _handle_connect_session(
@@ -73,14 +54,13 @@ def _handle_connect_session(
 ) -> OperationResult[SessionStartInfo]:
     """Connect to a target endpoint owned by another process and publish a session."""
 
-    session_id, result = session_manager.start_session(
+    return session_manager.start_session(
         endpoint=args.endpoint,
         init_commands=args.init_commands,
         debugger=args.debugger,
         program=args.program,
         debugger_path=args.debugger_path,
     )
-    return _publish_session_result(session_id, result)
 
 
 def _handle_session_list(

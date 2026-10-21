@@ -42,7 +42,7 @@ from ..domain import (
     RegisterRecord,
     RegistersInfo,
     SessionMessage,
-    SessionStartInfo,
+    SessionStartupInfo,
     SessionStatusSnapshot,
     SourceContextInfo,
     SourceLineRecord,
@@ -386,7 +386,7 @@ class LldbSbBackend:
         core: str | None = None,
         endpoint: str | None = None,
         replay: str | None = None,
-    ) -> OperationSuccess[SessionStartInfo] | OperationError:
+    ) -> OperationSuccess[SessionStartupInfo] | OperationError:
         with self.runtime.lifecycle_lock:
             if self.runtime.has_controller:
                 return OperationError(message="Session already running. Stop it first.")
@@ -486,7 +486,7 @@ class LldbSbBackend:
                     )
                 self.runtime.target_loaded = snapshot.target_loaded
                 return OperationSuccess(
-                    SessionStartInfo(
+                    SessionStartupInfo(
                         message="LLDB session started",
                         program=program,
                         core=core,

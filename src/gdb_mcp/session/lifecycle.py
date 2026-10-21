@@ -11,7 +11,7 @@ from ..domain import (
     OperationError,
     OperationSuccess,
     SessionMessage,
-    SessionStartInfo,
+    SessionStartupInfo,
     SessionStatusSnapshot,
     StructuredPayload,
     payload_to_mapping,
@@ -126,7 +126,7 @@ class SessionLifecycleService:
         core: str | None = None,
         endpoint: str | None = None,
         replay: str | None = None,
-    ) -> OperationSuccess[SessionStartInfo] | OperationError:
+    ) -> OperationSuccess[SessionStartupInfo] | OperationError:
         """Start a new GDB session.
 
         When ``endpoint`` is given the session connects to a GDB/MI stream that
@@ -407,7 +407,7 @@ class SessionLifecycleService:
                 self._runtime.mark_ready()
 
                 return OperationSuccess(
-                    SessionStartInfo(
+                    SessionStartupInfo(
                         message="GDB session started",
                         program=program,
                         core=core,

@@ -41,7 +41,7 @@ from ..domain import (
     OperationSuccess,
     RegistersInfo,
     SessionMessage,
-    SessionStartInfo,
+    SessionStartupInfo,
     SessionStatusSnapshot,
     SourceContextInfo,
     ThreadListInfo,
@@ -144,7 +144,7 @@ class DebuggerBackend(Protocol):
         core: str | None = None,
         endpoint: str | None = None,
         replay: str | None = None,
-    ) -> OperationSuccess[SessionStartInfo] | OperationError: ...
+    ) -> OperationSuccess[SessionStartupInfo] | OperationError: ...
 
     def stop(self) -> OperationSuccess[SessionMessage] | OperationError: ...
 
