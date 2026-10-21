@@ -16,20 +16,22 @@ from collections.abc import Mapping
 from .models import (
     BacktraceInfo,
     BreakpointListInfo,
-    BreakpointRecord,
     FrameInfo,
-    FrameRecord,
     FrameSelectionInfo,
-    MemoryBlockRecord,
-    RegisterRecord,
     RegistersInfo,
     ThreadListInfo,
-    ThreadRecord,
     ThreadSelectionInfo,
-    VariableRecord,
     VariablesInfo,
 )
 from .parsing import as_mapping, as_optional_mapping, as_record_list, as_text
+from .records import (
+    BreakpointRecord,
+    FrameRecord,
+    MemoryBlockRecord,
+    RegisterRecord,
+    ThreadRecord,
+    VariableRecord,
+)
 
 
 def _flag(value: object) -> bool:

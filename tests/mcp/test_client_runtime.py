@@ -9,6 +9,7 @@ from types import TracebackType
 from typing import Generic, TypeVar
 from unittest.mock import AsyncMock, MagicMock, Mock
 
+import httpx
 import pytest
 from mcp.types import CallToolResult, TextContent
 
@@ -182,7 +183,7 @@ class TestClientRuntime:
         mock_async_client_cls = MagicMock()
         owned_client = AsyncMock()
         mock_async_client_cls.return_value = owned_client
-        monkeypatch.setattr(runtime.httpx, "AsyncClient", mock_async_client_cls)
+        monkeypatch.setattr(httpx, "AsyncClient", mock_async_client_cls)
         runtime_harness.session.call_tool = AsyncMock(
             return_value=CallToolResult(
                 content=[TextContent(type="text", text='{"status":"success"}')]
