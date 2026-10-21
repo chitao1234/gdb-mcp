@@ -15,7 +15,7 @@ from gdb_mcp.domain import (
     OperationSuccess,
     SessionListInfo,
     SessionMessage,
-    SessionStartInfo,
+    SessionStartupInfo,
     SessionStatusSnapshot,
 )
 from gdb_mcp.session import registry as registry_module
@@ -62,11 +62,10 @@ def _session_double() -> Mock:
 def _publish_session(manager: SessionRegistry, session: Mock, *, program: str = "/bin/ls") -> int:
     """Publish one session through the public start_session path."""
 
-    session.start.return_value = OperationSuccess(SessionStartInfo(message="started"))
-    session_id, result = manager.start_session(program=program)
-    assert session_id is not None
+    session.start.return_value = OperationSuccess(SessionStartupInfo(message="started"))
+    result = manager.start_session(program=program)
     assert isinstance(result, OperationSuccess)
-    return session_id
+    return result.value.session_id
 
 
 def _session_factory_from(
@@ -97,18 +96,22 @@ class TestSessionRegistry:
 
         sessions = [_session_double(), _session_double(), _session_double()]
         for session in sessions:
-            session.start.return_value = OperationSuccess(SessionStartInfo(message="started"))
+            session.start.return_value = OperationSuccess(SessionStartupInfo(message="started"))
 
         manager = SessionRegistry(session_factory=_session_factory_from(sessions))
 
-        session_id_1, result_1 = manager.start_session(program="/bin/ls")
-        session_id_2, result_2 = manager.start_session(program="/bin/ls")
-        session_id_3, result_3 = manager.start_session(program="/bin/ls")
+        result_1 = manager.start_session(program="/bin/ls")
+        result_2 = manager.start_session(program="/bin/ls")
+        result_3 = manager.start_session(program="/bin/ls")
 
-        assert [session_id_1, session_id_2, session_id_3] == [1, 2, 3]
         assert isinstance(result_1, OperationSuccess)
         assert isinstance(result_2, OperationSuccess)
         assert isinstance(result_3, OperationSuccess)
+        assert [
+            result_1.value.session_id,
+            result_2.value.session_id,
+            result_3.value.session_id,
+        ] == [1, 2, 3]
 
     def test_get_session_returns_correct_session(self) -> None:
         """get_session should return the exact published session object."""
@@ -323,7 +326,7 @@ class TestSessionRegistry:
 
         sessions = [_session_double() for _ in range(10)]
         for session in sessions:
-            session.start.return_value = OperationSuccess(SessionStartInfo(message="started"))
+            session.start.return_value = OperationSuccess(SessionStartupInfo(message="started"))
 
         index_lock = threading.Lock()
 
@@ -332,11 +335,10 @@ class TestSessionRegistry:
         session_ids_lock = threading.Lock()
 
         def start_sessions() -> None:
-            session_id, result = manager.start_session(program="/bin/ls")
+            result = manager.start_session(program="/bin/ls")
             assert isinstance(result, OperationSuccess)
-            assert session_id is not None
             with session_ids_lock:
-                session_ids.append(session_id)
+                session_ids.append(result.value.session_id)
 
         threads = []
         for _ in range(10):
@@ -358,9 +360,8 @@ class TestSessionRegistry:
         session.start.return_value = OperationError(message="boom")
         manager = SessionRegistry(session_factory=lambda _debugger: session)
 
-        session_id, result = manager.start_session(program="/bin/ls")
+        result = manager.start_session(program="/bin/ls")
 
-        assert session_id is None
         assert isinstance(result, OperationError)
         assert result.message == "boom"
         assert manager.get_session(1) is None
@@ -369,32 +370,32 @@ class TestSessionRegistry:
         """Atomic startup should publish the session only after success."""
 
         session = _session_double()
-        session.start.return_value = OperationSuccess(SessionStartInfo(message="started"))
+        session.start.return_value = OperationSuccess(SessionStartupInfo(message="started"))
         manager = SessionRegistry(session_factory=lambda _debugger: session)
 
-        session_id, result = manager.start_session(program="/bin/ls")
+        result = manager.start_session(program="/bin/ls")
 
-        assert session_id == 1
         assert isinstance(result, OperationSuccess)
-        assert manager.get_session(session_id) is session
+        assert result.value.session_id == 1
+        assert manager.get_session(result.value.session_id) is session
 
     def test_shutdown_all_stops_and_clears_sessions(self) -> None:
         """Shutdown should stop every registered session and clear the registry."""
 
         sessions = [_session_double(), _session_double()]
         for session in sessions:
-            session.start.return_value = OperationSuccess(SessionStartInfo(message="started"))
+            session.start.return_value = OperationSuccess(SessionStartupInfo(message="started"))
             session.has_controller = True
             session.stop.return_value = OperationSuccess(SessionMessage(message="stopped"))
 
         manager = SessionRegistry(session_factory=_session_factory_from(sessions))
-        session_id_1, result_1 = manager.start_session(program="/bin/ls")
-        session_id_2, result_2 = manager.start_session(program="/bin/ls")
+        result_1 = manager.start_session(program="/bin/ls")
+        result_2 = manager.start_session(program="/bin/ls")
 
         assert isinstance(result_1, OperationSuccess)
         assert isinstance(result_2, OperationSuccess)
-        assert session_id_1 is not None
-        assert session_id_2 is not None
+        session_id_1 = result_1.value.session_id
+        session_id_2 = result_2.value.session_id
 
         results = manager.shutdown_all()
 

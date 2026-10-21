@@ -6,7 +6,7 @@ import threading
 import time
 from unittest.mock import MagicMock, patch
 
-from gdb_mcp.domain import OperationError, OperationSuccess, SessionStartInfo
+from gdb_mcp.domain import OperationError, OperationSuccess, SessionStartupInfo
 from gdb_mcp.session.gdb_backend import GdbMiBackend
 from gdb_mcp.session.protocols import OsModuleProtocol, TimeModuleProtocol
 from gdb_mcp.session.service import SessionService
@@ -81,7 +81,7 @@ class TestSessionService:
             result = service.start(program="/bin/ls")
 
         assert isinstance(result, OperationSuccess)
-        assert isinstance(result.value, SessionStartInfo)
+        assert isinstance(result.value, SessionStartupInfo)
         assert result.value.message == "GDB session started"
         assert result.value.program == "/bin/ls"
         assert result.value.target_loaded is True
@@ -144,7 +144,7 @@ class TestSessionService:
         fake_os = MagicMock()
         fake_os.environ.get.return_value = "gdb"
         service = _service(controller_factory=controller_factory, os_module=fake_os)
-        results: list[OperationSuccess[SessionStartInfo] | OperationError] = []
+        results: list[OperationSuccess[SessionStartupInfo] | OperationError] = []
 
         def run_start() -> None:
             start_barrier.wait()

@@ -153,9 +153,11 @@ def test_success_warnings_are_an_optional_array(
     """Warnings are omitted when empty and otherwise always an array."""
 
     schema = output_schemas["gdb_session_start"]
-    jsonschema.validate({"status": "success", "result": {}, "warnings": []}, schema)
+    jsonschema.validate({"status": "success", "result": {"session_id": 1}, "warnings": []}, schema)
     with pytest.raises(jsonschema.ValidationError):
-        jsonschema.validate({"status": "success", "result": {}, "warnings": None}, schema)
+        jsonschema.validate(
+            {"status": "success", "result": {"session_id": 1}, "warnings": None}, schema
+        )
 
 
 def test_an_action_tool_offers_one_alternative_per_action(
@@ -342,10 +344,13 @@ def test_the_start_payload_documents_the_session_id(
     )
     session_id = mapping(mapping(payload["properties"])["session_id"])
 
-    assert [mapping(item) for item in sequence(session_id["anyOf"])] == [
-        {"type": "integer"},
-        {"type": "null"},
-    ]
+    assert session_id["type"] == "integer"
+    assert "session_id" in sequence(payload["required"])
+    for invalid in ({}, {"session_id": None}):
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate(
+                {"status": "success", "result": invalid}, output_schemas["gdb_session_start"]
+            )
 
     jsonschema.validate(
         {

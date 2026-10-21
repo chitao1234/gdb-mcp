@@ -13,7 +13,7 @@ from gdb_mcp.domain import (
     OperationSuccess,
     RunUntilFailureInfo,
     SessionMessage,
-    SessionStartInfo,
+    SessionStartupInfo,
     SessionStatusSnapshot,
     StopEvent,
 )
@@ -35,7 +35,7 @@ def _fake_session(
     """Build a session double with the surface the campaign runner drives."""
 
     session = Mock(spec=SessionService)
-    session.start.return_value = OperationSuccess(SessionStartInfo(message="started"))
+    session.start.return_value = OperationSuccess(SessionStartupInfo(message="started"))
     session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
     if status is not None:
         session.get_status.return_value = OperationSuccess(status)

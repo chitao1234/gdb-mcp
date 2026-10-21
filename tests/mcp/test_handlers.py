@@ -159,12 +159,9 @@ class TestHandlerDispatch:
         """Successful startup should include the published session ID."""
 
         manager = Mock(spec=SessionRegistry)
-        manager.start_session.return_value = (
-            42,
-            OperationSuccess(
-                SessionStartInfo(message="Session started"),
-                warnings=("symbols missing",),
-            ),
+        manager.start_session.return_value = OperationSuccess(
+            SessionStartInfo(session_id=42, message="Session started"),
+            warnings=("symbols missing",),
         )
 
         result_data = dispatch("gdb_session_start", {}, manager)
@@ -178,9 +175,8 @@ class TestHandlerDispatch:
         """Startup args in shell-string form should be normalized before session creation."""
 
         manager = Mock(spec=SessionRegistry)
-        manager.start_session.return_value = (
-            7,
-            OperationSuccess(SessionMessage(message="Session started")),
+        manager.start_session.return_value = OperationSuccess(
+            SessionStartInfo(session_id=7, message="Session started"),
         )
 
         dispatch(
@@ -206,10 +202,7 @@ class TestHandlerDispatch:
         """Failed startup should not expose a session ID."""
 
         manager = Mock(spec=SessionRegistry)
-        manager.start_session.return_value = (
-            None,
-            OperationError(message="Startup failed"),
-        )
+        manager.start_session.return_value = OperationError(message="Startup failed")
 
         result_data = dispatch("gdb_session_start", {}, manager)
 
@@ -220,9 +213,8 @@ class TestHandlerDispatch:
         """Connecting should forward the endpoint and publish the session ID."""
 
         manager = Mock(spec=SessionRegistry)
-        manager.start_session.return_value = (
-            11,
-            OperationSuccess(SessionStartInfo(message="GDB session started")),
+        manager.start_session.return_value = OperationSuccess(
+            SessionStartInfo(session_id=11, message="GDB session started"),
         )
 
         result_data = dispatch(
@@ -245,9 +237,8 @@ class TestHandlerDispatch:
         """An LLDB remote connection forwards its backend and target fields."""
 
         manager = Mock(spec=SessionRegistry)
-        manager.start_session.return_value = (
-            12,
-            OperationSuccess(SessionStartInfo(message="LLDB session started")),
+        manager.start_session.return_value = OperationSuccess(
+            SessionStartInfo(session_id=12, message="LLDB session started"),
         )
 
         result_data = dispatch(
