@@ -105,5 +105,5 @@ Tools: `session_start`, `session_query`, `session_manage`, `inferior_query`, `in
 - Success: `{"status": "success", "result": {...}}`; action tools also include top-level `action`, and warnings are top-level `warnings`.
 - Failure: `{"status": "error", "code": ..., "message": ..., "details": {...}}`; validation
   failures use `code: "validation_error"` with `details.field_errors`.
-- Exit codes: `0` success, `1` tool or transport failure (also batch `error_count > 0`),
+- Exit codes: `0` success, `1` tool or transport failure (also a batch step with `result.status="error"`),
   `2` usage or payload-validation errors.

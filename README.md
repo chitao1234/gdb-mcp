@@ -36,6 +36,10 @@ callers see one contract.
 - stable, domain-oriented tool names
 - structured session snapshots instead of parsed terminal output
 
+Workflow batches return `requested_steps` and the completed `steps`. Each step
+contains the complete tool envelope under `result`; read its `status`, `action`,
+and error `code` there. The CLI exits nonzero if any step returned an error.
+
 ## Requirements
 
 - Python 3.10 or newer

@@ -32,7 +32,7 @@ Debugging shortcuts such as `break add main`, `run`, `bt`, and `exec "info files
 
 Add `--json` when you want the structured payload instead of human-oriented text.
 
-Set `GDB_MCP_SERVER_URL` to avoid repeating `--server-url`. `--payload-json '<json>'` sends a raw tool payload (mutually exclusive with field flags); every action-based subcommand lists validated payload examples in `--help`. `gdb_workflow_batch` exits non-zero when the response reports `error_count > 0`.
+Set `GDB_MCP_SERVER_URL` to avoid repeating `--server-url`. `--payload-json '<json>'` sends a raw tool payload (mutually exclusive with field flags); every action-based subcommand lists validated payload examples in `--help`. `gdb_workflow_batch` exits non-zero when any step's nested result has `status="error"`.
 
 ## Response Conventions
 
@@ -835,30 +835,26 @@ Execute a structured sequence of session-scoped tools under one workflow lock.
 ### Success Fields
 
 - `steps`
-- `count`
-- `completed_steps`
-- `error_count`
-- `stopped_early`
-- `failure_step_index`
+- `requested_steps`
 - `final_execution_state`
 - `final_stop_reason`
 - `last_stop_event`
 
 These fields are inside the success envelope's `result` object.
 
-Each step result includes:
+Each step includes:
 
 - `index`
 - `tool`
 - `label`
-- `status`
-- `action`
-- `code`
 - `result`
 - `stop_event`
 
 `steps[].result` preserves the full wrapped result of the inner tool call, using
-the same success and error envelope as a direct call.
+the same success and error envelope as a direct call. The number of completed
+steps is `steps.length`; inspect each nested result's `status` to find errors.
+`requested_steps` is the number of steps in the request, including steps skipped
+after a fail-fast error.
 
 ## `gdb_capture_bundle`
 
