@@ -25,6 +25,7 @@ from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Route
 from starlette.types import Receive, Scope, Send
 
+from .sdk import call_tool_registrar, list_tools_registrar
 from .stdio_input import DaemonStdinLines
 
 if TYPE_CHECKING:
@@ -41,15 +42,17 @@ def create_mcp_app(
     """Create an MCP app and register the provided handlers."""
 
     app = Server("gdb-mcp-server")
+    register_list_tools = list_tools_registrar(app)
+    register_call_tool = call_tool_registrar(app)
 
-    @app.list_tools()
+    @register_list_tools()
     async def list_tools() -> list[Tool]:
         return await list_tools_handler()
 
     # The SDK's own inputSchema gate is disabled on purpose: the typed request
     # models are the single source of truth, while the published flattened
     # schema is a client-facing summary that drops union alternatives.
-    @app.call_tool(validate_input=False)
+    @register_call_tool(validate_input=False)
     async def call_tool(name: str, arguments: object) -> CallToolResult:
         return await call_tool_handler(name, arguments)
 
