@@ -98,16 +98,12 @@ class RunUntilFailureService:
         )
 
         iteration_summaries: list[RunUntilFailureIterationInfo] = []
-        matched_info: _MatchedFailure | None = None
-        last_payload: StructuredPayload | None = None
-        last_status_snapshot: SessionStatusSnapshot | None = None
+        matched_iteration: RunUntilFailureIterationInfo | None = None
+        capture_bundle: CaptureBundleInfo | None = None
+        capture_error: str | None = None
 
         for iteration in range(1, request.max_iterations + 1):
             session = self._session_factory()
-            run_payload: StructuredPayload | None = None
-            status_snapshot: SessionStatusSnapshot | None = None
-            capture_bundle: CaptureBundleInfo | None = None
-            capture_error: str | None = None
 
             try:
                 startup_result = session.start(
@@ -120,25 +116,14 @@ class RunUntilFailureService:
                     core=request.core,
                 )
                 if isinstance(startup_result, OperationError):
-                    run_payload = result_to_envelope(startup_result)
-                    last_payload = run_payload
-                    matched_info = _MatchedFailure(
+                    matched_iteration = RunUntilFailureIterationInfo(
                         iteration=iteration,
+                        phase="startup",
+                        result=result_to_envelope(startup_result),
+                        matched_failure=True,
                         trigger="startup_error",
-                        run_payload=run_payload,
-                        status_snapshot=None,
-                        capture_bundle=None,
-                        capture_error=None,
                     )
-                    iteration_summaries.append(
-                        RunUntilFailureIterationInfo(
-                            iteration=iteration,
-                            status="error",
-                            matched_failure=True,
-                            trigger="startup_error",
-                            message=startup_result.message,
-                        )
-                    )
+                    iteration_summaries.append(matched_iteration)
                     break
 
                 if request.setup_steps:
@@ -148,43 +133,19 @@ class RunUntilFailureService:
                         capture_stop_events=True,
                     )
                     if setup_result.value.has_errors:
-                        matched_info = _MatchedFailure(
+                        setup_status = self._status_snapshot(session)
+                        matched_iteration = RunUntilFailureIterationInfo(
                             iteration=iteration,
+                            phase="setup",
+                            result=result_to_envelope(setup_result),
                             trigger="setup_error",
-                            run_payload=result_to_envelope(setup_result),
-                            status_snapshot=self._status_snapshot(session),
-                            capture_bundle=None,
-                            capture_error=None,
+                            matched_failure=True,
+                            execution_state=setup_status.execution_state,
+                            stop_reason=setup_status.stop_reason,
+                            stop_kind=setup_status.stop_kind,
+                            exit_code=setup_status.exit_code,
                         )
-                        iteration_summaries.append(
-                            RunUntilFailureIterationInfo(
-                                iteration=iteration,
-                                status="error",
-                                execution_state=(
-                                    matched_info.status_snapshot.execution_state
-                                    if matched_info.status_snapshot is not None
-                                    else None
-                                ),
-                                stop_reason=(
-                                    matched_info.status_snapshot.stop_reason
-                                    if matched_info.status_snapshot is not None
-                                    else None
-                                ),
-                                stop_kind=(
-                                    matched_info.status_snapshot.stop_kind
-                                    if matched_info.status_snapshot is not None
-                                    else None
-                                ),
-                                exit_code=(
-                                    matched_info.status_snapshot.exit_code
-                                    if matched_info.status_snapshot is not None
-                                    else None
-                                ),
-                                matched_failure=True,
-                                trigger="setup_error",
-                                message="One or more setup steps failed",
-                            )
-                        )
+                        iteration_summaries.append(matched_iteration)
                         break
 
                 run_result = session.run(
@@ -194,8 +155,6 @@ class RunUntilFailureService:
                 )
                 run_payload = result_to_envelope(run_result)
                 status_snapshot = self._status_snapshot(session)
-                last_payload = run_payload
-                last_status_snapshot = status_snapshot
 
                 matched, trigger = self._matches_failure(
                     request.failure,
@@ -229,96 +188,40 @@ class RunUntilFailureService:
                     else:
                         capture_error = capture_result.message
 
-                iteration_summaries.append(
-                    RunUntilFailureIterationInfo(
-                        iteration=iteration,
-                        status="error" if isinstance(run_result, OperationError) else "success",
-                        execution_state=status_snapshot.execution_state,
-                        stop_reason=status_snapshot.stop_reason,
-                        stop_kind=status_snapshot.stop_kind,
-                        exit_code=status_snapshot.exit_code,
-                        matched_failure=matched,
-                        trigger=trigger,
-                        message=self._payload_message(run_payload),
-                    )
+                iteration_summary = RunUntilFailureIterationInfo(
+                    iteration=iteration,
+                    phase="run",
+                    result=run_payload,
+                    execution_state=status_snapshot.execution_state,
+                    stop_reason=status_snapshot.stop_reason,
+                    stop_kind=status_snapshot.stop_kind,
+                    exit_code=status_snapshot.exit_code,
+                    matched_failure=matched,
+                    trigger=trigger,
                 )
+                iteration_summaries.append(iteration_summary)
 
                 if matched:
-                    matched_info = _MatchedFailure(
-                        iteration=iteration,
-                        trigger=trigger,
-                        run_payload=run_payload,
-                        status_snapshot=status_snapshot,
-                        capture_bundle=capture_bundle,
-                        capture_error=capture_error,
-                    )
+                    matched_iteration = iteration_summary
                     break
             finally:
                 self._cleanup_session(session)
 
-        if matched_info is None:
-            return OperationSuccess(
-                RunUntilFailureInfo(
-                    message=(
-                        f"No failure matched after {request.max_iterations} iteration"
-                        f"{'' if request.max_iterations == 1 else 's'}"
-                    ),
-                    matched_failure=False,
-                    iterations_requested=request.max_iterations,
-                    iterations_completed=len(iteration_summaries),
-                    execution_state=(
-                        last_status_snapshot.execution_state
-                        if last_status_snapshot is not None
-                        else None
-                    ),
-                    stop_reason=(
-                        last_status_snapshot.stop_reason
-                        if last_status_snapshot is not None
-                        else None
-                    ),
-                    stop_kind=(
-                        last_status_snapshot.stop_kind if last_status_snapshot is not None else None
-                    ),
-                    exit_code=(
-                        last_status_snapshot.exit_code if last_status_snapshot is not None else None
-                    ),
-                    last_result=last_payload,
-                    iterations=iteration_summaries,
-                )
-            )
-
         warnings: tuple[str, ...] = ()
-        if matched_info.capture_error is not None:
-            warnings = (f"Capture bundle failed: {matched_info.capture_error}",)
+        if capture_error is not None:
+            warnings = (f"Capture bundle failed: {capture_error}",)
+
+        if matched_iteration is None:
+            message = f"No failure matched after {len(iteration_summaries)} iterations"
+        else:
+            message = f"Failure matched on iteration {matched_iteration.iteration}: {matched_iteration.trigger}"
 
         return OperationSuccess(
             RunUntilFailureInfo(
-                message=(
-                    f"Failure matched on iteration {matched_info.iteration}: {matched_info.trigger}"
-                ),
-                matched_failure=True,
+                message=message,
                 iterations_requested=request.max_iterations,
-                iterations_completed=len(iteration_summaries),
-                failure_iteration=matched_info.iteration,
-                trigger=matched_info.trigger,
-                execution_state=(
-                    matched_info.status_snapshot.execution_state
-                    if matched_info.status_snapshot is not None
-                    else None
-                ),
-                stop_reason=(
-                    matched_info.status_snapshot.stop_reason
-                    if matched_info.status_snapshot is not None
-                    else None
-                ),
-                exit_code=(
-                    matched_info.status_snapshot.exit_code
-                    if matched_info.status_snapshot is not None
-                    else None
-                ),
-                capture_bundle=matched_info.capture_bundle,
-                capture_error=matched_info.capture_error,
-                last_result=matched_info.run_payload,
+                capture_bundle=capture_bundle,
+                capture_error=capture_error,
                 iterations=iteration_summaries,
             ),
             warnings=warnings,
@@ -402,15 +305,3 @@ class RunUntilFailureService:
             except Exception as exc:  # pragma: no cover - best effort
                 logger.debug("Ignoring failure while cleaning up a temporary session: %s", exc)
                 return
-
-
-@dataclass(slots=True, frozen=True)
-class _MatchedFailure:
-    """Internal matched-failure record used while assembling the final response."""
-
-    iteration: int
-    trigger: str | None
-    run_payload: StructuredPayload
-    status_snapshot: SessionStatusSnapshot | None
-    capture_bundle: CaptureBundleInfo | None
-    capture_error: str | None

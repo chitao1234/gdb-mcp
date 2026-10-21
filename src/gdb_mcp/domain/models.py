@@ -248,14 +248,14 @@ class RunUntilFailureIterationInfo(StructuredOutput):
     """Structured summary for one iteration of a campaign run."""
 
     iteration: int
-    status: ToolResultStatus
+    phase: Literal["startup", "setup", "run"]
+    result: StructuredPayload
     execution_state: ExecutionState | None = None
     stop_reason: str | None = None
     stop_kind: StopKind | None = None
     exit_code: int | None = None
     matched_failure: bool = False
     trigger: str | None = None
-    message: str | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -263,19 +263,10 @@ class RunUntilFailureInfo(StructuredOutput):
     """Structured result for one repeat-until-failure campaign."""
 
     message: str
-    matched_failure: bool
     iterations_requested: int
-    iterations_completed: int
-    failure_iteration: int | None = None
-    trigger: str | None = None
-    execution_state: ExecutionState | None = None
-    stop_reason: str | None = None
-    stop_kind: StopKind | None = None
-    exit_code: int | None = None
+    iterations: list[RunUntilFailureIterationInfo]
     capture_bundle: CaptureBundleInfo | None = None
     capture_error: str | None = None
-    last_result: StructuredPayload | None = None
-    iterations: list[RunUntilFailureIterationInfo] | None = None
 
 
 @dataclass(slots=True, frozen=True)
