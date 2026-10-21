@@ -35,11 +35,11 @@ def test_parses_connection_column() -> None:
     assert payload.current_inferior_id == 1
     first, second = payload.inferiors
     assert first.inferior_id == 1
-    assert first.is_current is True
+    assert "is_current" not in first.to_payload()
     assert first.description == "process 4242"
     assert first.connection == "1 (native)"
     assert first.executable == "/tmp/app"
-    assert second.is_current is False
+    assert "is_current" not in second.to_payload()
     assert second.description == "<null>"
     assert second.connection == "1 (native)"
     assert second.executable is None
@@ -53,7 +53,7 @@ def test_parses_executable_without_connection() -> None:
 
     first = payload.inferiors[0]
     assert first.inferior_id == 1
-    assert first.is_current is True
+    assert "is_current" not in first.to_payload()
     assert first.description == "process 1803825"
     assert first.executable == "/tmp/app"
     assert first.connection is None
@@ -67,7 +67,7 @@ def test_parses_bare_header() -> None:
 
     first = payload.inferiors[0]
     assert first.inferior_id == 1
-    assert first.is_current is True
+    assert "is_current" not in first.to_payload()
     assert first.description == "process 4242"
     assert "connection" not in first.to_payload()
     assert "executable" not in first.to_payload()
@@ -82,7 +82,7 @@ def test_parses_stripped_output() -> None:
 
     first = payload.inferiors[0]
     assert first.inferior_id == 1
-    assert first.is_current is True
+    assert "is_current" not in first.to_payload()
     assert first.executable == "/tmp/app"
 
 
@@ -99,7 +99,7 @@ def test_reports_known_current_when_no_marker() -> None:
     payload = parse_inferiors_output(output, current_inferior_id=7)
 
     assert payload.current_inferior_id == 7
-    assert payload.inferiors[0].is_current is False
+    assert "is_current" not in payload.inferiors[0].to_payload()
 
 
 def test_no_inferiors_outputs_empty_inventory() -> None:

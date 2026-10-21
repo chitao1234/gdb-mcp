@@ -1052,12 +1052,8 @@ class TestHandlerRouting:
         session.list_inferiors.return_value = OperationSuccess(
             InferiorListInfo(
                 inferiors=[
-                    InferiorRecord.from_payload(
-                        {"inferior_id": 1, "is_current": True, "display": "i1"}
-                    ),
-                    InferiorRecord.from_payload(
-                        {"inferior_id": 2, "is_current": False, "display": "i2"}
-                    ),
+                    InferiorRecord.from_payload({"inferior_id": 1, "display": "i1"}),
+                    InferiorRecord.from_payload({"inferior_id": 2, "display": "i2"}),
                 ],
                 current_inferior_id=1,
             )
@@ -1079,7 +1075,7 @@ class TestHandlerRouting:
 
         session = _session_double()
         session.select_inferior.return_value = OperationSuccess(
-            InferiorSelectionInfo(inferior_id=2, is_current=True)
+            InferiorSelectionInfo(inferior_id=2)
         )
         manager = _manager_for(session)
 

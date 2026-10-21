@@ -93,7 +93,8 @@ class TestRuntimeFoundations:
         assert summaries[0].execution_state == "paused"
         assert summaries[1].inferior_id == 2
         assert summaries[1].execution_state == "exited"
-        assert summaries[1].is_current is True
+        assert "is_current" not in summaries[1].to_payload()
+        assert runtime.current_inferior_id == 2
 
     def test_a_refined_stop_kind_belongs_to_its_reason(
         self, session_service: SessionService

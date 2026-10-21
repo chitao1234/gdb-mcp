@@ -124,7 +124,7 @@ class TestThreadAndStackInspectionApi:
         assert result["current_inferior_id"] == 1
         inferiors = mapping_list(result["inferiors"])
         assert inferiors[0]["inferior_id"] == 1
-        assert inferiors[0]["is_current"] is True
+        assert "is_current" not in inferiors[0]
         assert inferiors[0]["executable"] == "/tmp/app"
         assert inferiors[1]["inferior_id"] == 2
         assert controller.decoded_writes[0].endswith('-interpreter-exec console "info inferiors"\n')
@@ -179,7 +179,7 @@ class TestThreadAndStackInspectionApi:
 
         assert result["status"] == "success"
         assert result["inferior_id"] == 2
-        assert result["is_current"] is True
+        assert "is_current" not in result
         assert session.runtime.current_inferior_id == 2
         assert session.runtime.current_thread_id is None
         assert session.runtime.current_frame is None
