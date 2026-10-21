@@ -222,6 +222,9 @@ class TestHandlerDispatch:
         manager.start_session.assert_called_once_with(
             endpoint="tcp://127.0.0.1:4399",
             init_commands=["set pagination off"],
+            debugger="gdb",
+            program=None,
+            debugger_path=None,
         )
         assert result_data["status"] == "success"
         assert dig(result_data, "result", "session_id") == 11

@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 from ...domain import (
+    DetachOnForkInfo,
+    FollowForkModeInfo,
+    InferiorAddInfo,
     InferiorCurrentInfo,
+    InferiorListInfo,
+    InferiorRemoveInfo,
+    InferiorSelectionInfo,
     OperationError,
+    OperationResult,
     OperationSuccess,
 )
 from ...session.service import SessionService
@@ -20,13 +27,14 @@ from ..schemas import (
     InferiorQueryListAction,
 )
 from .common import (
-    ToolResult,
     _unsupported_action,
     _unwrap_action_args,
 )
 
 
-def _handle_inferior_query(session: SessionService, args: InferiorQueryArgs) -> ToolResult:
+def _handle_inferior_query(
+    session: SessionService, args: InferiorQueryArgs
+) -> OperationResult[InferiorListInfo | InferiorCurrentInfo]:
     """Route v2 inferior query actions to the inspection service."""
 
     action_args = _unwrap_action_args(args)
@@ -57,7 +65,15 @@ def _handle_inferior_query(session: SessionService, args: InferiorQueryArgs) -> 
     return _unsupported_action("inferior query action", action_args)
 
 
-def _handle_inferior_manage(session: SessionService, args: InferiorManageArgs) -> ToolResult:
+def _handle_inferior_manage(
+    session: SessionService, args: InferiorManageArgs
+) -> OperationResult[
+    InferiorAddInfo
+    | InferiorRemoveInfo
+    | InferiorSelectionInfo
+    | FollowForkModeInfo
+    | DetachOnForkInfo
+]:
     """Route v2 inferior mutation actions to the inspection/execution services."""
 
     action_args = _unwrap_action_args(args)

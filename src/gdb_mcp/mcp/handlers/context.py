@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+from ...domain import (
+    BacktraceInfo,
+    FrameInfo,
+    FrameSelectionInfo,
+    OperationResult,
+    ThreadListInfo,
+    ThreadSelectionInfo,
+)
 from ...session.service import SessionService
 from ..schemas import (
     ContextManageArgs,
@@ -13,13 +21,14 @@ from ..schemas import (
     ContextQueryThreadsAction,
 )
 from .common import (
-    ToolResult,
     _unsupported_action,
     _unwrap_action_args,
 )
 
 
-def _handle_context_query(session: SessionService, args: ContextQueryArgs) -> ToolResult:
+def _handle_context_query(
+    session: SessionService, args: ContextQueryArgs
+) -> OperationResult[ThreadListInfo | BacktraceInfo | FrameInfo]:
     """Route v2 context query actions to the inspection service."""
 
     action_args = _unwrap_action_args(args)
@@ -39,7 +48,9 @@ def _handle_context_query(session: SessionService, args: ContextQueryArgs) -> To
     return _unsupported_action("context query action", action_args)
 
 
-def _handle_context_manage(session: SessionService, args: ContextManageArgs) -> ToolResult:
+def _handle_context_manage(
+    session: SessionService, args: ContextManageArgs
+) -> OperationResult[ThreadSelectionInfo | FrameSelectionInfo]:
     """Route v2 context mutation actions to the inspection service."""
 
     action_args = _unwrap_action_args(args)

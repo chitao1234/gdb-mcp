@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from ...domain import (
+    CommandExecutionInfo,
+    FinishInfo,
+    MessageResult,
     OperationError,
+    OperationResult,
+    WaitForStopInfo,
 )
 from ...session.service import SessionService
 from ..schemas import (
@@ -17,7 +22,6 @@ from ..schemas import (
     ExecutionWaitForStopAction,
 )
 from .common import (
-    ToolResult,
     _execution_wait_policy,
     _normalize_run_args,
     _unsupported_action,
@@ -25,7 +29,9 @@ from .common import (
 )
 
 
-def _handle_execution_manage(session: SessionService, args: ExecutionManageArgs) -> ToolResult:
+def _handle_execution_manage(
+    session: SessionService, args: ExecutionManageArgs
+) -> OperationResult[CommandExecutionInfo | MessageResult | FinishInfo | WaitForStopInfo]:
     """Route v2 execution actions to the session execution API."""
 
     action_args = _unwrap_action_args(args)

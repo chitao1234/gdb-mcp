@@ -8,8 +8,12 @@ from pydantic import BaseModel
 
 from ... import contracts as shared_contracts
 from ...domain import (
+    BatchExecutionInfo,
+    CaptureBundleInfo,
     OperationError,
+    OperationResult,
     OperationSuccess,
+    RunUntilFailureInfo,
 )
 from ...session.campaign import (
     RunUntilFailureCaptureRequest,
@@ -37,7 +41,7 @@ from .common import (
 )
 
 
-def _handle_batch(session: SessionService, args: BatchArgs) -> ToolResult:
+def _handle_batch(session: SessionService, args: BatchArgs) -> OperationResult[BatchExecutionInfo]:
     """Validate one batch request and execute it under one workflow lock."""
 
     step_templates = _build_batch_step_templates(args.session_id, args.steps)
@@ -51,7 +55,9 @@ def _handle_batch(session: SessionService, args: BatchArgs) -> ToolResult:
     )
 
 
-def _handle_capture_bundle(session: SessionService, args: CaptureBundleArgs) -> ToolResult:
+def _handle_capture_bundle(
+    session: SessionService, args: CaptureBundleArgs
+) -> OperationResult[CaptureBundleInfo]:
     """Write a file-oriented forensic bundle for the current session."""
 
     memory_ranges = _memory_capture_ranges(args.memory_ranges)
@@ -77,7 +83,7 @@ def _handle_capture_bundle(session: SessionService, args: CaptureBundleArgs) -> 
 def _handle_run_until_failure(
     args: RunUntilFailureArgs,
     session_manager: SessionRegistry,
-) -> ToolResult:
+) -> OperationResult[RunUntilFailureInfo]:
     """Run repeated fresh sessions until one failure predicate matches."""
 
     step_templates = _build_batch_step_templates(1, args.setup_steps)

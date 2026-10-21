@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from ... import contracts as shared_contracts
 from ...domain import (
+    BreakpointInfo,
     BreakpointListInfo,
     OperationError,
+    OperationResult,
     OperationSuccess,
+    SessionMessage,
 )
 from ...session.service import SessionService
 from ..schemas import (
@@ -22,13 +25,14 @@ from ..schemas import (
     BreakpointWatchCreateArgs,
 )
 from .common import (
-    ToolResult,
     _unsupported_action,
     _unwrap_action_args,
 )
 
 
-def _handle_breakpoint_query(session: SessionService, args: BreakpointQueryArgs) -> ToolResult:
+def _handle_breakpoint_query(
+    session: SessionService, args: BreakpointQueryArgs
+) -> OperationResult[BreakpointListInfo | BreakpointInfo]:
     """Route v2 breakpoint query actions to the breakpoint service."""
 
     action_args = _unwrap_action_args(args)
@@ -73,7 +77,9 @@ def _handle_breakpoint_query(session: SessionService, args: BreakpointQueryArgs)
     return _unsupported_action("breakpoint query action", action_args)
 
 
-def _handle_breakpoint_manage(session: SessionService, args: BreakpointManageArgs) -> ToolResult:
+def _handle_breakpoint_manage(
+    session: SessionService, args: BreakpointManageArgs
+) -> OperationResult[BreakpointInfo | SessionMessage]:
     """Route v2 breakpoint mutation actions to the breakpoint service."""
 
     action_args = _unwrap_action_args(args)

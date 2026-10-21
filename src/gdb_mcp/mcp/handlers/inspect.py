@@ -4,6 +4,15 @@ from __future__ import annotations
 
 from typing import cast
 
+from ...domain import (
+    DisassemblyInfo,
+    ExpressionValueInfo,
+    MemoryReadInfo,
+    OperationResult,
+    RegistersInfo,
+    SourceContextInfo,
+    VariablesInfo,
+)
 from ...session.service import SessionService
 from ..schemas import (
     InspectDisassemblyAction,
@@ -24,7 +33,6 @@ from ..schemas import (
 from .common import (
     LocationArgs,
     LocationSelection,
-    ToolResult,
     _unsupported_action,
     _unwrap_action_args,
 )
@@ -67,7 +75,16 @@ def _context_selector(context: ThreadFrameContextArgs | None) -> tuple[int | Non
     return context.thread_id, context.frame
 
 
-def _handle_inspect_query(session: SessionService, args: InspectQueryArgs) -> ToolResult:
+def _handle_inspect_query(
+    session: SessionService, args: InspectQueryArgs
+) -> OperationResult[
+    ExpressionValueInfo
+    | VariablesInfo
+    | RegistersInfo
+    | MemoryReadInfo
+    | DisassemblyInfo
+    | SourceContextInfo
+]:
     """Route v2 inspect query actions to the inspection service."""
 
     action_args = _unwrap_action_args(args)

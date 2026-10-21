@@ -101,6 +101,7 @@ class ToolContext:
 
 
 ToolArgsT = TypeVar("ToolArgsT", bound=BaseModel)
+PayloadT = TypeVar("PayloadT")
 
 
 @dataclass(frozen=True)
@@ -220,7 +221,9 @@ def _unsupported_action(scope: str, action_args: BaseModel) -> OperationError:
     )
 
 
-def _wrap_action_result(action: str, result: ToolResult) -> ToolResult:
+def _wrap_action_result(
+    action: str, result: OperationResult[PayloadT]
+) -> OperationResult[PayloadT]:
     """Wrap a tool result in the v2 action envelope."""
 
     if isinstance(result, OperationError):
@@ -236,7 +239,9 @@ def _wrap_action_result(action: str, result: ToolResult) -> ToolResult:
     return OperationSuccess(result.value, warnings=result.warnings, action=action)
 
 
-def _wrap_action_result_for(validated_args: BaseModel, result: ToolResult) -> ToolResult:
+def _wrap_action_result_for(
+    validated_args: BaseModel, result: OperationResult[PayloadT]
+) -> OperationResult[PayloadT]:
     """Wrap one raw tool result in the action envelope when the request has an action."""
 
     action_args = _unwrap_action_args(validated_args)
@@ -291,8 +296,8 @@ def _session_state_details(session: SessionService) -> StructuredPayload:
 
 
 def _annotate_session_failure(
-    result: ToolResult, session: SessionService, *, session_id: int
-) -> ToolResult:
+    result: OperationResult[PayloadT], session: SessionService, *, session_id: int
+) -> OperationResult[PayloadT]:
     """Attach session state and a specific code to one session-scoped failure.
 
     A failure whose message is only ``The program is not being run.`` leaves the

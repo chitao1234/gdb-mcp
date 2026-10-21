@@ -9,8 +9,12 @@ from ...contracts import (
 )
 from ...domain import (
     OperationError,
+    OperationResult,
     OperationSuccess,
+    SessionListInfo,
+    SessionMessage,
     SessionStartInfo,
+    SessionStatusSnapshot,
 )
 from ...session.locking import session_workflow_context
 from ...session.registry import SessionRegistry
@@ -25,14 +29,15 @@ from ..schemas import (
 )
 from .common import (
     ToolContext,
-    ToolResult,
     _normalize_run_args,
     _unsupported_action,
     _unwrap_action_args,
 )
 
 
-def _publish_session_result(session_id: int | None, result: ToolResult) -> ToolResult:
+def _publish_session_result(
+    session_id: int | None, result: OperationResult[SessionStartInfo]
+) -> OperationResult[SessionStartInfo]:
     """Record the allocated session id in a successful session-start payload."""
 
     if session_id is None or not isinstance(result, OperationSuccess):
@@ -51,7 +56,7 @@ def _publish_session_result(session_id: int | None, result: ToolResult) -> ToolR
 def _handle_start_session(
     args: StartSessionArgs,
     session_manager: SessionRegistry,
-) -> ToolResult:
+) -> OperationResult[SessionStartInfo]:
     """Start a new debugger session."""
 
     normalized_args = _normalize_run_args(args.args)
@@ -76,24 +81,22 @@ def _handle_start_session(
 def _handle_connect_session(
     args: ConnectSessionArgs,
     session_manager: SessionRegistry,
-) -> ToolResult:
+) -> OperationResult[SessionStartInfo]:
     """Connect to a target endpoint owned by another process and publish a session."""
 
-    kwargs: dict[str, object] = {
-        "endpoint": args.endpoint,
-        "init_commands": args.init_commands,
-    }
-    if args.debugger != "gdb":
-        kwargs["debugger"] = args.debugger
-    if args.program is not None:
-        kwargs["program"] = args.program
-    if args.debugger_path is not None:
-        kwargs["debugger_path"] = args.debugger_path
-    session_id, result = session_manager.start_session(**kwargs)  # type: ignore[arg-type]
+    session_id, result = session_manager.start_session(
+        endpoint=args.endpoint,
+        init_commands=args.init_commands,
+        debugger=args.debugger,
+        program=args.program,
+        debugger_path=args.debugger_path,
+    )
     return _publish_session_result(session_id, result)
 
 
-def _handle_session_query(context: ToolContext, args: SessionQueryArgs) -> ToolResult:
+def _handle_session_query(
+    context: ToolContext, args: SessionQueryArgs
+) -> OperationResult[SessionListInfo | SessionStatusSnapshot]:
     """Route one v2 session query action.
 
     Direct calls arrive without a session and resolve it for the status action;
@@ -130,7 +133,7 @@ def _handle_session_query(context: ToolContext, args: SessionQueryArgs) -> ToolR
 def _handle_session_manage(
     args: SessionManageArgs,
     session_manager: SessionRegistry,
-) -> ToolResult:
+) -> OperationResult[SessionMessage]:
     """Route one v2 session lifecycle mutation."""
 
     action_args = _unwrap_action_args(args)
