@@ -6,11 +6,17 @@ import json
 
 from mcp.types import CallToolResult, TextContent
 
-from ..domain import OperationError, OperationResult, StructuredPayload, result_to_envelope
+from ..domain import (
+    OperationError,
+    OperationResult,
+    StructuredPayload,
+    ToolPayload,
+    result_to_envelope,
+)
 
 
 def result_to_payload(
-    result: OperationResult[object],
+    result: OperationResult[ToolPayload],
 ) -> StructuredPayload:
     """Convert a typed internal result into the external JSON payload shape."""
 
@@ -18,7 +24,7 @@ def result_to_payload(
 
 
 def serialize_result(
-    result: OperationResult[object],
+    result: OperationResult[ToolPayload],
 ) -> CallToolResult:
     """Serialize a typed tool result with a truthful MCP ``isError`` flag.
 

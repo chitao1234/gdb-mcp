@@ -48,8 +48,14 @@ CatchpointType: TypeAlias = Literal[
 ]
 
 
+class StructuredOutput:
+    """Nominal marker for dataclasses that form object-shaped tool results."""
+
+    __slots__ = ()
+
+
 @dataclass(slots=True, frozen=True)
-class SessionStatusSnapshot:
+class SessionStatusSnapshot(StructuredOutput):
     """Serializable snapshot of the externally visible session status."""
 
     is_running: bool
@@ -68,14 +74,14 @@ class SessionStatusSnapshot:
 
 
 @dataclass(slots=True, frozen=True)
-class InferiorCurrentInfo:
+class InferiorCurrentInfo(StructuredOutput):
     """The currently selected inferior."""
 
     inferior: InferiorRecord
 
 
 @dataclass(slots=True, frozen=True)
-class SessionSummary:
+class SessionSummary(StructuredOutput):
     """Structured summary of one active debugger session."""
 
     session_id: int
@@ -103,7 +109,7 @@ class SessionSummary:
 
 
 @dataclass(slots=True, frozen=True)
-class SessionListInfo:
+class SessionListInfo(StructuredOutput):
     """Structured list of currently registered sessions."""
 
     sessions: list[SessionSummary]
@@ -111,7 +117,7 @@ class SessionListInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class SessionStartInfo:
+class SessionStartInfo(StructuredOutput):
     """Structured result for a successful session start."""
 
     session_id: int | None = None
@@ -131,7 +137,7 @@ class SessionStartInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class StopEvent:
+class StopEvent(StructuredOutput):
     """Structured description of one inferior stop or exit event."""
 
     execution_state: ExecutionState
@@ -154,7 +160,7 @@ class StopEvent:
 
 
 @dataclass(slots=True, frozen=True)
-class CommandTranscriptEntry:
+class CommandTranscriptEntry(StructuredOutput):
     """Structured metadata for one debugger command execution."""
 
     command: str
@@ -171,7 +177,7 @@ class CommandTranscriptEntry:
 
 
 @dataclass(slots=True, frozen=True)
-class BatchStepResult:
+class BatchStepResult(StructuredOutput):
     """Structured result for one step executed by a batch workflow."""
 
     index: int
@@ -182,7 +188,7 @@ class BatchStepResult:
 
 
 @dataclass(slots=True, frozen=True)
-class BatchExecutionInfo:
+class BatchExecutionInfo(StructuredOutput):
     """Structured result for one workflow batch executed in a session."""
 
     steps: list[BatchStepResult]
@@ -200,7 +206,7 @@ class BatchExecutionInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class CaptureArtifactInfo:
+class CaptureArtifactInfo(StructuredOutput):
     """One file artifact produced by a capture bundle."""
 
     name: str
@@ -210,7 +216,7 @@ class CaptureArtifactInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class CaptureBundleInfo:
+class CaptureBundleInfo(StructuredOutput):
     """Structured result for one on-disk forensic capture bundle."""
 
     message: str
@@ -227,7 +233,7 @@ class CaptureBundleInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class RunUntilFailureIterationInfo:
+class RunUntilFailureIterationInfo(StructuredOutput):
     """Structured summary for one iteration of a campaign run."""
 
     iteration: int
@@ -242,7 +248,7 @@ class RunUntilFailureIterationInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class RunUntilFailureInfo:
+class RunUntilFailureInfo(StructuredOutput):
     """Structured result for one repeat-until-failure campaign."""
 
     message: str
@@ -262,7 +268,7 @@ class RunUntilFailureInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class InferiorListInfo:
+class InferiorListInfo(StructuredOutput):
     """Structured inferior inventory for one debugger session."""
 
     inferiors: list[InferiorRecord]
@@ -271,7 +277,7 @@ class InferiorListInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class InferiorSelectionInfo:
+class InferiorSelectionInfo(StructuredOutput):
     """Structured response for inferior selection."""
 
     inferior_id: int
@@ -284,7 +290,7 @@ class InferiorSelectionInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class InferiorAddInfo:
+class InferiorAddInfo(StructuredOutput):
     """Structured response for inferior creation."""
 
     inferior_id: int
@@ -299,7 +305,7 @@ class InferiorAddInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class InferiorRemoveInfo:
+class InferiorRemoveInfo(StructuredOutput):
     """Structured response for inferior removal."""
 
     inferior_id: int
@@ -309,7 +315,7 @@ class InferiorRemoveInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class FollowForkModeInfo:
+class FollowForkModeInfo(StructuredOutput):
     """Structured response for follow-fork-mode changes."""
 
     mode: FollowForkMode
@@ -317,7 +323,7 @@ class FollowForkModeInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class DetachOnForkInfo:
+class DetachOnForkInfo(StructuredOutput):
     """Structured response for detach-on-fork changes."""
 
     enabled: bool
@@ -325,7 +331,7 @@ class DetachOnForkInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class MemoryReadInfo:
+class MemoryReadInfo(StructuredOutput):
     """Structured response for one memory-read request."""
 
     address: str
@@ -337,7 +343,7 @@ class MemoryReadInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class WaitForStopInfo:
+class WaitForStopInfo(StructuredOutput):
     """Structured response for waiting on the next or current stop event."""
 
     message: str
@@ -352,7 +358,7 @@ class WaitForStopInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class FinishInfo:
+class FinishInfo(StructuredOutput):
     """Structured response for finishing the current frame."""
 
     message: str
@@ -366,7 +372,7 @@ class FinishInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class MemoryCaptureRange:
+class MemoryCaptureRange(StructuredOutput):
     """One explicit memory range requested for bundle capture."""
 
     address: str
@@ -376,14 +382,14 @@ class MemoryCaptureRange:
 
 
 @dataclass(slots=True, frozen=True)
-class SessionMessage:
+class SessionMessage(StructuredOutput):
     """Simple message payload."""
 
     message: str
 
 
 @dataclass(slots=True, frozen=True)
-class MessageResult:
+class MessageResult(StructuredOutput):
     """Message plus structured result payload."""
 
     message: str
@@ -391,7 +397,7 @@ class MessageResult:
 
 
 @dataclass(slots=True, frozen=True)
-class CommandExecutionInfo:
+class CommandExecutionInfo(StructuredOutput):
     """Structured result for command execution."""
 
     command: str
@@ -400,7 +406,7 @@ class CommandExecutionInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class ThreadListInfo:
+class ThreadListInfo(StructuredOutput):
     """Structured thread-list response."""
 
     threads: list[ThreadRecord]
@@ -409,7 +415,7 @@ class ThreadListInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class ThreadSelectionInfo:
+class ThreadSelectionInfo(StructuredOutput):
     """Structured thread-selection response."""
 
     thread_id: int
@@ -418,7 +424,7 @@ class ThreadSelectionInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class BacktraceInfo:
+class BacktraceInfo(StructuredOutput):
     """Structured backtrace response."""
 
     thread_id: int | None
@@ -427,14 +433,14 @@ class BacktraceInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class FrameInfo:
+class FrameInfo(StructuredOutput):
     """Current frame details."""
 
     frame: FrameRecord | None
 
 
 @dataclass(slots=True, frozen=True)
-class DisassemblyInfo:
+class DisassemblyInfo(StructuredOutput):
     """Structured disassembly response."""
 
     scope: str
@@ -452,7 +458,7 @@ class DisassemblyInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class SourceContextInfo:
+class SourceContextInfo(StructuredOutput):
     """Structured source-context response."""
 
     scope: str
@@ -470,7 +476,7 @@ class SourceContextInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class FrameSelectionInfo:
+class FrameSelectionInfo(StructuredOutput):
     """Structured frame-selection response."""
 
     frame_number: int
@@ -479,14 +485,14 @@ class FrameSelectionInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class BreakpointInfo:
+class BreakpointInfo(StructuredOutput):
     """Single breakpoint payload."""
 
     breakpoint: BreakpointRecord
 
 
 @dataclass(slots=True, frozen=True)
-class BreakpointListInfo:
+class BreakpointListInfo(StructuredOutput):
     """Structured breakpoint-list response."""
 
     breakpoints: list[BreakpointRecord]
@@ -494,7 +500,7 @@ class BreakpointListInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class ExpressionValueInfo:
+class ExpressionValueInfo(StructuredOutput):
     """Expression evaluation payload."""
 
     expression: str
@@ -504,7 +510,7 @@ class ExpressionValueInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class VariablesInfo:
+class VariablesInfo(StructuredOutput):
     """Local variable inspection payload."""
 
     thread_id: int | None
@@ -513,14 +519,14 @@ class VariablesInfo:
 
 
 @dataclass(slots=True, frozen=True)
-class RegistersInfo:
+class RegistersInfo(StructuredOutput):
     """Register inspection payload."""
 
     registers: list[RegisterRecord]
 
 
 @dataclass(slots=True, frozen=True)
-class FunctionCallInfo:
+class FunctionCallInfo(StructuredOutput):
     """Function-call payload."""
 
     function_call: str

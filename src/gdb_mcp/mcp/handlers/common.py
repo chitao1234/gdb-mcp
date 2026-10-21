@@ -6,7 +6,7 @@ import re
 import shlex
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Generic, Literal, Protocol, TypeAlias, TypeVar, runtime_checkable
+from typing import Generic, Literal, Protocol, TypeAlias, TypeVar, cast, runtime_checkable
 
 from pydantic import BaseModel, RootModel
 
@@ -23,6 +23,7 @@ from ...domain import (
     OperationResult,
     OperationSuccess,
     StructuredPayload,
+    ToolPayload,
     payload_to_mapping,
 )
 from ...session.constants import DEFAULT_TIMEOUT_SEC
@@ -70,7 +71,7 @@ class ActionArgsProtocol(Protocol):
 ToolArguments: TypeAlias = StructuredPayload
 
 
-ToolResult: TypeAlias = OperationResult[object]
+ToolResult: TypeAlias = OperationResult[ToolPayload]
 
 
 LocationArgs: TypeAlias = (
@@ -135,9 +136,7 @@ class RegisteredToolSpec:
 
 def _register(spec: ToolSpec[ToolArgsT]) -> RegisteredToolSpec:
     def invoke(context: ToolContext, args: BaseModel) -> ToolResult:
-        if not isinstance(args, spec.model):
-            raise TypeError(f"{spec.model.__name__} spec invoked with {type(args).__name__}")
-        return spec.handler(context, args)
+        return spec.handler(context, cast(ToolArgsT, args))
 
     return RegisteredToolSpec(model=spec.model, handler=invoke, scope=spec.scope)
 
@@ -163,10 +162,7 @@ def session_tool_spec(
     """Wrap a ``(session, args)`` handler as a session-scoped tool spec."""
 
     def invoke(context: ToolContext, args: ToolArgsT) -> ToolResult:
-        session = context.session
-        if session is None:
-            raise RuntimeError("session-scoped tool invoked without a session")
-        return handler(session, args)
+        return handler(cast(SessionService, context.session), args)
 
     return _register(ToolSpec(model=model, handler=invoke, scope="session"))
 
@@ -178,10 +174,7 @@ def registry_tool_spec(
     """Wrap an ``(args, registry)`` handler as a registry-scoped tool spec."""
 
     def invoke(context: ToolContext, args: ToolArgsT) -> ToolResult:
-        registry = context.registry
-        if registry is None:
-            raise RuntimeError("registry-scoped tool invoked without a registry")
-        return handler(args, registry)
+        return handler(args, cast(SessionRegistry, context.registry))
 
     return _register(ToolSpec(model=model, handler=invoke, scope="registry"))
 
@@ -214,10 +207,7 @@ def _unwrap_action_args(args: BaseModel) -> BaseModel:
     """Return the discriminated action payload for root-model tool schemas."""
 
     if isinstance(args, RootModel):
-        root: object = args.root
-        if not isinstance(root, BaseModel):
-            raise TypeError(f"{type(args).__name__} must wrap a request model")
-        return root
+        return cast(BaseModel, args.root)
     return args
 
 

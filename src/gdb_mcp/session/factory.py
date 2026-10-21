@@ -5,7 +5,7 @@ import os
 import subprocess
 import time
 from collections.abc import Callable
-from typing import cast
+from typing import BinaryIO, cast
 
 from pygdbmi.gdbcontroller import GdbController
 from pygdbmi.IoManager import IoManager
@@ -62,11 +62,9 @@ class _WorkingDirGdbController(GdbController):
 
         stdin = self.gdb_process.stdin
         stdout = self.gdb_process.stdout
-        if stdin is None or stdout is None:  # pragma: no cover - PIPE guarantees both
-            raise RuntimeError("GDB subprocess did not expose stdin/stdout pipes")
         self.io_manager = IoManager(
-            stdin,
-            stdout,
+            cast(BinaryIO, stdin),
+            cast(BinaryIO, stdout),
             self.gdb_process.stderr,
             self.time_to_check_for_additional_output_sec,
         )

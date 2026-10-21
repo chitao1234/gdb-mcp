@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 from mcp.types import CallToolResult, TextContent
 
 from gdb_mcp.domain import OperationError, OperationSuccess, SessionMessage
@@ -81,12 +80,6 @@ class TestMcpSerializer:
         payload = result_to_payload(OperationSuccess({"value": 42}))
 
         assert payload == {"status": "success", "result": {"value": 42}}
-
-    def test_success_payload_must_be_an_object(self) -> None:
-        """The published output schema requires an object under result."""
-
-        with pytest.raises(TypeError, match="must contain an object payload"):
-            result_to_payload(OperationSuccess(42))
 
     def test_result_to_payload_for_error(self) -> None:
         """OperationError should serialize to the standard external error shape."""

@@ -13,6 +13,7 @@ from ..domain import (
     OperationResult,
     OperationSuccess,
     StopEvent,
+    ToolPayload,
     result_to_envelope,
 )
 from .runtime import SessionRuntime
@@ -20,7 +21,7 @@ from .runtime import SessionRuntime
 if TYPE_CHECKING:
     from .service import SessionService
 
-WorkflowResult = OperationResult[object]
+WorkflowResult = OperationResult[ToolPayload]
 
 
 @dataclass(slots=True, frozen=True)

@@ -2,13 +2,14 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields, is_dataclass
-from typing import Generic, TypeVar, cast, overload
+from typing import Generic, TypeAlias, TypeVar, cast, overload
 
 from pydantic import BaseModel
 
-from .models import JsonObject, JsonValue, StructuredPayload
+from .models import JsonObject, JsonValue, StructuredOutput, StructuredPayload
 
 PayloadT_co = TypeVar("PayloadT_co", covariant=True)
+ToolPayload: TypeAlias = StructuredOutput | Mapping[str, object]
 
 
 @dataclass(slots=True, frozen=True)
@@ -37,6 +38,10 @@ _ERROR_TOP_LEVEL_DETAIL_KEYS = {"action", "tool"}
 
 @overload
 def payload_to_mapping(value: Mapping[str, object]) -> JsonObject: ...
+
+
+@overload
+def payload_to_mapping(value: StructuredOutput) -> JsonObject: ...
 
 
 @overload
@@ -102,15 +107,13 @@ def result_to_mapping(result: OperationResult[object]) -> StructuredPayload:
     return error_payload
 
 
-def result_to_envelope(result: OperationResult[object]) -> StructuredPayload:
+def result_to_envelope(result: OperationResult[ToolPayload]) -> StructuredPayload:
     """Convert an operation result into the uniform public tool envelope."""
 
     if isinstance(result, OperationError):
         return result_to_mapping(result)
 
     serialized_value = payload_to_mapping(result.value)
-    if not isinstance(serialized_value, dict):
-        raise TypeError("Successful tool results must contain an object payload")
     payload: StructuredPayload = {"status": "success"}
     if result.action is not None:
         payload["action"] = result.action

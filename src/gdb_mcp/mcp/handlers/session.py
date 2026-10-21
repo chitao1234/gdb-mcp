@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import cast
 
-from ...contracts import (
-    TOOL_SESSION_QUERY,
-)
 from ...domain import (
     OperationError,
     OperationResult,
@@ -105,20 +103,13 @@ def _handle_session_query(
 
     match action_args:
         case SessionQueryListAction():
-            if context.registry is None:  # pragma: no cover - batch rejects list upstream
-                return OperationError(
-                    message=(
-                        f"{TOOL_SESSION_QUERY}(action=list) is not valid inside a workflow batch"
-                    ),
-                    code="unsupported_combination",
-                )
-            return context.registry.list_sessions()
+            return cast(SessionRegistry, context.registry).list_sessions()
         case SessionQueryStatusAction():
             session = context.session
             if session is None:
-                if context.registry is None:  # pragma: no cover - always present for direct calls
-                    return OperationError(message="No session registry available")
-                resolved = context.registry.resolve_session(action_args.session_id)
+                resolved = cast(SessionRegistry, context.registry).resolve_session(
+                    action_args.session_id
+                )
                 if isinstance(resolved, OperationError):
                     return resolved
                 session = resolved

@@ -714,9 +714,7 @@ async def main(
                 error_output.write(f"gdb-mcp-client: error: {_format_runtime_error(exc)}\n")
                 return 1
         if payload_mode:
-            if args.payload_json is None:
-                parser.error("--payload-json is required")
-            request = _payload_from_json(args.tool_name, args.payload_json, parser)
+            request = _payload_from_json(args.tool_name, cast(str, args.payload_json), parser)
         else:
             try:
                 request = _build_payload(spec, args, resolved)
