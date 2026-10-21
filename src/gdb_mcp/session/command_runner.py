@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Mapping
-from typing import Literal, cast
+from typing import Literal
 
 from ..domain import (
     CommandExecutionInfo,
@@ -175,7 +175,7 @@ class SessionCommandRunner:
                 return OperationSuccess(
                     CommandExecutionInfo(
                         command=command,
-                        debugger_result=cast(StructuredPayload, parsed.to_dict()),
+                        debugger_result=payload_to_mapping(parsed.to_dict()),
                     ),
                     warnings=(
                         (
@@ -231,7 +231,7 @@ class SessionCommandRunner:
         return OperationSuccess(
             CommandExecutionInfo(
                 command=command,
-                debugger_result=cast(StructuredPayload, parsed.to_dict()),
+                debugger_result=payload_to_mapping(parsed.to_dict()),
             )
         )
 
@@ -514,7 +514,7 @@ class SessionCommandRunner:
 
         payload_mapping: StructuredPayload = {}
         if payload is not None:
-            payload_mapping = cast(StructuredPayload, payload_to_mapping(payload))
+            payload_mapping = payload_to_mapping(payload)
 
         thread_id = as_int(payload_mapping.get("thread-id"))
         frame = as_optional_mapping(payload_mapping.get("frame"))
@@ -536,7 +536,7 @@ class SessionCommandRunner:
         )
         crash: StructuredPayload | None = None
         if state_detail == "crashed":
-            compact: dict[str, object] = {}
+            compact: StructuredPayload = {}
             if signal_name is not None:
                 compact["signal_name"] = signal_name
             if signal_code is not None:
@@ -544,7 +544,7 @@ class SessionCommandRunner:
             if fault_address is not None:
                 compact["fault_address"] = fault_address
             if compact:
-                crash = cast(StructuredPayload, compact)
+                crash = compact
 
         return StopEvent(
             execution_state=execution_state,

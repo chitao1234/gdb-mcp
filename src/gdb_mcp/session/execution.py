@@ -24,6 +24,7 @@ from ..domain import (
     OperationSuccess,
     StructuredPayload,
     WaitForStopInfo,
+    payload_to_mapping,
 )
 from ..transport import (
     MiClient,
@@ -615,7 +616,7 @@ class SessionExecutionService:
         command_responses = raw_responses if isinstance(raw_responses, list) else []
         parsed = parse_mi_responses(command_responses)
         self._command_runner.update_runtime_after_command("interrupt", parsed)
-        parsed_result = cast(StructuredPayload, parsed.to_dict())
+        parsed_result = payload_to_mapping(parsed.to_dict())
 
         if result.get("timed_out"):
             self._runtime.mark_inferior_running()

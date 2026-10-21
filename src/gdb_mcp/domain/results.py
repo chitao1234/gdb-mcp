@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields, is_dataclass
-from typing import Generic, TypeVar, cast
+from typing import Generic, TypeVar, cast, overload
 
 from pydantic import BaseModel
 
@@ -35,6 +35,14 @@ _RESERVED_ERROR_KEYS = {"status", "code", "message", "fatal"}
 _ERROR_TOP_LEVEL_DETAIL_KEYS = {"action", "tool"}
 
 
+@overload
+def payload_to_mapping(value: Mapping[str, object]) -> JsonObject: ...
+
+
+@overload
+def payload_to_mapping(value: object) -> JsonValue: ...
+
+
 def payload_to_mapping(value: object) -> JsonValue:
     """Convert typed payload objects into JSON-serializable builtin structures.
 
@@ -46,9 +54,10 @@ def payload_to_mapping(value: object) -> JsonValue:
     if is_dataclass(value) and not isinstance(value, type):
         return {info.name: payload_to_mapping(getattr(value, info.name)) for info in fields(value)}
     if isinstance(value, BaseModel):
-        return payload_to_mapping(
-            value.model_dump(by_alias=True, exclude_unset=True, warnings=False)
+        dumped: Mapping[str, object] = value.model_dump(
+            by_alias=True, exclude_unset=True, warnings=False
         )
+        return payload_to_mapping(dumped)
     if isinstance(value, Mapping):
         payload: JsonObject = {}
         for key, item in value.items():
@@ -82,16 +91,14 @@ def result_to_mapping(result: OperationResult[object]) -> StructuredPayload:
     }
     if result.fatal:
         error_payload["fatal"] = True
-    details_payload = payload_to_mapping(result.details)
-    if isinstance(details_payload, dict):
-        nested_details: StructuredPayload = {}
-        for key, value in details_payload.items():
-            if key in _ERROR_TOP_LEVEL_DETAIL_KEYS:
-                error_payload[key] = value
-            elif key not in _RESERVED_ERROR_KEYS:
-                nested_details[key] = value
-        if nested_details:
-            error_payload["details"] = nested_details
+    nested_details: StructuredPayload = {}
+    for key, value in result.details.items():
+        if key in _ERROR_TOP_LEVEL_DETAIL_KEYS:
+            error_payload[key] = value
+        elif key not in _RESERVED_ERROR_KEYS:
+            nested_details[key] = value
+    if nested_details:
+        error_payload["details"] = nested_details
     return error_payload
 
 

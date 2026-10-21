@@ -23,7 +23,6 @@ from ...domain import (
     OperationResult,
     OperationSuccess,
     StructuredPayload,
-    payload_to_mapping,
 )
 from ...session.constants import DEFAULT_TIMEOUT_SEC
 from ...session.registry import SessionRegistry
@@ -193,10 +192,7 @@ def _wrap_action_result(action: str, result: ToolResult) -> ToolResult:
     """Wrap a tool result in the v2 action envelope."""
 
     if isinstance(result, OperationError):
-        details_payload = payload_to_mapping(result.details)
-        details: StructuredPayload = (
-            dict(details_payload) if isinstance(details_payload, dict) else {}
-        )
+        details = dict(result.details)
         details.setdefault("action", action)
         return OperationError(
             message=result.message,
@@ -273,8 +269,7 @@ def _annotate_session_failure(
     if not isinstance(result, OperationError):
         return result
 
-    details_payload = payload_to_mapping(result.details)
-    details: StructuredPayload = dict(details_payload) if isinstance(details_payload, dict) else {}
+    details = dict(result.details)
     details.setdefault("session_id", session_id)
     for name, value in _session_state_details(session).items():
         details.setdefault(name, value)

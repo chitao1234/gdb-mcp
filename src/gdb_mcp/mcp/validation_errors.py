@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import cast
 
 from pydantic import BaseModel, ValidationError
 
-from ..domain import OperationError, StructuredPayload
+from ..domain import JsonArray, JsonObject, OperationError, StructuredPayload
 from .schema_normalizer import public_input_schema
 
 _TAG_PROPERTY_NAMES = ("action", "kind")
@@ -28,7 +27,8 @@ def build_validation_error(
     """
 
     schema: object = public_input_schema(model) if model is not None else {}
-    field_errors: list[dict[str, str]] = []
+    field_errors: JsonArray = []
+    messages: list[str] = []
     action: str | None = None
 
     for error in exc.errors(include_url=False):
@@ -36,17 +36,17 @@ def build_validation_error(
         if action is None:
             action = next((value for parent, _, value in tags if not parent), None)
         field, issue, message = _describe(error, path, tags)
-        field_errors.append({"field": field, "issue": issue, "message": message})
+        entry: JsonObject = {"field": field, "issue": issue, "message": message}
+        field_errors.append(entry)
+        messages.append(message)
 
-    message = "; ".join(entry["message"] for entry in field_errors)
-
-    details: dict[str, object] = {"tool": tool_name, "field_errors": field_errors}
+    details: StructuredPayload = {"tool": tool_name, "field_errors": field_errors}
     if action is not None:
         details["action"] = action
     return OperationError(
-        message=message,
+        message="; ".join(messages),
         code="validation_error",
-        details=cast(StructuredPayload, details),
+        details=details,
     )
 
 
