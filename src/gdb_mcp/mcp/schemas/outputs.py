@@ -96,6 +96,7 @@ from ...domain import (
     SessionStartInfo,
     SessionStatusSnapshot,
     SourceContextInfo,
+    StructuredOutput,
     ThreadListInfo,
     ThreadSelectionInfo,
     VariablesInfo,
@@ -130,7 +131,7 @@ class ToolErrorEnvelope(BaseModel):
 #: The payload type of each success shape, keyed by the action that produces it,
 #: or ``None`` for the tools that are not action-based. These are the types the
 #: session layer returns, so the published schema follows the code.
-TOOL_OUTPUT_PAYLOADS: dict[str, tuple[tuple[str | None, type[object]], ...]] = {
+TOOL_OUTPUT_PAYLOADS: dict[str, tuple[tuple[str | None, type[StructuredOutput]], ...]] = {
     TOOL_SESSION_START: ((None, SessionStartInfo),),
     TOOL_SESSION_CONNECT: ((None, SessionStartInfo),),
     TOOL_SESSION_QUERY: (
@@ -226,7 +227,7 @@ def build_output_schema(tool_name: str) -> Schema:
 
 def _success_variant(
     action: str | None,
-    payload_type: type[object],
+    payload_type: type[StructuredOutput],
     defs: dict[str, object],
 ) -> Schema:
     """Build one success alternative: the envelope carrying one payload."""
@@ -234,7 +235,7 @@ def _success_variant(
     payload = TypeAdapter(payload_type).json_schema()
     _merge_defs(defs, payload.pop("$defs", {}))
 
-    properties = _properties(_model_schema(ToolSuccessEnvelope))
+    properties: dict[str, object] = ToolSuccessEnvelope.model_json_schema()["properties"]
     required: list[str] = ["status"]
     if action is not None:
         properties["action"] = {"const": action}
@@ -256,7 +257,7 @@ def _model_schema(model: type[BaseModel]) -> Schema:
     return model.model_json_schema()
 
 
-def _merge_defs(target: dict[str, object], source: object) -> None:
+def _merge_defs(target: dict[str, object], source: Mapping[str, object]) -> None:
     """Collect the definitions one payload schema references.
 
     Payload schemas are assembled into one document, so their definitions share
@@ -264,20 +265,9 @@ def _merge_defs(target: dict[str, object], source: object) -> None:
     publish one of them, so it is an error instead.
     """
 
-    if not isinstance(source, Mapping):
-        return
     for name, definition in source.items():
-        if not isinstance(name, str):
-            continue
         existing = target.get(name)
         if existing is None:
             target[name] = definition
         elif json.dumps(existing, sort_keys=True) != json.dumps(definition, sort_keys=True):
             raise ValueError(f"Conflicting schema definitions for {name!r}")
-
-
-def _properties(schema: Schema) -> dict[str, object]:
-    """Return one schema's property map, or an empty one."""
-
-    properties = schema.get("properties")
-    return dict(properties) if isinstance(properties, Mapping) else {}
