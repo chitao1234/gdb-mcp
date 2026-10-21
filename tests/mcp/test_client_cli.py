@@ -1741,7 +1741,7 @@ class TestClientCli:
             ],
             response={
                 "status": "success",
-                "result": {"matched_failure": False, "iterations_completed": 1},
+                "result": {"iterations_requested": 1, "iterations": []},
             },
         )
 
@@ -1771,10 +1771,15 @@ class TestClientCli:
             response={
                 "status": "success",
                 "result": {
-                    "matched_failure": True,
-                    "iterations_completed": 1,
+                    "iterations_requested": 1,
                     "iterations": [
-                        {"iteration": 1, "status": "success", "trigger": "signal-received"}
+                        {
+                            "iteration": 1,
+                            "phase": "run",
+                            "result": {"status": "success", "result": {}},
+                            "matched_failure": True,
+                            "trigger": "signal-received",
+                        }
                     ],
                     "capture_bundle": {
                         "bundle_name": "cli-failure",
@@ -1782,7 +1787,7 @@ class TestClientCli:
                             {
                                 "name": "manifest.json",
                                 "path": "/tmp/cli-failure/manifest.json",
-                                "status": "written",
+                                "status": "success",
                             }
                         ],
                     },
@@ -1815,7 +1820,7 @@ class TestClientCli:
             ],
             response={
                 "status": "success",
-                "result": {"matched_failure": False, "iterations_completed": 1},
+                "result": {"iterations_requested": 1, "iterations": []},
             },
         )
 
@@ -1847,7 +1852,7 @@ class TestClientCli:
             ],
             response={
                 "status": "success",
-                "result": {"matched_failure": False, "iterations_completed": 1},
+                "result": {"iterations_requested": 1, "iterations": []},
             },
         )
 

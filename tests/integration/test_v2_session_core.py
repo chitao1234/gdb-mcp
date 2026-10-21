@@ -222,7 +222,7 @@ def test_run_until_failure_v2(
         },
     )
     assert result["status"] == "success"
-    assert dig(result, "result", "matched_failure") is True
+    assert mapping_list(dig(result, "result", "iterations"))[-1]["matched_failure"] is True
     assert dig(result, "result", "capture_bundle", "bundle_name") == "failure"
 
 

@@ -11,6 +11,7 @@ from gdb_mcp.domain import (
     CaptureBundleInfo,
     CommandExecutionInfo,
     MemoryCaptureRange,
+    OperationError,
     OperationSuccess,
     RunUntilFailureInfo,
     SessionMessage,
@@ -63,6 +64,26 @@ def _bundle() -> OperationSuccess[CaptureBundleInfo]:
 class TestRunUntilFailureService:
     """Test campaign loop behavior independently of the MCP handler layer."""
 
+    def test_startup_failure_keeps_the_original_error_on_its_iteration(self) -> None:
+        session = _fake_session()
+        session.start.return_value = OperationError(message="startup failed", code="not_started")
+
+        result = RunUntilFailureService(lambda: session).run_until_failure(
+            RunUntilFailureRequest(max_iterations=3)
+        )
+
+        assert len(result.value.iterations) == 1
+        iteration = result.value.iterations[0]
+        assert iteration.phase == "startup"
+        assert iteration.trigger == "startup_error"
+        assert iteration.result == {
+            "status": "error",
+            "code": "not_started",
+            "message": "startup failed",
+        }
+        assert iteration.execution_state is None
+        session.run.assert_not_called()
+
     def test_matches_default_signal_stop_and_captures_bundle(self) -> None:
         """Signal stops should match the default failure criteria and trigger capture."""
 
@@ -93,9 +114,11 @@ class TestRunUntilFailureService:
 
         assert isinstance(result, OperationSuccess)
         assert isinstance(result.value, RunUntilFailureInfo)
-        assert result.value.matched_failure is True
-        assert result.value.failure_iteration == 1
-        assert result.value.trigger == "stop_reason:signal-received"
+        assert result.value.iterations[-1].matched_failure is True
+        assert result.value.iterations[-1].iteration == 1
+        assert result.value.iterations[-1].trigger == "stop_reason:signal-received"
+        assert result.value.iterations[-1].phase == "run"
+        assert result.value.iterations[-1].result["status"] == "success"
         assert result.value.capture_bundle is not None
         assert result.value.capture_bundle.bundle_name == "bundle"
         session.capture_bundle.assert_called_once()
@@ -133,12 +156,11 @@ class TestRunUntilFailureService:
         )
 
         assert isinstance(result, OperationSuccess)
-        assert result.value.matched_failure is False
-        assert result.value.iterations_completed == 2
-        assert result.value.failure_iteration is None
-        assert result.value.execution_state == "exited"
-        assert result.value.stop_reason == "exited-normally"
-        assert result.value.exit_code == 0
+        assert not any(item.matched_failure for item in result.value.iterations)
+        assert len(result.value.iterations) == 2
+        assert result.value.iterations[-1].execution_state == "exited"
+        assert result.value.iterations[-1].stop_reason == "exited-normally"
+        assert result.value.iterations[-1].exit_code == 0
         session_1.stop.assert_called_once()
         session_2.stop.assert_called_once()
 
@@ -182,6 +204,8 @@ class TestRunUntilFailureService:
         )
 
         assert isinstance(result, OperationSuccess)
-        assert result.value.matched_failure is True
-        assert result.value.trigger == "setup_error"
+        assert result.value.iterations[-1].matched_failure is True
+        assert result.value.iterations[-1].trigger == "setup_error"
+        assert result.value.iterations[-1].phase == "setup"
+        assert result.value.iterations[-1].result["status"] == "success"
         session.run.assert_not_called()

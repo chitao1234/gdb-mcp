@@ -273,7 +273,7 @@ def test_cli_calls_real_streamable_http_run_until_failure(
 
     assert exit_code == 0
     assert payload["status"] == "success"
-    assert dig(payload, "result", "matched_failure") is True
+    assert mapping_list(dig(payload, "result", "iterations"))[-1]["matched_failure"] is True
     assert dig(payload, "result", "capture_bundle", "bundle_name") == "cli-failure"
     assert Path(text(dig(payload, "result", "capture_bundle", "manifest_path"))).exists()
 
@@ -326,6 +326,6 @@ def test_cli_calls_real_streamable_http_run_until_failure_with_setup_steps(
 
     assert exit_code == 0
     assert payload["status"] == "success"
-    assert dig(payload, "result", "matched_failure") is True
+    assert mapping_list(dig(payload, "result", "iterations"))[-1]["matched_failure"] is True
     assert dig(payload, "result", "capture_bundle", "bundle_name") == "cli-break-main"
     assert Path(text(dig(payload, "result", "capture_bundle", "manifest_path"))).exists()

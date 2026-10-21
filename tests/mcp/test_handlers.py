@@ -1643,9 +1643,10 @@ class TestHandlerRouting:
         )
         session.run.assert_called_once_with(args=None, timeout_sec=30, wait_for_stop=True)
         assert result_data["status"] == "success"
-        assert dig(result_data, "result", "matched_failure") is True
-        assert dig(result_data, "result", "failure_iteration") == 1
-        assert dig(result_data, "result", "trigger") == "stop_reason:signal-received"
+        iteration = mapping_list(dig(result_data, "result", "iterations"))[-1]
+        assert iteration["matched_failure"] is True
+        assert iteration["iteration"] == 1
+        assert iteration["trigger"] == "stop_reason:signal-received"
         assert dig(result_data, "result", "capture_bundle") is None
 
     def test_multiple_tools_use_different_sessions(self) -> None:
