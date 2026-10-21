@@ -75,15 +75,11 @@ def payload_to_mapping(value: object) -> JsonValue:
     raise TypeError(f"Value of type {type(value).__name__} is not JSON-serializable")
 
 
-def result_to_mapping(result: OperationResult[object]) -> StructuredPayload:
+def result_to_mapping(result: OperationResult[ToolPayload]) -> StructuredPayload:
     """Convert a typed operation result into its flattened payload mapping."""
 
     if isinstance(result, OperationSuccess):
-        serialized_value = payload_to_mapping(result.value)
-        if isinstance(serialized_value, dict):
-            payload: StructuredPayload = dict(serialized_value)
-        else:
-            payload = {"value": serialized_value}
+        payload = payload_to_mapping(result.value)
         payload.setdefault("status", "success")
         if result.warnings and "warnings" not in payload:
             payload["warnings"] = list(result.warnings)

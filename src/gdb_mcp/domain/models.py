@@ -48,10 +48,9 @@ CatchpointType: TypeAlias = Literal[
 ]
 
 
+@dataclass(slots=True, frozen=True)
 class StructuredOutput:
     """Nominal marker for dataclasses that form object-shaped tool results."""
-
-    __slots__ = ()
 
 
 @dataclass(slots=True, frozen=True)

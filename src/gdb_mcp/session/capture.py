@@ -16,6 +16,7 @@ from ..domain import (
     OperationResult,
     OperationSuccess,
     StructuredPayload,
+    ToolPayload,
     payload_to_mapping,
     result_to_mapping,
 )
@@ -374,7 +375,7 @@ class SessionCaptureService:
         self,
         bundle_dir: Path,
         name: str,
-        result: OperationResult[object],
+        result: OperationResult[ToolPayload],
     ) -> _WrittenArtifact:
         """Serialize one typed operation result into an artifact file."""
 
