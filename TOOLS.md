@@ -44,6 +44,13 @@ When an operation completed with a warning, `warnings` is a top-level array;
 `status` remains `success`. Failures use `status: "error"` and include `code`
 and `message`.
 
+Collection sizes are the lengths of the returned arrays. Session, inferior,
+breakpoint, thread, backtrace, disassembly, and source results omit redundant
+`count` fields; capture bundles omit `artifact_count` and memory reads omit
+`block_count`. Memory results use `requested_bytes` for the requested size and
+`captured_bytes` for the actual readable size. The memory request still uses
+`query.count`.
+
 ### Canonical Payload Fields
 
 Records keep whatever fields the debugger reported and add a small set that is
@@ -515,7 +522,7 @@ Query session inventory or inspect one live session.
 
 | Action | Request Shape | Success `result` |
 | --- | --- | --- |
-| `list` | `{"action":"list","query":{}}` | `sessions`, `count` |
+| `list` | `{"action":"list","query":{}}` | `sessions` |
 | `status` | `{"session_id":7,"action":"status","query":{}}` | `is_running`, `target_loaded`, `has_controller`, `execution_state`, `stop_reason`, `exit_code`, `current_inferior_id`, `inferior_count`, `inferior_states`, `follow_fork_mode`, `detach_on_fork` |
 
 ### Example
@@ -546,7 +553,7 @@ Query inferior state inside one live session.
 
 | Action | Request Shape | Success `result` |
 | --- | --- | --- |
-| `list` | `{"session_id":7,"action":"list","query":{}}` | `inferiors`, `count`, `current_inferior_id` |
+| `list` | `{"session_id":7,"action":"list","query":{}}` | `inferiors`, `current_inferior_id` |
 | `current` | `{"session_id":7,"action":"current","query":{}}` | `inferior` |
 
 ## `gdb_inferior_manage`
@@ -636,7 +643,7 @@ Query breakpoints.
 
 | Action | Request Shape | Success `result` |
 | --- | --- | --- |
-| `list` | `{"session_id":7,"action":"list","query":{"kinds":["code","watch"],"enabled":true}}` | `breakpoints`, `count` |
+| `list` | `{"session_id":7,"action":"list","query":{"kinds":["code","watch"],"enabled":true}}` | `breakpoints` |
 | `get` | `{"session_id":7,"action":"get","query":{"number":4}}` | `breakpoint` |
 
 `list` filters are optional.
@@ -735,8 +742,8 @@ Read thread and frame state without mutating selection.
 
 | Action | Request Shape | Success `result` |
 | --- | --- | --- |
-| `threads` | `{"session_id":7,"action":"threads","query":{}}` | `threads`, `current_thread_id`, `count` |
-| `backtrace` | `{"session_id":7,"action":"backtrace","query":{"thread_id":3,"max_frames":20}}` | `thread_id`, `frames`, `count` |
+| `threads` | `{"session_id":7,"action":"threads","query":{}}` | `threads`, `current_thread_id` |
+| `backtrace` | `{"session_id":7,"action":"backtrace","query":{"thread_id":3,"max_frames":20}}` | `thread_id`, `frames` |
 | `frame` | `{"session_id":7,"action":"frame","query":{"thread_id":3,"frame":1}}` | `frame` |
 
 All `backtrace` and `frame` selectors are optional. If omitted, the current selection is used without mutating it.
@@ -763,9 +770,9 @@ Read program state without using raw debugger commands.
 | `evaluate` | `{"session_id":7,"action":"evaluate","query":{"context":{"thread_id":3,"frame":1},"expression":"node->count"}}` | `expression`, `value` |
 | `variables` | `{"session_id":7,"action":"variables","query":{"context":{"thread_id":3,"frame":0}}}` | `thread_id`, `frame`, `variables` |
 | `registers` | `{"session_id":7,"action":"registers","query":{"context":{"thread_id":3,"frame":0},"register_names":["rax","rip"],"value_format":"hex"}}` | `registers` |
-| `memory` | `{"session_id":7,"action":"memory","query":{"address":"buffer","count":64,"offset":0}}` | `address`, `count`, `offset`, `blocks`, `block_count`, `captured_bytes` |
-| `disassembly` | `{"session_id":7,"action":"disassembly","query":{"location":{"kind":"function","function":"process_data"},"instruction_count":24,"mode":"mixed"}}` | `scope`, `thread_id`, `frame`, `function`, `file`, `fullname`, `line`, `start_address`, `end_address`, `mode`, `instructions`, `count` |
-| `source` | `{"session_id":7,"action":"source","query":{"location":{"kind":"file_line","file":"src/main.c","line":42},"context_before":5,"context_after":5}}` | `scope`, `thread_id`, `frame`, `function`, `address`, `file`, `fullname`, `line`, `start_line`, `end_line`, `lines`, `count` |
+| `memory` | `{"session_id":7,"action":"memory","query":{"address":"buffer","count":64,"offset":0}}` | `address`, `requested_bytes`, `offset`, `blocks`, `captured_bytes` |
+| `disassembly` | `{"session_id":7,"action":"disassembly","query":{"location":{"kind":"function","function":"process_data"},"instruction_count":24,"mode":"mixed"}}` | `scope`, `thread_id`, `frame`, `function`, `file`, `fullname`, `line`, `start_address`, `end_address`, `mode`, `instructions` |
+| `source` | `{"session_id":7,"action":"source","query":{"location":{"kind":"file_line","file":"src/main.c","line":42},"context_before":5,"context_after":5}}` | `scope`, `thread_id`, `frame`, `function`, `address`, `file`, `fullname`, `line`, `start_line`, `end_line`, `lines` |
 
 ### Register Filters
 
@@ -792,9 +799,10 @@ architecture cannot be inferred, only unambiguous vector names are removed.
 - `blocks` carries only the readable memory. A request that spans unreadable
   memory comes back as several blocks, each with `begin`, `offset`, `end`, and
   `contents`.
-- A read that returns fewer bytes than `count`, or more than one block, adds a
-  `warnings` entry: `Partial read: captured X of Y bytes` and
-  `Discontinuous read: N blocks returned`.
+- `requested_bytes` records the requested length and `captured_bytes` the actual
+  readable length. A short read adds `Partial read: captured X of Y bytes`; a
+  discontinuous read adds `Discontinuous read: N blocks returned`. The number of
+  returned blocks is `blocks.length`.
 
 ### Location Notes
 
@@ -900,7 +908,6 @@ or shorthand string form:
 - `bundle_name`
 - `manifest_path`
 - `artifacts`
-- `artifact_count`
 - `failed_sections`
 - `execution_state`
 - `stop_reason`

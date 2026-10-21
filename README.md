@@ -40,6 +40,10 @@ Workflow batches return `requested_steps` and the completed `steps`. Each step
 contains the complete tool envelope under `result`; read its `status`, `action`,
 and error `code` there. The CLI exits nonzero if any step returned an error.
 
+Collection results expose their arrays directly; use the array length for the
+number returned. Memory reads report `requested_bytes` and `captured_bytes` so
+partial reads remain explicit.
+
 ## Requirements
 
 - Python 3.10 or newer
