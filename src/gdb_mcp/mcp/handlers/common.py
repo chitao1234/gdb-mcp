@@ -6,7 +6,7 @@ import re
 import shlex
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Generic, Literal, Protocol, TypeAlias, TypeVar, cast, runtime_checkable
+from typing import Generic, Literal, Protocol, TypeAlias, TypeVar, runtime_checkable
 
 from pydantic import BaseModel, RootModel
 
@@ -23,6 +23,7 @@ from ...domain import (
     OperationResult,
     OperationSuccess,
     StructuredPayload,
+    payload_to_mapping,
 )
 from ...session.constants import DEFAULT_TIMEOUT_SEC
 from ...session.registry import SessionRegistry
@@ -201,14 +202,22 @@ def _normalize_arguments(arguments: object) -> ToolArguments:
         return {}
     if not isinstance(arguments, dict):
         raise TypeError("Tool arguments must be a JSON object")
-    return cast(ToolArguments, arguments)
+    payload: ToolArguments = {}
+    for key, value in arguments.items():
+        if not isinstance(key, str):
+            raise TypeError("Tool arguments must be a JSON object")
+        payload[key] = payload_to_mapping(value)
+    return payload
 
 
 def _unwrap_action_args(args: BaseModel) -> BaseModel:
     """Return the discriminated action payload for root-model tool schemas."""
 
     if isinstance(args, RootModel):
-        return cast(BaseModel, args.root)
+        root: object = args.root
+        if not isinstance(root, BaseModel):
+            raise TypeError(f"{type(args).__name__} must wrap a request model")
+        return root
     return args
 
 
