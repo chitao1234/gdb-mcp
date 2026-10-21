@@ -11,6 +11,7 @@ from mcp.types import TextContent
 
 from gdb_mcp.domain import OperationSuccess, SessionMessage
 from gdb_mcp.mcp.handlers import dispatch_tool_call
+from gdb_mcp.session.registry import SessionRegistry
 from tests.support import dig, mapping_list, text
 
 
@@ -21,7 +22,7 @@ def _dispatch(name: str, arguments: object) -> dict[str, object]:
         dispatch_tool_call(
             name,
             arguments,
-            Mock(),
+            Mock(spec=SessionRegistry),
             logger=logging.getLogger("test-validation-errors"),
         )
     )
@@ -161,7 +162,7 @@ class TestSuccessfulDispatch:
     def test_success_result_keeps_is_error_false(self) -> None:
         """The dispatcher should only set isError for error envelopes."""
 
-        manager = Mock()
+        manager = Mock(spec=SessionRegistry)
         manager.close_session.return_value = OperationSuccess(
             SessionMessage(message="Session stopped")
         )

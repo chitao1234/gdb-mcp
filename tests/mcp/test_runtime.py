@@ -12,16 +12,19 @@ from mcp.types import TextContent
 
 from gdb_mcp.domain import OperationSuccess, SessionStatusSnapshot
 from gdb_mcp.mcp.runtime import ServerRuntime, create_server_runtime
+from gdb_mcp.session.registry import SessionRegistry
+from gdb_mcp.session.runtime import SessionRuntime
+from gdb_mcp.session.service import SessionService
 
 
 def _session_double() -> Mock:
     """Create a runtime test double that satisfies the workflow-lock contract."""
 
-    session = Mock()
+    session = Mock(spec=SessionService)
     workflow_lock = MagicMock()
     workflow_lock.__enter__.return_value = None
     workflow_lock.__exit__.return_value = None
-    session.runtime = Mock(workflow_lock=workflow_lock)
+    session.runtime = Mock(spec=SessionRuntime, workflow_lock=workflow_lock)
     return session
 
 
@@ -29,7 +32,7 @@ def _session_double() -> Mock:
 def runtime_with_manager() -> tuple[ServerRuntime, Mock]:
     """Build a runtime wired to a fresh mock session manager."""
 
-    mock_manager = Mock()
+    mock_manager = Mock(spec=SessionRegistry)
     mock_manager.shutdown_all.return_value = {}
     runtime = create_server_runtime(
         session_manager_provider=lambda: mock_manager,

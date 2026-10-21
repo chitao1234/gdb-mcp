@@ -147,8 +147,12 @@ def test_resolve_server_reuses_a_live_cookie(state_dir: Path) -> None:
     daemon._write_cookie(paths, {"pid": 1, "url": "http://127.0.0.1:9/mcp", "token": "tok"})
 
     with (
-        patch.object(daemon, "_server_reachable", new=AsyncMock(return_value=True)),
-        patch.object(daemon, "_spawn", new=AsyncMock()) as mock_spawn,
+        patch.object(
+            daemon,
+            "_server_reachable",
+            new=AsyncMock(spec=daemon._server_reachable, return_value=True),
+        ),
+        patch.object(daemon, "_spawn", new=AsyncMock(spec=daemon._spawn)) as mock_spawn,
     ):
         resolved = asyncio.run(resolve_server(explicit_url=None))
 
@@ -164,8 +168,14 @@ def test_resolve_server_replaces_a_stale_cookie(state_dir: Path) -> None:
     spawned = ResolvedServer("http://127.0.0.1:10/mcp", "fresh", True)
 
     with (
-        patch.object(daemon, "_server_reachable", new=AsyncMock(return_value=False)),
-        patch.object(daemon, "_spawn", new=AsyncMock(return_value=spawned)) as mock_spawn,
+        patch.object(
+            daemon,
+            "_server_reachable",
+            new=AsyncMock(spec=daemon._server_reachable, return_value=False),
+        ),
+        patch.object(
+            daemon, "_spawn", new=AsyncMock(spec=daemon._spawn, return_value=spawned)
+        ) as mock_spawn,
     ):
         resolved = asyncio.run(resolve_server(explicit_url=None))
 

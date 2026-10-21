@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -12,6 +13,8 @@ from unittest.mock import ANY, AsyncMock, MagicMock, Mock, patch
 
 import pytest
 import uvicorn
+from mcp.server import Server
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.shared.memory import create_connected_server_and_client_session
 from mcp.types import CallToolResult, TextContent, Tool
 from starlette.applications import Starlette
@@ -32,7 +35,7 @@ from gdb_mcp.mcp.app import (
 def http_app_doubles() -> tuple[Mock, Mock]:
     """Provide a stand-in MCP app and shutdown callback for HTTP-app tests."""
 
-    return Mock(), Mock()
+    return Mock(spec=Server), Mock()
 
 
 class TestMcpAppToolRegistration:
@@ -84,7 +87,7 @@ class TestStreamableHttpApp:
         """The helper should build the route and wire shutdown cleanup into lifespan."""
 
         mcp_app, shutdown = http_app_doubles
-        session_manager = Mock()
+        session_manager = Mock(spec=StreamableHTTPSessionManager)
 
         @asynccontextmanager
         async def manager_lifespan() -> AsyncIterator[None]:
@@ -168,7 +171,7 @@ class TestStreamableHttpApp:
         """The helper should wrap the Starlette app in a uvicorn server."""
 
         mcp_app, shutdown = http_app_doubles
-        starlette_app = Mock()
+        starlette_app = Mock(spec=Starlette)
         uvicorn_server = Mock()
         uvicorn_server.serve = AsyncMock(return_value=None)
 
@@ -221,8 +224,8 @@ class TestStreamableHttpApp:
         """The startup message should be logged once with the effective log level."""
 
         mcp_app, _shutdown = http_app_doubles
-        app_logger = Mock()
-        root_logger = Mock()
+        app_logger = Mock(spec=logging.Logger)
+        root_logger = Mock(spec=logging.Logger)
         root_logger.getEffectiveLevel.return_value = 20
         uvicorn_server = Mock()
         uvicorn_server.serve = AsyncMock(return_value=None)

@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 from gdb_mcp.domain import OperationError, OperationSuccess, SessionStartInfo
 from gdb_mcp.session.gdb_backend import GdbMiBackend
-from gdb_mcp.session.protocols import OsModuleProtocol
+from gdb_mcp.session.protocols import OsModuleProtocol, TimeModuleProtocol
 from gdb_mcp.session.service import SessionService
 from gdb_mcp.session.state import SessionState
 from gdb_mcp.transport.protocols import GdbControllerFactoryProtocol, GdbControllerProtocol
@@ -34,9 +34,9 @@ def _service(
 
     return SessionService(
         backend=GdbMiBackend(
-            controller_factory=controller_factory or MagicMock(),
+            controller_factory=controller_factory or MagicMock(spec=GdbControllerFactoryProtocol),
             os_module=os_module or _os_module(),
-            time_module=MagicMock(),
+            time_module=MagicMock(spec=TimeModuleProtocol),
         )
     )
 

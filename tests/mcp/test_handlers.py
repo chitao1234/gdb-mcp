@@ -39,6 +39,8 @@ from gdb_mcp.mcp.handlers import TOOL_SPECS, dispatch_tool_call
 from gdb_mcp.mcp.schemas import build_tool_definitions
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.registry import SessionRegistry
+from gdb_mcp.session.runtime import SessionRuntime
+from gdb_mcp.session.service import SessionService
 from tests.support import dig, mapping, mapping_list, text
 
 
@@ -54,8 +56,8 @@ def _workflow_lock() -> MagicMock:
 def _session_double(**runtime_state: object) -> Mock:
     """Create a handler test double that satisfies the workflow-lock contract."""
 
-    session = Mock()
-    session.runtime = Mock(workflow_lock=_workflow_lock(), **runtime_state)
+    session = Mock(spec=SessionService)
+    session.runtime = Mock(spec=SessionRuntime, workflow_lock=_workflow_lock(), **runtime_state)
     session.has_controller = False
     session.is_running = False
     return session
@@ -64,7 +66,7 @@ def _session_double(**runtime_state: object) -> Mock:
 def _manager_for(session: object) -> Mock:
     """Create a registry double that resolves every session ID to the session."""
 
-    manager = Mock()
+    manager = Mock(spec=SessionRegistry)
     manager.resolve_session.return_value = session
     return manager
 
@@ -144,7 +146,7 @@ class TestHandlerDispatch:
     def test_start_session_returns_session_id(self) -> None:
         """Successful startup should include the published session ID."""
 
-        manager = Mock()
+        manager = Mock(spec=SessionRegistry)
         manager.start_session.return_value = (
             42,
             OperationSuccess(
@@ -163,7 +165,7 @@ class TestHandlerDispatch:
     def test_start_session_normalizes_shell_style_string_args(self) -> None:
         """Startup args in shell-string form should be normalized before session creation."""
 
-        manager = Mock()
+        manager = Mock(spec=SessionRegistry)
         manager.start_session.return_value = (
             7,
             OperationSuccess(SessionMessage(message="Session started")),
@@ -191,7 +193,7 @@ class TestHandlerDispatch:
     def test_start_session_failure_does_not_expose_session_id(self) -> None:
         """Failed startup should not expose a session ID."""
 
-        manager = Mock()
+        manager = Mock(spec=SessionRegistry)
         manager.start_session.return_value = (
             None,
             OperationError(message="Startup failed"),
@@ -205,7 +207,7 @@ class TestHandlerDispatch:
     def test_connect_session_passes_endpoint_to_registry(self) -> None:
         """Connecting should forward the endpoint and publish the session ID."""
 
-        manager = Mock()
+        manager = Mock(spec=SessionRegistry)
         manager.start_session.return_value = (
             11,
             OperationSuccess(SessionStartInfo(message="GDB session started")),
@@ -227,7 +229,7 @@ class TestHandlerDispatch:
     def test_connect_session_passes_lldb_remote_fields_to_registry(self) -> None:
         """An LLDB remote connection forwards its backend and target fields."""
 
-        manager = Mock()
+        manager = Mock(spec=SessionRegistry)
         manager.start_session.return_value = (
             12,
             OperationSuccess(SessionStartInfo(message="LLDB session started")),
@@ -257,7 +259,7 @@ class TestHandlerDispatch:
     def test_connect_session_failure_does_not_expose_session_id(self) -> None:
         """A failed endpoint connection should not expose a session ID."""
 
-        manager = Mock()
+        manager = Mock(spec=SessionRegistry)
         manager.start_session.return_value = (
             None,
             OperationError(message="Could not reach MI endpoint"),
@@ -275,7 +277,7 @@ class TestHandlerDispatch:
     def test_session_query_list_routes_to_registry(self) -> None:
         """Global session inventory requests should route through gdb_session_query."""
 
-        manager = Mock()
+        manager = Mock(spec=SessionRegistry)
         manager.list_sessions.return_value = OperationSuccess(
             SessionListInfo(
                 sessions=[
@@ -326,7 +328,7 @@ class TestHandlerDispatch:
     def test_tool_with_invalid_session_id_returns_error(self) -> None:
         """Invalid session IDs should fail before any tool execution."""
 
-        manager = Mock()
+        manager = Mock(spec=SessionRegistry)
         manager.resolve_session.return_value = OperationError(
             message="Invalid session_id: 999. Use gdb_session_start to create a new session."
         )
@@ -344,7 +346,7 @@ class TestHandlerDispatch:
     def test_tool_with_closing_session_returns_closing_error(self) -> None:
         """Commands against closing sessions should get a precise lifecycle error."""
 
-        manager = Mock()
+        manager = Mock(spec=SessionRegistry)
         manager.resolve_session.return_value = OperationError(message="Session 2 is closing")
 
         result_data = dispatch(
@@ -464,7 +466,7 @@ class TestHandlerRouting:
     def test_tool_with_missing_session_id_returns_validation_error(self) -> None:
         """Known tools should validate arguments before session lookup."""
 
-        manager = Mock()
+        manager = Mock(spec=SessionRegistry)
 
         result_data = dispatch("gdb_session_query", {"action": "status", "query": {}}, manager)
 
@@ -475,7 +477,7 @@ class TestHandlerRouting:
     def test_tool_with_non_object_arguments_returns_validation_error(self) -> None:
         """Non-dict arguments should fail as request validation errors."""
 
-        manager = Mock()
+        manager = Mock(spec=SessionRegistry)
 
         result_data = dispatch("gdb_session_query", ["not", "an", "object"], manager)
 
@@ -487,7 +489,7 @@ class TestHandlerRouting:
     def test_tool_with_unknown_argument_returns_validation_error(self) -> None:
         """Unexpected tool arguments should be rejected at the MCP boundary."""
 
-        manager = Mock()
+        manager = Mock(spec=SessionRegistry)
 
         result_data = dispatch(
             "gdb_session_query",
@@ -502,7 +504,7 @@ class TestHandlerRouting:
     def test_session_manage_stop_routes_to_registry_close(self) -> None:
         """Successful stop should go through the registry lifecycle API."""
 
-        manager = Mock()
+        manager = Mock(spec=SessionRegistry)
         manager.close_session.return_value = OperationSuccess(
             SessionMessage(message="Session stopped")
         )
@@ -522,7 +524,7 @@ class TestHandlerRouting:
     def test_unknown_tool_returns_unknown_tool_error(self) -> None:
         """Unknown tools should fail before any session lookup happens."""
 
-        manager = Mock()
+        manager = Mock(spec=SessionRegistry)
 
         result_data = dispatch("gdb_typo_tool", {"session_id": 1}, manager)
 
@@ -1431,7 +1433,7 @@ class TestHandlerRouting:
 
         session = _session_double()
         workflow_lock = _workflow_lock()
-        session.runtime = Mock(workflow_lock=workflow_lock)
+        session.runtime = Mock(spec=SessionRuntime, workflow_lock=workflow_lock)
         session.get_status.return_value = OperationSuccess(
             SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=True)
         )
@@ -1562,7 +1564,7 @@ class TestHandlerRouting:
     def test_run_until_failure_capture_forwards_memory_ranges(self) -> None:
         """Campaign capture settings should forward explicit memory ranges to bundle capture."""
 
-        manager = Mock()
+        manager = Mock(spec=SessionRegistry)
         session = _failure_session(manager)
 
         dispatch(
@@ -1585,7 +1587,7 @@ class TestHandlerRouting:
     def test_run_until_failure_capture_accepts_exact_bundle_name(self) -> None:
         """Campaign capture should accept bundle_name alias for deterministic naming."""
 
-        manager = Mock()
+        manager = Mock(spec=SessionRegistry)
         session = _failure_session(manager)
 
         dispatch(
@@ -1606,7 +1608,7 @@ class TestHandlerRouting:
     def test_run_until_failure_uses_untracked_sessions(self) -> None:
         """Campaign requests should create fresh untracked sessions and return campaign data."""
 
-        manager = Mock()
+        manager = Mock(spec=SessionRegistry)
         session = _failure_session(manager)
 
         result_data = dispatch(
@@ -1639,7 +1641,7 @@ class TestHandlerRouting:
     def test_multiple_tools_use_different_sessions(self) -> None:
         """Separate session IDs should be routed independently."""
 
-        manager = Mock()
+        manager = Mock(spec=SessionRegistry)
         session_1 = _session_double()
         session_1.get_status.return_value = OperationSuccess(
             SessionStatusSnapshot(is_running=False, target_loaded=False, has_controller=True)

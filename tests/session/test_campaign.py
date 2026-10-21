@@ -21,6 +21,7 @@ from gdb_mcp.session.campaign import (
     RunUntilFailureRequest,
     RunUntilFailureService,
 )
+from gdb_mcp.session.service import SessionService
 from gdb_mcp.session.workflow import BatchStepTemplate
 
 
@@ -32,7 +33,7 @@ def _fake_session(
 ) -> Mock:
     """Build a session double with the surface the campaign runner drives."""
 
-    session = Mock()
+    session = Mock(spec=SessionService)
     session.start.return_value = OperationSuccess(SessionStartInfo(message="started"))
     session.run.return_value = OperationSuccess(CommandExecutionInfo(command="-exec-run"))
     if status is not None:
@@ -40,7 +41,6 @@ def _fake_session(
     session.last_stop_event = stop_event
     if capture is not None:
         session.capture_bundle.return_value = capture
-    session.controller = object()
     session.stop.return_value = OperationSuccess(SessionMessage(message="stopped"))
     session.runtime.workflow_lock = MagicMock()
     return session

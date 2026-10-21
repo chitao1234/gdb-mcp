@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import pytest
 
 from gdb_mcp import server
+from gdb_mcp.mcp.runtime import ServerRuntime
 from gdb_mcp.server import main, parse_server_config
 
 
@@ -20,7 +21,7 @@ class TestServerEntrypoint:
     def test_main_defaults_to_stdio_transport(self, mock_create_default_runtime: MagicMock) -> None:
         """main() should keep stdio as the zero-argument default transport."""
 
-        runtime = Mock()
+        runtime = Mock(spec=ServerRuntime)
         runtime.run_stdio = AsyncMock(return_value=None)
         runtime.run_streamable_http = AsyncMock(return_value=None)
         mock_create_default_runtime.return_value = runtime
@@ -37,7 +38,7 @@ class TestServerEntrypoint:
     ) -> None:
         """main() should route explicit HTTP transport flags to the HTTP runner."""
 
-        runtime = Mock()
+        runtime = Mock(spec=ServerRuntime)
         runtime.run_stdio = AsyncMock(return_value=None)
         runtime.run_streamable_http = AsyncMock(return_value=None)
         mock_create_default_runtime.return_value = runtime
@@ -124,10 +125,10 @@ class TestServerEntrypoint:
     ) -> None:
         """Repeated main() calls should not keep a module-global runtime cache."""
 
-        runtime_one = Mock()
+        runtime_one = Mock(spec=ServerRuntime)
         runtime_one.run_stdio = AsyncMock(return_value=None)
         runtime_one.run_streamable_http = AsyncMock(return_value=None)
-        runtime_two = Mock()
+        runtime_two = Mock(spec=ServerRuntime)
         runtime_two.run_stdio = AsyncMock(return_value=None)
         runtime_two.run_streamable_http = AsyncMock(return_value=None)
         mock_create_default_runtime.side_effect = [runtime_one, runtime_two]

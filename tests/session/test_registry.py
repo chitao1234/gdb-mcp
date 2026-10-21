@@ -19,8 +19,10 @@ from gdb_mcp.domain import (
     SessionStatusSnapshot,
 )
 from gdb_mcp.session import registry as registry_module
+from gdb_mcp.session.config import SessionConfig
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.registry import SessionRegistry
+from gdb_mcp.session.runtime import SessionRuntime
 from gdb_mcp.session.service import SessionService
 from gdb_mcp.session.state import SessionState
 from tests.support import failed, succeeded
@@ -34,6 +36,7 @@ def _session_double() -> Mock:
     workflow_lock.__enter__.return_value = None
     workflow_lock.__exit__.return_value = None
     session.runtime = Mock(
+        spec=SessionRuntime,
         workflow_lock=workflow_lock,
         lifecycle_lock=MagicMock(),
         attached_pid=None,
@@ -245,8 +248,11 @@ class TestSessionRegistry:
             )
         )
         session.state = SessionState.READY
-        session.config = Mock(program="/tmp/a.out", core=None, working_dir="/tmp")
+        session.config = Mock(
+            spec=SessionConfig, program="/tmp/a.out", core=None, working_dir="/tmp"
+        )
         session.runtime = Mock(
+            spec=SessionRuntime,
             workflow_lock=session.runtime.workflow_lock,
             lifecycle_lock=session.runtime.lifecycle_lock,
             attached_pid=None,

@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 
 import httpx
 import pytest
+from mcp.client.session import ClientSession
 from mcp.types import CallToolResult, TextContent
 
 from gdb_mcp.client import runtime
@@ -62,8 +63,8 @@ def runtime_harness(monkeypatch: pytest.MonkeyPatch) -> _RuntimeHarness:
     )
     monkeypatch.setattr(runtime, "streamable_http_client", streamable_http_client)
 
-    session = AsyncMock()
-    client_session_cls = MagicMock()
+    session = AsyncMock(spec=ClientSession)
+    client_session_cls = MagicMock(spec=ClientSession)
     client_session_cls.return_value = _AsyncContextManager(session)
     monkeypatch.setattr(runtime, "ClientSession", client_session_cls)
 
@@ -149,7 +150,7 @@ class TestClientRuntime:
     ) -> None:
         """A caller-supplied HTTP client should reach the streamable transport."""
 
-        http_client = Mock()
+        http_client = Mock(spec=httpx.AsyncClient)
         runtime_harness.session.call_tool = AsyncMock(
             return_value=CallToolResult(
                 content=[TextContent(type="text", text='{"status":"success"}')]
@@ -180,8 +181,8 @@ class TestClientRuntime:
         SSE read timeout instead.
         """
 
-        mock_async_client_cls = MagicMock()
-        owned_client = AsyncMock()
+        mock_async_client_cls = MagicMock(spec=httpx.AsyncClient)
+        owned_client = AsyncMock(spec=httpx.AsyncClient)
         mock_async_client_cls.return_value = owned_client
         monkeypatch.setattr(httpx, "AsyncClient", mock_async_client_cls)
         runtime_harness.session.call_tool = AsyncMock(
