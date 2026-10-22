@@ -31,6 +31,7 @@ class InferiorRuntimeState:
     execution_state: ExecutionState = "unknown"
     stop_reason: str | None = None
     exit_code: int | None = None
+    refined_stop_kind: tuple[str | None, StopKind] | None = None
 
 
 @dataclass(slots=True)
@@ -62,10 +63,6 @@ class SessionRuntime:
     stop_history_limit: int = DEFAULT_STOP_HISTORY_LIMIT
     command_transcript: list[CommandTranscriptEntry] = field(default_factory=list)
     command_transcript_limit: int = DEFAULT_COMMAND_TRANSCRIPT_LIMIT
-    # A finer stop kind than the native reason expresses, tied to that reason.
-    _refined_stop_kind: tuple[str | None, StopKind] | None = field(
-        default=None, repr=False, compare=False
-    )
     # Leaf lock guarding the container state below. No other lock is taken while
     # it is held, so it cannot participate in a lock-order cycle.
     _state_lock: LockProtocol = field(default_factory=threading.RLock, repr=False, compare=False)
@@ -103,7 +100,7 @@ class SessionRuntime:
         it is used only while that stop reason is current.
         """
 
-        refined = self._refined_stop_kind
+        refined = self._selected_state.refined_stop_kind
         if refined is not None and refined[0] == self.stop_reason:
             return refined[1]
         return stop_kind_from_reason(self.stop_reason)
@@ -310,12 +307,12 @@ class SessionRuntime:
         it (DAP calls a watchpoint stop ``breakpoint``).
         """
 
-        self._refined_stop_kind = (reason, stop_kind) if stop_kind is not None else None
         self._update_inferior_state(
             inferior_id=inferior_id,
             execution_state="paused",
             stop_reason=reason,
             exit_code=None,
+            refined_stop_kind=stop_kind,
         )
 
     def mark_inferior_exited(
@@ -407,6 +404,7 @@ class SessionRuntime:
         execution_state: ExecutionState,
         stop_reason: str | None,
         exit_code: int | None,
+        refined_stop_kind: StopKind | None = None,
     ) -> None:
         """Update the execution state owned by one inferior."""
 
@@ -420,6 +418,9 @@ class SessionRuntime:
             state.execution_state = execution_state
             state.stop_reason = stop_reason
             state.exit_code = exit_code
+            state.refined_stop_kind = (
+                (stop_reason, refined_stop_kind) if refined_stop_kind is not None else None
+            )
 
             if self.inferior_count is None or self.inferior_count < len(self.inferior_states):
                 self.inferior_count = len(self.inferior_states)
