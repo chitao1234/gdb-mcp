@@ -16,6 +16,7 @@ from ...contracts import (
     TOOL_SESSION_QUERY,
     TOOL_WORKFLOW_BATCH,
     ExecutionWaitUntil,
+    SessionState,
 )
 from ...domain import (
     MemoryCaptureRange,
@@ -213,6 +214,28 @@ def _wrap_action_result(
     return OperationSuccess(result.value, warnings=result.warnings, action=action)
 
 
+def execute_session_invocation(
+    invocation: SessionToolInvocation,
+    session: SessionService,
+    *,
+    session_id: int | None,
+) -> ToolResult:
+    """Apply shared session failure and action handling to one validated invocation."""
+
+    if session.state in {SessionState.STOPPED, SessionState.CLOSING}:
+        result: ToolResult = OperationError(
+            message="Session is closing or stopped", code="session_closing"
+        )
+    else:
+        result = invocation.execute(session)
+    result = _annotate_session_failure(
+        result,
+        session,
+        session_id=session_id,
+    )
+    return _wrap_action_result(invocation.action, result)
+
+
 # GDB reports these conditions as free-form text and this server forwards the
 # text unchanged. Classify the ones a caller can branch on, so an envelope is
 # actionable without parsing the message.
@@ -258,7 +281,7 @@ def _session_state_details(session: SessionService) -> StructuredPayload:
 
 
 def _annotate_session_failure(
-    result: OperationResult[PayloadT], session: SessionService, *, session_id: int
+    result: OperationResult[PayloadT], session: SessionService, *, session_id: int | None
 ) -> OperationResult[PayloadT]:
     """Attach session state and a specific code to one session-scoped failure.
 
@@ -271,7 +294,8 @@ def _annotate_session_failure(
         return result
 
     details = dict(result.details)
-    details.setdefault("session_id", session_id)
+    if session_id is not None:
+        details.setdefault("session_id", session_id)
     for name, value in _session_state_details(session).items():
         details.setdefault(name, value)
 

@@ -38,7 +38,7 @@ from .common import (
     _memory_capture_ranges,
     _normalize_run_args,
     _workflow_step_validation_error,
-    _wrap_action_result,
+    execute_session_invocation,
 )
 
 
@@ -188,8 +188,9 @@ def _build_batch_step_templates(
         def execute_step(
             session: SessionService,
             invocation: SessionToolInvocation = invocation,
+            step_session_id: int | None = session_id if steps_field == "steps" else None,
         ) -> ToolResult:
-            return _wrap_action_result(invocation.action, invocation.execute(session))
+            return execute_session_invocation(invocation, session, session_id=step_session_id)
 
         templates.append(
             BatchStepTemplate(

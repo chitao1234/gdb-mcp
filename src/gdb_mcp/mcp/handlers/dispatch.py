@@ -9,7 +9,6 @@ from contextlib import nullcontext
 from mcp.types import CallToolResult
 from pydantic import ValidationError
 
-from ...contracts import SessionState
 from ...domain import (
     OperationError,
 )
@@ -22,9 +21,9 @@ from .common import (
     SessionToolInvocation,
     ToolArguments,
     ToolResult,
-    _annotate_session_failure,
     _normalize_arguments,
     _wrap_action_result,
+    execute_session_invocation,
 )
 from .registry import TOOL_SPECS
 
@@ -55,17 +54,13 @@ def _dispatch_tool(
             and invocation.operation in {"interrupt", "status"}
         )
         with nullcontext() if concurrent_control else session_workflow_context(session):
-            if session.state in {SessionState.STOPPED, SessionState.CLOSING}:
-                result = OperationError(
-                    message="Session is closing or stopped", code="session_closing"
-                )
-            else:
-                result = invocation.execute(session)
-        result = _annotate_session_failure(result, session, session_id=invocation.session_id)
+            result = execute_session_invocation(
+                invocation, session, session_id=invocation.session_id
+            )
     else:
         result = invocation.execute(session_manager)
-
-    return _wrap_action_result(invocation.action, result)
+        return _wrap_action_result(invocation.action, result)
+    return result
 
 
 async def dispatch_tool_call(
