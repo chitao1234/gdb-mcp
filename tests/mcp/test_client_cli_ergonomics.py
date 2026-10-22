@@ -8,8 +8,43 @@ import pytest
 
 from gdb_mcp.client.cli import build_parser, parse_client_args
 from gdb_mcp.client.daemon import DaemonError, ResolvedServer
+from gdb_mcp.contracts import ACTION_THREADS, TOOL_CONTEXT_QUERY
+from tests.support import json_object
 
 from .cli_support import SERVER_URL, invoke_cli
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_json_output_keeps_unknown_and_dashed_response_fields(failed: bool) -> None:
+    payload: dict[str, object] = {
+        "status": "error" if failed else "success",
+        "action": ACTION_THREADS,
+        "future-field": {"nested-key": "kept"},
+        "future_field": "distinct",
+    }
+    if failed:
+        payload.update(code="future_error", message="unfamiliar debugger failure")
+    else:
+        payload["result"] = {
+            "threads": [{"id": "1", "target-id": "native-thread", "future-key": "kept"}]
+        }
+
+    result = invoke_cli(
+        [
+            "--server-url",
+            SERVER_URL,
+            "--json",
+            TOOL_CONTEXT_QUERY,
+            "--payload-json",
+            '{"session_id":7,"action":"threads"}',
+        ],
+        response=payload,
+        is_error=failed,
+    )
+
+    assert result.exit_code == int(failed)
+    assert result.stderr == ""
+    assert json_object(result.stdout) == payload
 
 
 def test_server_url_falls_back_to_environment(monkeypatch: pytest.MonkeyPatch) -> None:
