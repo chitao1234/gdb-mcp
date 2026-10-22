@@ -125,34 +125,23 @@ class InspectionInferiorState:
         """Attach runtime execution-state metadata to listed inferiors when known."""
 
         state_by_inferior = {
-            record.inferior_id: record
-            for record in self._runtime.inferiors_state_summary()
-            if isinstance(record.inferior_id, int)
+            record.inferior_id: record for record in self._runtime.inferiors_state_summary()
         }
 
         enriched: list[InferiorRecord] = []
         for inferior in inferiors:
-            inferior_id = inferior.inferior_id
-            if not isinstance(inferior_id, int):
-                enriched.append(inferior)
-                continue
-
-            state_record = state_by_inferior.get(inferior_id)
+            state_record = state_by_inferior.get(inferior.inferior_id)
             if state_record is None:
                 enriched.append(inferior)
                 continue
 
             update: dict[str, object] = {}
             execution_state = state_record.execution_state
-            if isinstance(execution_state, str):
+            if execution_state is not None:
                 update["execution_state"] = execution_state
-            stop_reason_value = (
-                state_record.stop_reason if isinstance(state_record.stop_reason, str) else None
-            )
-            update["stop_reason"] = stop_reason_value
+            update["stop_reason"] = state_record.stop_reason
             update["stop_kind"] = state_record.stop_kind
-            exit_code = state_record.exit_code
-            update["exit_code"] = int(exit_code) if isinstance(exit_code, int) else None
+            update["exit_code"] = state_record.exit_code
             enriched.append(inferior.model_copy(update=update))
 
         return enriched

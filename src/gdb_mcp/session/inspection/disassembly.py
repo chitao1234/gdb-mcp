@@ -376,8 +376,7 @@ class InspectionDisassembly:
 
         if not instructions:
             return None
-        address = instructions[0].address
-        return address if isinstance(address, str) else None
+        return instructions[0].address
 
     @staticmethod
     def _last_instruction_address(
@@ -387,8 +386,7 @@ class InspectionDisassembly:
 
         if not instructions:
             return None
-        address = instructions[-1].address
-        return address if isinstance(address, str) else None
+        return instructions[-1].address
 
     @staticmethod
     def _first_instruction_function(
@@ -398,7 +396,7 @@ class InspectionDisassembly:
 
         for instruction in instructions:
             function = instruction.function
-            if isinstance(function, str):
+            if function is not None:
                 return function
         return None
 
@@ -410,7 +408,7 @@ class InspectionDisassembly:
 
         for instruction in instructions:
             file = instruction.file
-            if isinstance(file, str):
+            if file is not None:
                 return file
         return None
 
@@ -422,7 +420,7 @@ class InspectionDisassembly:
 
         for instruction in instructions:
             fullname = instruction.fullname
-            if isinstance(fullname, str):
+            if fullname is not None:
                 return fullname
         return None
 
@@ -434,7 +432,7 @@ class InspectionDisassembly:
 
         for instruction in instructions:
             line = instruction.line
-            if isinstance(line, int):
+            if line is not None:
                 return line
         return None
 
