@@ -330,19 +330,19 @@ class DelveRpcBackend:
     @_operation
     def start(
         self,
-        program: str | None = None,
-        debugger: str | None = None,
-        args: list[str] | None = None,
-        init_commands: list[str] | None = None,
-        env: dict[str, str] | None = None,
-        debugger_path: str | None = None,
-        debugger_args: list[str] | None = None,
-        working_dir: str | None = None,
-        core: str | None = None,
-        endpoint: str | None = None,
-        replay: str | None = None,
+        config: SessionConfig,
     ) -> OperationSuccess[SessionStartupInfo]:
         with self.runtime.lifecycle_lock:
+            program = config.program
+            debugger = config.debugger
+            args = config.args
+            init_commands = config.init_commands
+            env = config.env
+            debugger_args = config.debugger_args
+            working_dir = config.working_dir
+            core = config.core
+            endpoint = config.endpoint
+            replay = config.rr_replay
             if self.runtime.state not in {
                 SessionState.CREATED,
                 SessionState.STOPPED,
@@ -372,24 +372,12 @@ class DelveRpcBackend:
                 )
             if core and not program:
                 raise DelveRpcError("Delve core debugging requires program", "validation_error")
-            problems = debugger_args_problems(debugger_args or (), DEBUGGER_DELVE)
+            problems = debugger_args_problems(debugger_args, DEBUGGER_DELVE)
             if problems:
                 raise DelveRpcError("; ".join(problems), "validation_error")
             if working_dir and not Path(working_dir).is_dir():
                 raise DelveRpcError(f"Working directory does not exist: {working_dir}", "not_found")
-            self.runtime.begin_startup(
-                SessionConfig.from_inputs(
-                    program=program,
-                    debugger=DEBUGGER_DELVE,
-                    args=args,
-                    env=env,
-                    debugger_path=debugger_path,
-                    debugger_args=debugger_args,
-                    working_dir=working_dir,
-                    core=core,
-                    endpoint=endpoint,
-                )
-            )
+            self.runtime.begin_startup(config)
             self._has_run = False
             self._attached = False
             self._temporary.clear()

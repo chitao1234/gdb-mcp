@@ -45,6 +45,7 @@ from ..transport.protocols import GdbControllerFactoryProtocol
 from .backends import BackendCapabilities
 from .breakpoints import SessionBreakpointService
 from .command_runner import SessionCommandRunner
+from .config import SessionConfig
 from .constants import DEFAULT_TIMEOUT_SEC, INITIAL_COMMAND_TOKEN, POLL_TIMEOUT_SEC
 from .execution import SessionExecutionService
 from .inspection import SessionInspectionService
@@ -99,33 +100,11 @@ class GdbMiBackend:
 
     def start(
         self,
-        program: str | None = None,
-        debugger: str | None = None,
-        args: list[str] | None = None,
-        init_commands: list[str] | None = None,
-        env: dict[str, str] | None = None,
-        debugger_path: str | None = None,
-        debugger_args: list[str] | None = None,
-        working_dir: str | None = None,
-        core: str | None = None,
-        endpoint: str | None = None,
-        replay: str | None = None,
+        config: SessionConfig,
     ) -> OperationSuccess[SessionStartupInfo] | OperationError:
         """Delegate session startup to the lifecycle service."""
 
-        return self._lifecycle.start(
-            program=program,
-            debugger=debugger,
-            args=args,
-            init_commands=init_commands,
-            env=env,
-            debugger_path=debugger_path,
-            debugger_args=debugger_args,
-            working_dir=working_dir,
-            core=core,
-            endpoint=endpoint,
-            replay=replay,
-        )
+        return self._lifecycle.start(config)
 
     def stop(self) -> OperationSuccess[SessionMessage] | OperationError:
         """Delegate session shutdown to the lifecycle service."""

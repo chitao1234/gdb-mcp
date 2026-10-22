@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 @dataclass(slots=True, frozen=True)
 class SessionConfig:
-    """Normalized launch configuration for a GDB session."""
+    """Normalized launch configuration passed from the service to its backend."""
 
     program: str | None = None
     debugger: str = "gdb"

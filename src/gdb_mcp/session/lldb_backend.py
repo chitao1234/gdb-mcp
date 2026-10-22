@@ -419,22 +419,22 @@ class LldbSbBackend:
 
     def start(
         self,
-        program: str | None = None,
-        debugger: str | None = None,
-        args: list[str] | None = None,
-        init_commands: list[str] | None = None,
-        env: dict[str, str] | None = None,
-        debugger_path: str | None = None,
-        debugger_args: list[str] | None = None,
-        working_dir: str | None = None,
-        core: str | None = None,
-        endpoint: str | None = None,
-        replay: str | None = None,
+        config: SessionConfig,
     ) -> OperationSuccess[SessionStartupInfo] | OperationError:
         with self.runtime.lifecycle_lock:
             if self.runtime.has_controller:
                 return OperationError(message="Session already running. Stop it first.")
-            debugger = debugger or DEBUGGER_LLDB
+            program = config.program
+            debugger = config.debugger
+            args = config.args
+            init_commands = config.init_commands
+            env = config.env
+            debugger_path = config.debugger_path
+            debugger_args = config.debugger_args
+            working_dir = config.working_dir
+            core = config.core
+            endpoint = config.endpoint
+            replay = config.rr_replay
             if debugger != DEBUGGER_LLDB:
                 return OperationError(
                     message=f"LLDB backend cannot start debugger {debugger!r}",
@@ -470,19 +470,6 @@ class LldbSbBackend:
                 )
             if working_dir and not self.runtime.os_module.path.isdir(working_dir):
                 return OperationError(message=f"Working directory does not exist: {working_dir}")
-            config = SessionConfig.from_inputs(
-                program=program,
-                debugger=debugger,
-                args=args,
-                init_commands=init_commands,
-                env=env,
-                debugger_path=debugger_path,
-                debugger_args=debugger_args,
-                working_dir=working_dir,
-                core=core,
-                endpoint=endpoint,
-                rr_replay=replay,
-            )
             self.runtime.begin_startup(config)
             try:
                 launch = prepare_bridge(debugger_path)
@@ -490,11 +477,11 @@ class LldbSbBackend:
                 self._client = client
                 self.runtime.controller = client
                 initialized = client.request("initialize")
-                env_entries = [f"{key}={value}" for key, value in (env or {}).items()]
+                env_entries = [f"{key}={value}" for key, value in env.items()]
                 client.request(
                     "configure_launch",
                     program=program,
-                    args=list(args or ()),
+                    args=list(args),
                     env=env_entries,
                     working_dir=working_dir,
                 )
@@ -507,7 +494,7 @@ class LldbSbBackend:
                 if endpoint:
                     client.request("connect_remote", endpoint=endpoint)
                 initialization_results: list[StructuredPayload] = []
-                for command in init_commands or ():
+                for command in init_commands:
                     result = self.execute_command(command)
                     initialization_results.append(result_to_envelope(result))
                     if isinstance(result, OperationError):

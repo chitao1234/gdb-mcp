@@ -52,6 +52,7 @@ from ..domain import (
     WaitForStopInfo,
     WatchpointAccessType,
 )
+from .config import SessionConfig
 from .constants import DEFAULT_TIMEOUT_SEC
 from .runtime import SessionRuntime
 
@@ -141,17 +142,7 @@ class DebuggerBackend(Protocol):
 
     def start(
         self,
-        program: str | None = None,
-        debugger: str | None = None,
-        args: list[str] | None = None,
-        init_commands: list[str] | None = None,
-        env: dict[str, str] | None = None,
-        debugger_path: str | None = None,
-        debugger_args: list[str] | None = None,
-        working_dir: str | None = None,
-        core: str | None = None,
-        endpoint: str | None = None,
-        replay: str | None = None,
+        config: SessionConfig,
     ) -> OperationSuccess[SessionStartupInfo] | OperationError: ...
 
     def stop(self) -> OperationSuccess[SessionMessage] | OperationError: ...

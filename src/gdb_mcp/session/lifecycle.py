@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import replace
 from typing import TypeAlias
 
 from ..contracts import DEBUGGER_GDB, DEBUGGER_NAMES
@@ -117,17 +118,7 @@ class SessionLifecycleService:
 
     def start(
         self,
-        program: str | None = None,
-        debugger: str | None = None,
-        args: list[str] | None = None,
-        init_commands: list[str] | None = None,
-        env: dict[str, str] | None = None,
-        debugger_path: str | None = None,
-        debugger_args: list[str] | None = None,
-        working_dir: str | None = None,
-        core: str | None = None,
-        endpoint: str | None = None,
-        replay: str | None = None,
+        config: SessionConfig,
     ) -> OperationSuccess[SessionStartupInfo] | OperationError:
         """Start a new GDB session.
 
@@ -141,11 +132,20 @@ class SessionLifecycleService:
             if self._runtime.has_controller:
                 return OperationError(message="Session already running. Stop it first.")
 
+            program = config.program
+            debugger = config.debugger
+            args = config.args
+            init_commands = config.init_commands
+            env = config.env
+            debugger_path = config.debugger_path
             if debugger_path is None:
                 debugger_path = self._runtime.os_module.environ.get("GDB_PATH", "gdb")
-
-            if debugger is None:
-                debugger = DEBUGGER_GDB
+                config = replace(config, debugger_path=debugger_path)
+            debugger_args = config.debugger_args
+            working_dir = config.working_dir
+            core = config.core
+            endpoint = config.endpoint
+            replay = config.rr_replay
 
             startup_warnings: list[str] = []
             if replay and program:
@@ -153,20 +153,8 @@ class SessionLifecycleService:
                     f"Program '{program}' was ignored: the rr trace already owns the target."
                 )
                 program = None
+                config = replace(config, program=None)
 
-            config = SessionConfig.from_inputs(
-                program=program,
-                debugger=debugger,
-                args=args,
-                init_commands=init_commands,
-                env=env,
-                debugger_path=debugger_path,
-                debugger_args=debugger_args,
-                working_dir=working_dir,
-                core=core,
-                endpoint=endpoint,
-                rr_replay=replay,
-            )
             self._runtime.begin_startup(config)
 
             try:
@@ -426,7 +414,7 @@ class SessionLifecycleService:
                 if self._runtime.execution_state == "unknown":
                     if core or any(
                         command.lower().strip().startswith("core-file ")
-                        for command in (init_commands or [])
+                        for command in init_commands
                     ):
                         self._runtime.mark_inferior_paused("core-file")
                     elif self._runtime.target_loaded:
@@ -534,11 +522,11 @@ class SessionLifecycleService:
         *,
         debugger_path: str,
         program: str | None,
-        args: list[str] | None,
+        args: tuple[str, ...],
         core: str | None,
         rr_replay: str | None = None,
         rr_path: str = "rr",
-        debugger_args: list[str] | None = None,
+        debugger_args: tuple[str, ...] = (),
     ) -> list[str]:
         """Build a GDB startup argv for the supported launch modes.
 
@@ -548,7 +536,7 @@ class SessionLifecycleService:
         search directories) can only arrive this way.
         """
 
-        extra_args = list(debugger_args or ())
+        extra_args = list(debugger_args)
 
         if rr_replay:
             # rr replays the trace itself, so it owns the target and chooses the
@@ -576,7 +564,7 @@ class SessionLifecycleService:
         return command
 
     def _apply_environment(
-        self, env: dict[str, str] | None, startup_backend_data: BackendData
+        self, env: dict[str, str], startup_backend_data: BackendData
     ) -> list[SerializedResultMapping] | OperationError:
         """Apply inferior environment variables before startup commands run."""
 

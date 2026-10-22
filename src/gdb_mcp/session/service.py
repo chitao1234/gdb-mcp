@@ -157,18 +157,23 @@ class SessionService:
     ) -> OperationSuccess[SessionStartupInfo] | OperationError:
         """Delegate session startup to the debugger backend."""
 
+        selected_debugger = self._backend.capabilities.debugger
+        if debugger is not None:
+            selected_debugger = debugger
         return self._backend.start(
-            program=program,
-            debugger=debugger,
-            args=args,
-            init_commands=init_commands,
-            env=env,
-            debugger_path=debugger_path,
-            debugger_args=debugger_args,
-            working_dir=working_dir,
-            core=core,
-            endpoint=endpoint,
-            replay=rr_replay,
+            SessionConfig.from_inputs(
+                program=program,
+                debugger=selected_debugger,
+                args=args,
+                init_commands=init_commands,
+                env=env,
+                debugger_path=debugger_path,
+                debugger_args=debugger_args,
+                working_dir=working_dir,
+                core=core,
+                endpoint=endpoint,
+                rr_replay=rr_replay,
+            )
         )
 
     def stop(self) -> OperationSuccess[SessionMessage] | OperationError:
