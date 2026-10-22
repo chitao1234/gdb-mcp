@@ -104,7 +104,7 @@ def _operation(
             return function(*args, **kwargs)
         except DelveRpcError as exc:
             return OperationError(message=str(exc), code=exc.code)
-        except (OSError, ValueError) as exc:
+        except OSError as exc:
             return OperationError(message=str(exc))
 
     return invoke
@@ -231,11 +231,14 @@ class DelveRpcBackend:
         self._client_state(self._request("State", {"NonBlocking": True}, timeout_sec=timeout_sec))
 
     def _connect(self, endpoint: str, *, timeout_sec: float) -> None:
-        parsed = urlsplit(endpoint)
-        if parsed.scheme == "tcp" and parsed.hostname and parsed.port:
-            connection = socket.create_connection(
-                (parsed.hostname, parsed.port), timeout=timeout_sec
-            )
+        try:
+            parsed = urlsplit(endpoint)
+            host = parsed.hostname
+            port = parsed.port
+        except ValueError as exc:
+            raise DelveRpcError(str(exc)) from exc
+        if parsed.scheme == "tcp" and host and port:
+            connection = socket.create_connection((host, port), timeout=timeout_sec)
         elif parsed.scheme == "unix" and parsed.path and not parsed.netloc:
             connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             try:
@@ -330,7 +333,7 @@ class DelveRpcBackend:
             self._attached = pid is not None
             if pid is not None:
                 self.runtime.mark_attached(pid)
-        except (OSError, ValueError, DelveRpcError):
+        except Exception:
             self._cleanup()
             raise
 
@@ -406,7 +409,7 @@ class DelveRpcBackend:
                     self._attached = bool(self._request("AttachedToExistingProcess").get("Answer"))
                 elif program:
                     self._spawn()
-            except (OSError, ValueError, DelveRpcError) as exc:
+            except Exception as exc:
                 self._cleanup()
                 self.runtime.mark_failed(str(exc))
                 raise
@@ -1102,7 +1105,12 @@ class DelveRpcBackend:
             variable = self._variable(expression)
             value = text(variable.get("value"))
             if value:
-                return int(value, 0)
+                try:
+                    return int(value, 0)
+                except ValueError as exc:
+                    raise DebuggerDecodeError(
+                        f"Delve address is not an integer: {value!r}"
+                    ) from exc
             children = mappings(variable.get("children"))
             if children:
                 return integer(children[0].get("addr"))
@@ -1125,7 +1133,10 @@ class DelveRpcBackend:
             raw = response.get("Mem")
             if not isinstance(raw, str):
                 raise DelveRpcError("Delve memory response is not base64", "protocol_error")
-            data = base64.b64decode(raw, validate=True)
+            try:
+                data = base64.b64decode(raw, validate=True)
+            except ValueError as exc:
+                raise DebuggerDecodeError("Delve memory response is not base64") from exc
             if not data or len(data) > requested:
                 raise DelveRpcError("Delve memory response has an invalid length", "protocol_error")
             contents.extend(data)
@@ -1287,7 +1298,10 @@ class DelveRpcBackend:
             if pc < start:
                 continue
             encoded = item.get("Bytes")
-            opcodes = base64.b64decode(encoded).hex(" ") if isinstance(encoded, str) else None
+            try:
+                opcodes = base64.b64decode(encoded).hex(" ") if isinstance(encoded, str) else None
+            except ValueError as exc:
+                raise DebuggerDecodeError("Delve instruction bytes are not base64") from exc
             instructions.append(
                 DisassemblyInstructionRecord.from_payload(
                     {
