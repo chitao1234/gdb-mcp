@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, Mock
 
+import pytest
+
 from gdb_mcp.contracts import DEBUGGER_GDB, SessionState
 from gdb_mcp.domain import (
     BackendData,
@@ -23,6 +25,7 @@ from gdb_mcp.domain import (
 )
 from gdb_mcp.session.campaign import (
     RunUntilFailureCaptureRequest,
+    RunUntilFailureCriteria,
     RunUntilFailureRequest,
     RunUntilFailureService,
 )
@@ -79,6 +82,51 @@ def _bundle() -> OperationSuccess[CaptureBundleInfo]:
 
 class TestRunUntilFailureService:
     """Test campaign loop behavior independently of the MCP handler layer."""
+
+    @pytest.mark.parametrize(
+        ("message", "on_timeout", "on_error", "expected_trigger"),
+        [
+            ("Timeout waiting for command response", True, True, "timeout"),
+            ("unrecognized debugger failure", True, True, "run_error"),
+            ("Timeout waiting for command response", False, True, "run_error"),
+            ("Timeout waiting for command response", True, False, "timeout"),
+            ("Timeout waiting for command response", False, False, None),
+        ],
+    )
+    def test_run_errors_respect_failure_predicates_and_keep_the_debugger_payload(
+        self,
+        message: str,
+        on_timeout: bool,
+        on_error: bool,
+        expected_trigger: str | None,
+    ) -> None:
+        status = SessionStatusSnapshot(
+            debugger_alive=True,
+            target_loaded=True,
+            session_state=SessionState.READY,
+            execution_state="exited",
+        )
+        session = _fake_session(status=status)
+        session.run.return_value = OperationError(
+            message=message,
+            details={"future-field": {"nested-key": "kept"}},
+        )
+        result = RunUntilFailureService(lambda: session).run_until_failure(
+            RunUntilFailureRequest(
+                max_iterations=1,
+                failure=RunUntilFailureCriteria(
+                    failure_on_timeout=on_timeout, failure_on_error=on_error
+                ),
+                capture=RunUntilFailureCaptureRequest(enabled=False),
+            )
+        )
+
+        iteration = result.value.iterations[0]
+        assert iteration.trigger == expected_trigger
+        assert iteration.matched_failure is (expected_trigger is not None)
+        assert iteration.result["status"] == "error"
+        assert iteration.result["message"] == message
+        assert iteration.result["details"] == {"future-field": {"nested-key": "kept"}}
 
     def test_startup_failure_keeps_the_original_error_on_its_iteration(self) -> None:
         session = _fake_session()
