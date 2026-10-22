@@ -14,8 +14,6 @@ from gdb_mcp.contracts import (
     ContextManageAction,
     ContextQueryAction,
     DisassemblyMode,
-    ExecutionManageAction,
-    ExecutionWaitUntil,
     InferiorFollowForkMode,
     InferiorManageAction,
     InferiorQueryAction,
@@ -69,21 +67,6 @@ class InferiorManageInput:
     inferior_id: int | None
     mode: InferiorFollowForkMode | None
     enabled: bool | None
-
-
-@dataclass(frozen=True, slots=True)
-class ExecutionManageInput:
-    """Parsed input for ``gdb_execution_manage``."""
-
-    action: ExecutionManageAction
-    session_id: int | None
-    args: tuple[str, ...]
-    wait_until: ExecutionWaitUntil | None
-    timeout_sec: int | None
-    stop_reasons: tuple[str, ...]
-    reverse: bool
-    value: str | None = None
-    location: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -28,7 +28,6 @@ from ..input_parsers import (
     parse_breakpoint_query_input,
     parse_context_manage_input,
     parse_context_query_input,
-    parse_execution_manage_input,
     parse_inferior_manage_input,
     parse_inferior_query_input,
     parse_inspect_query_input,
@@ -156,7 +155,7 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
         ToolCliSpec(
             name=TOOL_EXECUTION_MANAGE,
             configure_parser=_configure_execution_manage,
-            parse_input=parse_execution_manage_input,
+            parse_input=_parse_namespace,
             build_arguments=_build_execution_manage,
             render_human=render_action_payload,
         )

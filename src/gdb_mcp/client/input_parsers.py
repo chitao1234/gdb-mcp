@@ -19,8 +19,6 @@ from gdb_mcp.contracts import (
     CONTEXT_QUERY_ACTIONS,
     DEBUGGER_NAMES,
     DISASSEMBLY_MODES,
-    EXECUTION_MANAGE_ACTIONS,
-    EXECUTION_WAIT_UNTIL_VALUES,
     INFERIOR_FOLLOW_FORK_MODES,
     INFERIOR_MANAGE_ACTIONS,
     INFERIOR_QUERY_ACTIONS,
@@ -39,7 +37,6 @@ from .inputs import (
     BreakpointQueryInput,
     ContextManageInput,
     ContextQueryInput,
-    ExecutionManageInput,
     InferiorManageInput,
     InferiorQueryInput,
     InspectQueryInput,
@@ -53,7 +50,6 @@ from .inputs import (
 from .namespace import (
     NamespaceLike,
     ParsedOptions,
-    boolean,
     choice,
     integer_tuple,
     key_value_entries,
@@ -144,23 +140,6 @@ def parse_inferior_manage_input(namespace: NamespaceLike) -> InferiorManageInput
         inferior_id=optional_integer(values, "inferior_id"),
         mode=optional_one_of(values, "mode", INFERIOR_FOLLOW_FORK_MODES),
         enabled=optional_boolean(values, "enabled"),
-    )
-
-
-def parse_execution_manage_input(namespace: NamespaceLike) -> ExecutionManageInput:
-    """Parse one execution-manage namespace into a typed input object."""
-
-    values = snapshot(namespace)
-    return ExecutionManageInput(
-        action=one_of(values, "action", EXECUTION_MANAGE_ACTIONS),
-        session_id=optional_integer(values, "session_id"),
-        args=text_tuple(values, "args"),
-        wait_until=optional_one_of(values, "wait_until", EXECUTION_WAIT_UNTIL_VALUES),
-        timeout_sec=optional_integer(values, "timeout_sec"),
-        stop_reasons=text_tuple(values, "stop_reasons"),
-        reverse=boolean(values, "reverse"),
-        value=optional_text(values, "value"),
-        location=optional_text(values, "location"),
     )
 
 

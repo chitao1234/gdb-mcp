@@ -5,19 +5,21 @@ from __future__ import annotations
 import argparse
 
 from gdb_mcp.contracts import (
+    ACTION_INTERRUPT,
     ACTION_JUMP,
+    ACTION_RETURN,
+    ACTION_RUN,
     ACTION_UNTIL,
+    ACTION_WAIT_FOR_STOP,
     EXECUTION_MANAGE_ACTIONS,
     EXECUTION_WAIT_UNTIL_VALUES,
+    ExecutionManageAction,
 )
 from gdb_mcp.mcp.schemas import (
     ExecutionManageArgs,
 )
 
-from ..builders.execution import build_execution_manage_payload
-from ..inputs import (
-    ExecutionManageInput,
-)
+from ..namespace import NamespaceLike, ParsedOptions, one_of, snapshot
 from ..parsers import (
     validate_model,
 )
@@ -28,67 +30,35 @@ from .common import (
 )
 
 
-def _validate_execution_manage_input(typed_input: ExecutionManageInput) -> None:
+def _validate_execution_manage_input(action: ExecutionManageAction, values: ParsedOptions) -> None:
     invalid_flags: list[str] = []
 
-    if typed_input.action not in {ACTION_JUMP, ACTION_UNTIL} and typed_input.location is not None:
+    if action not in {ACTION_JUMP, ACTION_UNTIL} and values.get("location") is not None:
         invalid_flags.append("--location")
-
-    if typed_input.action != "return" and typed_input.value is not None:
+    if action != ACTION_RETURN and values.get("value") is not None:
         invalid_flags.append("--value")
-
-    if typed_input.action == "interrupt":
-        if typed_input.args:
-            invalid_flags.append("--arg")
-        if typed_input.wait_until is not None:
-            invalid_flags.append("--wait-until")
-        if typed_input.timeout_sec is not None:
-            invalid_flags.append("--timeout-sec")
-        if typed_input.stop_reasons:
-            invalid_flags.append("--stop-reason")
-        if typed_input.reverse:
-            invalid_flags.append("--reverse")
-    elif typed_input.action in {
-        "continue",
-        "step",
-        "next",
-        "step_instruction",
-        "next_instruction",
-        "finish",
+    if action != ACTION_RUN and values.get("args"):
+        invalid_flags.append("--arg")
+    if action != ACTION_WAIT_FOR_STOP and values.get("stop_reasons"):
+        invalid_flags.append("--stop-reason")
+    if (
+        action in {ACTION_INTERRUPT, ACTION_RETURN, ACTION_WAIT_FOR_STOP}
+        and values.get("wait_until") is not None
+    ):
+        invalid_flags.append("--wait-until")
+    if action in {ACTION_INTERRUPT, ACTION_RETURN} and values.get("timeout_sec") is not None:
+        invalid_flags.append("--timeout-sec")
+    if action in {
+        ACTION_RUN,
+        ACTION_INTERRUPT,
+        ACTION_RETURN,
+        ACTION_WAIT_FOR_STOP,
         ACTION_JUMP,
         ACTION_UNTIL,
-    }:
-        if typed_input.args:
-            invalid_flags.append("--arg")
-        if typed_input.stop_reasons:
-            invalid_flags.append("--stop-reason")
-        if typed_input.action in {ACTION_JUMP, ACTION_UNTIL} and typed_input.reverse:
-            invalid_flags.append("--reverse")
-    elif typed_input.action == "return":
-        if typed_input.args:
-            invalid_flags.append("--arg")
-        if typed_input.wait_until is not None:
-            invalid_flags.append("--wait-until")
-        if typed_input.timeout_sec is not None:
-            invalid_flags.append("--timeout-sec")
-        if typed_input.stop_reasons:
-            invalid_flags.append("--stop-reason")
-        if typed_input.reverse:
-            invalid_flags.append("--reverse")
-    elif typed_input.action == "run":
-        if typed_input.reverse:
-            invalid_flags.append("--reverse")
-        if typed_input.stop_reasons:
-            invalid_flags.append("--stop-reason")
-    elif typed_input.action == "wait_for_stop":
-        if typed_input.args:
-            invalid_flags.append("--arg")
-        if typed_input.wait_until is not None:
-            invalid_flags.append("--wait-until")
-        if typed_input.reverse:
-            invalid_flags.append("--reverse")
+    } and values.get("reverse"):
+        invalid_flags.append("--reverse")
 
-    _raise_invalid_action_flags(typed_input.action, invalid_flags)
+    _raise_invalid_action_flags(action, invalid_flags)
 
 
 def _configure_execution_manage(parser: argparse.ArgumentParser) -> None:
@@ -113,7 +83,24 @@ def _configure_execution_manage(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_execution_manage(typed_input: ExecutionManageInput) -> ExecutionManageArgs:
-    _validate_execution_manage_input(typed_input)
-    payload = build_execution_manage_payload(typed_input)
-    return validate_model(ExecutionManageArgs, payload)
+def _build_execution_manage(namespace: NamespaceLike) -> ExecutionManageArgs:
+    values = snapshot(namespace)
+    action = one_of(values, "action", EXECUTION_MANAGE_ACTIONS)
+    _validate_execution_manage_input(action, values)
+
+    execution: dict[str, object] = {}
+    for name in ("location", "value", "wait_until", "timeout_sec"):
+        value = values.get(name)
+        if value is not None:
+            execution[name] = value
+    for name in ("args", "stop_reasons", "reverse"):
+        value = values.get(name)
+        if value:
+            execution[name] = value
+    if action == ACTION_WAIT_FOR_STOP:
+        execution.setdefault("timeout_sec", 30)
+
+    return validate_model(
+        ExecutionManageArgs,
+        {"session_id": values.get("session_id"), "action": action, "execution": execution},
+    )
