@@ -490,17 +490,8 @@ class DelveRpcBackend:
                 if not client.alive:
                     self.runtime.mark_transport_terminated(str(exc))
         return OperationSuccess(
-            SessionStatusSnapshot(
+            self.runtime.status_snapshot(
                 debugger_alive=self._client is not None and self._client.alive,
-                target_loaded=self.runtime.target_loaded,
-                session_state=self.runtime.state,
-                execution_state=self.runtime.execution_state,
-                stop_reason=self.runtime.stop_reason,
-                stop_kind=self.runtime.stop_kind,
-                exit_code=self.runtime.exit_code,
-                current_inferior_id=self.runtime.current_inferior_id,
-                inferior_count=self.runtime.inferior_count,
-                inferior_states=self.runtime.inferiors_state_summary() or None,
             )
         )
 

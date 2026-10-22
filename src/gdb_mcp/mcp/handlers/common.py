@@ -267,16 +267,16 @@ def _failure_code(message: str) -> str | None:
 def _session_state_details(session: SessionService) -> StructuredPayload:
     """Return the JSON-safe execution state of one live session."""
 
-    runtime = session.runtime
-    details: StructuredPayload = {"execution_state": runtime.execution_state}
+    snapshot = session.runtime.status_snapshot(debugger_alive=session.is_running)
+    details: StructuredPayload = {"execution_state": snapshot.execution_state}
     for name, value in (
-        ("stop_reason", runtime.stop_reason),
-        ("stop_kind", runtime.stop_kind),
+        ("stop_reason", snapshot.stop_reason),
+        ("stop_kind", snapshot.stop_kind),
     ):
         if value is not None:
             details[name] = value
-    if runtime.exit_code is not None:
-        details["exit_code"] = runtime.exit_code
+    if snapshot.exit_code is not None:
+        details["exit_code"] = snapshot.exit_code
     return details
 
 

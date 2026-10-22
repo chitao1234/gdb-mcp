@@ -454,11 +454,8 @@ class SessionLifecycleService:
                 "GDB process has exited - session is no longer active"
             )
 
-        snapshot = SessionStatusSnapshot(
+        snapshot = self._runtime.status_snapshot(
             debugger_alive=self._runtime.is_running,
-            target_loaded=self._runtime.target_loaded,
-            session_state=self._runtime.state,
-            execution_state=self._runtime.execution_state,
             state_detail=(
                 self._runtime.last_stop_event.state_detail
                 if self._runtime.execution_state == "paused"
@@ -466,14 +463,6 @@ class SessionLifecycleService:
                 and self._runtime.last_stop_event.reason == self._runtime.stop_reason
                 else None
             ),
-            stop_reason=self._runtime.stop_reason,
-            stop_kind=self._runtime.stop_kind,
-            exit_code=self._runtime.exit_code,
-            current_inferior_id=self._runtime.current_inferior_id,
-            inferior_count=self._runtime.inferior_count,
-            inferior_states=self._runtime.inferiors_state_summary() or None,
-            follow_fork_mode=self._runtime.follow_fork_mode,
-            detach_on_fork=self._runtime.detach_on_fork,
         )
         return OperationSuccess(snapshot)
 

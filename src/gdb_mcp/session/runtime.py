@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass, field
-from typing import TypeVar
+from typing import Literal, TypeVar
 
 from ..domain import (
     CommandTranscriptEntry,
     ExecutionState,
     FollowForkMode,
     InferiorStateRecord,
+    SessionStatusSnapshot,
     StopEvent,
     StopKind,
     stop_kind_from_reason,
@@ -349,6 +350,28 @@ class SessionRuntime:
                     )
                 )
             return records
+
+    def status_snapshot(
+        self, *, debugger_alive: bool, state_detail: Literal["crashed"] | None = None
+    ) -> SessionStatusSnapshot:
+        """Read common status fields under the runtime state lock."""
+
+        with self._state_lock:
+            return SessionStatusSnapshot(
+                debugger_alive=debugger_alive,
+                target_loaded=self.target_loaded,
+                session_state=self.state,
+                execution_state=self.execution_state,
+                state_detail=state_detail,
+                stop_reason=self.stop_reason,
+                stop_kind=self.stop_kind,
+                exit_code=self.exit_code,
+                current_inferior_id=self.current_inferior_id,
+                inferior_count=self.inferior_count,
+                inferior_states=self.inferiors_state_summary() or None,
+                follow_fork_mode=self.follow_fork_mode,
+                detach_on_fork=self.detach_on_fork,
+            )
 
     def record_stop_event(self, event: StopEvent) -> None:
         """Remember a structured stop event and keep bounded history."""

@@ -199,6 +199,7 @@ class SessionRegistry:
             status = session.get_status().value
             config = session.config
             runtime = session.runtime
+            snapshot = runtime.status_snapshot(debugger_alive=status.debugger_alive)
             session_state = SessionState.CLOSING if closing else session.state
 
             return SessionSummary(
@@ -215,11 +216,11 @@ class SessionRegistry:
                 current_frame=runtime.current_frame,
                 stop_reason=status.stop_reason,
                 exit_code=status.exit_code,
-                current_inferior_id=runtime.current_inferior_id,
-                inferior_count=runtime.inferior_count,
-                inferior_states=runtime.inferiors_state_summary() or None,
-                follow_fork_mode=runtime.follow_fork_mode,
-                detach_on_fork=runtime.detach_on_fork,
+                current_inferior_id=snapshot.current_inferior_id,
+                inferior_count=snapshot.inferior_count,
+                inferior_states=snapshot.inferior_states,
+                follow_fork_mode=snapshot.follow_fork_mode,
+                detach_on_fork=snapshot.detach_on_fork,
                 last_failure_message=runtime.last_failure_message,
                 endpoint=config.endpoint if config is not None else None,
                 rr_replay=config.rr_replay if config is not None else None,
