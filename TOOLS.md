@@ -1032,6 +1032,9 @@ Each step includes:
 `steps[].result` preserves the full wrapped result of the inner tool call, using
 the same success and error envelope as a direct call. The number of completed
 steps is `steps.length`; inspect each nested result's `status` to find errors.
+With `capture_stop_events=true`, each step includes the latest stop event it
+produced, independent of stop-history retention. A step that produces no new
+stop has `stop_event=null`.
 `requested_steps` is the number of steps in the request, including steps skipped
 after a fail-fast error.
 

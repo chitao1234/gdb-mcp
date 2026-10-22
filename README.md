@@ -54,6 +54,7 @@ the fallback `error` code. These failures do not end an otherwise live session.
 Workflow batches return `requested_steps` and the completed `steps`. Each step
 contains the complete tool envelope under `result`; read its `status`, `action`,
 and error `code` there. The CLI exits nonzero if any step returned an error.
+Each step captures its new stop event even when the retained history is full.
 
 Collection results expose their arrays directly; use the array length for the
 number returned. Memory reads report `requested_bytes` and `captured_bytes` so
