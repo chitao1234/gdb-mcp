@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from gdb_mcp.domain.errors import DebuggerDecodeError
 from gdb_mcp.transport.mi_parser import (
     extract_mi_result_payload,
     mi_payload,
@@ -41,7 +42,7 @@ class TestMiParser:
     def test_a_non_mapping_payload_is_rejected(self) -> None:
         """MI records are key/value fields, so any other payload shape is a bug."""
 
-        with pytest.raises(TypeError, match="must be a mapping or absent"):
+        with pytest.raises(DebuggerDecodeError, match="must be a mapping or absent"):
             parse_mi_responses([{"type": "result", "message": "done", "payload": ["a", "b"]}])
 
     def test_extract_mi_result_payload_from_a_command_result(self) -> None:

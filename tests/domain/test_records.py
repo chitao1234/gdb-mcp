@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
 
+from gdb_mcp.domain.errors import DebuggerDecodeError
 from gdb_mcp.domain.records import (
     BreakpointRecord,
     DisassemblyInstructionRecord,
@@ -79,6 +79,22 @@ class TestRecordRoundTrip:
         assert record.variables_reference == 3
         assert record.to_payload() == {"variablesReference": 3}
 
+    @pytest.mark.parametrize("model", _RECORD_MODELS)
+    def test_nested_unknown_fields_keep_their_wire_keys(self, model: type[RecordModel]) -> None:
+        payload: dict[str, object] = {
+            "future-field": {"nested-key": [None, {"dash-key": "value", "dash_key": 7}]},
+        }
+
+        assert payload_to_mapping(model.from_payload(payload)) == payload
+
+    def test_an_alias_and_a_distinct_extra_key_are_both_kept(self) -> None:
+        payload = {"target-id": "Thread 0x1", "target_id": "extension"}
+
+        record = ThreadRecord.from_payload(payload)
+
+        assert record.target_id == "Thread 0x1"
+        assert payload_to_mapping(record) == payload
+
 
 class TestRecordValidation:
     """Declared types are a contract: a record never silently re-spells a value."""
@@ -96,19 +112,19 @@ class TestRecordValidation:
     ) -> None:
         """Adapters canonicalize, so a raw MI spelling must not pass validation."""
 
-        with pytest.raises(ValidationError, match=message):
+        with pytest.raises(DebuggerDecodeError, match=message):
             BreakpointRecord.from_payload(payload)
 
     def test_a_register_number_is_an_integer(self) -> None:
         """The number indexes the register-name list, so MI's spelling is not enough."""
 
-        with pytest.raises(ValidationError, match="valid integer"):
+        with pytest.raises(DebuggerDecodeError, match="valid integer"):
             RegisterRecord.from_payload({"number": "2"})
 
     def test_an_unknown_stop_kind_is_rejected(self) -> None:
         """`stop_kind` is a closed vocabulary, not free text."""
 
-        with pytest.raises(ValidationError, match="stop_kind"):
+        with pytest.raises(DebuggerDecodeError, match="stop_kind"):
             InferiorStateRecord.from_payload({"stop_kind": "not-a-kind"})
 
     def test_a_known_stop_kind_is_kept(self) -> None:

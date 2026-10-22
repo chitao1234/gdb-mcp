@@ -14,6 +14,7 @@ from gdb_mcp.domain.adapters import (
     register_records,
     thread_selection_info_from_payload,
 )
+from gdb_mcp.domain.errors import DebuggerDecodeError
 
 
 class TestBreakpointCanonicalFields:
@@ -104,13 +105,13 @@ class TestBreakpointCanonicalFields:
     def test_a_non_numeric_hit_count_is_a_contract_violation(self) -> None:
         """MI promises a number, so anything else is raised instead of hidden."""
 
-        with pytest.raises(ValueError):
+        with pytest.raises(DebuggerDecodeError):
             breakpoint_record({"number": "1", "times": "many"})
 
     def test_a_flag_that_is_neither_y_nor_n_is_a_contract_violation(self) -> None:
         """Reading a malformed flag as `False` would disable a live breakpoint."""
 
-        with pytest.raises(ValueError):
+        with pytest.raises(DebuggerDecodeError):
             breakpoint_record({"number": "1", "enabled": "maybe"})
 
     def test_breakpoint_table_records_are_canonicalized(self) -> None:
@@ -145,7 +146,7 @@ class TestFrameCanonicalFields:
         assert frame.to_payload() == {"level": 0, "line": 42}
 
     def test_invalid_frame_line_is_rejected(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(DebuggerDecodeError):
             frame_record({"line": "unknown"})
 
     def test_single_frame_record(self) -> None:
@@ -198,5 +199,5 @@ class TestRegisterCanonicalFields:
         assert records[0].to_payload() == {"value": "0x1"}
 
     def test_a_non_numeric_register_number_is_a_contract_violation(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(DebuggerDecodeError):
             register_records({"register-values": [{"number": "rax"}]})
