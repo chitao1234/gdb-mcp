@@ -29,6 +29,7 @@ from gdb_mcp.session.lldb_backend import LldbSbBackend
 from gdb_mcp.session.lldb_bridge import BridgeClient
 from gdb_mcp.session.lldb_bridge_types import BridgeError
 from gdb_mcp.session.protocols import OsModuleProtocol, TimeModuleProtocol
+from gdb_mcp.session.requests import FileLineLocation, SourceContextRequest
 
 
 class FakeBridge:
@@ -486,7 +487,11 @@ def test_catchpoint_uses_breakpoint_native_namespace_without_duplicates() -> Non
 def test_source_and_value_enrichment_are_published() -> None:
     backend, _ = _backend()
 
-    source = _value(backend.get_source_context(file="main.c", line=2))
+    source = _value(
+        backend.get_source_context(
+            SourceContextRequest(location=FileLineLocation(file="main.c", line=2))
+        )
+    )
     assert source.lines[0].column == 7
 
     variables = _value(backend.get_variables())

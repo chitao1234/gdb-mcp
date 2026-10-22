@@ -21,6 +21,7 @@ from gdb_mcp.domain import OperationError, OperationSuccess
 from gdb_mcp.mcp.handlers import dispatch_tool_call
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.registry import SessionRegistry
+from gdb_mcp.session.requests import DisassemblyRequest, SourceContextRequest
 from tests.support import dig, mapping_list
 
 T = TypeVar("T")
@@ -122,8 +123,10 @@ def test_delve_go_workflow(
         assert registers
         memory = success(session.read_memory("&main.buffer", 8))
         assert memory.blocks[0].contents == "0102030405060708"
-        assert success(session.disassemble(instruction_count=5)).instructions
-        context = success(session.get_source_context(context_before=1, context_after=1))
+        assert success(session.disassemble(DisassemblyRequest(instruction_count=5))).instructions
+        context = success(
+            session.get_source_context(SourceContextRequest(context_before=1, context_after=1))
+        )
         assert any(value.line_number == line for value in context.lines)
         capture = success(
             session.capture_bundle(

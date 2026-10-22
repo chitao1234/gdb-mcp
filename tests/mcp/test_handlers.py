@@ -55,6 +55,13 @@ from gdb_mcp.mcp.handlers import TOOL_SPECS, dispatch_tool_call
 from gdb_mcp.mcp.schemas import build_tool_definitions
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.registry import SessionRegistry
+from gdb_mcp.session.requests import (
+    DisassemblyRequest,
+    FileLineLocation,
+    FileRangeLocation,
+    FunctionLocation,
+    SourceContextRequest,
+)
 from gdb_mcp.session.service import SessionService
 from tests.support import dig, mapping, mapping_list, text
 
@@ -953,16 +960,9 @@ class TestHandlerRouting:
         )
 
         session.disassemble.assert_called_once_with(
-            thread_id=None,
-            frame=None,
-            function="main",
-            address=None,
-            start_address=None,
-            end_address=None,
-            file=None,
-            line=None,
-            instruction_count=8,
-            mode="mixed",
+            DisassemblyRequest(
+                location=FunctionLocation(function="main"), instruction_count=8, mode="mixed"
+            )
         )
 
     def test_inspect_query_variables_routes_context_selector(self) -> None:
@@ -1020,16 +1020,11 @@ class TestHandlerRouting:
         )
 
         session.get_source_context.assert_called_once_with(
-            thread_id=None,
-            frame=None,
-            function=None,
-            address=None,
-            file="main.c",
-            line=None,
-            start_line=10,
-            end_line=12,
-            context_before=0,
-            context_after=0,
+            SourceContextRequest(
+                location=FileRangeLocation(file="main.c", start_line=10, end_line=12),
+                context_before=0,
+                context_after=0,
+            )
         )
 
     def test_breakpoint_query_get_routes_to_service(self) -> None:
@@ -1893,16 +1888,7 @@ class TestHandlerRouting:
         )
 
         session.disassemble.assert_called_once_with(
-            thread_id=2,
-            frame=1,
-            function=None,
-            address=None,
-            start_address=None,
-            end_address=None,
-            file=None,
-            line=None,
-            instruction_count=12,
-            mode="mixed",
+            DisassemblyRequest(thread_id=2, frame=1, instruction_count=12, mode="mixed")
         )
 
     def test_get_variables_accepts_numeric_string_context(self) -> None:
@@ -1946,16 +1932,9 @@ class TestHandlerRouting:
         )
 
         session.get_source_context.assert_called_once_with(
-            thread_id=None,
-            frame=None,
-            function=None,
-            address=None,
-            file="main.c",
-            line=12,
-            start_line=None,
-            end_line=None,
-            context_before=2,
-            context_after=3,
+            SourceContextRequest(
+                location=FileLineLocation(file="main.c", line=12), context_before=2, context_after=3
+            )
         )
 
     def test_tool_definitions_match_dispatch_registry(self) -> None:

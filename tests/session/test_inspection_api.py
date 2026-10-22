@@ -6,6 +6,12 @@ from collections.abc import Callable
 from pathlib import Path
 
 from gdb_mcp.domain import result_to_mapping
+from gdb_mcp.session.requests import (
+    DisassemblyRequest,
+    FileLineLocation,
+    FunctionLocation,
+    SourceContextRequest,
+)
 from gdb_mcp.session.service import SessionService
 from tests.support import mapping_list, sequence
 
@@ -346,7 +352,9 @@ class TestStructuredCodeInspectionApi:
             ],
         )
 
-        result = result_to_mapping(session.disassemble(instruction_count=2, mode="assembly"))
+        result = result_to_mapping(
+            session.disassemble(DisassemblyRequest(instruction_count=2, mode="assembly"))
+        )
 
         assert result["status"] == "success"
         context = result["context"]
@@ -378,7 +386,7 @@ class TestStructuredCodeInspectionApi:
             )
         )
 
-        result = result_to_mapping(session.disassemble(thread_id=2, frame=1))
+        result = result_to_mapping(session.disassemble(DisassemblyRequest(thread_id=2, frame=1)))
 
         assert result["status"] == "success"
         context = result["context"]
@@ -411,7 +419,11 @@ class TestStructuredCodeInspectionApi:
             [mi_result({"asm_insns": [{"address": "0x401000", "inst": "push %rbp"}]})],
         )
 
-        result = result_to_mapping(session.disassemble(function="add", instruction_count=1))
+        result = result_to_mapping(
+            session.disassemble(
+                DisassemblyRequest(location=FunctionLocation(function="add"), instruction_count=1)
+            )
+        )
 
         assert result["status"] == "success"
         assert len(mapping_list(result["instructions"])) == 1
@@ -436,7 +448,9 @@ class TestStructuredCodeInspectionApi:
             [mi_console("No function contains specified address.\n"), mi_result()],
         )
 
-        result = result_to_mapping(session.disassemble(function="missing"))
+        result = result_to_mapping(
+            session.disassemble(DisassemblyRequest(location=FunctionLocation(function="missing")))
+        )
 
         assert result["status"] == "error"
         assert result["code"] == "disassembly_unavailable"
@@ -454,8 +468,8 @@ class TestStructuredCodeInspectionApi:
             [mi_result({"asm_insns": [{"address": "0x401000", "inst": "nop"}]})],
         )
 
-        session.disassemble(function="add")
-        session.disassemble(function="add")
+        session.disassemble(DisassemblyRequest(location=FunctionLocation(function="add")))
+        session.disassemble(DisassemblyRequest(location=FunctionLocation(function="add")))
 
         written = controller.decoded_writes
         assert sum(1 for command in written if command.endswith("-list-features\n")) == 1
@@ -480,10 +494,11 @@ class TestStructuredCodeInspectionApi:
 
         result = result_to_mapping(
             session.get_source_context(
-                file=str(source_file),
-                line=2,
-                context_before=1,
-                context_after=0,
+                SourceContextRequest(
+                    location=FileLineLocation(file=str(source_file), line=2),
+                    context_before=1,
+                    context_after=0,
+                )
             )
         )
 
@@ -525,7 +540,11 @@ class TestStructuredCodeInspectionApi:
         )
 
         result = result_to_mapping(
-            session.get_source_context(function="add", context_before=0, context_after=0)
+            session.get_source_context(
+                SourceContextRequest(
+                    location=FunctionLocation(function="add"), context_before=0, context_after=0
+                )
+            )
         )
 
         assert result["status"] == "success"
@@ -562,7 +581,11 @@ class TestStructuredCodeInspectionApi:
         )
 
         result = result_to_mapping(
-            session.get_source_context(function="main", context_before=0, context_after=0)
+            session.get_source_context(
+                SourceContextRequest(
+                    location=FunctionLocation(function="main"), context_before=0, context_after=0
+                )
+            )
         )
 
         assert result["status"] == "success"
@@ -606,7 +629,9 @@ class TestStructuredCodeInspectionApi:
             )
         )
 
-        result = result_to_mapping(session.get_source_context(thread_id=2, frame=1))
+        result = result_to_mapping(
+            session.get_source_context(SourceContextRequest(thread_id=2, frame=1))
+        )
 
         assert result["status"] == "success"
         context = result["context"]
