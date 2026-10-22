@@ -56,15 +56,10 @@ class FileRangeLocation:
     kind: ClassVar[Literal["file_range"]] = "file_range"
 
 
-DisassemblyLocation: TypeAlias = (
-    CurrentLocation
-    | FunctionLocation
-    | AddressLocation
-    | AddressRangeLocation
-    | FileLineLocation
-    | FileRangeLocation
+SourceLocation: TypeAlias = (
+    CurrentLocation | FunctionLocation | AddressLocation | FileLineLocation | FileRangeLocation
 )
-SourceLocation: TypeAlias = DisassemblyLocation
+DisassemblyLocation: TypeAlias = SourceLocation | AddressRangeLocation
 
 
 @dataclass(frozen=True, slots=True)

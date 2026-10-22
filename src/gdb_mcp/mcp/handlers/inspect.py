@@ -21,7 +21,6 @@ from ...session.requests import (
     FileRangeLocation,
     FunctionLocation,
     SourceContextRequest,
-    SourceLocation,
 )
 from ...session.service import SessionService
 from ..schemas import (
@@ -45,8 +44,8 @@ from .common import (
 )
 
 
-def _location_selection(location: LocationArgs) -> DisassemblyLocation | SourceLocation:
-    """Translate a location union payload into inspection keyword arguments."""
+def _location_selection(location: LocationArgs) -> DisassemblyLocation:
+    """Translate the public location union into a typed inspection selector."""
 
     match location:
         case LocationCurrentArgs():
