@@ -22,8 +22,8 @@
       url = "github:NixOS/nixpkgs/17.09";
       flake = false;
     };
-    nixpkgs-2305 = {
-      url = "github:NixOS/nixpkgs/23.05";
+    nixpkgs-2105 = {
+      url = "github:NixOS/nixpkgs/21.05";
       flake = false;
     };
   };
@@ -68,7 +68,7 @@
           python = "python314";
           lldb = "lldb";
         };
-        oldest-py310-gdb71a-lldb40-delve120 = {
+        oldest-py310-gdb71a-lldb40-delve16 = {
           channel = "mixed";
           baseline = true;
         };
@@ -116,7 +116,7 @@
             config.allowBroken = true;
           };
           p1709 = import inputs.nixpkgs-1709 { inherit system; };
-          p2305 = import inputs.nixpkgs-2305 { inherit system; };
+          p2105 = import inputs.nixpkgs-2105 { inherit system; };
 
           python26 = p1609.lib.overrideDerivation p1609.python26 (old: {
             buildInputs = old.buildInputs ++ [ p1609.glibc.dev ];
@@ -188,8 +188,8 @@
           lldb40 = p1709.lldb;
           gcc46 = p1310.gcc;
           gcc64 = p1709.gcc;
-          go120 = p2305.go;
-          delve120 = p2305.delve;
+          go116 = p2105.go;
+          delve16 = p2105.delve;
         };
 
       mkBaselineShell =
@@ -204,8 +204,8 @@
             legacy.gcc46
             legacy.gdb71a
             legacy.lldb40
-            legacy.go120
-            legacy.delve120
+            legacy.go116
+            legacy.delve16
             legacy.python26Path
             pkgs.python310
             pkgs.binutils
