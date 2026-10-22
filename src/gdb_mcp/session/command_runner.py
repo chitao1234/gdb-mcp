@@ -192,13 +192,7 @@ class SessionCommandRunner:
                             console_output="".join(
                                 item for item in parsed.console if isinstance(item, str)
                             ),
-                            data={
-                                "log": payload_to_mapping(parsed.log),
-                                "output": payload_to_mapping(parsed.output),
-                                "result": payload_to_mapping(parsed.result),
-                                "result_class": parsed.result_class,
-                                "notify": payload_to_mapping(parsed.notify),
-                            },
+                            data=payload_to_mapping(parsed.command_data()),
                         ),
                     ),
                     warnings=(
@@ -251,13 +245,7 @@ class SessionCommandRunner:
                     console_output="".join(
                         item for item in parsed.console if isinstance(item, str)
                     ),
-                    data={
-                        "log": payload_to_mapping(parsed.log),
-                        "output": payload_to_mapping(parsed.output),
-                        "result": payload_to_mapping(parsed.result),
-                        "result_class": parsed.result_class,
-                        "notify": payload_to_mapping(parsed.notify),
-                    },
+                    data=payload_to_mapping(parsed.command_data()),
                 ),
             )
         )

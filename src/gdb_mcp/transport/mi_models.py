@@ -67,11 +67,10 @@ class ParsedMiResponse:
         ]
         return "\n".join(part for part in parts if part)
 
-    def to_dict(self) -> dict[str, object]:
-        """Convert into plain builtin containers for higher-level payload assembly."""
+    def command_data(self) -> dict[str, object]:
+        """Return the non-console fields stored under ``BackendData.data``."""
 
         return {
-            "console": list(self.console),
             "log": list(self.log),
             "output": list(self.output),
             "result": self.result,
@@ -79,6 +78,14 @@ class ParsedMiResponse:
             "notify": [
                 {"message": notify.message, "payload": notify.payload} for notify in self.notify
             ],
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert into plain builtin containers for higher-level payload assembly."""
+
+        return {
+            "console": list(self.console),
+            **self.command_data(),
         }
 
 
