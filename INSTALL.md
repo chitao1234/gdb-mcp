@@ -24,7 +24,7 @@ the server and client do, see [README.md](README.md); for the tool contract, see
   A GDB built with Python support is recommended, so toolchain pretty-printers
   (Rust, Go, kernel scripts) can load.
 
-- **Optional:** LLDB 4.0.1 or newer and a C++17 compiler for
+- **Optional:** LLDB 4.0.1 or newer and a C++14 compiler for
   `debugger="lldb"`. The server builds a small SB API bridge on first use; set
   `LLDB_PREFIX` or `LLDB_LIBRARY` when the installation is not discovered
   automatically. The LLDB headers are not required for a prebuilt bridge.

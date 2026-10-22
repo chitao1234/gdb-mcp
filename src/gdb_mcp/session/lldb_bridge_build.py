@@ -334,7 +334,7 @@ def _build_core(install: LldbInstall) -> Path:
     _run(
         compiler
         + [
-            "-std=c++17",
+            "-std=c++14",
             "-O2",
             "-fPIC",
             "-pthread",
@@ -406,7 +406,7 @@ def _build_layers(install: LldbInstall, runtime_version: int | None) -> Path:
             _run(
                 compiler
                 + [
-                    "-std=c++17",
+                    "-std=c++14",
                     "-O2",
                     "-fPIC",
                     f"-I{include}",

@@ -66,7 +66,7 @@ partial reads remain explicit.
 - Python 3.10 or newer
 - GDB 7.1 or newer on `PATH` (GDB with Python support is recommended, so
   toolchain pretty-printers can load)
-- Optional: LLDB 4.0.1 or newer with headers for the native bridge; a C++17
+- Optional: LLDB 4.0.1 or newer with headers for the native bridge; a C++14
   compiler is used to build it on first use
 - Optional: Delve on `PATH`, or selected through `DLV_PATH` / `debugger_path`;
   CI exercises Delve 1.20.2 through 1.27 with matching Go toolchains
