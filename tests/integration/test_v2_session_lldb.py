@@ -61,6 +61,12 @@ def test_lldb_start_breakpoint_run_and_status(compile_program: CompileProgram) -
         assert status.value.stop_kind == "breakpoint"
         assert status.value.inferior_count == 1
 
+        inventory = backend.list_inferiors()
+        assert isinstance(inventory, OperationSuccess)
+        assert inventory.value.inferiors[0].execution_state == "paused"
+        assert backend.runtime.stop_reason == "breakpoint"
+        assert backend.runtime.stop_kind == "breakpoint"
+
         evaluated = backend.evaluate_expression("2 + 3")
         assert isinstance(evaluated, OperationSuccess)
         assert evaluated.value.value == "5"
@@ -72,6 +78,34 @@ def test_lldb_start_breakpoint_run_and_status(compile_program: CompileProgram) -
         finished = backend.finish(options=ExecutionOptions(timeout_sec=10))
         assert isinstance(finished, OperationSuccess)
         assert finished.value.return_value == "5"
+    finally:
+        backend.stop()
+
+
+def test_lldb_inventory_keeps_running_target_running(compile_program: CompileProgram) -> None:
+    program = compile_program(
+        "int main(void) { for (;;) {} }", filename="lldb_running.c", compiler="gcc"
+    )
+    backend = LldbSbBackend(
+        os_module=cast(OsModuleProtocol, os), time_module=cast(TimeModuleProtocol, time)
+    )
+    try:
+        assert isinstance(
+            backend.start(
+                SessionConfig.from_inputs(
+                    program=program, debugger="lldb", debugger_path=LLDB_PREFIX
+                )
+            ),
+            OperationSuccess,
+        )
+        assert isinstance(
+            backend.run(options=ExecutionOptions(wait_for_stop=False)), OperationSuccess
+        )
+        inventory = backend.list_inferiors()
+        assert isinstance(inventory, OperationSuccess)
+        assert inventory.value.inferiors[0].execution_state == "running"
+        assert backend.runtime.execution_state == "running"
+        assert backend.runtime.stop_reason is None
     finally:
         backend.stop()
 

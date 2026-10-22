@@ -455,6 +455,52 @@ def test_stop_identity_includes_process_and_inferior(identity_field: str) -> Non
     assert len(backend.runtime.stop_history) == 2
 
 
+@pytest.mark.parametrize(
+    ("details", "reason", "kind"),
+    [
+        ({}, "breakpoint", "watchpoint"),
+        ({"stop_reason": "step", "stop_kind": "step"}, "step", "step"),
+        ({"stop_reason": None, "stop_kind": None}, None, "unknown"),
+    ],
+)
+def test_inventory_only_replaces_stop_details_it_reports(
+    details: dict[str, object], reason: str | None, kind: str
+) -> None:
+    backend, bridge = _backend()
+    backend.runtime.mark_inferior_paused("breakpoint", stop_kind="watchpoint")
+    with patch.object(
+        bridge,
+        "request",
+        return_value={
+            "current_inferior_id": 1,
+            "targets": [{"inferior_id": 1, "execution_state": "paused", **details}],
+        },
+    ):
+        assert isinstance(backend.list_inferiors(), OperationSuccess)
+
+    assert backend.runtime.stop_reason == reason
+    assert backend.runtime.stop_kind == kind
+
+
+@pytest.mark.parametrize("state", ["running", "not_started", "unknown"])
+def test_inventory_state_transition_clears_previous_stop(state: str) -> None:
+    backend, bridge = _backend()
+    backend.runtime.mark_inferior_paused("breakpoint", stop_kind="watchpoint")
+    with patch.object(
+        bridge,
+        "request",
+        return_value={
+            "current_inferior_id": 1,
+            "targets": [{"inferior_id": 1, "execution_state": state}],
+        },
+    ):
+        assert isinstance(backend.list_inferiors(), OperationSuccess)
+
+    assert backend.runtime.execution_state == state
+    assert backend.runtime.stop_reason is None
+    assert backend.runtime.stop_kind == "unknown"
+
+
 def test_status_enriches_crash_and_stop_event() -> None:
     backend, _ = _backend()
 
