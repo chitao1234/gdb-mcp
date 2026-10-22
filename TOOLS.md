@@ -73,6 +73,8 @@ debugger is behind the session:
   kept as-is; `stop_reasons` request filters keep matching that native string
 - session status reports the selected inferior's stop kind; a stop on another
   inferior does not replace it
+- each `inferior_states` entry carries its own canonical `stop_kind`, including
+  backend refinements such as watchpoints; GDB inferior listings retain it too
 - execution observations apply state, selection, and new stop history together;
   status and capture readers do not observe a partially applied stop
 - `state_detail` is `"crashed"` when a paused inferior stopped on a fatal signal

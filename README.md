@@ -55,6 +55,7 @@ Unexpected server implementation failures return `internal_error` and are
 logged. A failed startup cleans up its debugger resources and does not publish
 a session id.
 Stop kinds follow the selected inferior, including watchpoint refinements.
+Each entry in session status `inferior_states` also carries its own `stop_kind`.
 LLDB inferior queries preserve known stop details when the inventory omits them
 and report running targets as running. Repeated status reads record each LLDB
 stop once per process and inferior; restarting a session resets that identity.
