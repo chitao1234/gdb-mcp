@@ -391,6 +391,12 @@ last field holds debugger-specific structured startup data. Both result arrays
 are always present; a backend may apply startup configuration without producing
 separate per-command result envelopes.
 
+Failed startup returns an error without registering a session. Termination and
+cleanup of an owned GDB or LLDB process share a single 10-second budget,
+including graceful shutdown, escalation to terminate and kill, and pipe cleanup.
+LLDB skips graceful shutdown after a response timeout or a protocol failure.
+This cleanup budget is additional to the existing startup command timeouts.
+
 ### Example
 
 ```json

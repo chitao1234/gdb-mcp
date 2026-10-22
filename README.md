@@ -15,6 +15,8 @@ commands and reads like an ordinary debugger.
 - Native `jump` (relocate and resume) and frame-scoped `until` with explicit
   function, source-line, or address-expression destinations on both backends
 - Several concurrent sessions, addressed explicitly by `session_id`
+- Debugger termination and cleanup share a 10-second budget, including recovery
+  from failed startup
 - Multi-inferior workflows, including fork-follow controls
 - LLDB remote targets through `gdb_session_connect` with `debugger="lldb"`
 - Read/write split by domain instead of one tool per operation
