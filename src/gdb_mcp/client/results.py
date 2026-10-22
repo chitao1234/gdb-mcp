@@ -13,10 +13,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast
 
+from gdb_mcp.contracts import ACTION_LIST
 from gdb_mcp.domain import ToolResultStatus
 from gdb_mcp.domain.parsing import as_int, as_text
-
-_ACTION_LIST = "list"
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,7 +30,7 @@ class ToolEnvelope:
     session_id: int | None
     target_loaded: bool | None
     execution_state: str | None
-    result: Mapping[str, object] | None
+    result: Mapping[str, object]
 
     @classmethod
     def from_payload(cls, payload: Mapping[str, object]) -> ToolEnvelope:
@@ -39,30 +38,27 @@ class ToolEnvelope:
 
         status = cast(ToolResultStatus, payload["status"])
         if status == "success":
-            result: Mapping[str, object] | None = cast(Mapping[str, object], payload["result"])
+            result = cast(Mapping[str, object], payload["result"])
+            message = as_text(result.get("message"))
         else:
-            result = None
-        message = (
-            as_text(result.get("message"))
-            if result is not None
-            else as_text(payload.get("message"))
-        )
+            result = {}
+            message = as_text(payload.get("message"))
         return cls(
             status=status,
             action=as_text(payload.get("action")),
             code=as_text(payload.get("code")),
             message=message,
             fatal=_as_bool(payload.get("fatal")),
-            session_id=as_int(result.get("session_id")) if result is not None else None,
-            target_loaded=_as_bool(result.get("target_loaded")) if result is not None else None,
-            execution_state=as_text(result.get("execution_state")) if result is not None else None,
+            session_id=as_int(result.get("session_id")),
+            target_loaded=_as_bool(result.get("target_loaded")),
+            execution_state=as_text(result.get("execution_state")),
             result=result,
         )
 
     def is_list_action(self) -> bool:
         """Return whether this payload is a session-list action envelope."""
 
-        return self.action == _ACTION_LIST
+        return self.action == ACTION_LIST
 
 
 def _as_bool(value: object) -> bool | None:

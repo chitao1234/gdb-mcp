@@ -593,8 +593,7 @@ def _default_session_annotation(
     session_id = remembered_session_id()
     if session_id is None:
         return ""
-    result = envelope.result
-    sessions = result.get("sessions") if result is not None else None
+    sessions = envelope.result.get("sessions")
     running = isinstance(sessions, list) and any(
         isinstance(item, dict) and item.get("session_id") == session_id for item in sessions
     )
