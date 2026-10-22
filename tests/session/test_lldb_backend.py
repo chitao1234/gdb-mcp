@@ -424,6 +424,37 @@ def test_finish_publishes_the_return_value() -> None:
     assert finished.stop_reason == "signal"
 
 
+def test_startup_resets_stop_event_deduplication() -> None:
+    backend, bridge = _backend()
+    backend.runtime.mark_ready()
+    backend.get_status()
+    assert len(backend.runtime.stop_history) == 1
+
+    backend._client = None
+    with (
+        patch("gdb_mcp.session.lldb_backend.prepare_bridge"),
+        patch("gdb_mcp.session.lldb_backend.BridgeClient", return_value=bridge),
+    ):
+        started = backend.start(SessionConfig(debugger="lldb"))
+
+    assert isinstance(started, OperationSuccess)
+    assert len(backend.runtime.stop_history) == 1
+    assert backend.runtime.last_stop_event is not None
+
+
+@pytest.mark.parametrize("identity_field", ["pid", "current_inferior_id"])
+def test_stop_identity_includes_process_and_inferior(identity_field: str) -> None:
+    backend, bridge = _backend()
+    payload = bridge.request("status")
+    backend._events.apply(payload)
+    backend._events.apply(payload)
+    assert len(backend.runtime.stop_history) == 1
+
+    backend._events.apply({**payload, identity_field: 2})
+
+    assert len(backend.runtime.stop_history) == 2
+
+
 def test_status_enriches_crash_and_stop_event() -> None:
     backend, _ = _backend()
 
