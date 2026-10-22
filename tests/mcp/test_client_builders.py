@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import argparse
 
+import pytest
+from pydantic import ValidationError
+
 from gdb_mcp.client.builders.breakpoint import (
     build_breakpoint_manage_payload,
     build_breakpoint_query_payload,
 )
 from gdb_mcp.client.builders.context import build_context_query_payload
-from gdb_mcp.client.builders.execution import build_execution_manage_payload
 from gdb_mcp.client.builders.inferior import build_inferior_manage_payload
 from gdb_mcp.client.builders.inspect import build_inspect_query_payload
 from gdb_mcp.client.builders.session import (
@@ -29,7 +31,6 @@ from gdb_mcp.client.inputs import (
     BreakpointManageInput,
     BreakpointQueryInput,
     ContextQueryInput,
-    ExecutionManageInput,
     InferiorManageInput,
     InspectQueryInput,
     LocationInput,
@@ -39,6 +40,8 @@ from gdb_mcp.client.inputs import (
     SessionStepInput,
     WorkflowBatchInput,
 )
+from gdb_mcp.client.parsers import serialize_model
+from gdb_mcp.client.specs.execution import _build_execution_manage
 
 
 def test_parse_session_start_input_from_namespace() -> None:
@@ -174,7 +177,7 @@ def test_build_inferior_manage_detach_on_fork_defaults_enabled() -> None:
 def test_build_execution_manage_payload_includes_reverse() -> None:
     """An explicit reverse flag is carried into the execution block."""
 
-    typed_input = ExecutionManageInput(
+    namespace = argparse.Namespace(
         action="step",
         session_id=7,
         args=(),
@@ -184,7 +187,7 @@ def test_build_execution_manage_payload_includes_reverse() -> None:
         reverse=True,
     )
 
-    assert build_execution_manage_payload(typed_input) == {
+    assert serialize_model(_build_execution_manage(namespace)) == {
         "session_id": 7,
         "action": "step",
         "execution": {"wait_until": "stop", "reverse": True},
@@ -192,7 +195,7 @@ def test_build_execution_manage_payload_includes_reverse() -> None:
 
 
 def test_build_instruction_step_payload_includes_reverse() -> None:
-    typed_input = ExecutionManageInput(
+    namespace = argparse.Namespace(
         action="step_instruction",
         session_id=7,
         args=(),
@@ -202,7 +205,7 @@ def test_build_instruction_step_payload_includes_reverse() -> None:
         reverse=True,
     )
 
-    assert build_execution_manage_payload(typed_input) == {
+    assert serialize_model(_build_execution_manage(namespace)) == {
         "session_id": 7,
         "action": "step_instruction",
         "execution": {"wait_until": "stop", "reverse": True},
@@ -210,7 +213,7 @@ def test_build_instruction_step_payload_includes_reverse() -> None:
 
 
 def test_build_return_payload_includes_value() -> None:
-    typed_input = ExecutionManageInput(
+    namespace = argparse.Namespace(
         action="return",
         session_id=7,
         args=(),
@@ -221,7 +224,7 @@ def test_build_return_payload_includes_value() -> None:
         value="42",
     )
 
-    assert build_execution_manage_payload(typed_input) == {
+    assert serialize_model(_build_execution_manage(namespace)) == {
         "session_id": 7,
         "action": "return",
         "execution": {"value": "42"},
@@ -294,7 +297,7 @@ def test_build_session_start_payload_includes_rr_replay() -> None:
 def test_build_execution_manage_run_payload() -> None:
     """A run action groups its arguments and stop condition."""
 
-    typed_input = ExecutionManageInput(
+    namespace = argparse.Namespace(
         action="run",
         session_id=7,
         args=("--mode", "fast"),
@@ -304,7 +307,7 @@ def test_build_execution_manage_run_payload() -> None:
         reverse=False,
     )
 
-    assert build_execution_manage_payload(typed_input) == {
+    assert serialize_model(_build_execution_manage(namespace)) == {
         "session_id": 7,
         "action": "run",
         "execution": {
@@ -315,10 +318,10 @@ def test_build_execution_manage_run_payload() -> None:
     }
 
 
-def test_build_execution_manage_wait_for_stop_preserves_explicit_zero_timeout() -> None:
-    """A zero timeout is meaningful and must not be dropped."""
+def test_build_execution_manage_wait_for_stop_rejects_explicit_zero_timeout() -> None:
+    """An explicit zero must reach validation rather than become a default."""
 
-    typed_input = ExecutionManageInput(
+    namespace = argparse.Namespace(
         action="wait_for_stop",
         session_id=7,
         args=(),
@@ -328,11 +331,8 @@ def test_build_execution_manage_wait_for_stop_preserves_explicit_zero_timeout() 
         reverse=False,
     )
 
-    assert build_execution_manage_payload(typed_input) == {
-        "session_id": 7,
-        "action": "wait_for_stop",
-        "execution": {"timeout_sec": 0},
-    }
+    with pytest.raises(ValidationError, match="timeout_sec"):
+        _build_execution_manage(namespace)
 
 
 def test_build_context_query_backtrace_payload() -> None:
