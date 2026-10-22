@@ -67,6 +67,7 @@ from ..domain import (
     WaitForStopInfo,
     WatchpointAccessType,
 )
+from ..domain.errors import DebuggerDecodeError
 from ..domain.results import payload_to_mapping
 from ..transport.delve_rpc import DelveRpcClient, DelveRpcError, RpcRequest
 from .backends import BackendCapabilities, BackendOperation
@@ -79,6 +80,7 @@ from .delve_values import (
     integer,
     mapping,
     mappings,
+    optional_integer,
     text,
     variable_record,
     variable_value,
@@ -172,7 +174,7 @@ class DelveRpcBackend:
         self._command_lock = threading.RLock()
         self._execution_done = threading.Event()
         self._execution_done.set()
-        self._execution_error: DelveRpcError | None = None
+        self._execution_error: Exception | None = None
         self._execution_result: dict[str, object] = {}
         self._pending: RpcRequest | None = None
         self._last_state: dict[str, object] = {}
@@ -537,7 +539,7 @@ class DelveRpcBackend:
             )
             thread = mapping(state.get("currentThread"))
             goroutine = mapping(state.get("currentGoroutine"))
-            goroutine_id = integer(goroutine.get("id")) or integer(thread.get("goroutineID"))
+            goroutine_id = integer(goroutine.get("id"), 0) or integer(thread.get("goroutineID"), 0)
             previous_goroutine = self.runtime.current_thread_id
             self.runtime.mark_thread_selected(goroutine_id or None)
             if previous_goroutine != (goroutine_id or None) or self.runtime.current_frame is None:
@@ -550,9 +552,9 @@ class DelveRpcBackend:
             reason = native_reason
             if state.get("exited"):
                 reason = reason or "exited"
-                self.runtime.mark_inferior_exited(reason, integer(state.get("exitStatus")))
+                self.runtime.mark_inferior_exited(reason, optional_integer(state.get("exitStatus")))
             else:
-                if integer(breakpoint.get("id")) == -1:
+                if optional_integer(breakpoint.get("id")) == -1:
                     reason = "panic"
                 elif breakpoint:
                     reason = "watchpoint" if breakpoint.get("WatchExpr") else "breakpoint-hit"
@@ -587,7 +589,7 @@ class DelveRpcBackend:
                 reason,
                 goroutine_id,
                 frame.addr,
-                integer(breakpoint.get("id")),
+                optional_integer(breakpoint.get("id")),
             )
             if key == self._last_stop_key:
                 return
@@ -636,17 +638,19 @@ class DelveRpcBackend:
                     self._execution_result = response
                     self._client_state(response)
                 self._remove_hit_temporary_breakpoints()
-            except DelveRpcError as exc:
+            except Exception as exc:
                 with self._command_lock:
                     if generation == self._generation:
                         self._execution_error = exc
                         self._pending = None
+                        if not isinstance(exc, DelveRpcError):
+                            return
                         if self._client is not None and self._client.alive:
                             try:
                                 self._client_state(
                                     self._request("State", {"NonBlocking": True}), record=False
                                 )
-                            except DelveRpcError:
+                            except (DelveRpcError, DebuggerDecodeError):
                                 pass
                         elif self.runtime.state != SessionState.STOPPED:
                             self.runtime.mark_transport_terminated(str(exc))
@@ -922,9 +926,9 @@ class DelveRpcBackend:
                     {
                         "id": str(integer(goroutine.get("id"))),
                         "name": text(mapping(location.get("function")).get("name")),
-                        "state": "running" if integer(goroutine.get("threadID")) else "waiting",
+                        "state": "running" if integer(goroutine.get("threadID"), 0) else "waiting",
                         "target-id": f"goroutine {integer(goroutine.get('id'))}",
-                        "native_thread_id": integer(goroutine.get("threadID")),
+                        "native_thread_id": integer(goroutine.get("threadID"), 0),
                         "frame": frame_record(location).to_payload(),
                     }
                 )
@@ -998,17 +1002,25 @@ class DelveRpcBackend:
             FrameSelectionInfo(frame_number, frame_record(locations[frame_number], frame_number))
         )
 
-    @_operation
-    def evaluate_expression(
+    def _variable(
         self, expression: str, thread_id: int | None = None, frame: int | None = None
-    ) -> OperationSuccess[ExpressionValueInfo]:
+    ) -> dict[str, object]:
         response = self._request(
             "Eval",
             {"Scope": self._scope(thread_id, frame), "Expr": expression, "Cfg": _LOAD_CONFIG},
         )
         variable = mapping(response.get("Variable"))
+        if not variable:
+            raise DebuggerDecodeError("Delve Eval response has no variable")
         if variable.get("unreadable"):
             raise DelveRpcError(text(variable["unreadable"]), "value_unavailable")
+        return variable
+
+    @_operation
+    def evaluate_expression(
+        self, expression: str, thread_id: int | None = None, frame: int | None = None
+    ) -> OperationSuccess[ExpressionValueInfo]:
+        variable = self._variable(expression, thread_id, frame)
         return OperationSuccess(
             ExpressionValueInfo(
                 expression, variable_value(variable), type=text(variable.get("type"))
@@ -1070,7 +1082,11 @@ class DelveRpcBackend:
                     value = str(int(value, 0))
                 except ValueError:
                     pass
-            records.append(RegisterRecord(number=number, name=name, value=value))
+            records.append(
+                RegisterRecord.from_payload(
+                    {**register, "number": number, "name": name, "value": value}
+                )
+            )
         if max_registers is not None:
             records = records[:max_registers]
         return OperationSuccess(RegistersInfo(records))
@@ -1079,11 +1095,7 @@ class DelveRpcBackend:
         try:
             return int(expression, 0)
         except ValueError:
-            variable = mapping(
-                self._request(
-                    "Eval", {"Scope": self._scope(), "Expr": expression, "Cfg": _LOAD_CONFIG}
-                ).get("Variable")
-            )
+            variable = self._variable(expression)
             value = text(variable.get("value"))
             if value:
                 return int(value, 0)
@@ -1170,7 +1182,7 @@ class DelveRpcBackend:
             address=hex(integer(location.get("pc"))),
             file=text(location.get("file")) or file,
             fullname=text(location.get("file")) or file,
-            line=integer(location.get("line")) or line,
+            line=optional_integer(location.get("line")) or line,
         )
         return location, normalized
 
@@ -1273,14 +1285,17 @@ class DelveRpcBackend:
             encoded = item.get("Bytes")
             opcodes = base64.b64decode(encoded).hex(" ") if isinstance(encoded, str) else None
             instructions.append(
-                DisassemblyInstructionRecord(
-                    address=hex(pc),
-                    instruction=text(item.get("Text")),
-                    opcodes=opcodes,
-                    function=text(mapping(loc.get("function")).get("name")),
-                    file=text(loc.get("file")) if mode == "mixed" else None,
-                    line=integer(loc.get("line")) if mode == "mixed" else None,
-                    is_current=bool(item.get("AtPC")),
+                DisassemblyInstructionRecord.from_payload(
+                    {
+                        **item,
+                        "address": hex(pc),
+                        "instruction": text(item.get("Text")),
+                        "opcodes": opcodes,
+                        "function": text(mapping(loc.get("function")).get("name")),
+                        "file": text(loc.get("file")) if mode == "mixed" else None,
+                        "line": optional_integer(loc.get("line")) if mode == "mixed" else None,
+                        "is_current": bool(item.get("AtPC")),
+                    }
                 )
             )
             if len(instructions) >= instruction_count:
@@ -1306,9 +1321,12 @@ class DelveRpcBackend:
         addresses: list[int] = []
         for loc in locations:
             pcs = loc.get("pcs")
-            addresses.extend(
-                [integer(pc) for pc in pcs] if isinstance(pcs, list) else [integer(loc.get("pc"))]
-            )
+            if pcs is None:
+                addresses.append(integer(loc.get("pc")))
+                continue
+            if not isinstance(pcs, list):
+                raise DebuggerDecodeError("Delve location pcs must be a list of integers")
+            addresses.extend(integer(pc) for pc in pcs)
         response = self._request(
             "CreateBreakpoint", {"Breakpoint": {"addrs": addresses, "Cond": condition or ""}}
         )
@@ -1352,7 +1370,9 @@ class DelveRpcBackend:
 
     def _breakpoint(self, number: int) -> dict[str, object]:
         self._scope()
-        return mapping(self._request("GetBreakpoint", {"Id": number}).get("Breakpoint"))
+        breakpoint = mapping(self._request("GetBreakpoint", {"Id": number}).get("Breakpoint"))
+        integer(breakpoint.get("id"))
+        return breakpoint
 
     @_operation
     def get_breakpoint(self, number: int) -> OperationSuccess[BreakpointInfo]:
@@ -1371,11 +1391,11 @@ class DelveRpcBackend:
 
     def _remove_hit_temporary_breakpoints(self) -> None:
         hit = {
-            integer(mapping(thread.get("breakPoint")).get("id"))
+            optional_integer(mapping(thread.get("breakPoint")).get("id"))
             for thread in mappings(self._last_state.get("Threads"))
         }
         hit.add(
-            integer(
+            optional_integer(
                 mapping(mapping(self._last_state.get("currentThread")).get("breakPoint")).get("id")
             )
         )
