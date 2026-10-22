@@ -56,7 +56,12 @@ from .backends import BackendCapabilities, DebuggerBackend
 from .capture import SessionCaptureService
 from .config import SessionConfig
 from .constants import DEFAULT_TIMEOUT_SEC
-from .requests import DisassemblyRequest, SourceContextRequest
+from .requests import (
+    DEFAULT_EXECUTION_OPTIONS,
+    DisassemblyRequest,
+    ExecutionOptions,
+    SourceContextRequest,
+)
 from .runtime import SessionRuntime
 from .state import SessionState
 from .workflow import BatchStepInvocation, BatchStepTemplate, SessionWorkflowService
@@ -197,12 +202,11 @@ class SessionService:
     def run(
         self,
         args: list[str] | None = None,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
-        wait_for_stop: bool = True,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate target start to the debugger backend."""
 
-        return self._backend.run(args=args, timeout_sec=timeout_sec, wait_for_stop=wait_for_stop)
+        return self._backend.run(args=args, options=options)
 
     def add_inferior(
         self, *, executable: str | None = None, make_current: bool = False
@@ -242,15 +246,12 @@ class SessionService:
     def continue_execution(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate continue to the debugger backend."""
 
-        return self._backend.continue_execution(
-            wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
-        )
+        return self._backend.continue_execution(reverse=reverse, options=options)
 
     def wait_for_stop(
         self, *, timeout_sec: int = DEFAULT_TIMEOUT_SEC, stop_reasons: tuple[str, ...] = ()
@@ -262,54 +263,42 @@ class SessionService:
     def step(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate single-step to the execution service."""
 
-        return self._backend.step(
-            wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
-        )
+        return self._backend.step(reverse=reverse, options=options)
 
     def next(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate next/step-over to the execution service."""
 
-        return self._backend.next(
-            wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
-        )
+        return self._backend.next(reverse=reverse, options=options)
 
     def step_instruction(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate instruction-step to the execution service."""
 
-        return self._backend.step_instruction(
-            wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
-        )
+        return self._backend.step_instruction(reverse=reverse, options=options)
 
     def next_instruction(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate instruction-step-over to the execution service."""
 
-        return self._backend.next_instruction(
-            wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
-        )
+        return self._backend.next_instruction(reverse=reverse, options=options)
 
     def return_from_frame(
         self, *, value: str | None = None
@@ -322,36 +311,30 @@ class SessionService:
         self,
         location: str,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
     ) -> OperationSuccess[LocationExecutionInfo] | OperationError:
         """Relocate the executing frame and resume through the debugger backend."""
 
-        return self._backend.jump(location, wait_for_stop=wait_for_stop, timeout_sec=timeout_sec)
+        return self._backend.jump(location, options=options)
 
     def until(
         self,
         location: str,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
     ) -> OperationSuccess[LocationExecutionInfo] | OperationError:
         """Execute toward a destination using the debugger's frame-scoped until."""
 
-        return self._backend.until(location, wait_for_stop=wait_for_stop, timeout_sec=timeout_sec)
+        return self._backend.until(location, options=options)
 
     def finish(
         self,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
-        *,
-        wait_for_stop: bool = True,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[FinishInfo] | OperationError:
         """Delegate finish/step-out to the execution service."""
 
-        return self._backend.finish(
-            timeout_sec=timeout_sec, wait_for_stop=wait_for_stop, reverse=reverse
-        )
+        return self._backend.finish(reverse=reverse, options=options)
 
     def interrupt(self) -> OperationSuccess[MessageResult] | OperationError:
         """Delegate interrupt to the debugger backend."""

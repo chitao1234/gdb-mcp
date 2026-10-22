@@ -31,6 +31,7 @@ from ...domain.errors import DebuggerDecodeError
 from ...session.backends import BackendOperation
 from ...session.constants import DEFAULT_TIMEOUT_SEC
 from ...session.registry import SessionRegistry
+from ...session.requests import ExecutionOptions
 from ...session.service import SessionService
 from ..schemas import (
     LocationAddressArgs,
@@ -333,11 +334,11 @@ def _workflow_step_validation_error(
 def _execution_wait_policy(
     wait_until: ExecutionWaitUntil,
     timeout_sec: int | None,
-) -> tuple[int, bool]:
+) -> ExecutionOptions:
     """Translate a flattened execution wait policy into service-layer arguments."""
 
     resolved_timeout = timeout_sec if timeout_sec is not None else DEFAULT_TIMEOUT_SEC
-    return resolved_timeout, wait_until == "stop"
+    return ExecutionOptions(timeout_sec=resolved_timeout, wait_for_stop=wait_until == "stop")
 
 
 def _normalize_run_args(args: list[str] | str | None) -> list[str] | None | OperationError:

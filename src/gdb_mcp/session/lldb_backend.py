@@ -80,7 +80,13 @@ from .lldb_bridge import BridgeClient
 from .lldb_bridge_build import prepare_bridge
 from .lldb_bridge_types import BridgeError
 from .protocols import OsModuleProtocol, TimeModuleProtocol
-from .requests import DisassemblyRequest, FileRangeLocation, SourceContextRequest
+from .requests import (
+    DEFAULT_EXECUTION_OPTIONS,
+    DisassemblyRequest,
+    ExecutionOptions,
+    FileRangeLocation,
+    SourceContextRequest,
+)
 from .runtime import SessionRuntime
 
 logger = logging.getLogger(__name__)
@@ -702,9 +708,9 @@ class LldbSbBackend:
     def run(
         self,
         args: list[str] | None = None,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
-        wait_for_stop: bool = True,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
         try:
             launch_payload: dict[str, object] = {}
             if args is not None:
@@ -819,10 +825,10 @@ class LldbSbBackend:
     def continue_execution(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
         if reverse:
             return OperationError(
                 message="LLDB reverse execution is not supported", code="unsupported_combination"
@@ -875,19 +881,19 @@ class LldbSbBackend:
     def step(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
         return self._step("into", wait_for_stop, timeout_sec, reverse)
 
     def next(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
         return self._step("over", wait_for_stop, timeout_sec, reverse)
 
     def _step(
@@ -921,19 +927,19 @@ class LldbSbBackend:
     def step_instruction(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
         return self._step("instruction_into", wait_for_stop, timeout_sec, reverse)
 
     def next_instruction(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
         return self._step("instruction_over", wait_for_stop, timeout_sec, reverse)
 
     def return_from_frame(
@@ -959,10 +965,10 @@ class LldbSbBackend:
         self,
         location: str,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
     ) -> OperationSuccess[LocationExecutionInfo] | OperationError:
         """Relocate through LLDB, then resume without restricting the function."""
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
 
         return self._execute_location(
             ACTION_JUMP, location, wait_for_stop=wait_for_stop, timeout_sec=timeout_sec
@@ -972,10 +978,10 @@ class LldbSbBackend:
         self,
         location: str,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
     ) -> OperationSuccess[LocationExecutionInfo] | OperationError:
         """Use LLDB's native until plan, including its return boundary and errors."""
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
 
         return self._execute_location(
             ACTION_UNTIL, location, wait_for_stop=wait_for_stop, timeout_sec=timeout_sec
@@ -1056,11 +1062,10 @@ class LldbSbBackend:
 
     def finish(
         self,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
-        *,
-        wait_for_stop: bool = True,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[FinishInfo] | OperationError:
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
         if reverse:
             return OperationError(
                 message="LLDB reverse execution is not supported", code="unsupported_combination"

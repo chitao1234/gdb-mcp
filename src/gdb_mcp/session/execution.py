@@ -44,6 +44,7 @@ from .command_runner import SessionCommandRunner
 from .constants import DEFAULT_TIMEOUT_SEC, INTERRUPT_RESPONSE_TIMEOUT_SEC
 from .gdb_command import GdbCommandResult
 from .inferiors import inferior_ids, parse_inferiors_output
+from .requests import DEFAULT_EXECUTION_OPTIONS, ExecutionOptions
 from .result_utils import command_result_mapping
 from .runtime import SessionRuntime
 
@@ -101,10 +102,10 @@ class SessionExecutionService:
         self,
         location: str,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
     ) -> OperationSuccess[LocationExecutionInfo] | OperationError:
         """Let GDB resolve the destination, relocate execution, and resume."""
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
 
         return self._execute_location(
             ACTION_JUMP, location, wait_for_stop=wait_for_stop, timeout_sec=timeout_sec
@@ -114,10 +115,10 @@ class SessionExecutionService:
         self,
         location: str,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
     ) -> OperationSuccess[LocationExecutionInfo] | OperationError:
         """Use GDB's native until semantics with an explicit destination."""
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
 
         return self._execute_location(
             ACTION_UNTIL, location, wait_for_stop=wait_for_stop, timeout_sec=timeout_sec
@@ -167,11 +168,11 @@ class SessionExecutionService:
     def run(
         self,
         args: list[str] | None = None,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
         *,
-        wait_for_stop: bool = True,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
     ) -> OperationSuccess[GdbCommandResult] | OperationError:
         """Run the program."""
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
         if self._transport.controller is None:
             return OperationError(message="No active GDB session")
 
@@ -431,11 +432,11 @@ class SessionExecutionService:
     def continue_execution(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[GdbCommandResult] | OperationError:
         """Continue execution of the program, forward or backward."""
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
         if self._transport.controller is None:
             return OperationError(message="No active GDB session")
         if self._runtime.execution_state == "running":
@@ -578,11 +579,11 @@ class SessionExecutionService:
     def step(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[GdbCommandResult] | OperationError:
         """Step into the next source line, forward or backward."""
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
         return self._command_runner.execute_command_result(
             _exec_command("-exec-step", reverse=reverse),
             timeout_sec=timeout_sec,
@@ -592,11 +593,11 @@ class SessionExecutionService:
     def next(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[GdbCommandResult] | OperationError:
         """Step over the next source line, forward or backward."""
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
         return self._command_runner.execute_command_result(
             _exec_command("-exec-next", reverse=reverse),
             timeout_sec=timeout_sec,
@@ -606,11 +607,11 @@ class SessionExecutionService:
     def step_instruction(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[GdbCommandResult] | OperationError:
         """Step into one machine instruction, forward or backward."""
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
         return self._command_runner.execute_command_result(
             _exec_command("-exec-step-instruction", reverse=reverse),
             timeout_sec=timeout_sec,
@@ -620,11 +621,11 @@ class SessionExecutionService:
     def next_instruction(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[GdbCommandResult] | OperationError:
         """Step over one machine instruction, forward or backward."""
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
         return self._command_runner.execute_command_result(
             _exec_command("-exec-next-instruction", reverse=reverse),
             timeout_sec=timeout_sec,
@@ -645,12 +646,11 @@ class SessionExecutionService:
 
     def finish(
         self,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
-        *,
-        wait_for_stop: bool = True,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[FinishInfo] | OperationError:
         """Finish the current frame and stop in the caller, forward or backward."""
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
 
         result = self._command_runner.execute_command_result(
             _exec_command("-exec-finish", reverse=reverse),

@@ -89,10 +89,12 @@ from .inspection.register_classes import guess_register_family, is_vector_regist
 from .process_cleanup import cleanup_process
 from .protocols import OsModuleProtocol, TimeModuleProtocol
 from .requests import (
+    DEFAULT_EXECUTION_OPTIONS,
     AddressLocation,
     AddressRangeLocation,
     DisassemblyLocation,
     DisassemblyRequest,
+    ExecutionOptions,
     FileLineLocation,
     FileRangeLocation,
     FunctionLocation,
@@ -727,9 +729,9 @@ class DelveRpcBackend:
     def run(
         self,
         args: list[str] | None = None,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
-        wait_for_stop: bool = True,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
     ) -> OperationSuccess[CommandExecutionInfo]:
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
         if self._attached:
             raise DelveRpcError(
                 "An attached target uses continue, not run/restart", "unsupported_combination"
@@ -749,10 +751,10 @@ class DelveRpcBackend:
     def continue_execution(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo]:
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
         return self._execute(
             "continue", wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
         )
@@ -761,10 +763,10 @@ class DelveRpcBackend:
     def step(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo]:
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
         return self._execute(
             "step", wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
         )
@@ -773,10 +775,10 @@ class DelveRpcBackend:
     def next(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo]:
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
         return self._execute(
             "next", wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
         )
@@ -785,10 +787,10 @@ class DelveRpcBackend:
     def step_instruction(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo]:
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
         return self._execute(
             "stepInstruction", wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
         )
@@ -797,10 +799,10 @@ class DelveRpcBackend:
     def next_instruction(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo]:
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
         return self._execute(
             "nextInstruction", wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
         )
@@ -808,11 +810,10 @@ class DelveRpcBackend:
     @_operation
     def finish(
         self,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
-        *,
-        wait_for_stop: bool = True,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[FinishInfo]:
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
         self._execute(
             "stepOut", wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
         )
@@ -1444,8 +1445,12 @@ class DelveRpcBackend:
 
     @_operation
     def jump(
-        self, location: str, *, wait_for_stop: bool = True, timeout_sec: int = DEFAULT_TIMEOUT_SEC
+        self,
+        location: str,
+        *,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
     ) -> OperationSuccess[LocationExecutionInfo]:
+        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
         pc = integer(self._locations(location)[0].get("pc"))
         try:
             self._client_state(self._request("SetExecutionPoint", {"Addr": pc}))
@@ -1517,7 +1522,10 @@ class DelveRpcBackend:
         return self._unsupported_operation("forcing a frame to return")
 
     def until(
-        self, location: str, *, wait_for_stop: bool = True, timeout_sec: int = DEFAULT_TIMEOUT_SEC
+        self,
+        location: str,
+        *,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
     ) -> OperationError:
         return self._unsupported_operation("frame-scoped until")
 

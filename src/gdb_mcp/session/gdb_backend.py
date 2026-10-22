@@ -52,7 +52,12 @@ from .gdb_command import command_output
 from .inspection import SessionInspectionService
 from .lifecycle import SessionLifecycleService
 from .protocols import OsModuleProtocol, TimeModuleProtocol
-from .requests import DisassemblyRequest, SourceContextRequest
+from .requests import (
+    DEFAULT_EXECUTION_OPTIONS,
+    DisassemblyRequest,
+    ExecutionOptions,
+    SourceContextRequest,
+)
 from .runtime import SessionRuntime
 
 
@@ -138,18 +143,11 @@ class GdbMiBackend:
     def run(
         self,
         args: list[str] | None = None,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
-        wait_for_stop: bool = True,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate target start to the execution service."""
 
-        return command_output(
-            self._execution.run(
-                args=args,
-                timeout_sec=timeout_sec,
-                wait_for_stop=wait_for_stop,
-            )
-        )
+        return command_output(self._execution.run(args=args, options=options))
 
     def add_inferior(
         self,
@@ -199,19 +197,12 @@ class GdbMiBackend:
     def continue_execution(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate continue to the execution service."""
 
-        return command_output(
-            self._execution.continue_execution(
-                wait_for_stop=wait_for_stop,
-                timeout_sec=timeout_sec,
-                reverse=reverse,
-            )
-        )
+        return command_output(self._execution.continue_execution(reverse=reverse, options=options))
 
     def wait_for_stop(
         self,
@@ -229,70 +220,42 @@ class GdbMiBackend:
     def step(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate single-step to the execution service."""
 
-        return command_output(
-            self._execution.step(
-                wait_for_stop=wait_for_stop,
-                timeout_sec=timeout_sec,
-                reverse=reverse,
-            )
-        )
+        return command_output(self._execution.step(reverse=reverse, options=options))
 
     def next(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate next/step-over to the execution service."""
 
-        return command_output(
-            self._execution.next(
-                wait_for_stop=wait_for_stop,
-                timeout_sec=timeout_sec,
-                reverse=reverse,
-            )
-        )
+        return command_output(self._execution.next(reverse=reverse, options=options))
 
     def step_instruction(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate instruction-step to the execution service."""
 
-        return command_output(
-            self._execution.step_instruction(
-                wait_for_stop=wait_for_stop,
-                timeout_sec=timeout_sec,
-                reverse=reverse,
-            )
-        )
+        return command_output(self._execution.step_instruction(reverse=reverse, options=options))
 
     def next_instruction(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Delegate instruction-step-over to the execution service."""
 
-        return command_output(
-            self._execution.next_instruction(
-                wait_for_stop=wait_for_stop,
-                timeout_sec=timeout_sec,
-                reverse=reverse,
-            )
-        )
+        return command_output(self._execution.next_instruction(reverse=reverse, options=options))
 
     def return_from_frame(
         self, *, value: str | None = None
@@ -305,38 +268,30 @@ class GdbMiBackend:
         self,
         location: str,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
     ) -> OperationSuccess[LocationExecutionInfo] | OperationError:
         """Delegate relocation and resume to the execution service."""
 
-        return self._execution.jump(location, wait_for_stop=wait_for_stop, timeout_sec=timeout_sec)
+        return self._execution.jump(location, options=options)
 
     def until(
         self,
         location: str,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
     ) -> OperationSuccess[LocationExecutionInfo] | OperationError:
         """Delegate frame-scoped execution to the execution service."""
 
-        return self._execution.until(location, wait_for_stop=wait_for_stop, timeout_sec=timeout_sec)
+        return self._execution.until(location, options=options)
 
     def finish(
         self,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
-        *,
-        wait_for_stop: bool = True,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[FinishInfo] | OperationError:
         """Delegate finish/step-out to the execution service."""
 
-        return self._execution.finish(
-            timeout_sec=timeout_sec,
-            reverse=reverse,
-            wait_for_stop=wait_for_stop,
-        )
+        return self._execution.finish(reverse=reverse, options=options)
 
     def interrupt(self) -> OperationSuccess[MessageResult] | OperationError:
         """Delegate interrupt to the execution service."""

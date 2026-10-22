@@ -5,6 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar, Literal, TypeAlias
 
+from .constants import DEFAULT_TIMEOUT_SEC
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionOptions:
+    timeout_sec: int = DEFAULT_TIMEOUT_SEC
+    wait_for_stop: bool = True
+
+
+DEFAULT_EXECUTION_OPTIONS = ExecutionOptions()
+
 
 @dataclass(frozen=True, slots=True)
 class CurrentLocation:
