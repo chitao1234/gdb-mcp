@@ -81,8 +81,8 @@
           ];
           GOTOOLCHAIN = "local";
           LLDB_PREFIX = "${lldbFull}";
-          # The bridge cache key includes this path. An unqualified "g++" would
-          # collide across profiles even though each profile has its own g++.
+          # Pin the bridge compiler so a host-exported CXX cannot leak into
+          # this profile's bridge build.
           LLDB_BRIDGE_CXX = "${pkgs.gcc}/bin/c++";
         };
     in
