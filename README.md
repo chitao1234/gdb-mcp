@@ -53,6 +53,8 @@ the fallback `error` code. These failures do not end an otherwise live session.
 Unexpected server implementation failures return `internal_error` and are
 logged. A failed startup cleans up its debugger resources and does not publish
 a session id.
+Stop kinds follow the selected inferior, including watchpoint refinements.
+Stop and interrupt operations use the same failure classification as other tools.
 
 Workflow batches return `requested_steps` and the completed `steps`. Each step
 contains the complete tool envelope under `result`; read its `status`, `action`,

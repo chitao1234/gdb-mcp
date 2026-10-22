@@ -71,6 +71,8 @@ debugger is behind the session:
   `step`, `signal`, `exception`, `exit`, `entry`, `pause`, `fork`, `vfork`,
   `exec`, `thread_exit`, or `unknown`. The debugger's own `stop_reason` string is
   kept as-is; `stop_reasons` request filters keep matching that native string
+- session status reports the selected inferior's stop kind; a stop on another
+  inferior does not replace it
 - `state_detail` is `"crashed"` when a paused inferior stopped on a fatal signal
   or LLDB reported a crashed process; the execution state itself stays `paused`
 - stop events expose portable signal fields once: `signal_name`,
@@ -183,6 +185,8 @@ If a field consumed by an operation cannot be decoded, that operation returns
 `code="protocol_error"`, not `validation_error`. The session remains usable
 while its debugger connection is usable. Unexpected implementation exceptions
 return `internal_error` and are logged by the server.
+This also applies to stop and interrupt: implementation failures are not
+converted to ordinary debugger errors during these operations.
 These distinctions also apply during startup: malformed consumed debugger data
 returns `protocol_error`, and unexpected implementation failures return
 `internal_error`, after startup resources are cleaned up. Failed startup does
