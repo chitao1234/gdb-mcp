@@ -207,6 +207,24 @@ def _backend() -> tuple[LldbSbBackend, FakeBridge]:
     return backend, bridge
 
 
+def test_lldb_unexpected_startup_exception_is_not_reclassified() -> None:
+    """Unexpected bridge implementation failures should propagate to dispatch."""
+
+    backend = LldbSbBackend(
+        os_module=cast(OsModuleProtocol, os), time_module=cast(TimeModuleProtocol, time)
+    )
+    with (
+        patch(
+            "gdb_mcp.session.lldb_backend.prepare_bridge",
+            side_effect=RuntimeError("bridge implementation bug"),
+        ),
+        pytest.raises(RuntimeError, match="bridge implementation bug"),
+    ):
+        backend.start(SessionConfig.from_inputs(debugger="lldb", program="/bin/true"))
+
+    assert backend.runtime.state.value == "failed"
+
+
 @pytest.mark.parametrize(
     ("decoder", "payload"),
     [

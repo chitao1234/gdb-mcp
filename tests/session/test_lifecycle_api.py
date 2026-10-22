@@ -6,6 +6,8 @@ import os
 from typing import cast
 from unittest.mock import MagicMock, Mock, patch
 
+import pytest
+
 from gdb_mcp.domain import (
     CommandExecutionInfo,
     OperationError,
@@ -83,6 +85,16 @@ class TestLifecycleApi:
         assert result["target_loaded"] is True
         assert result["execution_state"] == "not_started"
         assert start_session.service.is_running is True
+
+    def test_unexpected_startup_exception_is_not_reclassified_as_debugger_error(
+        self, start_session: StartHarness
+    ) -> None:
+        """Implementation failures should reach the caller as exceptions."""
+
+        with pytest.raises(RuntimeError, match="controller bug"):
+            start_session(controller_side_effect=RuntimeError("controller bug"))
+
+        assert start_session.service.state.value == "failed"
 
     def test_start_session_with_custom_debugger_path(self, start_session: StartHarness) -> None:
         """Explicit debugger_path should be forwarded into process startup."""

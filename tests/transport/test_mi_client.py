@@ -7,7 +7,9 @@ import time
 from collections.abc import Callable
 from unittest.mock import MagicMock, patch
 
-from gdb_mcp.transport.mi_client import MiClient
+import pytest
+
+from gdb_mcp.transport.mi_client import MiClient, MiTransportError
 from gdb_mcp.transport.mi_models import MiRecord, MiTransportResponse
 from gdb_mcp.transport.protocols import (
     GdbControllerFactoryProtocol,
@@ -219,6 +221,16 @@ class TestMiClient:
         assert result == [
             {"type": "log", "payload": "/missing/program: No such file or directory.\n"}
         ]
+
+    def test_startup_transport_failures_have_a_typed_exception(self) -> None:
+        """Startup transport errors can be distinguished from implementation errors."""
+
+        controller = _FakeController([])
+        controller.get_gdb_response = MagicMock(side_effect=OSError("pipe closed"))  # type: ignore[method-assign]
+        client = self._make_client(controller)
+
+        with pytest.raises(MiTransportError, match="pipe closed"):
+            client.read_initial_output(timeout_sec=0.1)
 
     def test_send_command_collects_result_and_async_notifications(self) -> None:
         """A matching result record should end the read loop and retain async output."""
