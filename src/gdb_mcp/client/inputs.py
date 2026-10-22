@@ -11,83 +11,11 @@ from gdb_mcp.contracts import (
     BreakpointKind,
     BreakpointManageAction,
     BreakpointQueryAction,
-    ContextManageAction,
-    ContextQueryAction,
     DisassemblyMode,
-    InferiorFollowForkMode,
-    InferiorManageAction,
-    InferiorQueryAction,
     InspectQueryAction,
     LocationKind,
     RegisterValueFormat,
-    SessionQueryAction,
 )
-
-
-@dataclass(frozen=True, slots=True)
-class SessionStartInput:
-    """Parsed input for ``gdb_session_start``."""
-
-    program: str | None
-    debugger: str | None
-    args: tuple[str, ...]
-    init_commands: tuple[str, ...]
-    env: dict[str, str] | None
-    core: str | None
-    debugger_path: str | None
-    debugger_args: tuple[str, ...]
-    working_dir: str | None
-    rr_replay: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class SessionQueryInput:
-    """Parsed input for ``gdb_session_query``."""
-
-    action: SessionQueryAction
-    session_id: int | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class InferiorQueryInput:
-    """Parsed input for ``gdb_inferior_query``."""
-
-    action: InferiorQueryAction
-    session_id: int | None
-
-
-@dataclass(frozen=True, slots=True)
-class InferiorManageInput:
-    """Parsed input for ``gdb_inferior_manage``."""
-
-    action: InferiorManageAction
-    session_id: int | None
-    executable: str | None
-    make_current: bool | None
-    inferior_id: int | None
-    mode: InferiorFollowForkMode | None
-    enabled: bool | None
-
-
-@dataclass(frozen=True, slots=True)
-class ContextQueryInput:
-    """Parsed input for ``gdb_context_query``."""
-
-    action: ContextQueryAction
-    session_id: int | None
-    thread_id: int | None
-    frame: int | None
-    max_frames: int | None
-
-
-@dataclass(frozen=True, slots=True)
-class ContextManageInput:
-    """Parsed input for ``gdb_context_manage``."""
-
-    action: ContextManageAction
-    session_id: int | None
-    thread_id: int | None
-    frame: int | None
 
 
 @dataclass(frozen=True, slots=True)

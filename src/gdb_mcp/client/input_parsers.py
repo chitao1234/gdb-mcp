@@ -15,17 +15,10 @@ from gdb_mcp.contracts import (
     BREAKPOINT_KINDS,
     BREAKPOINT_MANAGE_ACTIONS,
     BREAKPOINT_QUERY_ACTIONS,
-    CONTEXT_MANAGE_ACTIONS,
-    CONTEXT_QUERY_ACTIONS,
-    DEBUGGER_NAMES,
     DISASSEMBLY_MODES,
-    INFERIOR_FOLLOW_FORK_MODES,
-    INFERIOR_MANAGE_ACTIONS,
-    INFERIOR_QUERY_ACTIONS,
     INSPECT_QUERY_ACTIONS,
     LOCATION_KINDS,
     REGISTER_VALUE_FORMATS,
-    SESSION_QUERY_ACTIONS,
     TOOL_SESSION_MANAGE,
     TOOL_SESSION_QUERY,
 )
@@ -35,15 +28,9 @@ from .inputs import (
     BreakpointCreateInput,
     BreakpointManageInput,
     BreakpointQueryInput,
-    ContextManageInput,
-    ContextQueryInput,
-    InferiorManageInput,
-    InferiorQueryInput,
     InspectQueryInput,
     LocationInput,
     RunUntilFailureInput,
-    SessionQueryInput,
-    SessionStartInput,
     SessionStepInput,
     WorkflowBatchInput,
 )
@@ -88,84 +75,6 @@ def _normalize_step_tool_name(tool_name: str) -> str:
     if prefixed in shared_contracts.PUBLIC_TOOL_NAMES:
         return prefixed
     return tool_name
-
-
-def parse_session_start_input(namespace: NamespaceLike) -> SessionStartInput:
-    """Parse one session-start namespace into a typed input object."""
-
-    values = snapshot(namespace)
-    return SessionStartInput(
-        program=optional_text(values, "program"),
-        debugger=optional_one_of(values, "debugger", DEBUGGER_NAMES),
-        args=text_tuple(values, "args"),
-        init_commands=text_tuple(values, "init_commands"),
-        env=collapse_key_value_entries(key_value_entries(values, "env")),
-        core=optional_text(values, "core"),
-        debugger_path=optional_text(values, "debugger_path"),
-        debugger_args=text_tuple(values, "debugger_args"),
-        working_dir=optional_text(values, "working_dir"),
-        rr_replay=optional_text(values, "rr_replay"),
-    )
-
-
-def parse_session_query_input(namespace: NamespaceLike) -> SessionQueryInput:
-    """Parse one session-query namespace into a typed input object."""
-
-    values = snapshot(namespace)
-    return SessionQueryInput(
-        action=one_of(values, "action", SESSION_QUERY_ACTIONS),
-        session_id=optional_integer(values, "session_id"),
-    )
-
-
-def parse_inferior_query_input(namespace: NamespaceLike) -> InferiorQueryInput:
-    """Parse one inferior-query namespace into a typed input object."""
-
-    values = snapshot(namespace)
-    return InferiorQueryInput(
-        action=one_of(values, "action", INFERIOR_QUERY_ACTIONS),
-        session_id=optional_integer(values, "session_id"),
-    )
-
-
-def parse_inferior_manage_input(namespace: NamespaceLike) -> InferiorManageInput:
-    """Parse one inferior-manage namespace into a typed input object."""
-
-    values = snapshot(namespace)
-    return InferiorManageInput(
-        action=one_of(values, "action", INFERIOR_MANAGE_ACTIONS),
-        session_id=optional_integer(values, "session_id"),
-        executable=optional_text(values, "executable"),
-        make_current=optional_boolean(values, "make_current"),
-        inferior_id=optional_integer(values, "inferior_id"),
-        mode=optional_one_of(values, "mode", INFERIOR_FOLLOW_FORK_MODES),
-        enabled=optional_boolean(values, "enabled"),
-    )
-
-
-def parse_context_query_input(namespace: NamespaceLike) -> ContextQueryInput:
-    """Parse one context-query namespace into a typed input object."""
-
-    values = snapshot(namespace)
-    return ContextQueryInput(
-        action=one_of(values, "action", CONTEXT_QUERY_ACTIONS),
-        session_id=optional_integer(values, "session_id"),
-        thread_id=optional_integer(values, "thread_id"),
-        frame=optional_integer(values, "frame"),
-        max_frames=optional_integer(values, "max_frames"),
-    )
-
-
-def parse_context_manage_input(namespace: NamespaceLike) -> ContextManageInput:
-    """Parse one context-manage namespace into a typed input object."""
-
-    values = snapshot(namespace)
-    return ContextManageInput(
-        action=one_of(values, "action", CONTEXT_MANAGE_ACTIONS),
-        session_id=optional_integer(values, "session_id"),
-        thread_id=optional_integer(values, "thread_id"),
-        frame=optional_integer(values, "frame"),
-    )
 
 
 def _parse_location_input(values: ParsedOptions) -> LocationInput | None:

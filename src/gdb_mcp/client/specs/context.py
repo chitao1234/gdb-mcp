@@ -13,11 +13,7 @@ from gdb_mcp.mcp.schemas import (
     ContextQueryArgs,
 )
 
-from ..builders.context import build_context_manage_payload, build_context_query_payload
-from ..inputs import (
-    ContextManageInput,
-    ContextQueryInput,
-)
+from ..namespace import NamespaceLike, ParsedOptions, one_of, snapshot
 from ..parsers import (
     CliUsageError,
     validate_model,
@@ -29,39 +25,39 @@ from .common import (
 )
 
 
-def _validate_context_query_input(typed_input: ContextQueryInput) -> None:
+def _validate_context_query_input(action: str, values: ParsedOptions) -> None:
     invalid_flags: list[str] = []
-    if typed_input.action == "threads":
-        if typed_input.thread_id is not None:
+    if action == "threads":
+        if values.get("thread_id") is not None:
             invalid_flags.append("--thread-id")
-        if typed_input.frame is not None:
+        if values.get("frame") is not None:
             invalid_flags.append("--frame")
-        if typed_input.max_frames is not None:
+        if values.get("max_frames") is not None:
             invalid_flags.append("--max-frames")
-    elif typed_input.action == "backtrace":
-        if typed_input.frame is not None:
+    elif action == "backtrace":
+        if values.get("frame") is not None:
             invalid_flags.append("--frame")
-    elif typed_input.action == "frame":
-        if typed_input.max_frames is not None:
+    elif action == "frame":
+        if values.get("max_frames") is not None:
             invalid_flags.append("--max-frames")
 
-    _raise_invalid_action_flags(typed_input.action, invalid_flags)
+    _raise_invalid_action_flags(action, invalid_flags)
 
 
-def _validate_context_manage_input(typed_input: ContextManageInput) -> None:
+def _validate_context_manage_input(action: str, values: ParsedOptions) -> None:
     invalid_flags: list[str] = []
-    if typed_input.action == "select_thread":
-        if typed_input.thread_id is None:
+    if action == "select_thread":
+        if values.get("thread_id") is None:
             raise CliUsageError("--thread-id required with --action select_thread")
-        if typed_input.frame is not None:
+        if values.get("frame") is not None:
             invalid_flags.append("--frame")
-    elif typed_input.action == "select_frame":
-        if typed_input.frame is None:
+    elif action == "select_frame":
+        if values.get("frame") is None:
             raise CliUsageError("--frame required with --action select_frame")
-        if typed_input.thread_id is not None:
+        if values.get("thread_id") is not None:
             invalid_flags.append("--thread-id")
 
-    _raise_invalid_action_flags(typed_input.action, invalid_flags)
+    _raise_invalid_action_flags(action, invalid_flags)
 
 
 def _configure_context_query(parser: argparse.ArgumentParser) -> None:
@@ -72,9 +68,18 @@ def _configure_context_query(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-frames", type=int, default=None)
 
 
-def _build_context_query(typed_input: ContextQueryInput) -> ContextQueryArgs:
-    _validate_context_query_input(typed_input)
-    payload = build_context_query_payload(typed_input)
+def _build_context_query(namespace: NamespaceLike) -> ContextQueryArgs:
+    values = snapshot(namespace)
+    action = one_of(values, "action", CONTEXT_QUERY_ACTIONS)
+    _validate_context_query_input(action, values)
+    query = {
+        name: value
+        for name in ("thread_id", "frame", "max_frames")
+        if (value := values.get(name)) is not None
+    }
+    payload: dict[str, object] = {"session_id": values.get("session_id"), "action": action}
+    if query:
+        payload["query"] = query
     return validate_model(ContextQueryArgs, payload)
 
 
@@ -85,7 +90,14 @@ def _configure_context_manage(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--frame", type=int, default=None)
 
 
-def _build_context_manage(typed_input: ContextManageInput) -> ContextManageArgs:
-    _validate_context_manage_input(typed_input)
-    payload = build_context_manage_payload(typed_input)
-    return validate_model(ContextManageArgs, payload)
+def _build_context_manage(namespace: NamespaceLike) -> ContextManageArgs:
+    values = snapshot(namespace)
+    action = one_of(values, "action", CONTEXT_MANAGE_ACTIONS)
+    _validate_context_manage_input(action, values)
+    context = {
+        name: value for name in ("thread_id", "frame") if (value := values.get(name)) is not None
+    }
+    return validate_model(
+        ContextManageArgs,
+        {"session_id": values.get("session_id"), "action": action, "context": context},
+    )
