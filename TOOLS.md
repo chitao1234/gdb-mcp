@@ -183,6 +183,12 @@ If a field consumed by an operation cannot be decoded, that operation returns
 `code="protocol_error"`, not `validation_error`. The session remains usable
 while its debugger connection is usable. Unexpected implementation exceptions
 return `internal_error` and are logged by the server.
+These distinctions also apply during startup: malformed consumed debugger data
+returns `protocol_error`, and unexpected implementation failures return
+`internal_error`, after startup resources are cleaned up. Failed startup does
+not publish a session id. Unknown GDB/MI result classes retain their original
+text in command backend data; only `error` is classified as a debugger error
+and only `running` directly changes execution state to running.
 
 A failure that a debugger reported carries **everything that debugger printed**: GDB's console context (`Thread 1 (...):`, the address `x` tried) followed by its MI `msg`. A timeout carries whatever arrived before the deadline. `message` is only a short sentence when this server itself rejected the request (no session, no frame, an unsupported option).
 
