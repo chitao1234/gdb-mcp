@@ -88,8 +88,9 @@ partial reads remain explicit.
   toolchain pretty-printers can load)
 - Optional: LLDB 4.0.1 or newer with headers for the native bridge; a C++17
   compiler is used to build it on first use
-- Optional: Delve on `PATH`, or selected through `DLV_PATH` / `debugger_path`;
-  CI exercises Delve 1.20.2 through 1.27 with matching Go toolchains
+- Optional: Delve 1.6.1 or newer on `PATH`, or selected through `DLV_PATH` /
+  `debugger_path`; CI covers the 1.6.1 baseline and 1.21-1.27 era profiles
+  with matching Go toolchains
 - Optional: `rr` for reverse debugging (GDB), `rust-gdb` or similar wrappers for
   language-specific pretty-printers
 
@@ -295,13 +296,17 @@ truth:
 
 ```bash
 nix eval --json .#ciProfileNames      # names CI runs
-nix develop .#oldest-py310-gdb71a-lldb40-delve120
+nix develop .#oldest-py310-gdb71a-lldb40-delve16
 ```
 
 The era rows cover Python 3.10-3.14, GDB 13-17, LLDB 14-21, and Delve
 1.21-1.27. The baseline row covers GDB 7.1a with Python 2.6 scripting support,
-LLDB 4.0.1, Delve 1.20.2, and a modern Python 3.10 server. The `flake.lock`
-file pins the exact snapshots.
+LLDB 4.0.1, Delve 1.6.1 with Go 1.16.4, and a modern Python 3.10 server.
+Delve 1.6.1 (May 2021) is the compatibility floor: it introduced breakpoint
+disabling, which 1.6.0 silently ignores. The same RPC v2 backend handles all
+supported releases. Watchpoints require 1.7.0, Unix listeners 1.22.1,
+instruction stepping over calls 1.23.0, and `jump` 1.27.2. Memory reads are
+chunked to the release's limit. The `flake.lock` file pins the exact snapshots.
 
 The baseline runs unit tests plus the core GDB, LLDB, and Delve integration
 files instead of the full modern-feature suite.

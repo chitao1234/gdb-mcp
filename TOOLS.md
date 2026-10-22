@@ -454,10 +454,24 @@ This cleanup budget is additional to the existing startup command timeouts.
 ### Delve Sessions
 
 Set `debugger="delve"` to use Delve RPC API v2. The same backend supports
-multiple Delve releases; `debugger_path` selects a binary per session.
-Compatibility tests cover v1.20.2 / Go 1.20.14, v1.24.2 / Go 1.24.2, and
-v1.27.2 / Go 1.27.1. Delve's own target-Go compatibility checks remain enabled.
-TCP is available across these releases; Unix listeners require release support.
+Delve 1.6.1 and newer; `debugger_path` selects a binary per session. The oldest
+CI baseline pairs v1.6.1 with Go 1.16.4, and era profiles cover v1.21 through
+v1.27 with matching Go toolchains. Version 1.6.1 is the first release with
+breakpoint disabling; 1.6.0 silently ignores it. Delve's own target-Go
+compatibility checks remain enabled.
+
+| Capability | First Supported Delve Release |
+| --- | --- |
+| Core workflow, including breakpoint enable/disable | 1.6.1 (compatibility floor) |
+| Watchpoints | 1.7.0 |
+| External Unix listener | 1.22.1 |
+| `next_instruction`, including reverse | 1.23.0 |
+| `jump` (`SetExecutionPoint`) | 1.27.2 |
+
+TCP works throughout the supported range. Unavailable operations return
+`unsupported_operation`. Memory reads use at most 1,000 bytes per RPC before
+1.24.0 and 65,536 bytes from 1.24.0 onward; larger tool requests are assembled
+from multiple replies.
 
 With `program`, startup uses `dlv exec` and returns the target paused at entry.
 The first `run` resumes it; later `run` calls restart it, optionally replacing
@@ -495,9 +509,9 @@ Attach results include the version once Delve has started.
 Breakpoints, conditional and temporary breakpoints, watchpoints, goroutine
 selection, stacks, locals/arguments, evaluation, registers, memory, source,
 disassembly, stepping, finish, and function calls use structured tools.
-`jump` uses `SetExecutionPoint` when the selected release provides it; Delve
-restricts its destination to the current function. Older releases return
-`unsupported_operation`. Reverse execution requires a recorded Delve target.
+`jump` uses `SetExecutionPoint`; Delve restricts its destination to the current
+function. Release requirements are listed above. Reverse execution requires a
+recorded Delve target.
 There is one exposed inferior per session; use separate sessions for more
 targets. Raw command execution, `init_commands`, forced return, frame-scoped
 `until`, GDB catchpoints, inferior creation/removal, and GDB fork controls are
