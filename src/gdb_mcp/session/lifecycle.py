@@ -20,9 +20,11 @@ from ..domain import (
     payload_to_mapping,
     result_to_envelope,
 )
+from ..domain.errors import DebuggerDecodeError
 from ..transport import (
     EndpointError,
     MiClient,
+    MiTransportError,
     ParsedMiResponse,
     create_external_controller,
     parse_mi_responses,
@@ -330,68 +332,39 @@ class SessionLifecycleService:
                 initialization_results: list[SerializedResultMapping] = []
                 if init_commands:
                     for cmd in init_commands:
-                        try:
-                            logger.info("Executing init command: %s", cmd)
-                            cmd_lower = cmd.lower().strip()
-                            if self._loads_target(cmd_lower):
-                                timeout = FILE_LOAD_TIMEOUT_SEC
-                                logger.info(
-                                    "Using extended timeout (%ss) for file loading command", timeout
-                                )
-                            else:
-                                timeout = DEFAULT_TIMEOUT_SEC
-
-                            result = self._command_runner.execute_command_result(
-                                cmd, timeout_sec=timeout
+                        logger.info("Executing init command: %s", cmd)
+                        cmd_lower = cmd.lower().strip()
+                        if self._loads_target(cmd_lower):
+                            timeout = FILE_LOAD_TIMEOUT_SEC
+                            logger.info(
+                                "Using extended timeout (%ss) for file loading command", timeout
                             )
-                            initialization_results.append(result_to_envelope(result))
+                        else:
+                            timeout = DEFAULT_TIMEOUT_SEC
 
-                            if cmd_lower.startswith("core-file "):
-                                self._runtime.time_module.sleep(INIT_COMMAND_DELAY_SEC)
-                                logger.debug("Waiting for GDB to stabilize after core-file command")
+                        result = self._command_runner.execute_command_result(
+                            cmd, timeout_sec=timeout
+                        )
+                        initialization_results.append(result_to_envelope(result))
 
-                            if isinstance(result, OperationError):
-                                error_msg = result.message
-                                logger.error("Init command '%s' failed: %s", cmd, error_msg)
+                        if cmd_lower.startswith("core-file "):
+                            self._runtime.time_module.sleep(INIT_COMMAND_DELAY_SEC)
+                            logger.debug("Waiting for GDB to stabilize after core-file command")
 
-                                if (
-                                    result.fatal
-                                    or "GDB process" in error_msg
-                                    or not self._command_runner.is_gdb_alive()
-                                ):
-                                    logger.error("GDB process died during init commands")
-                                self._cleanup_failed_start(
-                                    f"Init command '{cmd}' failed: {error_msg}"
-                                )
-                                return OperationError(
-                                    message=f"Init command '{cmd}' failed: {error_msg}",
-                                    fatal=result.fatal,
-                                    details={
-                                        "diagnostics": payload_to_mapping(
-                                            StartupDiagnostics(
-                                                environment_results=env_output,
-                                                initialization_results=initialization_results,
-                                                backend_data=startup_backend_data,
-                                            )
-                                        )
-                                    },
-                                )
+                        if isinstance(result, OperationError):
+                            error_msg = result.message
+                            logger.error("Init command '%s' failed: %s", cmd, error_msg)
 
-                        except Exception as exc:
-                            logger.exception("Exception during init command '%s'", cmd)
-                            initialization_results.append(
-                                result_to_envelope(
-                                    OperationError(message=str(exc), details={"command": cmd})
-                                )
-                            )
-
-                            if not self._command_runner.is_gdb_alive():
-                                logger.error("GDB process died during init command execution")
-                            self._cleanup_failed_start(
-                                f"Init command '{cmd}' raised an exception: {exc!s}"
-                            )
+                            if (
+                                result.fatal
+                                or "GDB process" in error_msg
+                                or not self._command_runner.is_gdb_alive()
+                            ):
+                                logger.error("GDB process died during init commands")
+                            self._cleanup_failed_start(f"Init command '{cmd}' failed: {error_msg}")
                             return OperationError(
-                                message=f"Init command '{cmd}' raised an exception: {exc!s}",
+                                message=f"Init command '{cmd}' failed: {error_msg}",
+                                fatal=result.fatal,
                                 details={
                                     "diagnostics": payload_to_mapping(
                                         StartupDiagnostics(
@@ -447,10 +420,19 @@ class SessionLifecycleService:
                 self._cleanup_failed_start(str(exc))
                 return OperationError(message=str(exc))
 
-            except Exception as exc:
+            except MiTransportError as exc:
                 logger.error("Failed to start GDB session: %s", exc)
+                self._cleanup_failed_start(str(exc))
+                return OperationError(message=str(exc), code="not_started")
+
+            except DebuggerDecodeError:
+                self._cleanup_failed_start("GDB returned malformed debugger data")
+                raise
+
+            except Exception as exc:
+                logger.exception("Failed to start GDB session")
                 self._cleanup_failed_start(f"Failed to start GDB: {exc!s}")
-                return OperationError(message=f"Failed to start GDB: {exc!s}")
+                raise
 
     def stop(self) -> OperationSuccess[SessionMessage] | OperationError:
         """Stop the GDB session."""

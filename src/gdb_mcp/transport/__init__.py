@@ -7,7 +7,7 @@ from .external import (
     create_external_controller,
     parse_mi_endpoint,
 )
-from .mi_client import MiClient
+from .mi_client import MiClient, MiTransportError
 from .mi_commands import (
     build_evaluate_expression_command,
     build_exec_arguments_command,
@@ -25,6 +25,7 @@ __all__ = [
     "ExternalMiController",
     "MiClient",
     "MiEndpoint",
+    "MiTransportError",
     "MiTransportResponse",
     "ParsedMiResponse",
     "build_evaluate_expression_command",

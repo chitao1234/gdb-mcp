@@ -569,10 +569,14 @@ class LldbSbBackend:
                     )
                 self._cleanup_failed_start(message)
                 return OperationError(message=message, code=exc.code)
-            except Exception as exc:  # pragma: no cover - defensive
-                logger.exception("Could not start LLDB session")
-                self._cleanup_failed_start(f"Failed to start LLDB: {exc}")
-                return OperationError(message=f"Failed to start LLDB: {exc}")
+            except OSError as exc:
+                logger.error("Could not start LLDB session: %s", exc)
+                message = f"Failed to start LLDB: {exc}"
+                self._cleanup_failed_start(message)
+                return OperationError(message=message, code="not_started")
+            except DebuggerDecodeError:
+                self._cleanup_failed_start("LLDB returned malformed debugger data")
+                raise
 
     def _cleanup_failed_start(self, message: str) -> None:
         if self._client is not None:

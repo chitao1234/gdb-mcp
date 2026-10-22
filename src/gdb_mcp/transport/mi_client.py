@@ -15,6 +15,10 @@ logger = logging.getLogger(__name__)
 _LIVENESS_CHECK_INTERVAL_SEC = 1.0
 
 
+class MiTransportError(RuntimeError):
+    """A transport failure occurred while starting or reading GDB/MI."""
+
+
 class MiClient:
     """Owns the GDB controller and the low-level MI command transport."""
 
@@ -100,7 +104,9 @@ class MiClient:
                 except (BrokenPipeError, OSError) as exc:
                     logger.error("Communication error while reading startup output: %s", exc)
                     self._exit_unlocked()
-                    raise RuntimeError(f"Communication error while reading startup output: {exc}")
+                    raise MiTransportError(
+                        f"Communication error while reading startup output: {exc}"
+                    ) from exc
 
                 if not isinstance(responses, list) or not responses:
                     break
@@ -114,7 +120,7 @@ class MiClient:
                             "GDB internal fatal error detected during startup: %s", payload
                         )
                         self._exit_unlocked()
-                        raise RuntimeError(f"GDB internal fatal error: {str(payload).strip()}")
+                        raise MiTransportError(f"GDB internal fatal error: {str(payload).strip()}")
 
                 records.extend(responses)
 
