@@ -98,15 +98,23 @@ class GdbMiBackend:
 
         return self._capabilities
 
+    @property
+    def has_controller(self) -> bool:
+        """Return whether GDB/MI owns a debugger controller."""
+
+        return self._transport.controller is not None
+
     def start(
         self,
         config: SessionConfig,
     ) -> OperationSuccess[SessionStartupInfo] | OperationError:
         """Delegate session startup to the lifecycle service."""
 
-        self._execution.reset_capability_cache()
-        self._inspection.reset_capability_cache()
-        return self._lifecycle.start(config)
+        with self.runtime.lifecycle_lock:
+            if not self.has_controller:
+                self._execution.reset_capability_cache()
+                self._inspection.reset_capability_cache()
+            return self._lifecycle.start(config)
 
     def stop(self) -> OperationSuccess[SessionMessage] | OperationError:
         """Delegate session shutdown to the lifecycle service."""

@@ -101,7 +101,10 @@ class SessionCommandRunner:
     def handle_dead_transport(self, message: str) -> None:
         """Transition the session into a terminal state after GDB has exited."""
 
-        self._runtime.mark_transport_terminated(message)
+        try:
+            self._transport.exit()
+        finally:
+            self._runtime.mark_transport_terminated(message)
 
     def update_runtime_after_command(self, command: str, parsed: ParsedMiResponse) -> None:
         """Apply parsed MI execution effects to the mutable session runtime."""
@@ -118,7 +121,7 @@ class SessionCommandRunner:
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Execute a GDB command and normalize CLI vs MI results."""
 
-        if not self._runtime.has_controller:
+        if self._transport.controller is None:
             return OperationError(message="No active GDB session")
 
         if not self.is_gdb_alive():
@@ -363,7 +366,7 @@ class SessionCommandRunner:
     def _refresh_inferior_inventory_from_gdb(self) -> None:
         """Refresh cached inferior selection/inventory from authoritative GDB output."""
 
-        if not self._runtime.has_controller:
+        if self._transport.controller is None:
             return
 
         result = self.send_command_and_wait_for_prompt(

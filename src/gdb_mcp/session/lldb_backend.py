@@ -116,6 +116,12 @@ class LldbSbBackend:
     def capabilities(self) -> BackendCapabilities:
         return self._capabilities
 
+    @property
+    def has_controller(self) -> bool:
+        """Return whether this backend owns a bridge handle."""
+
+        return self._client is not None
+
     # -- bridge helpers -----------------------------------------------------
 
     def _require_client(self) -> BridgeClient:
@@ -431,7 +437,7 @@ class LldbSbBackend:
         config: SessionConfig,
     ) -> OperationSuccess[SessionStartupInfo] | OperationError:
         with self.runtime.lifecycle_lock:
-            if self.runtime.has_controller:
+            if self._client is not None:
                 return OperationError(message="Session already running. Stop it first.")
             program = config.program
             debugger = config.debugger
@@ -484,7 +490,6 @@ class LldbSbBackend:
                 launch = prepare_bridge(debugger_path)
                 client = BridgeClient(launch)
                 self._client = client
-                self.runtime.controller = client
                 initialized = client.request("initialize")
                 env_entries = [f"{key}={value}" for key, value in env.items()]
                 client.request(
@@ -589,7 +594,6 @@ class LldbSbBackend:
             except Exception as exc:
                 logger.debug("Ignoring LLDB bridge cleanup failure: %s", exc)
         self._client = None
-        self.runtime.controller = None
         self.runtime.mark_failed(message)
 
     def stop(self) -> OperationSuccess[SessionMessage] | OperationError:
@@ -608,7 +612,6 @@ class LldbSbBackend:
                 return OperationError(message=str(exc))
             finally:
                 self._client = None
-                self.runtime.controller = None
             self.runtime.mark_stopped()
             return OperationSuccess(SessionMessage(message="LLDB session stopped"))
 
@@ -626,8 +629,7 @@ class LldbSbBackend:
             return OperationSuccess(self._apply_status(self._request("status")))
         except BridgeError as exc:
             if exc.code == "not_started":
-                self.runtime.controller = None
-                self.runtime.mark_failed(str(exc))
+                self._cleanup_failed_start(str(exc))
             return OperationSuccess(
                 SessionStatusSnapshot(
                     debugger_alive=self.runtime.is_running,

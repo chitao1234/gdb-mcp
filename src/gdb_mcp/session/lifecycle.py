@@ -131,7 +131,7 @@ class SessionLifecycleService:
         ``gdb``.
         """
         with self._runtime.lifecycle_lock:
-            if self._runtime.has_controller:
+            if self._transport.controller is not None:
                 return OperationError(message="Session already running. Stop it first.")
 
             program = config.program
@@ -216,7 +216,6 @@ class SessionLifecycleService:
                         time_to_check_for_additional_output_sec=1.0,
                     )
                     self._transport.adopt_controller(external_controller)
-                    self._mirror_controller()
                 else:
                     gdb_command = self._build_start_command(
                         debugger_path=debugger_path,
@@ -232,7 +231,6 @@ class SessionLifecycleService:
                         time_to_check_for_additional_output_sec=1.0,
                         cwd=working_dir,
                     )
-                    self._mirror_controller()
 
                 initial_startup_responses = self._transport.read_initial_output(timeout_sec=1.0)
 
@@ -248,13 +246,11 @@ class SessionLifecycleService:
                         else "Timeout waiting for GDB to initialize"
                     )
                     logger.error("GDB failed to initialize: %s", error_msg)
-                    if self._runtime.has_controller:
+                    if self._transport.controller is not None:
                         try:
                             self._transport.exit()
                         except Exception as exc:  # pragma: no cover - best effort
                             logger.debug("Ignoring failure while aborting GDB: %s", exc)
-                        finally:
-                            self._mirror_controller()
                     message = f"GDB failed to initialize: {error_msg}"
                     self._runtime.mark_failed(message)
                     return OperationError(
@@ -438,25 +434,23 @@ class SessionLifecycleService:
     def stop(self) -> OperationSuccess[SessionMessage] | OperationError:
         """Stop the GDB session."""
         with self._runtime.lifecycle_lock:
-            if not self._runtime.has_controller:
+            if self._transport.controller is None:
                 return OperationError(message="No active session")
 
             try:
                 self._transport.exit()
             except Exception as exc:
-                self._mirror_controller()
                 logger.error("Failed to stop GDB session: %s", exc)
                 self._runtime.mark_failed(f"Failed to stop GDB session: {exc}")
                 return OperationError(message=str(exc))
 
-            self._mirror_controller()
             self._runtime.mark_stopped()
             return OperationSuccess(SessionMessage(message="GDB session stopped"))
 
     def get_status(self) -> OperationSuccess[SessionStatusSnapshot]:
         """Get the current status of the GDB session."""
-        if self._runtime.has_controller and not self._command_runner.is_gdb_alive():
-            self._runtime.mark_transport_terminated(
+        if self._transport.controller is not None and not self._command_runner.is_gdb_alive():
+            self._command_runner.handle_dead_transport(
                 "GDB process has exited - session is no longer active"
             )
 
@@ -486,19 +480,12 @@ class SessionLifecycleService:
     def _cleanup_failed_start(self, message: str) -> None:
         """Best-effort cleanup after a startup failure."""
 
-        if self._runtime.has_controller:
+        if self._transport.controller is not None:
             try:
                 self._transport.exit()
             except Exception as exc:  # pragma: no cover - best effort
                 logger.debug("Ignoring failure while cleaning up a failed start: %s", exc)
-            finally:
-                self._mirror_controller()
         self._runtime.mark_failed(message)
-
-    def _mirror_controller(self) -> None:
-        """Publish the transport's controller on the shared runtime state."""
-
-        self._runtime.controller = self._transport.controller
 
     @staticmethod
     def _build_start_command(

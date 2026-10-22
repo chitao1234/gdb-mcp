@@ -172,7 +172,7 @@ class SessionExecutionService:
         wait_for_stop: bool = True,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Run the program."""
-        if not self._runtime.has_controller:
+        if self._transport.controller is None:
             return OperationError(message="No active GDB session")
 
         if args:
@@ -376,7 +376,7 @@ class SessionExecutionService:
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Attach GDB to a running process."""
 
-        if not self._runtime.has_controller:
+        if self._transport.controller is None:
             return OperationError(message="No active GDB session")
 
         result = self._command_runner.execute_command_result(
@@ -436,7 +436,7 @@ class SessionExecutionService:
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
         """Continue execution of the program, forward or backward."""
-        if not self._runtime.has_controller:
+        if self._transport.controller is None:
             return OperationError(message="No active GDB session")
         if self._runtime.execution_state == "running":
             return OperationError(
@@ -459,7 +459,7 @@ class SessionExecutionService:
     ) -> OperationSuccess[WaitForStopInfo] | OperationError:
         """Wait for the inferior to stop, optionally matching one of several reasons."""
 
-        if not self._runtime.has_controller:
+        if self._transport.controller is None:
             return OperationError(message="No active GDB session")
 
         if not self._command_runner.is_gdb_alive():
@@ -686,7 +686,7 @@ class SessionExecutionService:
 
     def interrupt(self) -> OperationSuccess[MessageResult] | OperationError:
         """Interrupt (pause) a running program."""
-        if not self._runtime.has_controller:
+        if self._transport.controller is None:
             return OperationError(message="No active GDB session")
 
         if not self._command_runner.is_gdb_alive():
@@ -775,7 +775,7 @@ class SessionExecutionService:
         self, function_call: str, timeout_sec: int = DEFAULT_TIMEOUT_SEC
     ) -> OperationSuccess[FunctionCallInfo] | OperationError:
         """Call a function in the target process."""
-        if not self._runtime.has_controller:
+        if self._transport.controller is None:
             return OperationError(message="No active GDB session")
 
         if not self._command_runner.is_gdb_alive():

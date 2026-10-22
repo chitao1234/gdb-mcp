@@ -194,6 +194,12 @@ class DelveRpcBackend:
             DEBUGGER_DELVE, _OPERATIONS - self._unsupported, concurrent_control=True
         )
 
+    @property
+    def has_controller(self) -> bool:
+        """Return whether Delve owns an RPC client."""
+
+        return self._client is not None
+
     def _require_client(self) -> DelveRpcClient:
         if self._client is None:
             raise DelveRpcError(
@@ -243,7 +249,6 @@ class DelveRpcBackend:
                 "Delve endpoint must be tcp://host:port or unix:///path", "validation_error"
             )
         self._client = DelveRpcClient(connection)
-        self.runtime.controller = self._client
         self._handshake(timeout_sec=timeout_sec)
 
     def _spawn(self, *, pid: int | None = None, timeout_sec: float = DEFAULT_TIMEOUT_SEC) -> None:
@@ -460,7 +465,6 @@ class DelveRpcBackend:
             self._output_workers.clear()
             self._client = None
             self._process = None
-            self.runtime.controller = None
 
     @_operation
     def stop(self) -> OperationSuccess[SessionMessage]:

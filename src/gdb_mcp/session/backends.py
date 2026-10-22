@@ -140,6 +140,11 @@ class DebuggerBackend(Protocol):
         """The operations this backend can perform."""
         ...
 
+    @property
+    def has_controller(self) -> bool:
+        """Return whether this backend owns a debugger handle."""
+        ...
+
     def start(
         self,
         config: SessionConfig,

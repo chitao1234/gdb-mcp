@@ -38,9 +38,6 @@ class SessionRuntime:
 
     os_module: OsModuleProtocol
     time_module: TimeModuleProtocol
-    # Handle of the attached debugger process or stream, kept by the backend so
-    # lifecycle checks and the published status share one answer.
-    controller: object | None = None
     lifecycle_lock: LockProtocol = field(default_factory=threading.RLock, repr=False)
     workflow_lock: LockProtocol = field(default_factory=threading.RLock, repr=False)
     config: SessionConfig | None = None
@@ -73,12 +70,6 @@ class SessionRuntime:
     # Leaf lock guarding the container state below. No other lock is taken while
     # it is held, so it cannot participate in a lock-order cycle.
     _state_lock: LockProtocol = field(default_factory=threading.RLock, repr=False, compare=False)
-
-    @property
-    def has_controller(self) -> bool:
-        """Return whether a debugger process or stream is attached."""
-
-        return self.controller is not None
 
     @property
     def stop_kind(self) -> StopKind:
@@ -159,9 +150,8 @@ class SessionRuntime:
             self._reset_transient()
 
     def mark_transport_terminated(self, message: str) -> None:
-        """Record that the debugger transport has died and clear its controller."""
+        """Record that the debugger transport has died."""
 
-        self.controller = None
         self.mark_failed(message)
 
     def mark_stopped(self) -> None:

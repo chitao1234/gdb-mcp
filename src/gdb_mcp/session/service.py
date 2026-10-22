@@ -97,7 +97,7 @@ class SessionService:
     def has_controller(self) -> bool:
         """Expose whether a debugger process or stream is attached."""
 
-        return self.runtime.has_controller
+        return self._backend.has_controller
 
     @property
     def capabilities(self) -> BackendCapabilities:
