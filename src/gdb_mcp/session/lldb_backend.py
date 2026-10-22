@@ -70,6 +70,7 @@ from ..domain import (
     WaitForStopInfo,
     WatchpointAccessType,
 )
+from ..domain.errors import DebuggerDecodeError
 from ..domain.parsing import as_execution_state, as_stop_kind
 from ..domain.results import payload_to_mapping, result_to_envelope
 from .backends import BackendCapabilities
@@ -136,23 +137,48 @@ class LldbSbBackend:
 
     @staticmethod
     def _mapping(value: object) -> Mapping[str, object]:
-        return value if isinstance(value, Mapping) else {}
+        if value is None:
+            return {}
+        if isinstance(value, Mapping):
+            return value
+        raise DebuggerDecodeError(f"LLDB value must be a mapping, got {type(value).__name__}")
 
     @staticmethod
     def _mappings(value: object) -> list[Mapping[str, object]]:
-        return (
-            [item for item in value if isinstance(item, Mapping)] if isinstance(value, list) else []
-        )
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise DebuggerDecodeError(
+                f"LLDB value must be a list of mappings, got {type(value).__name__}"
+            )
+        records: list[Mapping[str, object]] = []
+        for index, item in enumerate(value):
+            if not isinstance(item, Mapping):
+                raise DebuggerDecodeError(
+                    f"LLDB list item {index} must be a mapping, got {type(item).__name__}"
+                )
+            records.append(item)
+        return records
 
     @staticmethod
     def _text(payload: Mapping[str, object], key: str) -> str | None:
         value = payload.get(key)
-        return value if isinstance(value, str) else None
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value
+        raise DebuggerDecodeError(f"LLDB field {key!r} must be text, got {type(value).__name__}")
 
     @staticmethod
     def _integer(payload: Mapping[str, object], key: str) -> int | None:
         value = payload.get(key)
-        return value if isinstance(value, int) and not isinstance(value, bool) else None
+        if value is None:
+            return None
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+        raise DebuggerDecodeError(
+            f"LLDB field {key!r} must be an integer, got {type(value).__name__}"
+        )
 
     def _frame(self, payload: object) -> FrameRecord | None:
         mapping = dict(self._mapping(payload))
@@ -697,9 +723,12 @@ class LldbSbBackend:
                 "target_create", executable=executable or "", make_current=make_current
             )
             self._refresh_inferiors()
+            inferior_id = self._integer(result, "inferior_id")
+            if inferior_id is None:
+                raise DebuggerDecodeError("LLDB target_create response has no inferior_id")
             return OperationSuccess(
                 InferiorAddInfo(
-                    inferior_id=self._integer(result, "inferior_id") or 0,
+                    inferior_id=inferior_id,
                     display=self._text(result, "display"),
                     description=self._text(result, "description"),
                     executable=self._text(result, "executable"),
@@ -1325,7 +1354,9 @@ class LldbSbBackend:
             payload = self._request("memory", address=address, count=count, offset=offset)
             begin = str(payload.get("address") or address)
             data = str(payload.get("data") or "")
-            read = self._integer(payload, "read") or 0
+            read = self._integer(payload, "read")
+            if read is None:
+                raise DebuggerDecodeError("LLDB memory response has no read count")
             end_address: str | None = None
             if begin.startswith("0x"):
                 try:
