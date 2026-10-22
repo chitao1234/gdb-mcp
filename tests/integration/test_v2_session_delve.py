@@ -359,7 +359,9 @@ def test_delve_jump_depends_on_selected_release(
         success(session.run(timeout_sec=10))
         result = session.jump(f"{source}:{line + 1}", timeout_sec=10)
         version = str(dig(started.diagnostics.backend_data.data, "version", "DelveVersion"))
-        if re.search(r"\b1\.(20|24)\.", version):
+        release = re.search(r"(\d+)\.(\d+)", version)
+        assert release is not None, version
+        if (int(release.group(1)), int(release.group(2))) < (1, 27):
             assert isinstance(result, OperationError) and result.code == "unsupported_operation"
         else:
             success(result)
