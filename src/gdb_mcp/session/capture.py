@@ -10,7 +10,6 @@ from pathlib import Path
 from ..domain import (
     CaptureArtifactInfo,
     CaptureBundleInfo,
-    ExecutionState,
     MemoryCaptureRange,
     OperationError,
     OperationResult,
@@ -21,7 +20,6 @@ from ..domain import (
     payload_to_mapping,
     result_to_mapping,
 )
-from ..domain.parsing import as_execution_state, as_stop_kind, as_text
 from .backends import DebuggerBackend
 
 DEFAULT_CAPTURE_MEMORY_MAX_RANGE_BYTES = 4 * 1024
@@ -101,24 +99,14 @@ class SessionCaptureService:
         failed_sections: list[str] = []
 
         status_result = self._backend.get_status()
-        status_payload = self._write_result_artifact(bundle_dir, "session-status", status_result)
-        artifacts.append(status_payload.artifact)
-        if status_payload.artifact.status == "error":
-            failed_sections.append("session-status")
-        status_execution_state = self._execution_state_field(
-            status_payload.payload,
-            "execution_state",
-            self._runtime.execution_state,
+        artifacts.append(self._write_result_artifact(bundle_dir, "session-status", status_result))
+        status = status_result.value
+        status_execution_state = status.execution_state
+        status_stop_reason = (
+            status.stop_reason if status.stop_reason is not None else self._runtime.stop_reason
         )
-        status_stop_reason = self._status_field(
-            status_payload.payload,
-            "stop_reason",
-            self._runtime.stop_reason,
-        )
-        status_stop_kind = self._status_field(
-            status_payload.payload,
-            "stop_kind",
-            self._runtime.stop_kind,
+        status_stop_kind = (
+            status.stop_kind if status.stop_kind is not None else self._runtime.stop_kind
         )
 
         stop_event_payload = self._write_payload_artifact(
@@ -148,12 +136,12 @@ class SessionCaptureService:
         if request.include_threads or request.include_backtraces:
             threads_result = self._backend.get_threads()
             threads_capture = self._write_result_artifact(bundle_dir, "threads", threads_result)
-            artifacts.append(threads_capture.artifact)
-            if threads_capture.artifact.status == "error":
+            artifacts.append(threads_capture)
+            if isinstance(threads_result, OperationError):
                 failed_sections.append("threads")
-            elif isinstance(threads_result, OperationSuccess):
+            else:
                 for thread in threads_result.value.threads:
-                    raw_id = as_text(thread.id)
+                    raw_id = thread.id
                     if raw_id is not None and raw_id.isdigit():
                         thread_ids.append(int(raw_id))
 
@@ -177,7 +165,7 @@ class SessionCaptureService:
                     payload = result_to_mapping(backtrace_result)
                     payload["thread_id"] = thread_id
                     backtrace_payloads.append(payload)
-                    if payload.get("status") == "error":
+                    if isinstance(backtrace_result, OperationError):
                         failed_sections.append(f"thread-{thread_id}-backtrace")
 
             artifacts.append(
@@ -192,8 +180,8 @@ class SessionCaptureService:
         if request.include_frame:
             frame_result = self._backend.get_frame_info()
             frame_capture = self._write_result_artifact(bundle_dir, "current-frame", frame_result)
-            artifacts.append(frame_capture.artifact)
-            if frame_capture.artifact.status == "error":
+            artifacts.append(frame_capture)
+            if isinstance(frame_result, OperationError):
                 failed_sections.append("current-frame")
 
         if request.include_variables:
@@ -206,8 +194,8 @@ class SessionCaptureService:
                 "current-variables",
                 variables_result,
             )
-            artifacts.append(variables_capture.artifact)
-            if variables_capture.artifact.status == "error":
+            artifacts.append(variables_capture)
+            if isinstance(variables_result, OperationError):
                 failed_sections.append("current-variables")
 
         if request.include_registers:
@@ -220,8 +208,8 @@ class SessionCaptureService:
                 "current-registers",
                 registers_result,
             )
-            artifacts.append(registers_capture.artifact)
-            if registers_capture.artifact.status == "error":
+            artifacts.append(registers_capture)
+            if isinstance(registers_result, OperationError):
                 failed_sections.append("current-registers")
 
         if request.expressions:
@@ -235,7 +223,7 @@ class SessionCaptureService:
                 payload = result_to_mapping(expression_result)
                 payload["expression"] = expression
                 expression_payloads.append(payload)
-                if payload.get("status") == "error":
+                if isinstance(expression_result, OperationError):
                     failed_sections.append(f"expression:{expression}")
 
             artifacts.append(
@@ -255,7 +243,7 @@ class SessionCaptureService:
                 if memory_range.name is not None:
                     payload["name"] = memory_range.name
                 memory_range_payloads.append(payload)
-                if payload.get("status") == "error":
+                if isinstance(memory_result, OperationError):
                     failed_sections.append(self._memory_range_section_name(memory_range))
 
             artifacts.append(
@@ -303,7 +291,7 @@ class SessionCaptureService:
                 failed_sections=sorted(set(failed_sections)) or None,
                 execution_state=status_execution_state,
                 stop_reason=status_stop_reason,
-                stop_kind=as_stop_kind(status_stop_kind),
+                stop_kind=status_stop_kind,
                 last_stop_event=self._runtime.last_stop_event,
             ),
             warnings=warnings,
@@ -376,17 +364,16 @@ class SessionCaptureService:
         bundle_dir: Path,
         name: str,
         result: OperationResult[ToolPayload],
-    ) -> _WrittenArtifact:
+    ) -> CaptureArtifactInfo:
         """Serialize one typed operation result into an artifact file."""
 
         payload = result_to_mapping(result)
-        artifact = self._write_payload_artifact(
+        return self._write_payload_artifact(
             bundle_dir,
             name,
             payload,
             status="error" if isinstance(result, OperationError) else "success",
         )
-        return _WrittenArtifact(artifact=artifact, payload=payload)
 
     def _write_payload_artifact(
         self,
@@ -417,33 +404,3 @@ class SessionCaptureService:
         if memory_range.name is not None:
             return f"memory-range:{memory_range.name}"
         return f"memory-range:{memory_range.address}"
-
-    @staticmethod
-    def _status_field(
-        payload: StructuredPayload,
-        key: str,
-        default: str | None,
-    ) -> str | None:
-        """Extract one string-ish status field from a serialized result payload."""
-
-        value = payload.get(key)
-        return value if isinstance(value, str) else default
-
-    @staticmethod
-    def _execution_state_field(
-        payload: StructuredPayload,
-        key: str,
-        default: ExecutionState,
-    ) -> ExecutionState:
-        """Extract one execution-state field, falling back to the runtime value."""
-
-        parsed = as_execution_state(payload.get(key))
-        return parsed if parsed is not None else default
-
-
-@dataclass(slots=True, frozen=True)
-class _WrittenArtifact:
-    """Internal pairing of one artifact manifest entry and its structured payload."""
-
-    artifact: CaptureArtifactInfo
-    payload: StructuredPayload
