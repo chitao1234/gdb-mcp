@@ -1006,6 +1006,8 @@ architecture cannot be inferred, only unambiguous vector names are removed.
 
 - `disassembly` accepts `function`, `address`, `address_range`, `file_line`, `file_range`, or `current`.
 - `source` accepts the same location union.
+  An `address_range` keeps the existing current-location source behavior;
+  use `address` for source around a specific instruction address.
 
 ### Source Notes
 

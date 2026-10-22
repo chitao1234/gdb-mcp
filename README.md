@@ -70,6 +70,8 @@ snapshot taken before the inspection sections run.
 Backend execution observations update state, selection, and new stop events
 together. Snapshots can observe either side of a transition, never part of it;
 they do not suspend execution or freeze later inspection queries.
+Inspection keeps the published location selectors: source queries using
+`address_range` continue to inspect the current location.
 
 Collection results expose their arrays directly; use the array length for the
 number returned. Memory reads report `requested_bytes` and `captured_bytes` so
