@@ -16,22 +16,10 @@ from gdb_mcp.contracts import (
 from gdb_mcp.mcp.schemas import BATCH_STEP_TOOL_MODELS
 
 from .inputs import (
-    RunUntilFailureInput,
     SessionStepInput,
-    WorkflowBatchInput,
 )
 from .namespace import (
-    NamespaceLike,
     choice,
-    key_value_entries,
-    optional_boolean,
-    optional_integer,
-    optional_integer_tuple,
-    optional_text,
-    optional_text_tuple,
-    snapshot,
-    tagged_events,
-    text_tuple,
 )
 from .parsers import (
     CliUsageError,
@@ -40,7 +28,6 @@ from .parsers import (
     StepLabelEvent,
     StepToolEvent,
     assign_dotted_value,
-    collapse_key_value_entries,
     format_validation_error,
     serialize_model,
     validate_model_with_list_coercion,
@@ -165,64 +152,3 @@ def parse_step_inputs(
         )
 
     return tuple(validated_steps)
-
-
-def parse_workflow_batch_input(namespace: NamespaceLike) -> WorkflowBatchInput:
-    """Parse one workflow-batch namespace into a typed input object."""
-
-    values = snapshot(namespace)
-    steps = parse_step_inputs(
-        tagged_events(values, "step_events"),
-        required=True,
-        step_flag="--step",
-    )
-    return WorkflowBatchInput(
-        session_id=optional_integer(values, "session_id"),
-        steps=steps,
-        fail_fast=optional_boolean(values, "fail_fast"),
-        capture_stop_events=optional_boolean(values, "capture_stop_events"),
-    )
-
-
-def parse_run_until_failure_input(namespace: NamespaceLike) -> RunUntilFailureInput:
-    """Parse one run-until-failure namespace into a typed input object."""
-
-    values = snapshot(namespace)
-    return RunUntilFailureInput(
-        startup_debugger=optional_text(values, "startup_debugger"),
-        startup_program=optional_text(values, "startup_program"),
-        startup_args=text_tuple(values, "startup_args"),
-        startup_init_commands=text_tuple(values, "startup_init_commands"),
-        startup_env=collapse_key_value_entries(key_value_entries(values, "startup_env")),
-        startup_debugger_path=optional_text(values, "startup_debugger_path"),
-        startup_working_dir=optional_text(values, "startup_working_dir"),
-        startup_core=optional_text(values, "startup_core"),
-        setup_steps=parse_step_inputs(
-            tagged_events(values, "setup_step_events"),
-            required=False,
-            step_flag="--setup-step",
-        ),
-        run_args=text_tuple(values, "run_args"),
-        run_timeout_sec=optional_integer(values, "run_timeout_sec"),
-        max_iterations=optional_integer(values, "max_iterations"),
-        failure_on_error=optional_boolean(values, "failure_on_error"),
-        failure_on_timeout=optional_boolean(values, "failure_on_timeout"),
-        failure_stop_reasons=optional_text_tuple(values, "failure_stop_reasons"),
-        failure_execution_states=optional_text_tuple(values, "failure_execution_states"),
-        failure_exit_codes=optional_integer_tuple(values, "failure_exit_codes"),
-        failure_result_text_regex=optional_text(values, "failure_result_text_regex"),
-        capture_enabled=optional_boolean(values, "capture_enabled"),
-        capture_output_dir=optional_text(values, "capture_output_dir"),
-        capture_bundle_name_prefix=optional_text(values, "capture_bundle_name_prefix"),
-        capture_bundle_name=optional_text(values, "capture_bundle_name"),
-        capture_expressions=text_tuple(values, "capture_expressions"),
-        capture_memory_ranges=text_tuple(values, "capture_memory_ranges"),
-        capture_max_frames=optional_integer(values, "capture_max_frames"),
-        capture_include_threads=optional_boolean(values, "capture_include_threads"),
-        capture_include_backtraces=optional_boolean(values, "capture_include_backtraces"),
-        capture_include_frame=optional_boolean(values, "capture_include_frame"),
-        capture_include_variables=optional_boolean(values, "capture_include_variables"),
-        capture_include_registers=optional_boolean(values, "capture_include_registers"),
-        capture_include_transcript=optional_boolean(values, "capture_include_transcript"),
-        capture_include_stop_history=optional_boolean(values, "capture_include_stop_history"),
-    )

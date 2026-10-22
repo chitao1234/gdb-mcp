@@ -23,10 +23,6 @@ from gdb_mcp.contracts import (
     TOOL_WORKFLOW_BATCH,
 )
 
-from ..input_parsers import (
-    parse_run_until_failure_input,
-    parse_workflow_batch_input,
-)
 from ..renderers import render_action_payload, render_mapping, render_session_start
 from .breakpoint import (
     _build_breakpoint_manage,
@@ -218,7 +214,7 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
         ToolCliSpec(
             name=TOOL_WORKFLOW_BATCH,
             configure_parser=_configure_workflow_batch,
-            parse_input=parse_workflow_batch_input,
+            parse_input=_parse_namespace,
             build_arguments=_build_workflow_batch,
             render_human=render_mapping,
         )
@@ -245,7 +241,7 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
         ToolCliSpec(
             name=TOOL_RUN_UNTIL_FAILURE,
             configure_parser=_configure_run_until_failure,
-            parse_input=parse_run_until_failure_input,
+            parse_input=_parse_namespace,
             build_arguments=_build_run_until_failure,
             render_human=render_mapping,
         )
