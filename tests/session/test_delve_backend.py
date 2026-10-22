@@ -138,6 +138,8 @@ def test_go_values_keep_aggregate_children_and_unreadable_details() -> None:
         (mappings, "not a list"),
         (mappings, [{"ok": True}, "not a mapping"]),
         (integer, "not an integer"),
+        (integer, None),
+        (integer, True),
         (text, 123),
     ],
 )
@@ -179,6 +181,8 @@ def test_breakpoint_record_does_not_invent_missing_location_values() -> None:
 
 def test_breakpoint_record_rejects_malformed_consumed_fields() -> None:
     with pytest.raises(DebuggerDecodeError, match="integer"):
+        breakpoint_record({})
+    with pytest.raises(DebuggerDecodeError, match="integer"):
         breakpoint_record({"id": "three"})
     with pytest.raises(DebuggerDecodeError, match="addresses"):
         breakpoint_record({"id": 3, "addrs": "0x10"})
@@ -187,3 +191,63 @@ def test_breakpoint_record_rejects_malformed_consumed_fields() -> None:
 def test_variable_record_rejects_malformed_children() -> None:
     with pytest.raises(DebuggerDecodeError, match="list of mappings"):
         variable_record({"name": "value", "children": "not a list"})
+
+
+def test_delve_records_keep_zero_values_and_distinct_dashed_keys() -> None:
+    fields: dict[str, object] = {
+        "new-field": {"nested-key": [None, 0, False]},
+        "original-location": "native",
+        "original_location": "extension",
+    }
+    payload = {**fields, "id": 1, "addrs": [], "addr": 0, "totalHitCount": 0, "disabled": False}
+    record = breakpoint_record(payload)
+
+    assert record.number == "1"
+    assert record.enabled is True
+    assert record.times == 0
+    assert record.locations[0].addr == "0x0"
+    assert record.verified is False
+    assert record.to_payload() == {
+        **payload,
+        "number": "1",
+        "type": "breakpoint",
+        "enabled": True,
+        "times": 0,
+        "temporary": False,
+        "verified": False,
+        "locations": [{"addr": "0x0"}],
+    }
+    assert frame_record({"pc": 0, "line": 0, **fields}).addr == "0x0"
+    assert variable_record({"addr": 0, "value": "0", **fields}).address == "0x0"
+
+
+@pytest.mark.parametrize("location", [{}, {"pc": "invalid"}, {"pcs": "invalid"}])
+def test_invalid_breakpoint_locations_do_not_send_fabricated_addresses(
+    monkeypatch: pytest.MonkeyPatch, location: dict[str, object]
+) -> None:
+    selected = backend()
+    monkeypatch.setattr(selected, "_locations", Mock(return_value=[location]))
+    request = Mock()
+    monkeypatch.setattr(selected, "_request", request)
+
+    with pytest.raises(DebuggerDecodeError):
+        selected.set_breakpoint("main.main")
+
+    request.assert_not_called()
+
+
+def test_delve_register_records_keep_debugger_extensions(monkeypatch: pytest.MonkeyPatch) -> None:
+    selected = backend()
+    native = {"DwarfNumber": 0, "Name": "rax", "Value": "0x0", "new-field": {"dash-key": True}}
+    monkeypatch.setattr(selected, "_scope", Mock(return_value={}))
+    monkeypatch.setattr(selected, "_request", Mock(return_value={"Regs": [native]}))
+
+    result = selected.get_registers()
+
+    assert isinstance(result, OperationSuccess)
+    assert result.value.registers[0].to_payload() == {
+        **native,
+        "number": 0,
+        "name": "rax",
+        "value": "0x0",
+    }
