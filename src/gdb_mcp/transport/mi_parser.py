@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 
 from ..domain.errors import DebuggerDecodeError
-from .mi_models import MiRecord, ParsedMiResponse
+from .mi_models import MiNotifyRecord, MiRecord, ParsedMiResponse
 
 
 def parse_mi_responses(responses: list[MiRecord]) -> ParsedMiResponse:
@@ -27,10 +27,10 @@ def parse_mi_responses(responses: list[MiRecord]) -> ParsedMiResponse:
         elif msg_type == "notify":
             message = response.get("message")
             parsed.notify.append(
-                {
-                    "message": message if isinstance(message, str) else None,
-                    "payload": mi_payload(response.get("payload")),
-                }
+                MiNotifyRecord(
+                    message=message if isinstance(message, str) else None,
+                    payload=mi_payload(response.get("payload")),
+                )
             )
 
     return parsed

@@ -29,13 +29,13 @@ from ..domain import (
     MessageResult,
     OperationError,
     OperationSuccess,
-    StructuredPayload,
     WaitForStopInfo,
     payload_to_mapping,
 )
 from ..domain.adapters import frame_record
 from ..transport import (
     MiClient,
+    ParsedMiResponse,
     build_exec_arguments_command,
     extract_mi_result_payload,
     parse_mi_responses,
@@ -744,7 +744,7 @@ class SessionExecutionService:
                 warnings=("Interrupt sent but no stopped notification received",),
             )
 
-        stop_reason = self._extract_stop_reason(parsed_result)
+        stop_reason = self._extract_stop_reason(parsed)
         self._runtime.mark_inferior_paused(stop_reason)
         self._runtime.record_command_transcript(
             CommandTranscriptEntry(
@@ -865,18 +865,14 @@ class SessionExecutionService:
         )
 
     @staticmethod
-    def _extract_stop_reason(parsed_result: StructuredPayload) -> str | None:
-        """Extract the first stop reason from a parsed MI result payload."""
+    def _extract_stop_reason(parsed: ParsedMiResponse) -> str | None:
+        """Extract the first stop reason from typed MI notifications."""
 
-        notify_records = parsed_result.get("notify")
-        if not isinstance(notify_records, list):
-            return None
-
-        for notify in notify_records:
-            if not isinstance(notify, dict) or notify.get("message") != "stopped":
+        for notify in parsed.notify:
+            if notify.message != "stopped":
                 continue
-            payload = notify.get("payload")
-            if isinstance(payload, dict):
+            payload = notify.payload
+            if payload is not None:
                 reason = payload.get("reason")
                 if isinstance(reason, str):
                     return reason

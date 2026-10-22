@@ -2,12 +2,13 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TypeAlias, TypedDict
+from typing import TypeAlias
 
 MiRecord: TypeAlias = dict[str, object]
 
 
-class MiNotifyRecord(TypedDict):
+@dataclass(frozen=True, slots=True)
+class MiNotifyRecord:
     """Normalized async notification record."""
 
     message: str | None
@@ -75,7 +76,9 @@ class ParsedMiResponse:
             "output": list(self.output),
             "result": self.result,
             "result_class": self.result_class,
-            "notify": list(self.notify),
+            "notify": [
+                {"message": notify.message, "payload": notify.payload} for notify in self.notify
+            ],
         }
 
 

@@ -21,7 +21,7 @@ from ..domain import (
     stop_kind_from_reason,
 )
 from ..domain.adapters import frame_record
-from ..domain.parsing import as_int, as_mapping, as_optional_mapping, as_text_or_number
+from ..domain.parsing import as_int, as_optional_mapping, as_text_or_number
 from ..transport import (
     MiClient,
     MiTransportResponse,
@@ -275,9 +275,9 @@ class SessionCommandRunner:
         stopped_thread_id: int | None = None
         stopped_frame_level: int | None = None
         for notify in parsed.notify:
-            message = notify.get("message")
-            payload = notify.get("payload")
-            payload_dict = as_mapping(payload)
+            message = notify.message
+            payload = notify.payload
+            payload_dict = payload if payload is not None else {}
 
             if message == "thread-group-added":
                 inferior_id = self._parse_inferior_id_from_thread_group(payload_dict.get("id"))
@@ -319,7 +319,7 @@ class SessionCommandRunner:
                 continue
 
             saw_stopped = True
-            stopped_payload = as_optional_mapping(payload)
+            stopped_payload = payload
             if stopped_payload is not None:
                 reason_value = stopped_payload.get("reason")
                 if isinstance(reason_value, str):
