@@ -145,7 +145,7 @@ def test_decode_failure_returns_protocol_error_and_the_next_call_succeeds(
 def test_disassembly_preserves_instruction_extensions(
     monkeypatch: pytest.MonkeyPatch, mixed: bool
 ) -> None:
-    instruction = {
+    instruction: dict[str, object] = {
         "address": "0x401000",
         "inst": "nop",
         "func-name": "main",
