@@ -422,8 +422,9 @@ class SessionLifecycleService:
 
             except MiTransportError as exc:
                 logger.error("Failed to start GDB session: %s", exc)
-                self._cleanup_failed_start(str(exc))
-                return OperationError(message=str(exc), code="not_started")
+                message = f"Failed to start GDB: {exc}"
+                self._cleanup_failed_start(message)
+                return OperationError(message=message)
 
             except DebuggerDecodeError:
                 self._cleanup_failed_start("GDB returned malformed debugger data")
