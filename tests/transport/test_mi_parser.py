@@ -31,6 +31,20 @@ class TestMiParser:
         assert parsed.result == {"msg": "done"}
         assert parsed.result_class == "done"
         assert MiNotifyRecord(message=None, payload={"msg": "thread-created"}) in parsed.notify
+        assert parsed.command_data() == {
+            "log": [],
+            "output": [],
+            "result": {"msg": "done"},
+            "result_class": "done",
+            "notify": [{"message": None, "payload": {"msg": "thread-created"}}],
+        }
+        assert parsed.command_data() == {
+            "log": [],
+            "output": [],
+            "result": {"msg": "done"},
+            "result_class": "done",
+            "notify": [{"message": None, "payload": {"msg": "thread-created"}}],
+        }
 
     def test_a_result_record_without_fields_has_no_payload(self) -> None:
         """`^done` carries no fields, which the parser records as an absent payload."""
