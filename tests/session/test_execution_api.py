@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from gdb_mcp.contracts import ACTION_JUMP, ACTION_UNTIL
-from gdb_mcp.domain import StopEvent, payload_to_mapping, result_to_mapping
+from gdb_mcp.domain import OperationSuccess, StopEvent, payload_to_mapping, result_to_mapping
 from gdb_mcp.session.service import SessionService
 from gdb_mcp.transport.mi_models import MiTransportResponse
 from gdb_mcp.transport.protocols import GdbControllerProtocol
@@ -96,6 +96,86 @@ def test_acknowledged_location_execution_excludes_the_previous_stop(
     assert result["last_stop_event"] is None
     assert result["stop_reason"] is None
     assert session.runtime.last_stop_event is previous
+
+
+@pytest.mark.parametrize("fields", [{}, {"payload": None}, {"payload": {}}])
+def test_fieldless_first_stop_keeps_optional_selection_and_is_not_replaced(
+    scripted_running_session: ScriptedSessionBuilder,
+    mi_result: MiRecordBuilder,
+    mi_notify: MiNotifyBuilder,
+    fields: dict[str, object],
+) -> None:
+    session, _ = scripted_running_session(
+        [
+            mi_result(message="running"),
+            {"type": "notify", "message": "stopped", **fields},
+            mi_notify(
+                "stopped",
+                {"reason": "breakpoint-hit", "thread-id": "8", "frame": {"level": "3"}},
+            ),
+        ]
+    )
+    session.runtime.mark_thread_selected(4)
+    session.runtime.mark_frame_selected(2)
+
+    result = session.continue_execution()
+
+    assert isinstance(result, OperationSuccess)
+    event = session.last_stop_event
+    assert event is not None
+    assert event.execution_state == "paused"
+    assert event.reason is None
+    assert event.thread_id is None
+    assert event.frame is None
+    assert event.inferior_id == 1
+    assert event.backend_data is None
+    assert session.runtime.execution_state == "paused"
+    assert session.runtime.current_thread_id == 4
+    assert session.runtime.current_frame == 2
+    assert session.stop_history == (event,)
+
+
+def test_stop_event_drives_runtime_selection_and_keeps_debugger_extensions(
+    scripted_running_session: ScriptedSessionBuilder,
+    mi_result: MiRecordBuilder,
+    mi_notify: MiNotifyBuilder,
+) -> None:
+    payload: dict[str, object] = {
+        "reason": "future-stop-reason",
+        "thread-group": "i1",
+        "thread-id": "5",
+        "frame": {
+            "level": "3",
+            "line": "14",
+            "future-field": {"nested-key": "kept"},
+            "future_field": "distinct",
+        },
+        "future-field": {"nested-key": [None, 7]},
+        "future_field": "distinct",
+    }
+    session, _ = scripted_running_session(
+        [mi_result(message="running"), mi_notify("stopped", payload)]
+    )
+
+    result = session.continue_execution()
+
+    assert isinstance(result, OperationSuccess)
+    event = session.last_stop_event
+    assert event is not None
+    assert event.reason == "future-stop-reason"
+    assert event.stop_kind == "unknown"
+    assert event.thread_id == session.runtime.current_thread_id == 5
+    assert event.frame is not None
+    assert event.frame.level == session.runtime.current_frame == 3
+    assert event.frame.line == 14
+    assert event.frame.to_payload()["future-field"] == {"nested-key": "kept"}
+    assert event.frame.to_payload()["future_field"] == "distinct"
+    assert event.backend_data is not None
+    assert event.backend_data.data == {
+        "future-field": {"nested-key": [None, 7]},
+        "future_field": "distinct",
+    }
+    assert result.value.backend_data.data["notify"] == [{"message": "stopped", "payload": payload}]
 
 
 class TestExecutionApi:
