@@ -623,9 +623,13 @@ class TestExecutionApi:
     ) -> None:
         """Waiting on an already paused inferior should return the current stop state."""
 
-        # Any controller marks the session as having one; this path only reads the
-        # already-recorded stop event and never talks to the controller.
-        attach_controller(session_service, MagicMock(spec=GdbControllerProtocol))
+        attach_controller(
+            session_service,
+            MagicMock(
+                spec=GdbControllerProtocol,
+                gdb_process=MagicMock(poll=MagicMock(return_value=None)),
+            ),
+        )
         session_service.runtime.mark_ready()
         session_service.runtime.mark_inferior_paused("breakpoint-hit")
         session_service.runtime.record_stop_event(
