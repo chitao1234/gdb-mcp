@@ -11,7 +11,8 @@ import pytest
 from gdb_mcp.contracts import (
     ACTION_JUMP,
     ACTION_UNTIL,
-    DEBUGGER_NAMES,
+    DEBUGGER_GDB,
+    DEBUGGER_LLDB,
     TOOL_EXECUTION_MANAGE,
     TOOL_INSPECT_QUERY,
     DebuggerName,
@@ -27,7 +28,10 @@ from .conftest import (
     run,
 )
 
-pytestmark = [pytest.mark.integration, pytest.mark.parametrize("debugger", DEBUGGER_NAMES)]
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.parametrize("debugger", (DEBUGGER_GDB, DEBUGGER_LLDB)),
+]
 
 _PROGRAM = """#include <unistd.h>
 volatile int total = 0;

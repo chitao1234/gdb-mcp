@@ -1697,12 +1697,15 @@ class TestHandlerRouting:
         manager.create_untracked_session.assert_called_once()
         session.start.assert_called_once_with(
             program="/tmp/a.out",
+            debugger=DEBUGGER_GDB,
             args=None,
             init_commands=None,
             env=None,
             debugger_path=None,
+            debugger_args=None,
             working_dir=None,
             core=None,
+            rr_replay=None,
         )
         session.run.assert_called_once_with(args=None, timeout_sec=30, wait_for_stop=True)
         assert result_data["status"] == "success"

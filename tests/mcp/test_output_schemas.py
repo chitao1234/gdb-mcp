@@ -397,7 +397,7 @@ def test_backend_data_is_tagged_and_keeps_a_recursive_native_payload(
 
     payload = _resolve(schema, mapping(success["properties"])["result"])
     backend_data = _resolve(schema, dig(payload, "properties", "backend_data"))
-    assert dig(backend_data, "properties", "debugger", "enum") == ["gdb", "lldb"]
+    assert dig(backend_data, "properties", "debugger", "enum") == ["gdb", "lldb", "delve"]
     assert dig(backend_data, "properties", "data", "$ref") == "#/$defs/JsonObject"
     assert "backend_data" in sequence(payload["required"])
     assert {"JsonObject", "JsonValue"} <= set(mapping(schema["$defs"]))
