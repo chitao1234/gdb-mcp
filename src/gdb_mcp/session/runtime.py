@@ -34,7 +34,7 @@ class InferiorRuntimeState:
 
 @dataclass(slots=True)
 class SessionRuntime:
-    """Single source of truth for session lifecycle and transport state."""
+    """Single source of truth for common session and inferior state."""
 
     os_module: OsModuleProtocol
     time_module: TimeModuleProtocol
@@ -46,15 +46,13 @@ class SessionRuntime:
     debugger: str = "gdb"
     target_loaded: bool = False
     attached_pid: int | None = None
-    execution_state: ExecutionState = "unknown"
-    stop_reason: str | None = None
-    exit_code: int | None = None
     last_failure_message: str | None = None
     current_thread_id: int | None = None
     current_frame: int | None = None
     current_inferior_id: int | None = None
     inferior_count: int | None = None
     inferior_states: dict[int, InferiorRuntimeState] = field(default_factory=dict)
+    _selected_state: InferiorRuntimeState = field(default_factory=InferiorRuntimeState, repr=False)
     follow_fork_mode: FollowForkMode | None = None
     detach_on_fork: bool | None = None
     artifact_root: str | None = None
@@ -70,6 +68,30 @@ class SessionRuntime:
     # Leaf lock guarding the container state below. No other lock is taken while
     # it is held, so it cannot participate in a lock-order cycle.
     _state_lock: LockProtocol = field(default_factory=threading.RLock, repr=False, compare=False)
+
+    @property
+    def execution_state(self) -> ExecutionState:
+        return self._selected_state.execution_state
+
+    @execution_state.setter
+    def execution_state(self, state: ExecutionState) -> None:
+        self._selected_state.execution_state = state
+
+    @property
+    def stop_reason(self) -> str | None:
+        return self._selected_state.stop_reason
+
+    @stop_reason.setter
+    def stop_reason(self, reason: str | None) -> None:
+        self._selected_state.stop_reason = reason
+
+    @property
+    def exit_code(self) -> int | None:
+        return self._selected_state.exit_code
+
+    @exit_code.setter
+    def exit_code(self, code: int | None) -> None:
+        self._selected_state.exit_code = code
 
     @property
     def stop_kind(self) -> StopKind:
@@ -107,9 +129,7 @@ class SessionRuntime:
         self.is_running = False
         self.target_loaded = False
         self.attached_pid = None
-        self.execution_state = "unknown"
-        self.stop_reason = None
-        self.exit_code = None
+        self._selected_state = InferiorRuntimeState()
         self.current_thread_id = None
         self.current_frame = None
         self.current_inferior_id = None
@@ -130,11 +150,7 @@ class SessionRuntime:
             if self.inferior_count is None:
                 self.inferior_count = 1
             if self.current_inferior_id not in self.inferior_states:
-                self.inferior_states[self.current_inferior_id] = InferiorRuntimeState(
-                    execution_state=self.execution_state,
-                    stop_reason=self.stop_reason,
-                    exit_code=self.exit_code,
-                )
+                self.inferior_states[self.current_inferior_id] = self._selected_state
             self._synchronize_selected_state()
             if self.follow_fork_mode is None:
                 self.follow_fork_mode = "parent"
@@ -369,7 +385,7 @@ class SessionRuntime:
         stop_reason: str | None,
         exit_code: int | None,
     ) -> None:
-        """Update one inferior state and mirror it to selected-global fields when applicable."""
+        """Update the execution state owned by one inferior."""
 
         with self._state_lock:
             target_inferior_id = self._resolve_target_inferior_id(inferior_id)
@@ -386,9 +402,7 @@ class SessionRuntime:
                 self.inferior_count = len(self.inferior_states)
 
             if target_inferior_id == self.current_inferior_id:
-                self.execution_state = execution_state
-                self.stop_reason = stop_reason
-                self.exit_code = exit_code
+                self._selected_state = state
 
     def _resolve_target_inferior_id(self, inferior_id: int | None) -> int:
         """Resolve the target inferior for a state update."""
@@ -403,15 +417,13 @@ class SessionRuntime:
         return self.current_inferior_id
 
     def _synchronize_selected_state(self) -> None:
-        """Mirror the selected inferior runtime state into top-level fields.
+        """Point selected status at its inferior's authoritative state record.
 
         Callers must already hold ``self._state_lock``.
         """
 
         if self.current_inferior_id is None:
-            self.execution_state = "unknown"
-            self.stop_reason = None
-            self.exit_code = None
+            self._selected_state = InferiorRuntimeState()
             return
 
         state = self.inferior_states.get(self.current_inferior_id)
@@ -419,6 +431,4 @@ class SessionRuntime:
             state = InferiorRuntimeState()
             self.inferior_states[self.current_inferior_id] = state
 
-        self.execution_state = state.execution_state
-        self.stop_reason = state.stop_reason
-        self.exit_code = state.exit_code
+        self._selected_state = state
