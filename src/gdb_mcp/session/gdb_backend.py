@@ -104,6 +104,8 @@ class GdbMiBackend:
     ) -> OperationSuccess[SessionStartupInfo] | OperationError:
         """Delegate session startup to the lifecycle service."""
 
+        self._execution.reset_capability_cache()
+        self._inspection.reset_capability_cache()
         return self._lifecycle.start(config)
 
     def stop(self) -> OperationSuccess[SessionMessage] | OperationError:

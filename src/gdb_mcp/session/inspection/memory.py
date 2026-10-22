@@ -86,6 +86,12 @@ class InspectionMemory:
         self._context = context
         self._runtime = context.runtime
         self._command_runner = context.command_runner
+        self._read_memory_bytes_supported: bool | None = None
+
+    def reset_capability_cache(self) -> None:
+        """Clear the GDB feature probe for a new debugger process."""
+
+        self._read_memory_bytes_supported = None
 
     def evaluate_expression(
         self,
@@ -220,7 +226,7 @@ class InspectionMemory:
     def _supports_read_memory_bytes(self) -> bool:
         """Return whether this GDB supports `-data-read-memory-bytes` (GDB >= 7.3)."""
 
-        cached = self._runtime.read_memory_bytes_supported
+        cached = self._read_memory_bytes_supported
         if cached is not None:
             return cached
 
@@ -232,5 +238,5 @@ class InspectionMemory:
             features = command_result_mapping(result).get("features")
             if isinstance(features, list):
                 supported = _FEATURE_READ_MEMORY_BYTES in features
-        self._runtime.read_memory_bytes_supported = supported
+        self._read_memory_bytes_supported = supported
         return supported

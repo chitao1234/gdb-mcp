@@ -40,6 +40,12 @@ class InspectionDisassembly:
         self._context = context
         self._runtime = context.runtime
         self._command_runner = context.command_runner
+        self._disassemble_a_supported: bool | None = None
+
+    def reset_capability_cache(self) -> None:
+        """Clear the GDB feature probe for a new debugger process."""
+
+        self._disassemble_a_supported = None
 
     def disassemble(
         self,
@@ -237,7 +243,7 @@ class InspectionDisassembly:
     def _supports_disassemble_a(self) -> bool:
         """Return whether this GDB supports ``-data-disassemble -a`` (GDB >= 8.3)."""
 
-        cached = self._runtime.disassemble_a_supported
+        cached = self._disassemble_a_supported
         if cached is not None:
             return cached
 
@@ -250,7 +256,7 @@ class InspectionDisassembly:
             features = payload.get("features")
             if isinstance(features, list):
                 supported = _FEATURE_DISASSEMBLE_A in features
-        self._runtime.disassemble_a_supported = supported
+        self._disassemble_a_supported = supported
         return supported
 
     def _whole_function_address_range(self, target: str) -> tuple[str, str] | OperationError:

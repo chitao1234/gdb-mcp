@@ -88,6 +88,14 @@ class SessionExecutionService:
         self._runtime = runtime
         self._command_runner = command_runner
         self._transport = transport
+        # GDB 7.1 lacks the MI inferior commands; probe once and keep the
+        # compatibility decision with the execution collaborator.
+        self._inferior_mi_supported: bool | None = None
+
+    def reset_capability_cache(self) -> None:
+        """Clear GDB feature probes for a new debugger process."""
+
+        self._inferior_mi_supported = None
 
     def jump(
         self,
@@ -269,13 +277,13 @@ class SessionExecutionService:
         CLI `add-inferior` on GDB 7.1, which only has the command-line form.
         """
 
-        if self._runtime.inferior_mi_supported is not False:
+        if self._inferior_mi_supported is not False:
             result = self._command_runner.execute_command_result(
                 "-add-inferior",
                 timeout_sec=DEFAULT_TIMEOUT_SEC,
             )
             if not isinstance(result, OperationError):
-                self._runtime.inferior_mi_supported = True
+                self._inferior_mi_supported = True
                 payload = command_result_mapping(result)
                 inferior_token = payload.get("inferior")
                 inferior_id = self._command_runner.parse_inferior_id_from_thread_group(
@@ -288,7 +296,7 @@ class SessionExecutionService:
                 return inferior_id
             if not _is_undefined_mi_command(result.message):
                 return result
-            self._runtime.inferior_mi_supported = False
+            self._inferior_mi_supported = False
 
         return self._create_inferior_legacy()
 
@@ -325,17 +333,17 @@ class SessionExecutionService:
     ) -> OperationSuccess[InferiorRemoveInfo] | OperationError:
         """Remove one inferior and return the refreshed inventory summary."""
 
-        if self._runtime.inferior_mi_supported is not False:
+        if self._inferior_mi_supported is not False:
             result = self._command_runner.execute_command_result(
                 f"-remove-inferior i{inferior_id}",
                 timeout_sec=DEFAULT_TIMEOUT_SEC,
             )
             if not isinstance(result, OperationError):
-                self._runtime.inferior_mi_supported = True
+                self._inferior_mi_supported = True
                 return self._finish_remove_inferior(inferior_id)
             if not _is_undefined_mi_command(result.message):
                 return result
-            self._runtime.inferior_mi_supported = False
+            self._inferior_mi_supported = False
 
         legacy_result = self._command_runner.execute_command_result(
             f"remove-inferior {inferior_id}",

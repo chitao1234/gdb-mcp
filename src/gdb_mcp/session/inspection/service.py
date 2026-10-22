@@ -50,6 +50,12 @@ class SessionInspectionService:
         self._disassembly = InspectionDisassembly(context)
         self._source = InspectionSource(context, resolver)
 
+    def reset_capability_cache(self) -> None:
+        """Clear GDB feature probes for a new debugger process."""
+
+        self._disassembly.reset_capability_cache()
+        self._memory.reset_capability_cache()
+
     def get_threads(self) -> OperationSuccess[ThreadListInfo] | OperationError:
         """Return the thread list for the current session."""
 
