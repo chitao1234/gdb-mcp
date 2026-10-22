@@ -63,6 +63,7 @@ class DelveInspection:
     def __init__(self, runtime: SessionRuntime, bridge: DelveRequests) -> None:
         self.runtime = runtime
         self._bridge = bridge
+        self.memory_read_limit = 1000
 
     def scope(self, thread_id: int | None = None, frame: int | None = None) -> dict[str, object]:
         self._bridge._require_client()
@@ -295,7 +296,7 @@ class DelveInspection:
             raise DelveRpcError("Memory address and count must be nonnegative", "validation_error")
         contents = bytearray()
         while len(contents) < count:
-            requested = min(65536, count - len(contents))
+            requested = min(self.memory_read_limit, count - len(contents))
             response = self._bridge._request(
                 "ExamineMemory", {"Address": begin + len(contents), "Length": requested}
             )

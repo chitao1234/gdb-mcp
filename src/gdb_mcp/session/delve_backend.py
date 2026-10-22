@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import BinaryIO, Literal
 from urllib.parse import urlsplit
 
-from ..contracts import ACTION_JUMP, DEBUGGER_DELVE
+from ..contracts import ACTION_JUMP, ACTION_NEXT_INSTRUCTION, DEBUGGER_DELVE
 from ..domain import (
     BackendData,
     BacktraceInfo,
@@ -61,6 +61,7 @@ from .delve_inspection import DelveInspection
 from .delve_protocols import operation as _operation
 from .delve_values import (
     integer,
+    text,
 )
 from .process_cleanup import cleanup_process
 from .protocols import OsModuleProtocol, TimeModuleProtocol
@@ -84,7 +85,7 @@ _OPERATIONS: frozenset[BackendOperation] = frozenset(
         "step",
         "next",
         "step_instruction",
-        "next_instruction",
+        ACTION_NEXT_INSTRUCTION,
         "finish",
         "interrupt",
         "wait_for_stop",
@@ -173,6 +174,15 @@ class DelveRpcBackend:
         if version.get("APIVersion") != 2:
             raise DelveRpcError("Delve did not select RPC API v2", "protocol_error")
         self._version = version
+        release = re.search(r"(\d+)\.(\d+)", text(version.get("DelveVersion")))
+        self._inspection.memory_read_limit = 1000
+        if release:
+            version_pair = int(release[1]), int(release[2])
+            if version_pair < (1, 23):
+                # Older Delve silently accepts unknown Command names without executing them.
+                self._unsupported.add(ACTION_NEXT_INSTRUCTION)
+            if version_pair >= (1, 24):
+                self._inspection.memory_read_limit = 65536
         self._client_state(self._request("State", {"NonBlocking": True}, timeout_sec=timeout_sec))
 
     def _connect(self, endpoint: str, *, timeout_sec: float) -> None:

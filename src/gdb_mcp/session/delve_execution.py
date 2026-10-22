@@ -7,7 +7,7 @@ import threading
 import time
 from typing import Protocol
 
-from ..contracts import ACTION_JUMP
+from ..contracts import ACTION_JUMP, ACTION_NEXT_INSTRUCTION
 from ..domain import (
     BackendData,
     CommandExecutionInfo,
@@ -394,6 +394,11 @@ class DelveExecution:
         options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo]:
+        if ACTION_NEXT_INSTRUCTION in self._bridge._unsupported:
+            raise DelveRpcError(
+                "Instruction stepping over calls requires Delve 1.23 or later",
+                "unsupported_operation",
+            )
         timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
         return self._execute(
             "nextInstruction", wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
