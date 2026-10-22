@@ -24,8 +24,6 @@ from gdb_mcp.contracts import (
 )
 
 from ..input_parsers import (
-    parse_breakpoint_manage_input,
-    parse_breakpoint_query_input,
     parse_inspect_query_input,
     parse_run_until_failure_input,
     parse_workflow_batch_input,
@@ -158,7 +156,7 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
         ToolCliSpec(
             name=TOOL_BREAKPOINT_QUERY,
             configure_parser=_configure_breakpoint_query,
-            parse_input=parse_breakpoint_query_input,
+            parse_input=_parse_namespace,
             build_arguments=_build_breakpoint_query,
             render_human=render_action_payload,
         )
@@ -167,7 +165,7 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
         ToolCliSpec(
             name=TOOL_BREAKPOINT_MANAGE,
             configure_parser=_configure_breakpoint_manage,
-            parse_input=parse_breakpoint_manage_input,
+            parse_input=_parse_namespace,
             build_arguments=_build_breakpoint_manage,
             render_human=render_action_payload,
         )

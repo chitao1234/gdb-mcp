@@ -6,55 +6,11 @@ from dataclasses import dataclass
 
 from gdb_mcp.contracts import (
     BatchStepToolName,
-    BreakpointAccess,
-    BreakpointEvent,
-    BreakpointKind,
-    BreakpointManageAction,
-    BreakpointQueryAction,
     DisassemblyMode,
     InspectQueryAction,
     LocationKind,
     RegisterValueFormat,
 )
-
-
-@dataclass(frozen=True, slots=True)
-class BreakpointQueryInput:
-    """Parsed input for ``gdb_breakpoint_query``."""
-
-    action: BreakpointQueryAction
-    session_id: int | None
-    number: int | None
-    kinds: tuple[BreakpointKind, ...]
-    enabled: bool | None
-
-
-@dataclass(frozen=True, slots=True)
-class BreakpointCreateInput:
-    """Create payload for ``gdb_breakpoint_manage --action create``."""
-
-    kind: BreakpointKind
-    location: str | None
-    expression: str | None
-    access: BreakpointAccess | None
-    event: BreakpointEvent | None
-    argument: str | None
-    condition: str | None
-    temporary: bool
-    kind_explicit: bool = False
-    temporary_explicit: bool = False
-
-
-@dataclass(frozen=True, slots=True)
-class BreakpointManageInput:
-    """Parsed input for ``gdb_breakpoint_manage``."""
-
-    action: BreakpointManageAction
-    session_id: int | None
-    breakpoint: BreakpointCreateInput | None
-    number: int | None
-    condition: str | None
-    clear_condition: bool | None
 
 
 @dataclass(frozen=True, slots=True)

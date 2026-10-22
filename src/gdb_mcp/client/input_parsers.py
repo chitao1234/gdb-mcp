@@ -10,11 +10,6 @@ from pydantic import ValidationError
 import gdb_mcp.contracts as shared_contracts
 from gdb_mcp.contracts import (
     BATCH_STEP_TOOL_NAMES,
-    BREAKPOINT_ACCESS_VALUES,
-    BREAKPOINT_EVENTS,
-    BREAKPOINT_KINDS,
-    BREAKPOINT_MANAGE_ACTIONS,
-    BREAKPOINT_QUERY_ACTIONS,
     DISASSEMBLY_MODES,
     INSPECT_QUERY_ACTIONS,
     LOCATION_KINDS,
@@ -25,9 +20,6 @@ from gdb_mcp.contracts import (
 from gdb_mcp.mcp.schemas import BATCH_STEP_TOOL_MODELS
 
 from .inputs import (
-    BreakpointCreateInput,
-    BreakpointManageInput,
-    BreakpointQueryInput,
     InspectQueryInput,
     LocationInput,
     RunUntilFailureInput,
@@ -41,7 +33,6 @@ from .namespace import (
     integer_tuple,
     key_value_entries,
     one_of,
-    one_of_tuple,
     optional_boolean,
     optional_integer,
     optional_integer_tuple,
@@ -202,68 +193,6 @@ def parse_step_inputs(
         )
 
     return tuple(validated_steps)
-
-
-def parse_breakpoint_query_input(namespace: NamespaceLike) -> BreakpointQueryInput:
-    """Parse one breakpoint-query namespace into a typed input object."""
-
-    values = snapshot(namespace)
-    return BreakpointQueryInput(
-        action=one_of(values, "action", BREAKPOINT_QUERY_ACTIONS),
-        session_id=optional_integer(values, "session_id"),
-        number=optional_integer(values, "number"),
-        kinds=one_of_tuple(values, "kinds", BREAKPOINT_KINDS),
-        enabled=optional_boolean(values, "enabled"),
-    )
-
-
-def parse_breakpoint_manage_input(namespace: NamespaceLike) -> BreakpointManageInput:
-    """Parse one breakpoint-manage namespace into a typed input object."""
-
-    values = snapshot(namespace)
-    action = one_of(values, "action", BREAKPOINT_MANAGE_ACTIONS)
-    breakpoint_kind = optional_one_of(values, "breakpoint_kind", BREAKPOINT_KINDS)
-    temporary = optional_boolean(values, "temporary")
-    location = optional_text(values, "location")
-    expression = optional_text(values, "expression")
-    access = optional_one_of(values, "access", BREAKPOINT_ACCESS_VALUES)
-    event = optional_one_of(values, "event", BREAKPOINT_EVENTS)
-    argument = optional_text(values, "argument")
-    temporary_explicit = temporary is not None
-    has_breakpoint_fields = (
-        breakpoint_kind is not None
-        or location is not None
-        or expression is not None
-        or access is not None
-        or event is not None
-        or argument is not None
-        or temporary_explicit
-    )
-    breakpoint = (
-        BreakpointCreateInput(
-            kind=breakpoint_kind or "code",
-            location=location,
-            expression=expression,
-            access=access,
-            event=event,
-            argument=argument,
-            condition=optional_text(values, "condition"),
-            temporary=bool(temporary),
-            kind_explicit=breakpoint_kind is not None,
-            temporary_explicit=temporary_explicit,
-        )
-        if action == "create" or has_breakpoint_fields
-        else None
-    )
-
-    return BreakpointManageInput(
-        action=action,
-        session_id=optional_integer(values, "session_id"),
-        breakpoint=breakpoint,
-        number=optional_integer(values, "number"),
-        condition=optional_text(values, "condition"),
-        clear_condition=optional_boolean(values, "clear_condition"),
-    )
 
 
 def parse_inspect_query_input(namespace: NamespaceLike) -> InspectQueryInput:
