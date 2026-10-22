@@ -73,6 +73,8 @@ debugger is behind the session:
   kept as-is; `stop_reasons` request filters keep matching that native string
 - session status reports the selected inferior's stop kind; a stop on another
   inferior does not replace it
+- execution observations apply state, selection, and new stop history together;
+  status and capture readers do not observe a partially applied stop
 - `state_detail` is `"crashed"` when a paused inferior stopped on a fatal signal
   or LLDB reported a crashed process; the execution state itself stays `paused`
 - stop events expose portable signal fields once: `signal_name`,
@@ -597,6 +599,12 @@ reverse-step operation, so connecting LLDB to rr gives up rr's reverse stepping.
 Use `debugger="gdb"` with `rr_replay` when reverse execution is required.
 
 ## LLDB Backend
+
+Inferior inventory reports the process execution state and preserves known stop
+details when its records omit them. A transition to running or not started clears
+the previous stop. Status polling records a stop once per process and inferior;
+starting the session again resets stop identity. Unfamiliar execution states
+become `unknown` in both status output and the cached runtime state.
 
 The LLDB backend is compiled from this repository against the LLDB 4.0.1 SB API
 and talks to the selected real `liblldb` at runtime. Newer APIs are isolated in

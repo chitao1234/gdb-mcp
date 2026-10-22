@@ -55,6 +55,9 @@ Unexpected server implementation failures return `internal_error` and are
 logged. A failed startup cleans up its debugger resources and does not publish
 a session id.
 Stop kinds follow the selected inferior, including watchpoint refinements.
+LLDB inferior queries preserve known stop details when the inventory omits them
+and report running targets as running. Repeated status reads record each LLDB
+stop once per process and inferior; restarting a session resets that identity.
 Stop and interrupt operations use the same failure classification as other tools.
 
 Workflow batches return `requested_steps` and the completed `steps`. Each step
@@ -64,6 +67,9 @@ Each step captures its new stop event even when the retained history is full.
 Invalid batch or campaign setup steps report every field error with its step path.
 Capture status, manifest metadata, and returned stop metadata share one runtime
 snapshot taken before the inspection sections run.
+Backend execution observations update state, selection, and new stop events
+together. Snapshots can observe either side of a transition, never part of it;
+they do not suspend execution or freeze later inspection queries.
 
 Collection results expose their arrays directly; use the array length for the
 number returned. Memory reads report `requested_bytes` and `captured_bytes` so
