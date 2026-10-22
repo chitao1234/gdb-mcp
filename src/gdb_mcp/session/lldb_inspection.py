@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Literal
 
 from ..domain import (
@@ -39,11 +39,35 @@ from .lldb_values import frame as frame_record
 from .lldb_values import integer, mappings, operation_error, text
 from .lldb_values import thread as thread_record
 from .requests import (
+    AddressLocation,
+    AddressRangeLocation,
+    CurrentLocation,
+    DisassemblyLocation,
     DisassemblyRequest,
+    FileLineLocation,
     FileRangeLocation,
+    FunctionLocation,
     SourceContextRequest,
 )
 from .runtime import SessionRuntime
+
+
+def _inspection_location(location: DisassemblyLocation) -> InspectionLocation:
+    match location:
+        case CurrentLocation() | AddressRangeLocation():
+            return InspectionLocation(kind=location.kind)
+        case FunctionLocation():
+            return InspectionLocation(kind=location.kind, function=location.function)
+        case AddressLocation():
+            return InspectionLocation(kind=location.kind, address=location.address)
+        case FileLineLocation():
+            return InspectionLocation(
+                kind=location.kind, file=location.file, fullname=location.file, line=location.line
+            )
+        case FileRangeLocation():
+            return InspectionLocation(
+                kind=location.kind, file=location.file, fullname=location.file
+            )
 
 
 class LldbInspection:
@@ -304,11 +328,10 @@ class LldbInspection:
     def disassemble(
         self, request: DisassemblyRequest
     ) -> OperationSuccess[DisassemblyInfo] | OperationError:
-        fields: dict[str, object] = asdict(request.location)
         try:
             payload = self._bridge._request(
                 "disassemble",
-                **fields,
+                **asdict(request.location),
                 instruction_count=request.instruction_count,
                 mode=request.mode,
             )
@@ -316,21 +339,19 @@ class LldbInspection:
                 DisassemblyInstructionRecord.from_payload(item)
                 for item in mappings(payload.get("instructions"))
             ]
-            first = instructions[0] if instructions else None
-            scope = request.location.kind
+            location = _inspection_location(request.location)
             if isinstance(request.location, FileRangeLocation):
-                scope = "file_line"
+                location = replace(location, kind="file_line")
+            if instructions:
+                first = instructions[0]
+                location = replace(
+                    location, file=first.file, fullname=first.fullname, line=first.line
+                )
+            location = replace(location, function=text(payload, "function") or location.function)
             return OperationSuccess(
                 DisassemblyInfo(
                     context=InspectionContextInfo(thread_id=request.thread_id, frame=request.frame),
-                    location=InspectionLocation(
-                        kind=scope,
-                        function=text(payload, "function") or text(fields, "function"),
-                        address=text(fields, "address"),
-                        file=first.file if first is not None else text(fields, "file"),
-                        fullname=(first.fullname if first is not None else text(fields, "file")),
-                        line=first.line if first is not None else integer(fields, "line"),
-                    ),
+                    location=location,
                     range=AddressRange(
                         start_address=text(payload, "start_address"),
                         end_address=text(payload, "end_address"),
@@ -345,34 +366,31 @@ class LldbInspection:
     def get_source_context(
         self, request: SourceContextRequest
     ) -> OperationSuccess[SourceContextInfo] | OperationError:
-        fields: dict[str, object] = asdict(request.location)
         try:
             payload = self._bridge._request(
                 "source",
-                **fields,
+                **asdict(request.location),
                 context_before=request.context_before,
                 context_after=request.context_after,
             )
             lines = [SourceLineRecord.from_payload(item) for item in mappings(payload.get("lines"))]
-            scope = request.location.kind
+            location = _inspection_location(request.location)
+            source_range = SourceRange(1, len(lines))
+            if isinstance(request.location, FileRangeLocation):
+                source_range = SourceRange(request.location.start_line, request.location.end_line)
             return OperationSuccess(
                 SourceContextInfo(
                     context=InspectionContextInfo(thread_id=request.thread_id, frame=request.frame),
-                    location=InspectionLocation(
-                        kind=scope,
-                        function=text(payload, "function") or text(fields, "function"),
-                        address=text(fields, "address"),
-                        file=str(payload.get("file") or text(fields, "file") or ""),
+                    location=replace(
+                        location,
+                        function=text(payload, "function") or location.function,
+                        file=str(payload.get("file") or location.file or ""),
                         fullname=text(payload, "fullname"),
-                        line=integer(payload, "line") or integer(fields, "line"),
+                        line=integer(payload, "line") or location.line,
                     ),
                     range=SourceRange(
-                        start_line=integer(payload, "start_line")
-                        or integer(fields, "start_line")
-                        or 1,
-                        end_line=integer(payload, "end_line")
-                        or integer(fields, "end_line")
-                        or len(lines),
+                        start_line=integer(payload, "start_line") or source_range.start_line,
+                        end_line=integer(payload, "end_line") or source_range.end_line,
                     ),
                     lines=lines,
                 )
