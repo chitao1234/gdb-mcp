@@ -236,26 +236,20 @@ class SessionRegistry:
         if session is None:
             return self._unknown_session_error(session_id)
 
-        if not session.has_controller:
-            if session.is_running:
-                with self._lock:
-                    self._closing_sessions.discard(session_id)
-                return OperationError(
-                    message=(
-                        "Session state is inconsistent: session reports running "
-                        "without an active controller."
-                    )
-                )
-            with self._lock:
-                current = self._sessions.get(session_id)
-                if current is session:
-                    del self._sessions[session_id]
-                self._closing_sessions.discard(session_id)
-            return OperationSuccess(SessionMessage(message="Session removed"))
-
         try:
             with session_workflow_context(session):
-                result = session.stop()
+                if session.has_controller:
+                    result = session.stop()
+                elif session.is_running:
+                    result = OperationError(
+                        message=(
+                            "Session state is inconsistent: session reports running "
+                            "without an active controller."
+                        )
+                    )
+                else:
+                    session.runtime.mark_stopped()
+                    result = OperationSuccess(SessionMessage(message="Session removed"))
         except Exception as exc:
             with self._lock:
                 self._closing_sessions.discard(session_id)
