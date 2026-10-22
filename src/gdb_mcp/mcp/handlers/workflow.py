@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Literal
 
 from pydantic import ValidationError
 
@@ -30,6 +31,7 @@ from ..schemas import (
     CaptureBundleArgs,
     RunUntilFailureArgs,
 )
+from ..validation_errors import build_validation_error
 from .common import (
     SessionToolInvocation,
     ToolResult,
@@ -85,7 +87,7 @@ def _handle_run_until_failure(
 ) -> OperationResult[RunUntilFailureInfo]:
     """Run repeated fresh sessions until one failure predicate matches."""
 
-    step_templates = _build_batch_step_templates(1, args.setup_steps)
+    step_templates = _build_batch_step_templates(1, args.setup_steps, steps_field="setup_steps")
     if isinstance(step_templates, OperationError):
         return step_templates
 
@@ -151,6 +153,8 @@ def _handle_run_until_failure(
 def _build_batch_step_templates(
     session_id: int,
     steps: Sequence[BatchStepArgs | str],
+    *,
+    steps_field: Literal["steps", "setup_steps"] = "steps",
 ) -> OperationSuccess[list[BatchStepTemplate]] | OperationError:
     """Validate batch-like step definitions into reusable execution templates."""
 
@@ -174,9 +178,11 @@ def _build_batch_step_templates(
         try:
             invocation = tool_spec.prepare(step_arguments)
         except ValidationError as exc:
-            return OperationError(
-                message=f"Invalid batch step {index} ({step.tool}): {exc}",
-                code="validation_error",
+            return build_validation_error(
+                exc,
+                tool_name=step.tool,
+                model=tool_spec.model,
+                field_prefix=f"{steps_field}[{index}].arguments",
             )
 
         def execute_step(

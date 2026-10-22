@@ -17,6 +17,7 @@ def build_validation_error(
     *,
     tool_name: str,
     model: type[BaseModel] | None,
+    field_prefix: str = "",
 ) -> OperationError:
     """Translate one Pydantic failure into an actionable ``validation_error``.
 
@@ -36,6 +37,9 @@ def build_validation_error(
         if action is None:
             action = next((value for parent, _, value in tags if not parent), None)
         field, issue, message = _describe(error, path, tags)
+        if field_prefix:
+            field = f"{field_prefix}.{field}" if field != "(root)" else field_prefix
+            message = f"{field_prefix}: {message}"
         entry: JsonObject = {"field": field, "issue": issue, "message": message}
         field_errors.append(entry)
         messages.append(message)
