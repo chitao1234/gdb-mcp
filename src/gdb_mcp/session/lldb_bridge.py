@@ -89,12 +89,15 @@ class BridgeClient:
                 self._responsive = False
                 raise BridgeError("LLDB bridge exited without a response", "not_started")
             try:
-                response = json.loads(line)
+                response: object = json.loads(line)
             except json.JSONDecodeError as exc:
                 self._responsive = False
                 raise BridgeError(
                     f"Invalid LLDB bridge response: {line.strip()}", "protocol_error"
                 ) from exc
+            if not isinstance(response, dict):
+                self._responsive = False
+                raise BridgeError("LLDB bridge response must be an object", "protocol_error")
             if response.get("request_id") != request_id:
                 self._responsive = False
                 raise BridgeError(f"LLDB bridge response id mismatch: {response}", "protocol_error")
