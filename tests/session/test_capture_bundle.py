@@ -116,6 +116,48 @@ def _stub_bundle_sections(
 class TestCaptureBundle:
     """Test capture bundle generation from one live session service."""
 
+    @pytest.mark.parametrize("snapshot_has_stop", [False, True])
+    def test_capture_status_uses_snapshot_and_keeps_optional_runtime_defaults(
+        self,
+        session_service: SessionService,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        snapshot_has_stop: bool,
+    ) -> None:
+        """Manifest and result metadata must agree when a snapshot omits stop fields."""
+
+        session_service.runtime.mark_inferior_paused("breakpoint-hit")
+        snapshot = SessionStatusSnapshot(
+            debugger_alive=True,
+            target_loaded=True,
+            session_state=SessionState.READY,
+            execution_state="exited",
+            stop_reason="exited-normally" if snapshot_has_stop else None,
+            stop_kind="exit" if snapshot_has_stop else None,
+        )
+        _stub_bundle_sections(
+            monkeypatch,
+            session_service,
+            get_status=lambda: OperationSuccess(snapshot),
+        )
+
+        result = session_service.capture_bundle(output_dir=str(tmp_path), bundle_name="status")
+
+        assert isinstance(result, OperationSuccess)
+        expected_reason = "exited-normally" if snapshot_has_stop else "breakpoint-hit"
+        expected_kind = "exit" if snapshot_has_stop else "breakpoint"
+        assert result.value.execution_state == "exited"
+        assert result.value.stop_reason == expected_reason
+        assert result.value.stop_kind == expected_kind
+        manifest = json_object((tmp_path / "status" / "manifest.json").read_text())
+        assert manifest["execution_state"] == "exited"
+        assert manifest["stop_reason"] == expected_reason
+        assert manifest["stop_kind"] == expected_kind
+        artifact = json_object((tmp_path / "status" / "session-status.json").read_text())
+        assert artifact["execution_state"] == "exited"
+        assert artifact["stop_reason"] == snapshot.stop_reason
+        assert artifact["stop_kind"] == snapshot.stop_kind
+
     def test_capture_bundle_writes_manifest_and_artifacts(
         self, session_service: SessionService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -217,3 +259,42 @@ class TestCaptureBundle:
 
         assert isinstance(result, OperationError)
         assert "per-range limit" in result.message
+
+    def test_capture_records_debugger_failures_without_losing_error_details(
+        self, session_service: SessionService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An unfamiliar debugger failure stays in its artifact and marks the section failed."""
+
+        error = OperationError(
+            message="unfamiliar debugger failure",
+            details={"future-field": {"nested-key": "kept"}, "future_field": "distinct"},
+        )
+        _stub_bundle_sections(
+            monkeypatch,
+            session_service,
+            get_backtrace=lambda **kwargs: error,
+            evaluate_expression=lambda *args, **kwargs: error,
+            read_memory=lambda *args, **kwargs: error,
+        )
+
+        result = session_service.capture_bundle(
+            output_dir=str(tmp_path),
+            bundle_name="debugger-errors",
+            expressions=["value"],
+            memory_ranges=[MemoryCaptureRange(address="&value", count=4, name="value-bytes")],
+        )
+
+        assert isinstance(result, OperationSuccess)
+        assert result.value.failed_sections == [
+            "expression:value",
+            "memory-range:value-bytes",
+            "thread-1-backtrace",
+        ]
+        assert len(result.warnings) == 3
+        for name in ("thread-backtraces", "expressions", "memory-ranges"):
+            records = json_array((tmp_path / "debugger-errors" / f"{name}.json").read_text())
+            payload = mapping(records[0])
+            assert payload["status"] == "error"
+            assert payload["code"] == "error"
+            assert payload["message"] == error.message
+            assert payload["details"] == error.details
