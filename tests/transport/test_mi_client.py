@@ -208,6 +208,37 @@ class TestMiClient:
         worker.join(timeout=1.0)
         assert finished.is_set()
 
+    @pytest.mark.parametrize("operation", ["is_alive", "exit_code", "interrupt"])
+    def test_implementation_failures_propagate(self, operation: str) -> None:
+        controller = _FakeController([])
+        client = self._make_client(controller)
+        failure = RuntimeError("process bug")
+
+        def interrupt() -> None:
+            controller.gdb_process.poll()
+
+        with (
+            patch.object(controller.gdb_process, "poll", side_effect=failure),
+            pytest.raises(RuntimeError, match="process bug"),
+        ):
+            if operation == "is_alive":
+                client.is_alive()
+            elif operation == "exit_code":
+                client._extract_exit_code()
+            else:
+                client.interrupt_and_wait_for_stop(send_interrupt=interrupt, timeout_sec=0.1)
+
+        assert client._command_lock.acquire(blocking=False)
+        client._command_lock.release()
+
+    def test_interrupt_os_failure_remains_an_operation_error(self) -> None:
+        client = self._make_client(_FakeController([]))
+        result = client.interrupt_and_wait_for_stop(
+            send_interrupt=MagicMock(side_effect=ProcessLookupError("no process")),
+            timeout_sec=0.1,
+        )
+        assert result.error == "Failed to interrupt: no process"
+
     def test_read_initial_output_drains_startup_records(self) -> None:
         """Startup output emitted before the first command should be retrievable."""
 

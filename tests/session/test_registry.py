@@ -214,6 +214,18 @@ class TestSessionRegistry:
         assert result.message == "stop failed"
         assert manager.get_session(session_id) is session
 
+    def test_close_session_propagates_failure_and_clears_closing_marker(self) -> None:
+        session = _session_double()
+        manager = SessionRegistry(session_factory=_session_factory_from([session]))
+        session_id = _publish_session(manager, session)
+        session.has_controller = True
+        session.stop.side_effect = RuntimeError("stop bug")
+
+        with pytest.raises(RuntimeError, match="stop bug"):
+            manager.close_session(session_id)
+
+        assert manager.resolve_session(session_id) is session
+
     def test_close_session_rejects_inconsistent_running_session_without_controller(self) -> None:
         """close_session should not silently drop a logically running session."""
 

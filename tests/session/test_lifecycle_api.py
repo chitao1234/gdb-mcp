@@ -514,7 +514,7 @@ class TestLifecycleApi:
 
         # running_session installs a MagicMock controller (see conftest).
         cast(MagicMock, gdb_backend(running_session).transport.controller).exit.side_effect = (
-            RuntimeError("exit failed")
+            OSError("exit failed")
         )
 
         result = result_to_mapping(running_session.stop())
@@ -525,3 +525,14 @@ class TestLifecycleApi:
         assert running_session.is_running is False
         assert running_session.state.value == "failed"
         assert running_session.runtime.last_failure_message is not None
+
+    def test_stop_propagates_implementation_failure(self, running_session: SessionService) -> None:
+        cast(MagicMock, gdb_backend(running_session).transport.controller).exit.side_effect = (
+            RuntimeError("exit bug")
+        )
+
+        with pytest.raises(RuntimeError, match="exit bug"):
+            running_session.stop()
+
+        assert not running_session.has_controller
+        assert not running_session.is_running

@@ -11,7 +11,7 @@ import os
 import time
 from collections.abc import Callable
 from typing import TypeVar, cast
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -27,6 +27,7 @@ from gdb_mcp.session.config import SessionConfig
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.lldb_backend import LldbSbBackend
 from gdb_mcp.session.lldb_bridge import BridgeClient
+from gdb_mcp.session.lldb_bridge_types import BridgeError
 from gdb_mcp.session.protocols import OsModuleProtocol, TimeModuleProtocol
 
 
@@ -205,6 +206,33 @@ def _backend() -> tuple[LldbSbBackend, FakeBridge]:
     bridge = FakeBridge()
     backend._client = cast(BridgeClient, bridge)
     return backend, bridge
+
+
+@pytest.mark.parametrize(
+    "failure", [RuntimeError("close bug"), DebuggerDecodeError("bad consumed field")]
+)
+def test_lldb_stop_propagates_unexpected_failure(failure: Exception) -> None:
+    backend, _ = _backend()
+    backend._client = Mock(spec=BridgeClient, close=Mock(side_effect=failure))
+    backend.runtime.mark_ready()
+
+    with pytest.raises(type(failure), match=str(failure)):
+        backend.stop()
+
+    assert not backend.has_controller
+    assert not backend.runtime.is_running
+
+
+def test_lldb_stop_preserves_expected_failure_code() -> None:
+    backend, _ = _backend()
+    backend._client = Mock(
+        spec=BridgeClient, close=Mock(side_effect=BridgeError("bad shutdown", "protocol_error"))
+    )
+
+    result = backend.stop()
+
+    assert isinstance(result, OperationError)
+    assert result.code == "protocol_error"
 
 
 def test_lldb_unexpected_startup_exception_is_not_reclassified() -> None:
