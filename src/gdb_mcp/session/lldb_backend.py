@@ -76,7 +76,9 @@ from ..domain.results import payload_to_mapping, result_to_envelope
 from .backends import BackendCapabilities
 from .config import SessionConfig
 from .constants import DEFAULT_TIMEOUT_SEC
-from .lldb_bridge import BridgeClient, BridgeError, prepare_bridge
+from .lldb_bridge import BridgeClient
+from .lldb_bridge_build import prepare_bridge
+from .lldb_bridge_types import BridgeError
 from .protocols import OsModuleProtocol, TimeModuleProtocol
 from .runtime import SessionRuntime
 
