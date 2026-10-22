@@ -19,14 +19,16 @@ from .constants import (
 )
 from .gdb_backend import GdbMiBackend
 from .lldb_backend import LldbSbBackend
+from .process_cleanup import cleanup_process
 from .protocols import OsModuleProtocol
 from .service import SessionService
 
 logger = logging.getLogger(__name__)
+_PYGDB_GDB_CONTROLLER = GdbController
 
 
-class _WorkingDirGdbController(GdbController):
-    """GdbController variant that spawns the subprocess in a specific cwd."""
+class _GdbController(GdbController):
+    """GDB controller with a process working directory and bounded cleanup."""
 
     def __init__(
         self,
@@ -70,6 +72,14 @@ class _WorkingDirGdbController(GdbController):
         )
         return self.gdb_process.pid
 
+    def exit(self) -> None:
+        """Terminate GDB and close its pipes within the cleanup budget."""
+
+        process = self.gdb_process
+        self.gdb_process = None
+        if process is not None:
+            cleanup_process(process)
+
 
 def create_gdb_controller(
     *,
@@ -78,11 +88,21 @@ def create_gdb_controller(
     cwd: str | None = None,
     controller_class: Callable[..., object] | None = None,
 ) -> GdbControllerProtocol:
-    """Create a GDB controller, adding cwd support for the default pygdbmi class."""
+    """Create a GDB controller with cwd support and bounded process cleanup."""
 
-    selected_controller_class = (
-        cast(Callable[..., object], GdbController) if controller_class is None else controller_class
+    selected_controller_class = cast(
+        Callable[..., object], GdbController if controller_class is None else controller_class
     )
+
+    if selected_controller_class is _PYGDB_GDB_CONTROLLER:
+        return cast(
+            GdbControllerProtocol,
+            _GdbController(
+                command=command,
+                time_to_check_for_additional_output_sec=time_to_check_for_additional_output_sec,
+                cwd=cwd,
+            ),
+        )
 
     if cwd is None:
         return cast(
@@ -90,16 +110,6 @@ def create_gdb_controller(
             selected_controller_class(
                 command=command,
                 time_to_check_for_additional_output_sec=time_to_check_for_additional_output_sec,
-            ),
-        )
-
-    if controller_class is None or controller_class is GdbController:
-        return cast(
-            GdbControllerProtocol,
-            _WorkingDirGdbController(
-                command=command,
-                time_to_check_for_additional_output_sec=time_to_check_for_additional_output_sec,
-                cwd=cwd,
             ),
         )
 

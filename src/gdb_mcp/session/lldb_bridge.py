@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import cast
 
 from ..session.constants import DEFAULT_TIMEOUT_SEC
+from .process_cleanup import cleanup_process
 
 logger = logging.getLogger(__name__)
 
@@ -510,6 +511,9 @@ class BridgeClient:
         self._reader = threading.Thread(target=self._read_responses, daemon=True)
         self._reader.start()
         self._closed = False
+        self._closing = False
+        self._close_lock = threading.Lock()
+        self._responsive = True
 
     def _read_responses(self) -> None:
         stdout = self._process.stdout
@@ -530,7 +534,11 @@ class BridgeClient:
         self, operation: str, *, timeout_sec: float = DEFAULT_TIMEOUT_SEC, **payload: object
     ) -> dict[str, object]:
         with self._lock:
-            if self._closed or self._process.poll() is not None:
+            if (
+                self._closed
+                or (self._closing and operation != "shutdown")
+                or self._process.poll() is not None
+            ):
                 raise BridgeError("LLDB bridge is not running", "not_started")
             request_id = self._next_id
             self._next_id += 1
@@ -543,25 +551,31 @@ class BridgeClient:
                 stdin.write(json.dumps(message, separators=(",", ":")) + "\n")
                 stdin.flush()
             except (BrokenPipeError, OSError) as exc:
+                self._responsive = False
                 raise BridgeError(f"LLDB bridge exited: {exc}", "not_started") from exc
             try:
                 line = self._responses.get(timeout=timeout_sec if timeout_sec > 0 else None)
             except queue.Empty as exc:
+                self._responsive = False
                 raise BridgeError(
                     f"LLDB bridge did not answer {operation!r} within {timeout_sec}s",
                     "command_timeout",
                 ) from exc
             if line is None:
+                self._responsive = False
                 raise BridgeError("LLDB bridge exited without a response", "not_started")
             if not line:
+                self._responsive = False
                 raise BridgeError("LLDB bridge exited without a response", "not_started")
             try:
                 response = json.loads(line)
             except json.JSONDecodeError as exc:
+                self._responsive = False
                 raise BridgeError(
                     f"Invalid LLDB bridge response: {line.strip()}", "protocol_error"
                 ) from exc
             if response.get("request_id") != request_id:
+                self._responsive = False
                 raise BridgeError(f"LLDB bridge response id mismatch: {response}", "protocol_error")
             if not response.get("ok"):
                 raise BridgeError(
@@ -573,25 +587,20 @@ class BridgeClient:
             return cast(dict[str, object], response)
 
     def close(self, *, detach: bool = False) -> None:
-        with self._lock:
+        """Share the ten-second cleanup budget across shutdown and termination."""
+
+        with self._close_lock:
             if self._closed:
                 return
+            self._closing = True
+
+            def shutdown() -> None:
+                self.request("shutdown", detach=detach)
+
             try:
-                if self._process.poll() is None:
-                    self.request("shutdown", detach=detach)
-            except Exception as exc:
-                logger.debug("Ignoring LLDB bridge shutdown failure: %s", exc)
+                cleanup_process(
+                    self._process,
+                    graceful_shutdown=shutdown if self._responsive else None,
+                )
             finally:
                 self._closed = True
-                try:
-                    if self._process.stdin is not None:
-                        self._process.stdin.close()
-                except OSError:
-                    pass
-                try:
-                    self._process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    self._process.kill()
-                    self._process.wait(timeout=5)
-                except OSError:
-                    pass
