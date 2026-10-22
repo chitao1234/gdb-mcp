@@ -240,3 +240,4 @@ class RunUntilFailureInput:
     capture_include_registers: bool | None
     capture_include_transcript: bool | None
     capture_include_stop_history: bool | None
+    startup_debugger: str | None = None

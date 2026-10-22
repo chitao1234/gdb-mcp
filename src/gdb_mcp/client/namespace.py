@@ -40,6 +40,7 @@ TextOption: TypeAlias = Literal[
     "rr_replay",
     "start_address",
     "startup_core",
+    "startup_debugger",
     "startup_debugger_path",
     "startup_program",
     "startup_working_dir",

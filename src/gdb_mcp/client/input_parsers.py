@@ -449,6 +449,7 @@ def parse_run_until_failure_input(namespace: NamespaceLike) -> RunUntilFailureIn
 
     values = snapshot(namespace)
     return RunUntilFailureInput(
+        startup_debugger=optional_text(values, "startup_debugger"),
         startup_program=optional_text(values, "startup_program"),
         startup_args=text_tuple(values, "startup_args"),
         startup_init_commands=text_tuple(values, "startup_init_commands"),

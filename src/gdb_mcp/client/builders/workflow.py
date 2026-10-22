@@ -33,6 +33,8 @@ def build_run_until_failure_payload(typed_input: RunUntilFailureInput) -> dict[s
     """Build the raw run-until-failure payload from typed input."""
 
     startup: dict[str, object] = {}
+    if typed_input.startup_debugger is not None:
+        startup["debugger"] = typed_input.startup_debugger
     if typed_input.startup_program is not None:
         startup["program"] = typed_input.startup_program
     if typed_input.startup_args:

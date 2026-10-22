@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 
+from gdb_mcp.contracts import DEBUGGER_NAMES
 from gdb_mcp.mcp.schemas import (
     BatchArgs,
     CaptureBundleArgs,
@@ -124,6 +125,7 @@ def _build_workflow_batch(typed_input: WorkflowBatchInput) -> BatchArgs:
 
 
 def _configure_run_until_failure(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--startup-debugger", choices=list(DEBUGGER_NAMES), default=None)
     parser.add_argument("--startup-program", default=None)
     parser.add_argument("--startup-arg", dest="startup_args", action="append", default=[])
     parser.add_argument(

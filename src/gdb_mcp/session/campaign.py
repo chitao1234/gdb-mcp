@@ -9,6 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from re import Pattern
 
+from ..contracts import DEBUGGER_GDB
 from ..domain import (
     CaptureBundleInfo,
     MemoryCaptureRange,
@@ -65,6 +66,9 @@ class RunUntilFailureRequest:
     """Validated campaign configuration for the repeat-until-failure runner."""
 
     program: str | None = None
+    debugger: str = DEBUGGER_GDB
+    debugger_args: tuple[str, ...] = ()
+    rr_replay: str | None = None
     args: tuple[str, ...] = ()
     init_commands: tuple[str, ...] = ()
     env: dict[str, str] = field(default_factory=dict)
@@ -108,12 +112,15 @@ class RunUntilFailureService:
             try:
                 startup_result = session.start(
                     program=request.program,
+                    debugger=request.debugger,
                     args=list(request.args) or None,
                     init_commands=list(request.init_commands) or None,
                     env=dict(request.env) or None,
                     debugger_path=request.debugger_path,
+                    debugger_args=list(request.debugger_args) or None,
                     working_dir=request.working_dir,
                     core=request.core,
+                    rr_replay=request.rr_replay,
                 )
                 if isinstance(startup_result, OperationError):
                     matched_iteration = RunUntilFailureIterationInfo(

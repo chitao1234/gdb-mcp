@@ -93,15 +93,24 @@ def _handle_run_until_failure(
     if isinstance(run_args, OperationError):
         return run_args
 
+    startup_args = _normalize_run_args(args.startup.args)
+    if isinstance(startup_args, OperationError):
+        return startup_args
+
     capture_memory_ranges = _memory_capture_ranges(args.capture.memory_ranges)
     if isinstance(capture_memory_ranges, OperationError):
         return capture_memory_ranges
 
-    runner = RunUntilFailureService(session_manager.create_untracked_session)
+    runner = RunUntilFailureService(
+        lambda: session_manager.create_untracked_session(args.startup.debugger)
+    )
     return runner.run_until_failure(
         RunUntilFailureRequest(
             program=args.startup.program,
-            args=tuple(args.startup.args or ()),
+            debugger=args.startup.debugger,
+            debugger_args=tuple(args.startup.debugger_args or ()),
+            rr_replay=args.startup.rr_replay,
+            args=tuple(startup_args or ()),
             init_commands=tuple(args.startup.init_commands or ()),
             env=dict(args.startup.env or {}),
             debugger_path=args.startup.debugger_path,
