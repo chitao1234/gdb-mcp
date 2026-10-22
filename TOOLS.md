@@ -277,6 +277,11 @@ Inspection requests may carry an optional context override:
 }
 ```
 
+LLDB source and disassembly use this context for current-location inspection,
+address expressions, and the current-instruction marker without changing the
+selected thread or frame. An unavailable explicit thread or frame returns
+`not_found`.
+
 ### Location Selector Union
 
 `gdb_inspect_query(action="disassembly" | "source")` uses an explicit `location` union:
