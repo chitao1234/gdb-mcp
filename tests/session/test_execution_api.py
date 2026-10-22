@@ -11,6 +11,7 @@ import pytest
 from gdb_mcp.contracts import ACTION_JUMP, ACTION_UNTIL
 from gdb_mcp.domain import StopEvent, payload_to_mapping, result_to_mapping
 from gdb_mcp.session.service import SessionService
+from gdb_mcp.transport.mi_models import MiTransportResponse
 from gdb_mcp.transport.protocols import GdbControllerProtocol
 from tests.support import (
     attach_controller,
@@ -568,8 +569,8 @@ class TestExecutionApi:
         with patch.object(
             gdb_backend(running_session)._command_runner,
             "wait_for_stop",
-            return_value={
-                "command_responses": [
+            return_value=MiTransportResponse(
+                command_responses=[
                     {
                         "type": "notify",
                         "message": "stopped",
@@ -580,8 +581,7 @@ class TestExecutionApi:
                         },
                     }
                 ],
-                "timed_out": False,
-            },
+            ),
         ):
             result = result_to_mapping(
                 running_session.wait_for_stop(timeout_sec=5, stop_reasons=("signal-received",))
@@ -603,7 +603,7 @@ class TestExecutionApi:
         with patch.object(
             gdb_backend(running_session)._command_runner,
             "wait_for_stop",
-            return_value={"command_responses": [], "timed_out": True},
+            return_value=MiTransportResponse(timed_out=True),
         ):
             result = result_to_mapping(running_session.wait_for_stop(timeout_sec=2))
 
@@ -954,8 +954,8 @@ class TestExecutionApi:
         with patch.object(
             gdb_backend(running_session)._command_runner,
             "wait_for_stop",
-            return_value={
-                "command_responses": [
+            return_value=MiTransportResponse(
+                command_responses=[
                     {
                         "type": "notify",
                         "message": "stopped",
@@ -966,8 +966,7 @@ class TestExecutionApi:
                         },
                     }
                 ],
-                "timed_out": False,
-            },
+            ),
         ):
             result = result_to_mapping(running_session.wait_for_stop(timeout_sec=5))
 
@@ -1113,11 +1112,7 @@ class TestCallFunctionApi:
         with patch.object(
             gdb_backend(running_session)._command_runner, "send_command_and_wait_for_prompt"
         ) as mock_send:
-            mock_send.return_value = {
-                "command_responses": [],
-                "async_notifications": [],
-                "timed_out": False,
-            }
+            mock_send.return_value = MiTransportResponse()
             with patch("gdb_mcp.session.execution.parse_mi_responses") as mock_parse:
                 mock_parse.return_value.is_error_result.return_value = False
                 mock_parse.return_value.console = []

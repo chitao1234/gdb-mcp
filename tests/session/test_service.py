@@ -11,6 +11,7 @@ from gdb_mcp.session.gdb_backend import GdbMiBackend
 from gdb_mcp.session.protocols import OsModuleProtocol, TimeModuleProtocol
 from gdb_mcp.session.service import SessionService
 from gdb_mcp.session.state import SessionState
+from gdb_mcp.transport.mi_models import MiTransportResponse
 from gdb_mcp.transport.protocols import GdbControllerFactoryProtocol, GdbControllerProtocol
 from tests.support import gdb_backend
 
@@ -153,11 +154,9 @@ class TestSessionService:
         with patch.object(
             gdb_backend(service)._command_runner,
             "send_command_and_wait_for_prompt",
-            return_value={
-                "command_responses": [{"type": "result", "message": "done", "token": 1000}],
-                "async_notifications": [],
-                "timed_out": False,
-            },
+            return_value=MiTransportResponse(
+                command_responses=[{"type": "result", "message": "done", "token": 1000}],
+            ),
         ):
             thread_1 = threading.Thread(target=run_start)
             thread_2 = threading.Thread(target=run_start)

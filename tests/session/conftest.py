@@ -22,7 +22,7 @@ from gdb_mcp.domain import (
 )
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.service import SessionService
-from gdb_mcp.transport.mi_models import MiRecord
+from gdb_mcp.transport.mi_models import MiRecord, MiTransportResponse
 from gdb_mcp.transport.protocols import (
     ControllerIoManagerProtocol,
     GdbControllerFactoryProtocol,
@@ -57,7 +57,7 @@ class PromptResponseBuilder(Protocol):
         timed_out: bool = False,
         error: str | None = None,
         fatal: bool = False,
-    ) -> dict[str, object]: ...
+    ) -> MiTransportResponse: ...
 
 
 class CommandResultBuilder(Protocol):
@@ -253,7 +253,7 @@ def command_result() -> CommandResultBuilder:
 
 @pytest.fixture
 def prompt_response() -> PromptResponseBuilder:
-    """Build a normalized transport response payload for prompt waits."""
+    """Build a typed transport response for prompt waits."""
 
     def build(
         *,
@@ -262,17 +262,14 @@ def prompt_response() -> PromptResponseBuilder:
         timed_out: bool = False,
         error: str | None = None,
         fatal: bool = False,
-    ) -> dict[str, object]:
-        response: dict[str, object] = {
-            "command_responses": command_responses or [],
-            "async_notifications": async_notifications or [],
-            "timed_out": timed_out,
-        }
-        if error is not None:
-            response["error"] = error
-        if fatal:
-            response["fatal"] = True
-        return response
+    ) -> MiTransportResponse:
+        return MiTransportResponse(
+            command_responses=command_responses or [],
+            async_notifications=async_notifications or [],
+            timed_out=timed_out,
+            error=error,
+            fatal=fatal,
+        )
 
     return build
 
@@ -315,7 +312,7 @@ class StartHarness:
         self,
         *,
         console: Sequence[str] = (),
-        prompt: dict[str, object] | None = None,
+        prompt: MiTransportResponse | None = None,
         initial_output: list[dict[str, object]] | None = None,
         probe_target_loaded: bool | None = True,
         execute: (
@@ -391,7 +388,7 @@ class StartHarness:
                 )
             )
 
-    def _prompt_response(self, console: Sequence[str]) -> dict[str, object]:
+    def _prompt_response(self, console: Sequence[str]) -> MiTransportResponse:
         return self.maker.prompt_response(
             command_responses=[
                 *(self.maker.mi_console(payload) for payload in console),
