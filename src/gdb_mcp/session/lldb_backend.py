@@ -171,6 +171,7 @@ class LldbSbBackend:
             if working_dir and not self.runtime.os_module.path.isdir(working_dir):
                 return OperationError(message=f"Working directory does not exist: {working_dir}")
             self.runtime.begin_startup(config)
+            self._events.reset()
             try:
                 launch = prepare_bridge(debugger_path)
                 client = BridgeClient(launch)

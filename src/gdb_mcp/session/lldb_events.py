@@ -31,6 +31,10 @@ class LldbEvents:
         self.state_detail: Literal["crashed"] | None = None
         self._last_stop_key: tuple[object, ...] | None = None
 
+    def reset(self) -> None:
+        self.state_detail = None
+        self._last_stop_key = None
+
     def apply(self, payload: Mapping[str, object]) -> SessionStatusSnapshot:
         execution = as_execution_state(text(payload, "execution_state")) or "unknown"
         detail = text(payload, "state_detail")
@@ -86,6 +90,8 @@ class LldbEvents:
         breakpoint_id = integer(payload, "breakpoint_id")
         watchpoint_id = integer(payload, "watchpoint_id")
         key = (
+            integer(payload, "pid"),
+            integer(payload, "current_inferior_id"),
             integer(payload, "stop_id"),
             reason,
             integer(payload, "current_thread_id"),
