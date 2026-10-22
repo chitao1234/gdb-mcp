@@ -577,6 +577,10 @@ class LldbSbBackend:
             except DebuggerDecodeError:
                 self._cleanup_failed_start("LLDB returned malformed debugger data")
                 raise
+            except Exception as exc:
+                logger.exception("Could not start LLDB session")
+                self._cleanup_failed_start(f"Failed to start LLDB: {exc}")
+                raise
 
     def _cleanup_failed_start(self, message: str) -> None:
         if self._client is not None:
