@@ -63,30 +63,7 @@ class LldbInspection:
             )
             records.append(record)
         current = integer(response, "current_inferior_id")
-        count = len(records)
-        self.runtime.update_inferior_inventory(
-            current_inferior_id=current,
-            count=count,
-            inferior_ids=tuple(
-                int(record.inferior_id) for record in records if record.inferior_id is not None
-            ),
-        )
-        for record in records:
-            if record.inferior_id is None:
-                continue
-            state = record.execution_state
-            if state == "paused":
-                self.runtime.mark_inferior_paused(
-                    record.stop_reason, inferior_id=record.inferior_id
-                )
-            elif state == "running":
-                self.runtime.mark_inferior_running(inferior_id=record.inferior_id)
-            elif state == "exited":
-                self.runtime.mark_inferior_exited(
-                    record.stop_reason, record.exit_code, inferior_id=record.inferior_id
-                )
-            elif state == "not_started":
-                self.runtime.mark_inferior_not_started(inferior_id=record.inferior_id)
+        self.runtime.apply_inferior_inventory(records, current_inferior_id=current)
         return records
 
     def list_inferiors(self) -> OperationSuccess[InferiorListInfo] | OperationError:

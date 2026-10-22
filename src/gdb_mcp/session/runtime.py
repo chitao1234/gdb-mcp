@@ -10,6 +10,7 @@ from ..domain import (
     CommandTranscriptEntry,
     ExecutionState,
     FollowForkMode,
+    InferiorRecord,
     InferiorStateRecord,
     SessionStatusSnapshot,
     StopEvent,
@@ -254,6 +255,41 @@ class SessionRuntime:
                 self.inferior_states[inferior_id] = InferiorRuntimeState()
             if self.inferior_count is None or self.inferior_count < len(self.inferior_states):
                 self.inferior_count = len(self.inferior_states)
+
+    def apply_inferior_inventory(
+        self, records: list[InferiorRecord], *, current_inferior_id: int | None
+    ) -> None:
+        """Apply an inventory without erasing stop details it does not report."""
+
+        with self._state_lock:
+            self.update_inferior_inventory(
+                current_inferior_id=current_inferior_id,
+                count=len(records),
+                inferior_ids=tuple(
+                    record.inferior_id for record in records if record.inferior_id is not None
+                ),
+            )
+            for record in records:
+                if record.inferior_id is None or record.execution_state is None:
+                    continue
+                state = self.inferior_states[record.inferior_id]
+                if state.execution_state != record.execution_state:
+                    self._update_inferior_state(
+                        inferior_id=record.inferior_id,
+                        execution_state=record.execution_state,
+                        stop_reason=record.stop_reason,
+                        exit_code=record.exit_code,
+                        refined_stop_kind=record.stop_kind,
+                    )
+                    continue
+                if "stop_reason" in record.model_fields_set:
+                    state.stop_reason = record.stop_reason
+                if "exit_code" in record.model_fields_set:
+                    state.exit_code = record.exit_code
+                if "stop_kind" in record.model_fields_set:
+                    state.refined_stop_kind = None
+                    if record.stop_kind is not None:
+                        state.refined_stop_kind = (state.stop_reason, record.stop_kind)
 
     def remove_inferior(self, inferior_id: int) -> None:
         """Remove one inferior from runtime tracking after thread-group removal."""

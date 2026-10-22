@@ -901,6 +901,28 @@ Json thread_json(SBThread &thread, SBProcess &process) {
   return out;
 }
 
+const char *execution_state_name(StateType state) {
+  switch (state) {
+  case eStateStopped:
+  case eStateCrashed:
+  case eStateSuspended:
+    return "paused";
+  case eStateRunning:
+  case eStateStepping:
+  case eStateAttaching:
+  case eStateLaunching:
+    return "running";
+  case eStateExited:
+  case eStateDetached:
+    return "exited";
+  case eStateInvalid:
+  case eStateUnloaded:
+  case eStateConnected:
+    return "not_started";
+  }
+  return "unknown";
+}
+
 Json status_json(const char *forced_reason = nullptr, bool *timed_out = nullptr) {
   drain_events();
   Json out = Json::object_value();
@@ -908,30 +930,7 @@ Json status_json(const char *forced_reason = nullptr, bool *timed_out = nullptr)
   SBProcess process = target.IsValid() ? target.GetProcess() : SBProcess();
   bool loaded = target_loaded(target);
   StateType state = process.IsValid() ? process.GetState() : eStateInvalid;
-
-  std::string execution = "unknown";
-  switch (state) {
-  case eStateStopped:
-  case eStateCrashed:
-  case eStateSuspended:
-    execution = "paused";
-    break;
-  case eStateRunning:
-  case eStateStepping:
-  case eStateAttaching:
-  case eStateLaunching:
-    execution = "running";
-    break;
-  case eStateExited:
-  case eStateDetached:
-    execution = "exited";
-    break;
-  case eStateInvalid:
-  case eStateUnloaded:
-  case eStateConnected:
-    execution = "not_started";
-    break;
-  }
+  std::string execution = execution_state_name(state);
 
   out.object["target_loaded"] = Json::boolean_value(loaded);
   out.object["execution_state"] = Json::string_value(execution);
@@ -1075,8 +1074,7 @@ Json target_json(SBTarget &target, int index) {
   SBProcess process = target.GetProcess();
   if (process.IsValid()) {
     StateType state = process.GetState();
-    out.object["execution_state"] = Json::string_value(
-        state == eStateExited || state == eStateDetached ? "exited" : "paused");
+    out.object["execution_state"] = Json::string_value(execution_state_name(state));
     if (state == eStateExited && process.GetExitStatus() >= 0)
       out.object["exit_code"] = Json::integer_value(process.GetExitStatus());
   } else {
