@@ -100,7 +100,13 @@ def session_service() -> SessionService:
 def running_session(session_service: SessionService) -> SessionService:
     """Create a session with a controller attached and marked running."""
 
-    attach_controller(session_service, MagicMock(spec=GdbControllerProtocol))
+    attach_controller(
+        session_service,
+        MagicMock(
+            spec=GdbControllerProtocol,
+            gdb_process=MagicMock(spec=GdbProcessProtocol, poll=MagicMock(return_value=None)),
+        ),
+    )
     session_service.runtime.mark_ready()
     return session_service
 
@@ -126,7 +132,9 @@ class ScriptedController:
         self.io_manager.stdin = self._stdin
         self._response_batches = [list(batch) for batch in response_batches]
         self._emit_empty = False
-        self.gdb_process: GdbProcessProtocol | None = MagicMock(spec=GdbProcessProtocol)
+        self.gdb_process: GdbProcessProtocol | None = MagicMock(
+            spec=GdbProcessProtocol, poll=MagicMock(return_value=None)
+        )
         self.exit_called = False
 
     @property
