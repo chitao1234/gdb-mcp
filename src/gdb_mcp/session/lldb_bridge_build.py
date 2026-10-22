@@ -220,7 +220,9 @@ def discover_lldb(debugger_path: str | None = None) -> LldbInstall:
 def _compiler() -> list[str]:
     configured = os.environ.get("LLDB_BRIDGE_CXX") or os.environ.get("CXX")
     if configured:
-        return [configured]
+        # Resolve names through PATH. The cache key includes this text, so
+        # leaving it as a bare "g++" would share artifacts between toolchains.
+        return [shutil.which(configured) or configured]
     for name in ("c++", "g++", "clang++"):
         found = shutil.which(name)
         if found:
@@ -381,7 +383,7 @@ def _build_layers(install: LldbInstall, runtime_version: int | None) -> Path:
     compiler = _compiler()
     layer_dir = cache / (
         f"layers-{install.version or 'unknown'}-"
-        f"{_digest([_NATIVE_DIR / 'layer_api.h', *(_NATIVE_DIR / name for name in _LAYER_SOURCES.values())], str(install.prefix))}"
+        f"{_digest([_NATIVE_DIR / 'layer_api.h', *(_NATIVE_DIR / name for name in _LAYER_SOURCES.values())], f'layers:{sys.platform}:{compiler}:{install.prefix}')}"
     )
     layer_dir.mkdir(parents=True, exist_ok=True)
     include = install.include_dir

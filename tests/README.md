@@ -57,9 +57,9 @@ GOTOOLCHAIN=go1.24.2 DLV_PATH=/opt/delve/1.24.2/dlv \
   .venv/bin/pytest -q tests/integration/test_v2_session_delve.py -rs
 ```
 
-The compatibility workflow tests Delve v1.20.2, v1.24.2, and v1.27.2 with
-matching Go versions. Attach tests require permission to trace sibling
-processes; on Linux the CI job sets `kernel.yama.ptrace_scope=0`.
+The compatibility workflow runs Delve 1.20.2 through 1.27 with matching Go
+versions. Attach tests require permission to trace sibling processes; on Linux
+the CI job sets `kernel.yama.ptrace_scope=0`.
 
 ```bash
 # Run only unit tests (excluding integration tests)
@@ -114,8 +114,17 @@ When adding new tests:
 ## Continuous Integration
 
 Tests run automatically on GitHub Actions for:
-- Python 3.10, 3.11, and 3.12
+- Curated Nix toolchain profiles covering Python 3.10-3.14, GDB 13-17,
+  LLDB 14-21, and Delve 1.21-1.27 (see `flake.nix`)
+- An oldest baseline with GDB 7.1a plus Python 2.6, LLDB 4.0.1, Delve 1.20.2,
+  and a modern Python 3.10 server
 - Every push to main/master
 - Every pull request
+
+`nix eval --json .#ciProfileNames` lists the exact profiles CI runs. Each era
+profile crosses no package versions beyond its snapshot; the oldest baseline
+mixes pins because the old debuggers and the server Python cannot share one.
+That profile runs unit tests plus the core GDB, LLDB, and Delve integration
+files.
 
 See `.github/workflows/test.yml` for the CI configuration.

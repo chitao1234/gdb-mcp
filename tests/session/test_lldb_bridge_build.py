@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -60,3 +61,40 @@ def test_missing_prebuilt_directory_keeps_its_lookup_error(
 
     assert caught.value.code == "not_found"
     assert str(tmp_path) in str(caught.value)
+
+
+def test_compiler_resolves_a_configured_name_through_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    compiler = tmp_path / "g++"
+    monkeypatch.delenv("LLDB_BRIDGE_CXX", raising=False)
+    monkeypatch.setenv("CXX", "g++")
+    monkeypatch.setattr(shutil, "which", lambda name: str(compiler) if name == "g++" else None)
+
+    assert build._compiler() == [str(compiler)]
+
+
+def test_layer_cache_key_includes_the_compiler(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install = build.LldbInstall(
+        prefix=tmp_path / "lldb-18.1.8",
+        lib_dir=tmp_path / "lib",
+        liblldb=tmp_path / "lib" / "liblldb.so",
+        bin_dir=tmp_path / "bin",
+        include_dir=None,
+        version=18,
+    )
+    captured: dict[str, str] = {}
+
+    def capture(paths: list[Path], extra: str = "") -> str:
+        captured["extra"] = extra
+        return "digest"
+
+    monkeypatch.setattr(build, "_cache_root", lambda: tmp_path)
+    monkeypatch.setattr(build, "_compiler", lambda: ["/toolchains/a/c++"])
+    monkeypatch.setattr(build, "_digest", capture)
+
+    build._build_layers(install, 18)
+
+    assert "/toolchains/a/c++" in captured["extra"]
