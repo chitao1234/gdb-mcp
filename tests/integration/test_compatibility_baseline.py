@@ -22,6 +22,7 @@ from gdb_mcp.session.config import SessionConfig
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.lldb_backend import LldbSbBackend
 from gdb_mcp.session.protocols import OsModuleProtocol, TimeModuleProtocol
+from gdb_mcp.session.requests import ExecutionOptions
 
 from .conftest import CompileProgram
 
@@ -60,7 +61,7 @@ def test_gdb_baseline(compile_program: CompileProgram) -> None:
     try:
         success(session.start(program=program, debugger="gdb"))
         success(session.set_breakpoint("add"))
-        success(session.run(timeout_sec=10))
+        success(session.run(options=ExecutionOptions(timeout_sec=10)))
         status = success(session.get_status())
         assert status.stop_kind == "breakpoint"
         evaluated = success(session.evaluate_expression("2 + 3"))
@@ -84,7 +85,7 @@ def test_lldb_baseline(compile_program: CompileProgram) -> None:
             )
         )
         success(backend.set_breakpoint("add"))
-        success(backend.run(timeout_sec=10))
+        success(backend.run(options=ExecutionOptions(timeout_sec=10)))
         status = success(backend.get_status())
         assert status.stop_kind == "breakpoint"
         evaluated = success(backend.evaluate_expression("2 + 3"))
@@ -111,7 +112,7 @@ def test_delve_baseline(tmp_path: Path) -> None:
     try:
         success(session.start(program=str(binary), debugger=DEBUGGER_DELVE, debugger_path=dlv))
         success(session.set_breakpoint(f"{source}:{line}"))
-        success(session.run(timeout_sec=10))
+        success(session.run(options=ExecutionOptions(timeout_sec=10)))
         status = success(session.get_status())
         assert status.stop_kind == "breakpoint"
         evaluated = success(session.evaluate_expression("total"))

@@ -11,6 +11,7 @@ import pytest
 from gdb_mcp.contracts import ACTION_JUMP, ACTION_UNTIL
 from gdb_mcp.domain import OperationSuccess, StopEvent, payload_to_mapping, result_to_mapping
 from gdb_mcp.session.gdb_command import GdbCommandResult
+from gdb_mcp.session.requests import ExecutionOptions
 from gdb_mcp.session.service import SessionService
 from gdb_mcp.transport.mi_models import MiTransportResponse, ParsedMiResponse
 from gdb_mcp.transport.protocols import GdbControllerProtocol
@@ -90,7 +91,7 @@ def test_acknowledged_location_execution_excludes_the_previous_stop(
     previous = StopEvent(execution_state="paused", reason="breakpoint-hit", stop_kind="breakpoint")
     session.runtime.record_stop_event(previous)
     operation = session.jump if action == ACTION_JUMP else session.until
-    result = result_to_mapping(operation("*$pc + 4", wait_for_stop=False))
+    result = result_to_mapping(operation("*$pc + 4", options=ExecutionOptions(wait_for_stop=False)))
 
     assert len(controller.decoded_writes) == 1
     assert result["execution_state"] == "running"
@@ -264,7 +265,9 @@ class TestExecutionApi:
                 timed_out=True,
             ),
         ):
-            result = result_to_mapping(running_session.continue_execution(wait_for_stop=False))
+            result = result_to_mapping(
+                running_session.continue_execution(options=ExecutionOptions(wait_for_stop=False))
+            )
 
         assert result["status"] == "success"
         assert dig(result, "backend_data", "debugger") == "gdb"
@@ -517,7 +520,7 @@ class TestExecutionApi:
             ]
         )
 
-        result = result_to_mapping(session.finish(timeout_sec=9))
+        result = result_to_mapping(session.finish(options=ExecutionOptions(timeout_sec=9)))
 
         assert result["status"] == "success"
         assert result["return_value"] == "42"
@@ -623,9 +626,13 @@ class TestExecutionApi:
     ) -> None:
         """Waiting on an already paused inferior should return the current stop state."""
 
-        # Any controller marks the session as having one; this path only reads the
-        # already-recorded stop event and never talks to the controller.
-        attach_controller(session_service, MagicMock(spec=GdbControllerProtocol))
+        attach_controller(
+            session_service,
+            MagicMock(
+                spec=GdbControllerProtocol,
+                gdb_process=MagicMock(poll=MagicMock(return_value=None)),
+            ),
+        )
         session_service.runtime.mark_ready()
         session_service.runtime.mark_inferior_paused("breakpoint-hit")
         session_service.runtime.record_stop_event(
@@ -859,7 +866,7 @@ class TestExecutionApi:
             [mi_result(message="running"), mi_notify("stopped", {"reason": "breakpoint-hit"})],
         )
 
-        result = result_to_mapping(session.run(timeout_sec=5))
+        result = result_to_mapping(session.run(options=ExecutionOptions(timeout_sec=5)))
 
         assert result["status"] == "success"
         status = result_to_mapping(session.get_status())
@@ -900,7 +907,9 @@ class TestExecutionApi:
 
         session, _ = scripted_running_session([mi_result(message="running")])
 
-        result = result_to_mapping(session.run(wait_for_stop=False, timeout_sec=1))
+        result = result_to_mapping(
+            session.run(options=ExecutionOptions(timeout_sec=1, wait_for_stop=False))
+        )
 
         assert result["status"] == "success"
         assert result["command"] == "-exec-run"
@@ -1036,7 +1045,7 @@ class TestExecutionApi:
             ]
         )
 
-        result = result_to_mapping(session.run(timeout_sec=5))
+        result = result_to_mapping(session.run(options=ExecutionOptions(timeout_sec=5)))
 
         assert result["status"] == "success"
         status = result_to_mapping(session.get_status())

@@ -158,20 +158,14 @@ class MiClient:
         if not self._controller:
             return False
 
-        try:
-            gdb_process = self._controller.gdb_process
-            if gdb_process is None:
-                return True
-
-            poll_result = gdb_process.poll()
-            if poll_result is not None and not isinstance(poll_result, int):
-                return True
-            if poll_result is not None:
-                logger.error("GDB process exited with code %s", poll_result)
-            return poll_result is None
-        except Exception as exc:
-            logger.debug("Exception checking if GDB alive: %s, assuming alive", exc)
+        gdb_process = self._controller.gdb_process
+        if gdb_process is None:
             return True
+
+        poll_result = gdb_process.poll()
+        if poll_result is not None:
+            logger.error("GDB process exited with code %s", poll_result)
+        return poll_result is None
 
     def send_command_and_wait_for_prompt(
         self,
@@ -371,7 +365,7 @@ class MiClient:
                 timeout_sec=timeout_sec,
                 fatal_context="during interrupt",
             )
-        except Exception as exc:
+        except OSError as exc:
             logger.error("Failed to interrupt program: %s", exc)
             return MiTransportResponse(error=f"Failed to interrupt: {exc}")
         finally:
@@ -407,12 +401,7 @@ class MiClient:
         if gdb_process is None:
             return None
 
-        try:
-            poll_result = gdb_process.poll()
-            return poll_result if isinstance(poll_result, int) else None
-        except Exception as exc:  # pragma: no cover - defensive around pygdbmi
-            logger.debug("Ignoring failure while polling the GDB child exit code: %s", exc)
-            return None
+        return gdb_process.poll()
 
     def _wait_for_stopped_notification(
         self,

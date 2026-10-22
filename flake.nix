@@ -34,6 +34,10 @@
       url = "github:NixOS/nixpkgs/21.11";
       flake = false;
     };
+    nixpkgs-2205 = {
+      url = "github:NixOS/nixpkgs/22.05";
+      flake = false;
+    };
     nixpkgs-2305 = {
       url = "github:NixOS/nixpkgs/23.05";
       flake = false;
@@ -54,26 +58,26 @@
           import input { inherit system; };
 
       profiles = {
-        oldest-py310-gdb71a-lldb40-delve120 = {
+        oldest-py310-gdb71a-lldb40-delve16 = {
           baseline = true;
         };
-        legacy-py311-gdb92-lldb71-delve120 = {
+        legacy-py311-gdb92-lldb71-delve18 = {
           legacy = true;
           pythonPackages = inputs.nixpkgs-2405;
           python = "python311";
           gdbPackages = inputs.nixpkgs-2009;
           lldbPackages = inputs.nixpkgs-2009;
-          goPackages = inputs.nixpkgs-2305;
-          delvePackages = inputs.nixpkgs-2305;
+          goPackages = inputs.nixpkgs-2205;
+          delvePackages = inputs.nixpkgs-2205;
         };
-        legacy-py312-gdb111-lldb111-delve121 = {
+        legacy-py312-gdb111-lldb111-delve120 = {
           legacy = true;
           pythonPackages = inputs.nixpkgs-2411;
           python = "python312";
           gdbPackages = inputs.nixpkgs-2111;
           lldbPackages = inputs.nixpkgs-2105;
-          goPackages = inputs.nixpkgs-2311;
-          delvePackages = inputs.nixpkgs-2311;
+          goPackages = inputs.nixpkgs-2305;
+          delvePackages = inputs.nixpkgs-2305;
         };
         full-py313-gdb13-lldb14-delve122 = {
           pythonPackages = inputs.nixpkgs-2505;
@@ -83,13 +87,13 @@
           goPackages = inputs.nixpkgs-2405;
           delvePackages = inputs.nixpkgs-2405;
         };
-        full-py314-gdb15-lldb18-delve123 = {
+        full-py314-gdb15-lldb18-delve124 = {
           pythonPackages = inputs.nixpkgs-unstable;
           python = "python314";
           gdbPackages = inputs.nixpkgs-2411;
           lldbPackages = inputs.nixpkgs-2411;
-          goPackages = inputs.nixpkgs-2411;
-          delvePackages = inputs.nixpkgs-2411;
+          goPackages = inputs.nixpkgs-2505;
+          delvePackages = inputs.nixpkgs-2505;
         };
         full-py313-gdb17-lldb21-delve127 = {
           pythonPackages = inputs.nixpkgs-2505;
@@ -150,7 +154,7 @@
             config.allowBroken = true;
           };
           p1709 = import inputs.nixpkgs-1709 { inherit system; };
-          p2305 = import inputs.nixpkgs-2305 { inherit system; };
+          p2105 = import inputs.nixpkgs-2105 { inherit system; };
 
           python26 = p1609.lib.overrideDerivation p1609.python26 (old: {
             buildInputs = old.buildInputs ++ [ p1609.glibc.dev ];
@@ -222,8 +226,8 @@
           lldb40 = p1709.lldb;
           gcc46 = p1310.gcc;
           gcc64 = p1709.gcc;
-          go120 = p2305.go;
-          delve120 = p2305.delve;
+          go116 = p2105.go;
+          delve16 = p2105.delve;
         };
 
       mkBaselineShell =
@@ -238,8 +242,8 @@
             legacy.gcc46
             legacy.gdb71a
             legacy.lldb40
-            legacy.go120
-            legacy.delve120
+            legacy.go116
+            legacy.delve16
             legacy.python26Path
             pkgs.python310
             pkgs.binutils

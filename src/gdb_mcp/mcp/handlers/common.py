@@ -31,6 +31,7 @@ from ...domain.errors import DebuggerDecodeError
 from ...session.backends import BackendOperation
 from ...session.constants import DEFAULT_TIMEOUT_SEC
 from ...session.registry import SessionRegistry
+from ...session.requests import ExecutionOptions
 from ...session.service import SessionService
 from ..schemas import (
     LocationAddressArgs,
@@ -104,20 +105,6 @@ class RegisteredToolSpec(Generic[InvocationT_co]):
     model: type[BaseModel]
     scope: ToolScope
     prepare: Callable[[object], InvocationT_co]
-
-
-@dataclass(frozen=True, slots=True)
-class LocationSelection:
-    """Typed inspection location resolved from one schema-discriminated selector."""
-
-    function: str | None = None
-    address: str | None = None
-    start_address: str | None = None
-    end_address: str | None = None
-    file: str | None = None
-    line: int | None = None
-    start_line: int | None = None
-    end_line: int | None = None
 
 
 def session_tool_spec(
@@ -347,11 +334,11 @@ def _workflow_step_validation_error(
 def _execution_wait_policy(
     wait_until: ExecutionWaitUntil,
     timeout_sec: int | None,
-) -> tuple[int, bool]:
+) -> ExecutionOptions:
     """Translate a flattened execution wait policy into service-layer arguments."""
 
     resolved_timeout = timeout_sec if timeout_sec is not None else DEFAULT_TIMEOUT_SEC
-    return resolved_timeout, wait_until == "stop"
+    return ExecutionOptions(timeout_sec=resolved_timeout, wait_for_stop=wait_until == "stop")
 
 
 def _normalize_run_args(args: list[str] | str | None) -> list[str] | None | OperationError:

@@ -47,15 +47,35 @@ callers see one contract.
 
 Debugger records preserve additional fields and their original keys, including
 hyphenated GDB/MI keys. A field the server cannot decode returns a
-`protocol_error` for that operation; invalid caller input returns
+`protocol_error` for that operation; disassembly also preserves instruction and
+mixed-source extension fields. Invalid caller input returns
 `validation_error`. Unfamiliar debugger error messages keep their text and use
 the fallback `error` code. These failures do not end an otherwise live session.
+Unexpected server implementation failures return `internal_error` and are
+logged. A failed startup cleans up its debugger resources and does not publish
+a session id.
+Stop kinds follow the selected inferior, including watchpoint refinements.
+Each entry in session status `inferior_states` also carries its own `stop_kind`.
+LLDB inferior queries preserve known stop details when the inventory omits them
+and report running targets as running. A reported reason or kind change clears
+the previous stop's crash detail. Repeated status reads record each LLDB
+stop once per process and inferior; restarting a session resets that identity.
+Stop and interrupt operations use the same failure classification as other tools.
 
 Workflow batches return `requested_steps` and the completed `steps`. Each step
 contains the complete tool envelope under `result`; read its `status`, `action`,
 and error `code` there. The CLI exits nonzero if any step returned an error.
 Each step captures its new stop event even when the retained history is full.
 Invalid batch or campaign setup steps report every field error with its step path.
+Capture status, manifest metadata, and returned stop metadata share one runtime
+snapshot taken before the inspection sections run.
+Backend execution observations update state, selection, and new stop events
+together. Snapshots can observe either side of a transition, never part of it;
+they do not suspend execution or freeze later inspection queries.
+Inspection keeps the published location selectors: source queries using
+`address_range` continue to inspect the current location.
+LLDB source and disassembly honor thread/frame overrides, including address
+expressions, and preserve the selected context.
 
 Collection results expose their arrays directly; use the array length for the
 number returned. Memory reads report `requested_bytes` and `captured_bytes` so
@@ -68,8 +88,9 @@ partial reads remain explicit.
   toolchain pretty-printers can load)
 - Optional: LLDB 4.0.1 or newer with headers for the native bridge; a C++14
   compiler is used to build it on first use
-- Optional: Delve on `PATH`, or selected through `DLV_PATH` / `debugger_path`;
-  CI exercises Delve 1.20.2 through 1.27 with matching Go toolchains
+- Optional: Delve 1.6.1 or newer on `PATH`, or selected through `DLV_PATH` /
+  `debugger_path`; CI covers the 1.6.1 baseline and 1.21-1.27 era profiles
+  with matching Go toolchains
 - Optional: `rr` for reverse debugging (GDB), `rust-gdb` or similar wrappers for
   language-specific pretty-printers
 
@@ -273,16 +294,24 @@ the server Python back with it. `flake.nix` is the source of truth:
 
 ```bash
 nix eval --json .#ciProfileNames      # names CI runs
-nix develop .#legacy-py311-gdb92-lldb71-delve120
+nix develop .#legacy-py311-gdb92-lldb71-delve18
 ```
 
 The six rows cover Python 3.10-3.14; GDB 7.1a, 9.2, 11.1, 13.2, 15.2, and
-17.2; LLDB 4.0.1, 7.1, 11.1, 14.0, 18.1, and 21.1; and Delve 1.20.2 through
-1.27. The oldest row also carries GDB's Python 2.6 scripting support. The
-`flake.lock` file pins the exact snapshots.
+17.2; LLDB 4.0.1, 7.1, 11.1, 14.0, 18.1, and 21.1; and Delve 1.6.1, 1.8.2,
+1.20.2, 1.22.1, 1.24.2, and 1.27.2. The oldest row also carries GDB's Python
+2.6 scripting support and Go 1.16.4 for Delve 1.6.1. The `flake.lock` file pins
+the exact snapshots.
 
-The `oldest-` and `legacy-` rows run unit tests plus
-`test_compatibility_baseline.py`; the `full-` rows run the complete suite.
+Delve 1.6.1 (May 2021) is the compatibility floor: it introduced breakpoint
+disabling, which 1.6.0 silently ignores. The same RPC v2 backend handles all
+supported releases. Watchpoints require 1.7.0, Unix listeners 1.22.1,
+instruction stepping over calls 1.23.0, and `jump` 1.27.2. Memory reads are
+chunked to the release's limit.
+
+The `oldest-` and `legacy-` rows run unit tests plus the compatibility
+baseline and the Delve integration file; the `full-` rows run the complete
+suite.
 
 See [AGENTS.md](AGENTS.md) for repository conventions.
 

@@ -901,6 +901,28 @@ Json thread_json(SBThread &thread, SBProcess &process) {
   return out;
 }
 
+const char *execution_state_name(StateType state) {
+  switch (state) {
+  case eStateStopped:
+  case eStateCrashed:
+  case eStateSuspended:
+    return "paused";
+  case eStateRunning:
+  case eStateStepping:
+  case eStateAttaching:
+  case eStateLaunching:
+    return "running";
+  case eStateExited:
+  case eStateDetached:
+    return "exited";
+  case eStateInvalid:
+  case eStateUnloaded:
+  case eStateConnected:
+    return "not_started";
+  }
+  return "unknown";
+}
+
 Json status_json(const char *forced_reason = nullptr, bool *timed_out = nullptr) {
   drain_events();
   Json out = Json::object_value();
@@ -908,30 +930,7 @@ Json status_json(const char *forced_reason = nullptr, bool *timed_out = nullptr)
   SBProcess process = target.IsValid() ? target.GetProcess() : SBProcess();
   bool loaded = target_loaded(target);
   StateType state = process.IsValid() ? process.GetState() : eStateInvalid;
-
-  std::string execution = "unknown";
-  switch (state) {
-  case eStateStopped:
-  case eStateCrashed:
-  case eStateSuspended:
-    execution = "paused";
-    break;
-  case eStateRunning:
-  case eStateStepping:
-  case eStateAttaching:
-  case eStateLaunching:
-    execution = "running";
-    break;
-  case eStateExited:
-  case eStateDetached:
-    execution = "exited";
-    break;
-  case eStateInvalid:
-  case eStateUnloaded:
-  case eStateConnected:
-    execution = "not_started";
-    break;
-  }
+  std::string execution = execution_state_name(state);
 
   out.object["target_loaded"] = Json::boolean_value(loaded);
   out.object["execution_state"] = Json::string_value(execution);
@@ -1075,8 +1074,7 @@ Json target_json(SBTarget &target, int index) {
   SBProcess process = target.GetProcess();
   if (process.IsValid()) {
     StateType state = process.GetState();
-    out.object["execution_state"] = Json::string_value(
-        state == eStateExited || state == eStateDetached ? "exited" : "paused");
+    out.object["execution_state"] = Json::string_value(execution_state_name(state));
     if (state == eStateExited && process.GetExitStatus() >= 0)
       out.object["exit_code"] = Json::integer_value(process.GetExitStatus());
   } else {
@@ -1625,7 +1623,8 @@ bool value_address(SBValue &value, uint64_t &address) {
   return false;
 }
 
-bool resolve_address(const std::string &expression, uint64_t &address, std::string &error) {
+bool resolve_address(const std::string &expression, uint64_t &address, std::string &error,
+                     SBFrame frame) {
   std::string text = trim(expression);
   if (text.empty()) {
     error = "An address expression is required";
@@ -1633,9 +1632,6 @@ bool resolve_address(const std::string &expression, uint64_t &address, std::stri
   }
   if (parse_u64(text, address))
     return true;
-  SBThread thread;
-  SBFrame frame;
-  ensure_thread(thread, frame, false);
   if (frame.IsValid()) {
     if (text == "$pc") {
       address = static_cast<uint64_t>(frame.GetPC());
@@ -1672,6 +1668,13 @@ bool resolve_address(const std::string &expression, uint64_t &address, std::stri
   }
   error = "Could not resolve address expression: " + text;
   return false;
+}
+
+bool resolve_address(const std::string &expression, uint64_t &address, std::string &error) {
+  SBThread thread;
+  SBFrame frame;
+  ensure_thread(thread, frame, false);
+  return resolve_address(expression, address, error, frame);
 }
 
 Json inspect_threads() {
@@ -1966,8 +1969,28 @@ Json read_memory(const Json &request) {
   return out;
 }
 
+SBFrame code_inspection_frame(const Json &request) {
+  long long thread_id = as_integer(member(request, "thread_id"), -1);
+  long long frame_number = as_integer(member(request, "frame"), -1);
+  SBProcess process = current_process();
+  SBThread thread = thread_id > 0 ? process.GetThreadByIndexID(static_cast<uint32_t>(thread_id))
+                                  : process.GetSelectedThread();
+  if (thread_id > 0 && !thread.IsValid())
+    throw BridgeError("Thread " + std::to_string(thread_id) + " does not exist", "not_found");
+  if (!thread.IsValid() && process.GetNumThreads() > 0)
+    thread = process.GetThreadAtIndex(0);
+  SBFrame frame = frame_number >= 0 ? thread.GetFrameAtIndex(static_cast<uint32_t>(frame_number))
+                                   : thread.GetSelectedFrame();
+  if (frame_number >= 0 && !frame.IsValid())
+    throw BridgeError("Frame " + std::to_string(frame_number) + " does not exist", "not_found");
+  if (!frame.IsValid() && thread.GetNumFrames() > 0)
+    frame = thread.GetFrameAtIndex(0);
+  return frame;
+}
+
 Json disassemble(const Json &request) {
   SBTarget target = require_target();
+  SBFrame context_frame = code_inspection_frame(request);
   std::string function = as_string(member(request, "function"));
   std::string address_text = as_string(member(request, "address"));
   std::string start_text = as_string(member(request, "start_address"));
@@ -1996,7 +2019,8 @@ Json disassemble(const Json &request) {
   } else if (!start_text.empty() || !address_text.empty()) {
     uint64_t value = 0;
     std::string error;
-    if (!resolve_address(start_text.empty() ? address_text : start_text, value, error))
+    if (!resolve_address(start_text.empty() ? address_text : start_text, value, error,
+                         context_frame))
       throw BridgeError(error, "disassembly_unavailable");
     start = target.ResolveLoadAddress(static_cast<addr_t>(value));
   } else if (!file.empty() && line > 0) {
@@ -2009,14 +2033,11 @@ Json disassemble(const Json &request) {
     start = bp.GetLocationAtIndex(0).GetAddress();
     target.BreakpointDelete(bp.GetID());
   } else {
-    SBThread thread;
-    SBFrame frame;
-    ensure_thread(thread, frame, false);
-    if (!frame.IsValid())
+    if (!context_frame.IsValid())
       throw BridgeError("No frame is selected", "no_stack_frame");
-    start = frame.GetPCAddress();
+    start = context_frame.GetPCAddress();
     if (resolved_function.empty())
-      resolved_function = S(frame.GetFunctionName());
+      resolved_function = S(context_frame.GetFunctionName());
   }
   if (!start.IsValid())
     throw BridgeError("Could not resolve a disassembly address", "disassembly_unavailable");
@@ -2024,16 +2045,13 @@ Json disassemble(const Json &request) {
   bool has_end = false;
   if (!end_text.empty()) {
     std::string error;
-    if (!resolve_address(end_text, end, error))
+    if (!resolve_address(end_text, end, error, context_frame))
       throw BridgeError(error, "disassembly_unavailable");
     has_end = true;
   }
   uint64_t current_pc = 0;
-  SBThread current_thread;
-  SBFrame current_frame;
-  ensure_thread(current_thread, current_frame, false);
-  if (current_frame.IsValid())
-    current_pc = static_cast<uint64_t>(current_frame.GetPC());
+  if (context_frame.IsValid())
+    current_pc = static_cast<uint64_t>(context_frame.GetPC());
   uint64_t limit = has_end ? 4096 : static_cast<uint64_t>(instruction_count);
   SBInstructionList instructions = target.ReadInstructions(start, static_cast<uint32_t>(limit));
   Json items = Json::array_value();
@@ -2111,6 +2129,7 @@ Json disassemble(const Json &request) {
 
 Json source_context(const Json &request) {
   SBTarget target = require_target();
+  SBFrame context_frame = code_inspection_frame(request);
   std::string function = as_string(member(request, "function"));
   std::string address_text = as_string(member(request, "address"));
   std::string file = as_string(member(request, "file"));
@@ -2136,18 +2155,15 @@ Json source_context(const Json &request) {
   } else if (!address_text.empty()) {
     uint64_t value = 0;
     std::string error;
-    if (!resolve_address(address_text, value, error))
+    if (!resolve_address(address_text, value, error, context_frame))
       throw BridgeError(error, "not_found");
     location = target.ResolveLoadAddress(static_cast<addr_t>(value)).GetLineEntry();
   } else {
-    SBThread thread;
-    SBFrame frame;
-    ensure_thread(thread, frame, false);
-    if (!frame.IsValid())
+    if (!context_frame.IsValid())
       throw BridgeError("No frame is selected", "no_stack_frame");
-    location = frame.GetLineEntry();
+    location = context_frame.GetLineEntry();
     if (resolved_function.empty())
-      resolved_function = S(frame.GetFunctionName());
+      resolved_function = S(context_frame.GetFunctionName());
   }
   if (file.empty())
     file = file_path(location.GetFileSpec());

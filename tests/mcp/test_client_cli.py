@@ -8,7 +8,8 @@ import pytest
 
 import gdb_mcp.client.specs as client_specs
 from gdb_mcp.client.cli import build_parser, parse_client_args
-from gdb_mcp.client.input_parsers import parse_workflow_batch_input
+from gdb_mcp.client.input_parsers import parse_step_inputs
+from gdb_mcp.client.namespace import snapshot, tagged_events
 from gdb_mcp.client.parsers import serialize_model
 from gdb_mcp.client.renderers import render_action_payload
 from gdb_mcp.client.specs import CLIENT_TOOL_SPECS
@@ -34,8 +35,12 @@ class TestClientCli:
             parser=parser,
         )
 
-        first_steps = parse_workflow_batch_input(first).steps
-        second_steps = parse_workflow_batch_input(second).steps
+        first_steps = parse_step_inputs(
+            tagged_events(snapshot(first), "step_events"), required=True, step_flag="--step"
+        )
+        second_steps = parse_step_inputs(
+            tagged_events(snapshot(second), "step_events"), required=True, step_flag="--step"
+        )
         assert len(first_steps) == len(second_steps) == 1
         assert first_steps[0].arguments["action"] == ACTION_THREADS
         assert second_steps[0].arguments["action"] == ACTION_BACKTRACE
@@ -1164,9 +1169,7 @@ class TestClientCli:
             ],
             parser=build_parser(),
         )
-        typed_input = client_specs.parse_breakpoint_manage_input(args)
-
-        payload = serialize_model(client_specs._build_breakpoint_manage(typed_input))
+        payload = serialize_model(client_specs._build_breakpoint_manage(args))
 
         assert payload == {
             "session_id": SESSION_ID,
@@ -1499,9 +1502,7 @@ class TestClientCli:
             ],
             parser=build_parser(),
         )
-        typed_input = client_specs.parse_workflow_batch_input(args)
-
-        payload = serialize_model(client_specs._build_workflow_batch(typed_input))
+        payload = serialize_model(client_specs._build_workflow_batch(args))
 
         assert payload == {
             "session_id": SESSION_ID,
@@ -1889,9 +1890,7 @@ class TestClientCli:
             ],
             parser=build_parser(),
         )
-        typed_input = client_specs.parse_run_until_failure_input(args)
-
-        payload = serialize_model(client_specs._build_run_until_failure(typed_input))
+        payload = serialize_model(client_specs._build_run_until_failure(args))
 
         assert payload == {
             "startup": {"program": "/bin/true"},

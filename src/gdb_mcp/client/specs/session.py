@@ -15,14 +15,10 @@ from gdb_mcp.mcp.schemas import (
     StartSessionArgs,
 )
 
-from ..builders.session import build_session_query_payload, build_session_start_payload
-from ..inputs import (
-    SessionQueryInput,
-    SessionStartInput,
-)
-from ..namespace import NamespaceLike, one_of, optional_integer, snapshot
+from ..namespace import NamespaceLike, key_value_entries, one_of, optional_integer, snapshot
 from ..parsers import (
     CliUsageError,
+    collapse_key_value_entries,
     key_value_entry,
     validate_model,
 )
@@ -66,8 +62,20 @@ def _configure_session_start(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_session_start(typed_input: SessionStartInput) -> StartSessionArgs:
-    payload = build_session_start_payload(typed_input)
+def _build_session_start(namespace: NamespaceLike) -> StartSessionArgs:
+    values = snapshot(namespace)
+    payload: dict[str, object] = {
+        name: item
+        for name in ("program", "debugger", "core", "debugger_path", "working_dir", "rr_replay")
+        if (item := values.get(name)) is not None
+    }
+    for name in ("args", "init_commands", "debugger_args"):
+        value = values.get(name)
+        if value:
+            payload[name] = value
+    env = collapse_key_value_entries(key_value_entries(values, "env"))
+    if env:
+        payload["env"] = env
     return validate_model(StartSessionArgs, payload)
 
 
@@ -76,10 +84,15 @@ def _configure_session_query(parser: argparse.ArgumentParser) -> None:
     _add_session_id(parser)
 
 
-def _build_session_query(typed_input: SessionQueryInput) -> SessionQueryArgs:
-    payload = build_session_query_payload(typed_input)
-    if typed_input.action == "list" and typed_input.session_id is not None:
+def _build_session_query(namespace: NamespaceLike) -> SessionQueryArgs:
+    values = snapshot(namespace)
+    action = one_of(values, "action", SESSION_QUERY_ACTIONS)
+    session_id = values.get("session_id")
+    if action == "list" and session_id is not None:
         raise CliUsageError("--session-id not valid with --action list")
+    payload: dict[str, object] = {"action": action}
+    if session_id is not None:
+        payload["session_id"] = session_id
     return validate_model(SessionQueryArgs, payload)
 
 

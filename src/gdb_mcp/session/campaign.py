@@ -25,6 +25,7 @@ from ..domain import (
     result_to_envelope,
 )
 from .locking import session_workflow_context
+from .requests import ExecutionOptions
 from .service import SessionService
 from .workflow import BatchStepTemplate
 
@@ -159,8 +160,9 @@ class RunUntilFailureService:
 
                 run_result = session.run(
                     args=list(request.run_args) or None,
-                    timeout_sec=request.run_timeout_sec,
-                    wait_for_stop=True,
+                    options=ExecutionOptions(
+                        timeout_sec=request.run_timeout_sec, wait_for_stop=True
+                    ),
                 )
                 run_payload = result_to_envelope(run_result)
                 status_snapshot = self._status_snapshot(session)

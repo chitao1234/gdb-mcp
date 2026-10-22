@@ -141,6 +141,57 @@ def test_decode_failure_returns_protocol_error_and_the_next_call_succeeds(
     assert dig(mapping(following.structuredContent), "result", "threads") == []
 
 
+@pytest.mark.parametrize("mixed", [False, True])
+def test_disassembly_preserves_instruction_extensions(
+    monkeypatch: pytest.MonkeyPatch, mixed: bool
+) -> None:
+    instruction: dict[str, object] = {
+        "address": "0x401000",
+        "inst": "nop",
+        "func-name": "main",
+        "offset": "0",
+        "future-field": {"nested-key": [None, {"dash-key": 7}]},
+        "future_field": "separate extension",
+    }
+    entry: dict[str, object] = instruction
+    if mixed:
+        entry = {
+            "file": "main.c",
+            "line": "12",
+            "line_asm_insn": [instruction],
+            "source-extension": {"nested-key": 8},
+        }
+    registry, _, _ = _session(monkeypatch, [_response({"asm_insns": [entry]})])
+
+    response = _call(
+        registry,
+        c.TOOL_INSPECT_QUERY,
+        {
+            "session_id": 1,
+            "action": "disassembly",
+            "query": {
+                "location": {
+                    "kind": "address_range",
+                    "start_address": "0x401000",
+                    "end_address": "0x401001",
+                }
+            },
+        },
+    )
+
+    assert not response.isError
+    record = mapping_list(dig(mapping(response.structuredContent), "result", "instructions"))[0]
+    assert record["instruction"] == "nop"
+    assert record["function"] == "main"
+    assert record["offset"] == 0
+    assert record["future-field"] == instruction["future-field"]
+    assert record["future_field"] == instruction["future_field"]
+    if mixed:
+        assert record["file"] == "main.c"
+        assert record["line"] == 12
+        assert record["source-extension"] == {"nested-key": 8}
+
+
 def test_request_validation_keeps_field_errors_and_does_not_call_debugger(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

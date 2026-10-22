@@ -11,23 +11,38 @@ import os
 import time
 from collections.abc import Callable
 from typing import TypeVar, cast
-from unittest.mock import patch
+from unittest.mock import ANY, Mock, patch
 
 import pytest
 
 from gdb_mcp.contracts import ACTION_JUMP, ACTION_UNTIL
 from gdb_mcp.domain import (
+    InspectionLocation,
     OperationError,
     OperationResult,
     OperationSuccess,
     StopEvent,
 )
 from gdb_mcp.domain.errors import DebuggerDecodeError
+from gdb_mcp.session import lldb_values
 from gdb_mcp.session.config import SessionConfig
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.lldb_backend import LldbSbBackend
 from gdb_mcp.session.lldb_bridge import BridgeClient
+from gdb_mcp.session.lldb_bridge_types import BridgeError
 from gdb_mcp.session.protocols import OsModuleProtocol, TimeModuleProtocol
+from gdb_mcp.session.requests import (
+    AddressLocation,
+    AddressRangeLocation,
+    CurrentLocation,
+    DisassemblyLocation,
+    DisassemblyRequest,
+    ExecutionOptions,
+    FileLineLocation,
+    FileRangeLocation,
+    FunctionLocation,
+    SourceContextRequest,
+)
 
 
 class FakeBridge:
@@ -207,6 +222,33 @@ def _backend() -> tuple[LldbSbBackend, FakeBridge]:
     return backend, bridge
 
 
+@pytest.mark.parametrize(
+    "failure", [RuntimeError("close bug"), DebuggerDecodeError("bad consumed field")]
+)
+def test_lldb_stop_propagates_unexpected_failure(failure: Exception) -> None:
+    backend, _ = _backend()
+    backend._client = Mock(spec=BridgeClient, close=Mock(side_effect=failure))
+    backend.runtime.mark_ready()
+
+    with pytest.raises(type(failure), match=str(failure)):
+        backend.stop()
+
+    assert not backend.has_controller
+    assert not backend.runtime.is_running
+
+
+def test_lldb_stop_preserves_expected_failure_code() -> None:
+    backend, _ = _backend()
+    backend._client = Mock(
+        spec=BridgeClient, close=Mock(side_effect=BridgeError("bad shutdown", "protocol_error"))
+    )
+
+    result = backend.stop()
+
+    assert isinstance(result, OperationError)
+    assert result.code == "protocol_error"
+
+
 def test_lldb_unexpected_startup_exception_is_not_reclassified() -> None:
     """Unexpected bridge implementation failures should propagate to dispatch."""
 
@@ -228,11 +270,11 @@ def test_lldb_unexpected_startup_exception_is_not_reclassified() -> None:
 @pytest.mark.parametrize(
     ("decoder", "payload"),
     [
-        (LldbSbBackend._mapping, "not a mapping"),
-        (LldbSbBackend._mappings, "not a list"),
-        (LldbSbBackend._mappings, [{"ok": True}, "not a mapping"]),
-        (lambda value: LldbSbBackend._text({"field": value}, "field"), 1),
-        (lambda value: LldbSbBackend._integer({"field": value}, "field"), "1"),
+        (lldb_values.mapping, "not a mapping"),
+        (lldb_values.mappings, "not a list"),
+        (lldb_values.mappings, [{"ok": True}, "not a mapping"]),
+        (lambda value: lldb_values.text({"field": value}, "field"), 1),
+        (lambda value: lldb_values.integer({"field": value}, "field"), "1"),
     ],
 )
 def test_lldb_decoders_reject_malformed_values(
@@ -276,9 +318,8 @@ def test_lldb_breakpoint_creation_rejects_invalid_numbers(number: object) -> Non
 
 @pytest.mark.parametrize("thread_id", [[], {}, True])
 def test_lldb_thread_ids_do_not_stringify_malformed_values(thread_id: object) -> None:
-    backend, _ = _backend()
     with pytest.raises(DebuggerDecodeError):
-        backend._thread({"id": thread_id})
+        lldb_values.thread({"id": thread_id})
 
 
 def test_lldb_memory_keeps_zero_address_and_count() -> None:
@@ -338,7 +379,7 @@ def test_lldb_location_acknowledgement_does_not_reuse_a_stop(action: str) -> Non
         },
     ) as request:
         operation = backend.jump if action == ACTION_JUMP else backend.until
-        result = _value(operation("*$pc + 4", wait_for_stop=False))
+        result = _value(operation("*$pc + 4", options=ExecutionOptions(wait_for_stop=False)))
 
     assert request.call_count == 1
     assert result.execution_state == "running"
@@ -389,10 +430,162 @@ def test_lldb_rr_replay_points_to_connect_mode_and_reverse_caveat() -> None:
 def test_finish_publishes_the_return_value() -> None:
     backend, _ = _backend()
 
-    finished = _value(backend.finish(timeout_sec=1))
+    finished = _value(backend.finish(options=ExecutionOptions(timeout_sec=1)))
 
     assert finished.return_value == "5"
     assert finished.stop_reason == "signal"
+
+
+def test_startup_resets_stop_event_deduplication() -> None:
+    backend, bridge = _backend()
+    backend.runtime.mark_ready()
+    backend.get_status()
+    assert len(backend.runtime.stop_history) == 1
+
+    backend._client = None
+    with (
+        patch("gdb_mcp.session.lldb_backend.prepare_bridge"),
+        patch("gdb_mcp.session.lldb_backend.BridgeClient", return_value=bridge),
+    ):
+        started = backend.start(SessionConfig(debugger="lldb"))
+
+    assert isinstance(started, OperationSuccess)
+    assert len(backend.runtime.stop_history) == 1
+    assert backend.runtime.last_stop_event is not None
+
+
+@pytest.mark.parametrize("identity_field", ["pid", "current_inferior_id"])
+def test_stop_identity_includes_process_and_inferior(identity_field: str) -> None:
+    backend, bridge = _backend()
+    payload = bridge.request("status")
+    backend._events.apply(payload)
+    backend._events.apply(payload)
+    assert len(backend.runtime.stop_history) == 1
+
+    backend._events.apply({**payload, identity_field: 2})
+
+    assert len(backend.runtime.stop_history) == 2
+
+
+@pytest.mark.parametrize(
+    ("details", "reason", "kind"),
+    [
+        ({}, "breakpoint", "watchpoint"),
+        ({"stop_reason": "step", "stop_kind": "step"}, "step", "step"),
+        ({"stop_reason": None, "stop_kind": None}, None, "unknown"),
+    ],
+)
+def test_inventory_only_replaces_stop_details_it_reports(
+    details: dict[str, object], reason: str | None, kind: str
+) -> None:
+    backend, bridge = _backend()
+    backend.runtime.mark_inferior_paused("breakpoint", stop_kind="watchpoint")
+    with patch.object(
+        bridge,
+        "request",
+        return_value={
+            "current_inferior_id": 1,
+            "targets": [{"inferior_id": 1, "execution_state": "paused", **details}],
+        },
+    ):
+        assert isinstance(backend.list_inferiors(), OperationSuccess)
+
+    assert backend.runtime.stop_reason == reason
+    assert backend.runtime.stop_kind == kind
+
+
+@pytest.mark.parametrize("state", ["running", "not_started", "unknown"])
+def test_inventory_state_transition_clears_previous_stop(state: str) -> None:
+    backend, bridge = _backend()
+    backend.runtime.mark_inferior_paused("breakpoint", stop_kind="watchpoint")
+    with patch.object(
+        bridge,
+        "request",
+        return_value={
+            "current_inferior_id": 1,
+            "targets": [{"inferior_id": 1, "execution_state": state}],
+        },
+    ):
+        assert isinstance(backend.list_inferiors(), OperationSuccess)
+
+    assert backend.runtime.execution_state == state
+    assert backend.runtime.stop_reason is None
+    assert backend.runtime.stop_kind == "unknown"
+
+
+def test_unknown_execution_state_replaces_previous_runtime_state() -> None:
+    backend, _ = _backend()
+    backend.runtime.mark_inferior_running()
+
+    status = backend._events.apply(
+        {
+            "execution_state": "future-state",
+            "target_loaded": True,
+            "current_inferior_id": 1,
+            "inferior_count": 1,
+        }
+    )
+
+    assert status.execution_state == "unknown"
+    assert backend.runtime.execution_state == "unknown"
+    assert backend.runtime.stop_history == []
+
+
+def test_malformed_stop_does_not_partially_update_runtime() -> None:
+    backend, bridge = _backend()
+    backend.runtime.mark_inferior_running()
+    backend.runtime.mark_thread_selected(99)
+    payload = bridge.request("status")
+    with pytest.raises(DebuggerDecodeError):
+        backend._events.apply({**payload, "signal_code": "bad integer"})
+
+    assert backend.runtime.execution_state == "running"
+    assert backend.runtime.current_thread_id == 99
+    assert backend.runtime.stop_history == []
+    backend._events.apply(payload)
+    assert len(backend.runtime.stop_history) == 1
+
+
+def test_crash_detail_follows_selected_inferior() -> None:
+    backend, bridge = _backend()
+    backend._events.apply(bridge.request("status"))
+    assert backend.runtime.status_snapshot(debugger_alive=True).state_detail == "crashed"
+
+    backend.runtime.mark_inferior_paused("breakpoint", inferior_id=2)
+    backend.runtime.mark_inferior_selected(2)
+    assert backend.runtime.status_snapshot(debugger_alive=True).state_detail is None
+
+    backend.runtime.mark_inferior_selected(1)
+    assert backend.runtime.status_snapshot(debugger_alive=True).state_detail == "crashed"
+
+
+@pytest.mark.parametrize(
+    ("details", "expected"),
+    [
+        ({}, "crashed"),
+        ({"stop_reason": "signal", "stop_kind": "signal"}, "crashed"),
+        ({"stop_reason": "breakpoint", "stop_kind": "breakpoint"}, None),
+        ({"stop_reason": "breakpoint"}, None),
+        ({"stop_kind": "breakpoint"}, None),
+        ({"stop_reason": None}, None),
+    ],
+)
+def test_inventory_crash_detail_belongs_to_the_reported_stop(
+    details: dict[str, object], expected: str | None
+) -> None:
+    backend, bridge = _backend()
+    backend._events.apply(bridge.request("status"))
+    with patch.object(
+        bridge,
+        "request",
+        return_value={
+            "current_inferior_id": 1,
+            "targets": [{"inferior_id": 1, "execution_state": "paused", **details}],
+        },
+    ):
+        assert isinstance(backend.list_inferiors(), OperationSuccess)
+
+    assert backend.runtime.status_snapshot(debugger_alive=True).state_detail == expected
 
 
 def test_status_enriches_crash_and_stop_event() -> None:
@@ -455,10 +648,66 @@ def test_catchpoint_uses_breakpoint_native_namespace_without_duplicates() -> Non
     assert [record.type for record in listed.breakpoints] == ["breakpoint", "catchpoint"]
 
 
+@pytest.mark.parametrize(
+    ("selector", "expected"),
+    [
+        (CurrentLocation(), InspectionLocation(kind="current")),
+        (FunctionLocation("main"), InspectionLocation(kind="function", function="main")),
+        (AddressLocation("0x123"), InspectionLocation(kind="address", address="0x123")),
+        (AddressRangeLocation("0x123", "0x456"), InspectionLocation(kind="address_range")),
+        (
+            FileLineLocation("main.c", 7),
+            InspectionLocation(kind="file_line", file="main.c", fullname="main.c", line=7),
+        ),
+        (
+            FileRangeLocation("main.c", 7, 10),
+            InspectionLocation(kind="file_line", file="main.c", fullname="main.c"),
+        ),
+    ],
+)
+def test_empty_disassembly_keeps_typed_request_metadata(
+    selector: DisassemblyLocation, expected: InspectionLocation
+) -> None:
+    backend, _ = _backend()
+
+    result = _value(backend.disassemble(DisassemblyRequest(location=selector)))
+
+    assert result.location == expected
+
+
+def test_source_range_falls_back_to_typed_request_metadata() -> None:
+    backend, bridge = _backend()
+    with patch.object(bridge, "request", return_value={"lines": []}) as source_request:
+        source = _value(
+            backend.get_source_context(
+                SourceContextRequest(location=FileRangeLocation("main.c", 7, 10))
+            )
+        )
+
+    assert source.location == InspectionLocation(kind="file_range", file="main.c")
+    assert source.range.start_line == 7
+    assert source.range.end_line == 10
+    source_request.assert_called_once_with(
+        "source",
+        timeout_sec=ANY,
+        file="main.c",
+        start_line=7,
+        end_line=10,
+        thread_id=None,
+        frame=None,
+        context_before=5,
+        context_after=5,
+    )
+
+
 def test_source_and_value_enrichment_are_published() -> None:
     backend, _ = _backend()
 
-    source = _value(backend.get_source_context(file="main.c", line=2))
+    source = _value(
+        backend.get_source_context(
+            SourceContextRequest(location=FileLineLocation(file="main.c", line=2))
+        )
+    )
     assert source.lines[0].column == 7
 
     variables = _value(backend.get_variables())

@@ -24,7 +24,7 @@ from gdb_mcp.session import registry as registry_module
 from gdb_mcp.session.config import SessionConfig
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.registry import SessionRegistry
-from gdb_mcp.session.runtime import SessionRuntime
+from gdb_mcp.session.runtime import RuntimeSnapshot, SessionRuntime
 from gdb_mcp.session.service import SessionService
 from gdb_mcp.session.state import SessionState
 from tests.support import failed, succeeded
@@ -51,8 +51,18 @@ def _session_double() -> Mock:
         last_failure_message=None,
     )
     session.runtime.inferiors_state_summary.return_value = []
-    session.runtime.status_snapshot.return_value = SessionStatusSnapshot(
-        debugger_alive=False, target_loaded=False, session_state=SessionState.CREATED
+    session.runtime.snapshot.return_value = RuntimeSnapshot(
+        status=SessionStatusSnapshot(
+            debugger_alive=False, target_loaded=False, session_state=SessionState.CREATED
+        ),
+        config=None,
+        attached_pid=None,
+        current_thread_id=None,
+        current_frame=None,
+        last_failure_message=None,
+        last_stop_event=None,
+        stop_history=(),
+        command_transcript=(),
     )
     session.has_controller = False
     session.is_running = False
@@ -214,6 +224,18 @@ class TestSessionRegistry:
         assert result.message == "stop failed"
         assert manager.get_session(session_id) is session
 
+    def test_close_session_propagates_failure_and_clears_closing_marker(self) -> None:
+        session = _session_double()
+        manager = SessionRegistry(session_factory=_session_factory_from([session]))
+        session_id = _publish_session(manager, session)
+        session.has_controller = True
+        session.stop.side_effect = RuntimeError("stop bug")
+
+        with pytest.raises(RuntimeError, match="stop bug"):
+            manager.close_session(session_id)
+
+        assert manager.resolve_session(session_id) is session
+
     def test_close_session_rejects_inconsistent_running_session_without_controller(self) -> None:
         """close_session should not silently drop a logically running session."""
 
@@ -321,7 +343,17 @@ class TestSessionRegistry:
             current_frame=1,
             last_failure_message=None,
         )
-        session.runtime.status_snapshot.return_value = session.get_status.return_value.value
+        session.runtime.snapshot.return_value = RuntimeSnapshot(
+            status=session.get_status.return_value.value,
+            config=session.config,
+            attached_pid=None,
+            current_thread_id=2,
+            current_frame=1,
+            last_failure_message=None,
+            last_stop_event=None,
+            stop_history=(),
+            command_transcript=(),
+        )
         manager = SessionRegistry(session_factory=lambda _debugger: session)
 
         session_id = _publish_session(manager, session)

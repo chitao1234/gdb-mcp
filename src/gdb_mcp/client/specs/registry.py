@@ -23,19 +23,6 @@ from gdb_mcp.contracts import (
     TOOL_WORKFLOW_BATCH,
 )
 
-from ..input_parsers import (
-    parse_breakpoint_manage_input,
-    parse_breakpoint_query_input,
-    parse_context_manage_input,
-    parse_context_query_input,
-    parse_inferior_manage_input,
-    parse_inferior_query_input,
-    parse_inspect_query_input,
-    parse_run_until_failure_input,
-    parse_session_query_input,
-    parse_session_start_input,
-    parse_workflow_batch_input,
-)
 from ..renderers import render_action_payload, render_mapping, render_session_start
 from .breakpoint import (
     _build_breakpoint_manage,
@@ -101,7 +88,7 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
         ToolCliSpec(
             name=TOOL_SESSION_START,
             configure_parser=_configure_session_start,
-            parse_input=parse_session_start_input,
+            parse_input=_parse_namespace,
             build_arguments=_build_session_start,
             render_human=render_session_start,
         )
@@ -119,7 +106,7 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
         ToolCliSpec(
             name=TOOL_SESSION_QUERY,
             configure_parser=_configure_session_query,
-            parse_input=parse_session_query_input,
+            parse_input=_parse_namespace,
             build_arguments=_build_session_query,
             render_human=render_action_payload,
         )
@@ -137,7 +124,7 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
         ToolCliSpec(
             name=TOOL_INFERIOR_QUERY,
             configure_parser=_configure_inferior_query,
-            parse_input=parse_inferior_query_input,
+            parse_input=_parse_namespace,
             build_arguments=_build_inferior_query,
             render_human=render_action_payload,
         )
@@ -146,7 +133,7 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
         ToolCliSpec(
             name=TOOL_INFERIOR_MANAGE,
             configure_parser=_configure_inferior_manage,
-            parse_input=parse_inferior_manage_input,
+            parse_input=_parse_namespace,
             build_arguments=_build_inferior_manage,
             render_human=render_action_payload,
         )
@@ -164,7 +151,7 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
         ToolCliSpec(
             name=TOOL_BREAKPOINT_QUERY,
             configure_parser=_configure_breakpoint_query,
-            parse_input=parse_breakpoint_query_input,
+            parse_input=_parse_namespace,
             build_arguments=_build_breakpoint_query,
             render_human=render_action_payload,
         )
@@ -173,7 +160,7 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
         ToolCliSpec(
             name=TOOL_BREAKPOINT_MANAGE,
             configure_parser=_configure_breakpoint_manage,
-            parse_input=parse_breakpoint_manage_input,
+            parse_input=_parse_namespace,
             build_arguments=_build_breakpoint_manage,
             render_human=render_action_payload,
         )
@@ -200,7 +187,7 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
         ToolCliSpec(
             name=TOOL_CONTEXT_QUERY,
             configure_parser=_configure_context_query,
-            parse_input=parse_context_query_input,
+            parse_input=_parse_namespace,
             build_arguments=_build_context_query,
             render_human=render_action_payload,
         )
@@ -209,7 +196,7 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
         ToolCliSpec(
             name=TOOL_CONTEXT_MANAGE,
             configure_parser=_configure_context_manage,
-            parse_input=parse_context_manage_input,
+            parse_input=_parse_namespace,
             build_arguments=_build_context_manage,
             render_human=render_action_payload,
         )
@@ -218,7 +205,7 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
         ToolCliSpec(
             name=TOOL_INSPECT_QUERY,
             configure_parser=_configure_inspect_query,
-            parse_input=parse_inspect_query_input,
+            parse_input=_parse_namespace,
             build_arguments=_build_inspect_query,
             render_human=render_action_payload,
         )
@@ -227,7 +214,7 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
         ToolCliSpec(
             name=TOOL_WORKFLOW_BATCH,
             configure_parser=_configure_workflow_batch,
-            parse_input=parse_workflow_batch_input,
+            parse_input=_parse_namespace,
             build_arguments=_build_workflow_batch,
             render_human=render_mapping,
         )
@@ -254,7 +241,7 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
         ToolCliSpec(
             name=TOOL_RUN_UNTIL_FAILURE,
             configure_parser=_configure_run_until_failure,
-            parse_input=parse_run_until_failure_input,
+            parse_input=_parse_namespace,
             build_arguments=_build_run_until_failure,
             render_human=render_mapping,
         )

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import base64
-import json
 import os
 import re
 import shutil
@@ -12,26 +10,19 @@ import subprocess
 import threading
 import time
 from collections import deque
-from collections.abc import Callable
-from functools import wraps
 from pathlib import Path
-from typing import BinaryIO, Literal, TypeVar
+from typing import BinaryIO, Literal
 from urllib.parse import urlsplit
 
-from typing_extensions import ParamSpec
-
-from ..contracts import ACTION_JUMP, DEBUGGER_DELVE
+from ..contracts import ACTION_JUMP, ACTION_NEXT_INSTRUCTION, DEBUGGER_DELVE
 from ..domain import (
-    AddressRange,
     BackendData,
     BacktraceInfo,
     BreakpointInfo,
     BreakpointListInfo,
     CatchpointType,
     CommandExecutionInfo,
-    CommandTranscriptEntry,
     DisassemblyInfo,
-    DisassemblyInstructionRecord,
     ExpressionValueInfo,
     FinishInfo,
     FollowForkMode,
@@ -41,74 +32,47 @@ from ..domain import (
     InferiorListInfo,
     InferiorRecord,
     InferiorSelectionInfo,
-    InspectionContextInfo,
-    InspectionLocation,
     LocationExecutionInfo,
-    MemoryBlockRecord,
     MemoryReadInfo,
     MessageResult,
     OperationError,
     OperationSuccess,
-    RegisterRecord,
     RegistersInfo,
     SessionMessage,
     SessionStartupInfo,
     SessionStatusSnapshot,
     SourceContextInfo,
-    SourceLineRecord,
-    SourceRange,
     StartupDiagnostics,
-    StopEvent,
-    StopKind,
     ThreadListInfo,
-    ThreadRecord,
     ThreadSelectionInfo,
     VariablesInfo,
     WaitForStopInfo,
     WatchpointAccessType,
 )
-from ..domain.errors import DebuggerDecodeError
 from ..domain.results import payload_to_mapping
-from ..transport.delve_rpc import DelveRpcClient, DelveRpcError, RpcRequest
+from ..transport.delve_rpc import DelveRpcClient, DelveRpcError
 from .backends import BackendCapabilities, BackendOperation
 from .config import SessionConfig
 from .constants import DEFAULT_TIMEOUT_SEC
 from .debugger_args import debugger_args_problems
+from .delve_breakpoints import DelveBreakpoints
+from .delve_execution import DelveExecution
+from .delve_inspection import DelveInspection
+from .delve_protocols import operation as _operation
 from .delve_values import (
-    breakpoint_record,
-    frame_record,
     integer,
-    mapping,
-    mappings,
-    optional_integer,
     text,
-    variable_record,
-    variable_value,
 )
-from .inspection.register_classes import guess_register_family, is_vector_register
 from .process_cleanup import cleanup_process
 from .protocols import OsModuleProtocol, TimeModuleProtocol
+from .requests import (
+    DEFAULT_EXECUTION_OPTIONS,
+    DisassemblyRequest,
+    ExecutionOptions,
+    SourceContextRequest,
+)
 from .runtime import SessionRuntime
 from .state import SessionState
-
-P = ParamSpec("P")
-T = TypeVar("T")
-
-
-def _operation(
-    function: Callable[P, OperationSuccess[T]],
-) -> Callable[P, OperationSuccess[T] | OperationError]:
-    @wraps(function)
-    def invoke(*args: P.args, **kwargs: P.kwargs) -> OperationSuccess[T] | OperationError:
-        try:
-            return function(*args, **kwargs)
-        except DelveRpcError as exc:
-            return OperationError(message=str(exc), code=exc.code)
-        except OSError as exc:
-            return OperationError(message=str(exc))
-
-    return invoke
-
 
 _OPERATIONS: frozenset[BackendOperation] = frozenset(
     {
@@ -121,7 +85,7 @@ _OPERATIONS: frozenset[BackendOperation] = frozenset(
         "step",
         "next",
         "step_instruction",
-        "next_instruction",
+        ACTION_NEXT_INSTRUCTION,
         "finish",
         "interrupt",
         "wait_for_stop",
@@ -152,14 +116,6 @@ _OPERATIONS: frozenset[BackendOperation] = frozenset(
     }
 )
 
-_LOAD_CONFIG: dict[str, object] = {
-    "FollowPointers": True,
-    "MaxVariableRecurse": 2,
-    "MaxStringLen": 1024,
-    "MaxArrayValues": 64,
-    "MaxStructFields": -1,
-}
-
 
 class DelveRpcBackend:
     """One selected dlv executable or external RPC connection per session."""
@@ -171,22 +127,12 @@ class DelveRpcBackend:
         self._output_workers: list[threading.Thread] = []
         self._output: deque[str] = deque(maxlen=2000)
         self._output_lock = threading.Lock()
-        self._command_lock = threading.RLock()
-        self._execution_done = threading.Event()
-        self._execution_done.set()
-        self._execution_error: Exception | None = None
-        self._execution_result: dict[str, object] = {}
-        self._pending: RpcRequest | None = None
-        self._last_state: dict[str, object] = {}
-        self._last_stop_key: tuple[object, ...] | None = None
-        self._generation = 0
-        self._command = ""
-        self._has_run = False
         self._attached = False
         self._version: dict[str, object] = {}
         self._unsupported: set[BackendOperation] = set()
-        self._temporary: set[int] = set()
-        self._interrupt_requested = False
+        self._inspection = DelveInspection(self.runtime, self)
+        self._breakpoints = DelveBreakpoints(self, self._inspection)
+        self._execution = DelveExecution(self.runtime, self, self._inspection, self._breakpoints)
 
     @property
     def capabilities(self) -> BackendCapabilities:
@@ -228,6 +174,15 @@ class DelveRpcBackend:
         if version.get("APIVersion") != 2:
             raise DelveRpcError("Delve did not select RPC API v2", "protocol_error")
         self._version = version
+        release = re.search(r"(\d+)\.(\d+)", text(version.get("DelveVersion")))
+        self._inspection.memory_read_limit = 1000
+        if release:
+            version_pair = int(release[1]), int(release[2])
+            if version_pair < (1, 23):
+                # Older Delve silently accepts unknown Command names without executing them.
+                self._unsupported.add(ACTION_NEXT_INSTRUCTION)
+            if version_pair >= (1, 24):
+                self._inspection.memory_read_limit = 65536
         self._client_state(self._request("State", {"NonBlocking": True}, timeout_sec=timeout_sec))
 
     def _connect(self, endpoint: str, *, timeout_sec: float) -> None:
@@ -388,19 +343,11 @@ class DelveRpcBackend:
             if working_dir and not Path(working_dir).is_dir():
                 raise DelveRpcError(f"Working directory does not exist: {working_dir}", "not_found")
             self.runtime.begin_startup(config)
-            self._has_run = False
             self._attached = False
-            self._temporary.clear()
+            self._breakpoints.reset()
             self._unsupported.clear()
             self._version = {}
-            self._last_state = {}
-            self._last_stop_key = None
-            self._command = ""
-            self._pending = None
-            self._execution_error = None
-            self._execution_result = {}
-            self._execution_done = threading.Event()
-            self._execution_done.set()
+            self._execution.reset()
             with self._output_lock:
                 self._output.clear()
             try:
@@ -414,10 +361,10 @@ class DelveRpcBackend:
                 self.runtime.mark_failed(str(exc))
                 raise
             self.runtime.mark_ready()
-            self.runtime.follow_fork_mode = None
-            self.runtime.detach_on_fork = None
+            self.runtime.mark_follow_fork_mode(None)
+            self.runtime.mark_detach_on_fork(None)
             if self._client is None:
-                self.runtime.is_running = False
+                self.runtime.mark_debugger_running(False)
                 self.runtime.update_inferior_inventory(
                     current_inferior_id=None, count=0, inferior_ids=()
                 )
@@ -447,12 +394,11 @@ class DelveRpcBackend:
     def _cleanup(self, *, graceful: bool = False) -> None:
         deadline = time.monotonic() + 10
         client, process = self._client, self._process
-        with self._command_lock:
-            self._generation += 1
+        self._execution.cancel_generation()
 
         def shutdown() -> None:
             if client is not None and client.alive:
-                if not self._execution_done.is_set():
+                if not self._execution.done.is_set():
                     client.request("Command", {"name": "halt"}, timeout_sec=2)
                 client.request("Detach", {"Kill": not self._attached}, timeout_sec=2)
 
@@ -462,7 +408,7 @@ class DelveRpcBackend:
         finally:
             if client is not None:
                 client.close()
-            self._execution_done.wait(max(0.0, deadline - time.monotonic()))
+            self._execution.done.wait(max(0.0, deadline - time.monotonic()))
             for worker in self._output_workers:
                 worker.join(timeout=max(0.0, deadline - time.monotonic()))
             self._output_workers.clear()
@@ -486,7 +432,7 @@ class DelveRpcBackend:
                     self._request("State", {"NonBlocking": True}, timeout_sec=2), record=False
                 )
             except DelveRpcError as exc:
-                self.runtime.last_failure_message = str(exc)
+                self.runtime.record_failure_message(str(exc))
                 if not client.alive:
                     self.runtime.mark_transport_terminated(str(exc))
         return OperationSuccess(
@@ -510,543 +456,119 @@ class DelveRpcBackend:
             if self.runtime.state != SessionState.READY:
                 raise DelveRpcError("Start a Delve session before attaching", "not_started")
             self._spawn(pid=pid, timeout_sec=timeout_sec)
-            self.runtime.is_running = True
+            self.runtime.mark_debugger_running(True)
             return OperationSuccess(
                 CommandExecutionInfo(
                     command="attach",
-                    backend_data=self._data({"version": self._version, "State": self._last_state}),
+                    backend_data=self._data(
+                        {"version": self._version, "State": self._execution.last_state}
+                    ),
                 )
             )
 
     def _client_state(self, response: dict[str, object], *, record: bool = True) -> None:
-        state = mapping(response.get("State"))
-        if not state:
-            raise DelveRpcError("Delve returned no debugger state", "protocol_error")
-        with self._command_lock:
-            if (
-                not record
-                and self._pending is not None
-                and not self._execution_done.is_set()
-                and not state.get("Running")
-            ):
-                return
-            self._last_state = state
-            self.runtime.target_loaded = True
-            self.runtime.update_inferior_inventory(
-                current_inferior_id=1, count=1, inferior_ids=(1,)
-            )
-            thread = mapping(state.get("currentThread"))
-            goroutine = mapping(state.get("currentGoroutine"))
-            goroutine_id = integer(goroutine.get("id"), 0) or integer(thread.get("goroutineID"), 0)
-            previous_goroutine = self.runtime.current_thread_id
-            self.runtime.mark_thread_selected(goroutine_id or None)
-            if previous_goroutine != (goroutine_id or None) or self.runtime.current_frame is None:
-                self.runtime.mark_frame_selected(0)
-            if state.get("Running"):
-                self.runtime.mark_inferior_running()
-                return
-            breakpoint = mapping(thread.get("breakPoint"))
-            native_reason = text(state.get("stopReason"))
-            reason = native_reason
-            if state.get("exited"):
-                reason = reason or "exited"
-                self.runtime.mark_inferior_exited(reason, optional_integer(state.get("exitStatus")))
-            else:
-                if optional_integer(breakpoint.get("id")) == -1:
-                    reason = "panic"
-                elif breakpoint:
-                    reason = "watchpoint" if breakpoint.get("WatchExpr") else "breakpoint-hit"
-                elif self._interrupt_requested:
-                    reason = "interrupt"
-                elif not reason:
-                    reason = (
-                        "step"
-                        if self._command
-                        in {"step", "next", "stepOut", "stepInstruction", "nextInstruction"}
-                        else "entry" if not self._has_run else "unknown"
-                    )
-                kinds: dict[str, StopKind] = {
-                    "launched": "entry",
-                    "attached": "pause",
-                    "manual": "pause",
-                    "next finished": "step",
-                    "call returned": "step",
-                    "hardcoded breakpoint": "breakpoint",
-                }
-                canonical = kinds.get(native_reason)
-                if reason == "panic":
-                    canonical = "exception"
-                reason = native_reason or reason
-                self.runtime.mark_inferior_paused(reason, stop_kind=canonical)
-            if not record:
-                return
-            frame = frame_record(goroutine.get("currentLoc") or thread)
-            key = (
-                self._generation,
-                self.runtime.execution_state,
-                reason,
-                goroutine_id,
-                frame.addr,
-                optional_integer(breakpoint.get("id")),
-            )
-            if key == self._last_stop_key:
-                return
-            self._last_stop_key = key
-            self.runtime.record_stop_event(
-                StopEvent(
-                    execution_state=self.runtime.execution_state,
-                    reason=reason,
-                    stop_kind=self.runtime.stop_kind,
-                    thread_id=goroutine_id or None,
-                    inferior_id=1,
-                    frame=frame,
-                    breakpoint_number=str(breakpoint["id"]) if "id" in breakpoint else None,
-                    exit_code=self.runtime.exit_code,
-                    timestamp=time.time(),
-                    backend_data=self._data({"State": state}),
-                )
-            )
+        self._execution._client_state(response, record=record)
 
-    def _begin_execution(self, command: str, arguments: dict[str, object] | None = None) -> None:
-        with self._command_lock:
-            if not self._execution_done.is_set() or self.runtime.execution_state == "running":
-                raise DelveRpcError("The target is already running", "inferior_running")
-            if self.runtime.config is not None and self.runtime.config.core:
-                raise DelveRpcError("Cannot execute a core dump", "unsupported_combination")
-            payload = {"name": command, "ReturnInfoLoadConfig": _LOAD_CONFIG, **(arguments or {})}
-            request = self._require_client().submit("Command", payload)
-            self._generation += 1
-            generation = self._generation
-            self._command = command
-            self._interrupt_requested = False
-            self._pending = request
-            self._execution_done = threading.Event()
-            done = self._execution_done
-            self._execution_error = None
-            self._has_run = True
-            self.runtime.mark_frame_selected(None)
-            self.runtime.mark_inferior_running()
-
-        def complete() -> None:
-            try:
-                response = request.wait()
-                with self._command_lock:
-                    if generation != self._generation:
-                        return
-                    self._execution_result = response
-                    self._client_state(response)
-                self._remove_hit_temporary_breakpoints()
-            except Exception as exc:
-                with self._command_lock:
-                    if generation == self._generation:
-                        self._execution_error = exc
-                        self._pending = None
-                        if not isinstance(exc, DelveRpcError):
-                            return
-                        if self._client is not None and self._client.alive:
-                            try:
-                                self._client_state(
-                                    self._request("State", {"NonBlocking": True}), record=False
-                                )
-                            except (DelveRpcError, DebuggerDecodeError):
-                                pass
-                        elif self.runtime.state != SessionState.STOPPED:
-                            self.runtime.mark_transport_terminated(str(exc))
-            finally:
-                if generation == self._generation:
-                    self.runtime.record_command_transcript(
-                        CommandTranscriptEntry(
-                            command=command,
-                            sent_command=json.dumps(payload),
-                            status="error" if self._execution_error else "success",
-                            result_class="delve",
-                            error=str(self._execution_error) if self._execution_error else None,
-                            execution_state=self.runtime.execution_state,
-                            stop_reason=self.runtime.stop_reason,
-                            stop_kind=self.runtime.stop_kind,
-                            timestamp=time.time(),
-                        )
-                    )
-                done.set()
-
-        threading.Thread(target=complete, name="delve-execution", daemon=True).start()
-
-    def _execute(
-        self,
-        command: str,
-        *,
-        wait_for_stop: bool,
-        timeout_sec: int,
-        reverse: bool = False,
-        arguments: dict[str, object] | None = None,
-    ) -> OperationSuccess[CommandExecutionInfo]:
-        if reverse:
-            if not self._request("Recorded").get("Recorded"):
-                raise DelveRpcError(
-                    "Reverse execution requires a recorded Delve target", "unsupported_combination"
-                )
-            command = {
-                "continue": "rewind",
-                "step": "reverseStep",
-                "next": "reverseNext",
-                "stepOut": "reverseStepOut",
-                "stepInstruction": "reverseStepInstruction",
-                "nextInstruction": "reverseNextInstruction",
-            }[command]
-        self._begin_execution(command, arguments)
-        if wait_for_stop:
-            if not self._execution_done.wait(timeout_sec):
-                raise DelveRpcError(
-                    f"Timed out waiting for Delve {command}; the target may still be running",
-                    "command_timeout",
-                )
-            if self._execution_error is not None:
-                raise self._execution_error
-        return OperationSuccess(
-            CommandExecutionInfo(
-                command=command,
-                backend_data=self._data(
-                    self._execution_result
-                    if self._execution_done.is_set()
-                    else {"execution_state": "running"}
-                ),
-            )
-        )
-
-    @_operation
     def run(
         self,
         args: list[str] | None = None,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
-        wait_for_stop: bool = True,
-    ) -> OperationSuccess[CommandExecutionInfo]:
-        if self._attached:
-            raise DelveRpcError(
-                "An attached target uses continue, not run/restart", "unsupported_combination"
-            )
-        if self.runtime.config is not None and self.runtime.config.core:
-            raise DelveRpcError("Cannot execute a core dump", "unsupported_combination")
-        if self.runtime.execution_state == "running" or not self._execution_done.is_set():
-            raise DelveRpcError("The target is already running", "inferior_running")
-        if self._has_run or args is not None:
-            self._request(
-                "Restart", {"ResetArgs": args is not None, "NewArgs": args}, timeout_sec=timeout_sec
-            )
-            self.runtime.mark_inferior_paused("entry")
-        return self._execute("continue", wait_for_stop=wait_for_stop, timeout_sec=timeout_sec)
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        return self._execution.run(args, options)
 
-    @_operation
     def continue_execution(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
-    ) -> OperationSuccess[CommandExecutionInfo]:
-        return self._execute(
-            "continue", wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
-        )
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        return self._execution.continue_execution(options=options, reverse=reverse)
 
-    @_operation
     def step(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
-    ) -> OperationSuccess[CommandExecutionInfo]:
-        return self._execute(
-            "step", wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
-        )
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        return self._execution.step(options=options, reverse=reverse)
 
-    @_operation
     def next(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
-    ) -> OperationSuccess[CommandExecutionInfo]:
-        return self._execute(
-            "next", wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
-        )
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        return self._execution.next(options=options, reverse=reverse)
 
-    @_operation
     def step_instruction(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
-    ) -> OperationSuccess[CommandExecutionInfo]:
-        return self._execute(
-            "stepInstruction", wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
-        )
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        return self._execution.step_instruction(options=options, reverse=reverse)
 
-    @_operation
     def next_instruction(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
-    ) -> OperationSuccess[CommandExecutionInfo]:
-        return self._execute(
-            "nextInstruction", wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
-        )
+    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+        return self._execution.next_instruction(options=options, reverse=reverse)
 
-    @_operation
     def finish(
         self,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
-        *,
-        wait_for_stop: bool = True,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
-    ) -> OperationSuccess[FinishInfo]:
-        self._execute(
-            "stepOut", wait_for_stop=wait_for_stop, timeout_sec=timeout_sec, reverse=reverse
-        )
-        returns = (
-            mappings(mapping(self._last_state.get("currentThread")).get("ReturnValues"))
-            if self._execution_done.is_set()
-            else []
-        )
-        return OperationSuccess(
-            FinishInfo(
-                message="Finished frame" if self._execution_done.is_set() else "Finish started",
-                return_value=(
-                    ", ".join(variable_value(value) for value in returns) if returns else None
-                ),
-                frame=(
-                    self.runtime.last_stop_event.frame
-                    if self._execution_done.is_set() and self.runtime.last_stop_event is not None
-                    else None
-                ),
-                execution_state=self.runtime.execution_state,
-                stop_reason=self.runtime.stop_reason,
-                stop_kind=self.runtime.stop_kind,
-                last_stop_event=(
-                    self.runtime.last_stop_event if self._execution_done.is_set() else None
-                ),
-            )
-        )
+    ) -> OperationSuccess[FinishInfo] | OperationError:
+        return self._execution.finish(options, reverse)
 
-    @_operation
-    def interrupt(self) -> OperationSuccess[MessageResult]:
-        self._interrupt_requested = True
-        response = self._request("Command", {"name": "halt"})
-        if self._execution_done.is_set():
-            self._client_state(response)
-        return OperationSuccess(MessageResult("Interrupt requested", self._data(response)))
+    def interrupt(self) -> OperationSuccess[MessageResult] | OperationError:
+        return self._execution.interrupt()
 
-    @_operation
     def wait_for_stop(
         self, *, timeout_sec: int = DEFAULT_TIMEOUT_SEC, stop_reasons: tuple[str, ...] = ()
-    ) -> OperationSuccess[WaitForStopInfo]:
-        self._require_client()
-        source = "existing" if self.runtime.execution_state != "running" else "waited"
-        deadline = time.monotonic() + timeout_sec
-        completed = self._execution_done.wait(timeout_sec)
-        if completed and self._execution_error is not None:
-            raise self._execution_error
-        if completed:
-            self._client_state(self._request("State", {"NonBlocking": True}))
-        while (
-            completed and self.runtime.execution_state == "running" and time.monotonic() < deadline
-        ):
-            time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
-            self._client_state(
-                self._request(
-                    "State",
-                    {"NonBlocking": True},
-                    timeout_sec=max(0.1, deadline - time.monotonic()),
-                )
-            )
-        stopped = completed and self.runtime.execution_state in {"paused", "exited"}
-        matched = stopped and (
-            not stop_reasons
-            or self.runtime.stop_reason in stop_reasons
-            or self.runtime.stop_kind in stop_reasons
-        )
-        return OperationSuccess(
-            WaitForStopInfo(
-                message="Target stopped" if stopped else "Timed out waiting for stop",
-                matched=matched,
-                timed_out=not stopped,
-                source=source,
-                execution_state=self.runtime.execution_state,
-                stop_reason=self.runtime.stop_reason,
-                stop_kind=self.runtime.stop_kind,
-                reason_filter=list(stop_reasons),
-                last_stop_event=self.runtime.last_stop_event,
-            )
-        )
+    ) -> OperationSuccess[WaitForStopInfo] | OperationError:
+        return self._execution.wait_for_stop(timeout_sec=timeout_sec, stop_reasons=stop_reasons)
 
-    @_operation
     def call_function(
         self, function_call: str, timeout_sec: int = DEFAULT_TIMEOUT_SEC
-    ) -> OperationSuccess[FunctionCallInfo]:
-        self._execute(
-            "call",
-            wait_for_stop=True,
-            timeout_sec=timeout_sec,
-            arguments={"expr": function_call, "goroutineID": self.runtime.current_thread_id or -1},
-        )
-        returns = mappings(mapping(self._last_state.get("currentThread")).get("ReturnValues"))
-        return OperationSuccess(
-            FunctionCallInfo(function_call, ", ".join(variable_value(value) for value in returns))
-        )
+    ) -> OperationSuccess[FunctionCallInfo] | OperationError:
+        return self._execution.call_function(function_call, timeout_sec)
 
-    def _scope(self, thread_id: int | None = None, frame: int | None = None) -> dict[str, object]:
-        self._require_client()
-        if self.runtime.execution_state == "running":
-            raise DelveRpcError("Pause the target before inspecting it", "inferior_running")
-        return {
-            "GoroutineID": (
-                thread_id if thread_id is not None else self.runtime.current_thread_id or -1
-            ),
-            "Frame": frame if frame is not None else self.runtime.current_frame or 0,
-        }
+    def get_threads(self) -> OperationSuccess[ThreadListInfo] | OperationError:
+        return self._inspection.get_threads()
 
-    @_operation
-    def get_threads(self) -> OperationSuccess[ThreadListInfo]:
-        self._scope()
-        threads: list[ThreadRecord] = []
-        start = 0
-        while True:
-            response = self._request("ListGoroutines", {"Start": start, "Count": 1000})
-            for goroutine in mappings(response.get("Goroutines")):
-                location = mapping(goroutine.get("userCurrentLoc")) or mapping(
-                    goroutine.get("currentLoc")
-                )
-                values = dict(goroutine)
-                values.update(
-                    {
-                        "id": str(integer(goroutine.get("id"))),
-                        "name": text(mapping(location.get("function")).get("name")),
-                        "state": "running" if integer(goroutine.get("threadID"), 0) else "waiting",
-                        "target-id": f"goroutine {integer(goroutine.get('id'))}",
-                        "native_thread_id": integer(goroutine.get("threadID"), 0),
-                        "frame": frame_record(location).to_payload(),
-                    }
-                )
-                threads.append(ThreadRecord.from_payload(values))
-            next_start = integer(response.get("Nextg"), -1)
-            if next_start < 0:
-                break
-            if next_start <= start:
-                raise DelveRpcError("Delve goroutine pagination did not advance", "protocol_error")
-            start = next_start
-        return OperationSuccess(
-            ThreadListInfo(
-                threads,
-                (
-                    str(self.runtime.current_thread_id)
-                    if self.runtime.current_thread_id is not None
-                    else None
-                ),
-            )
-        )
-
-    def _stack(self, thread_id: int | None, max_frames: int) -> list[dict[str, object]]:
-        scope = self._scope(thread_id)
-        response = self._request("Stacktrace", {"Id": scope["GoroutineID"], "Depth": max_frames})
-        return mappings(response.get("Locations"))[:max_frames]
-
-    @_operation
     def get_backtrace(
         self, thread_id: int | None = None, max_frames: int = 100
-    ) -> OperationSuccess[BacktraceInfo]:
-        frames = [
-            frame_record(location, index)
-            for index, location in enumerate(self._stack(thread_id, max_frames))
-        ]
-        return OperationSuccess(
-            BacktraceInfo(
-                thread_id if thread_id is not None else self.runtime.current_thread_id, frames
-            )
-        )
+    ) -> OperationSuccess[BacktraceInfo] | OperationError:
+        return self._inspection.get_backtrace(thread_id, max_frames)
 
-    @_operation
     def get_frame_info(
         self, *, thread_id: int | None = None, frame: int | None = None
-    ) -> OperationSuccess[FrameInfo]:
-        number = frame if frame is not None else self.runtime.current_frame or 0
-        locations = self._stack(thread_id, number + 1)
-        if number < 0 or number >= len(locations):
-            raise DelveRpcError(f"Frame {number} is unavailable", "no_stack_frame")
-        return OperationSuccess(FrameInfo(frame_record(locations[number], number)))
+    ) -> OperationSuccess[FrameInfo] | OperationError:
+        return self._inspection.get_frame_info(thread_id=thread_id, frame=frame)
 
-    @_operation
-    def select_thread(self, thread_id: int) -> OperationSuccess[ThreadSelectionInfo]:
-        self._scope(thread_id)
-        response = self._request("Command", {"name": "switchGoroutine", "goroutineID": thread_id})
-        self._client_state(response, record=False)
-        self.runtime.mark_frame_selected(0)
-        location = mapping(self._last_state.get("currentGoroutine")).get("currentLoc")
-        return OperationSuccess(
-            ThreadSelectionInfo(thread_id, str(thread_id), frame_record(location))
-        )
+    def select_thread(
+        self, thread_id: int
+    ) -> OperationSuccess[ThreadSelectionInfo] | OperationError:
+        return self._inspection.select_thread(thread_id)
 
-    @_operation
-    def select_frame(self, frame_number: int) -> OperationSuccess[FrameSelectionInfo]:
-        if frame_number < 0:
-            raise DelveRpcError("frame must be nonnegative", "validation_error")
-        locations = self._stack(None, frame_number + 1)
-        if frame_number >= len(locations):
-            raise DelveRpcError(f"Frame {frame_number} is unavailable", "no_stack_frame")
-        self.runtime.mark_frame_selected(frame_number)
-        return OperationSuccess(
-            FrameSelectionInfo(frame_number, frame_record(locations[frame_number], frame_number))
-        )
+    def select_frame(
+        self, frame_number: int
+    ) -> OperationSuccess[FrameSelectionInfo] | OperationError:
+        return self._inspection.select_frame(frame_number)
 
-    def _variable(
-        self, expression: str, thread_id: int | None = None, frame: int | None = None
-    ) -> dict[str, object]:
-        response = self._request(
-            "Eval",
-            {"Scope": self._scope(thread_id, frame), "Expr": expression, "Cfg": _LOAD_CONFIG},
-        )
-        variable = mapping(response.get("Variable"))
-        if not variable:
-            raise DebuggerDecodeError("Delve Eval response has no variable")
-        if variable.get("unreadable"):
-            raise DelveRpcError(text(variable["unreadable"]), "value_unavailable")
-        return variable
-
-    @_operation
     def evaluate_expression(
         self, expression: str, thread_id: int | None = None, frame: int | None = None
-    ) -> OperationSuccess[ExpressionValueInfo]:
-        variable = self._variable(expression, thread_id, frame)
-        return OperationSuccess(
-            ExpressionValueInfo(
-                expression, variable_value(variable), type=text(variable.get("type"))
-            )
-        )
+    ) -> OperationSuccess[ExpressionValueInfo] | OperationError:
+        return self._inspection.evaluate_expression(expression, thread_id, frame)
 
-    @_operation
     def get_variables(
         self, thread_id: int | None = None, frame: int = 0
-    ) -> OperationSuccess[VariablesInfo]:
-        arguments: dict[str, object] = {"Scope": self._scope(thread_id, frame), "Cfg": _LOAD_CONFIG}
-        locals_response = self._request("ListLocalVars", arguments)
-        args_response = self._request("ListFunctionArgs", arguments)
-        variables = [
-            variable_record(value, argument=True) for value in mappings(args_response.get("Args"))
-        ]
-        variables += [
-            variable_record(value) for value in mappings(locals_response.get("Variables"))
-        ]
-        return OperationSuccess(
-            VariablesInfo(
-                thread_id if thread_id is not None else self.runtime.current_thread_id,
-                frame,
-                variables,
-            )
-        )
+    ) -> OperationSuccess[VariablesInfo] | OperationError:
+        return self._inspection.get_variables(thread_id, frame)
 
-    @_operation
     def get_registers(
         self,
         thread_id: int | None = None,
@@ -1056,420 +578,79 @@ class DelveRpcBackend:
         include_vector_registers: bool = True,
         max_registers: int | None = None,
         value_format: Literal["hex", "natural"] = "hex",
-    ) -> OperationSuccess[RegistersInfo]:
-        scope = self._scope(thread_id, frame)
-        response = self._request(
-            "ListRegisters", {"Scope": scope, "IncludeFp": include_vector_registers}
+    ) -> OperationSuccess[RegistersInfo] | OperationError:
+        return self._inspection.get_registers(
+            thread_id,
+            frame,
+            register_numbers,
+            register_names,
+            include_vector_registers,
+            max_registers,
+            value_format,
         )
-        registers = mappings(response.get("Regs"))
-        names = {name.casefold() for name in register_names or ()}
-        family = guess_register_family([text(value.get("Name")) for value in registers])
-        records: list[RegisterRecord] = []
-        for register in registers:
-            name = text(register.get("Name"))
-            number = integer(register.get("DwarfNumber"))
-            if register_numbers is not None and number not in register_numbers:
-                continue
-            if names and name.casefold() not in names:
-                continue
-            if not include_vector_registers and is_vector_register(family, name):
-                continue
-            value = text(register.get("Value"))
-            if value_format == "natural":
-                try:
-                    value = str(int(value, 0))
-                except ValueError:
-                    pass
-            records.append(
-                RegisterRecord.from_payload(
-                    {**register, "number": number, "name": name, "value": value}
-                )
-            )
-        if max_registers is not None:
-            records = records[:max_registers]
-        return OperationSuccess(RegistersInfo(records))
 
-    def _address(self, expression: str) -> int:
-        try:
-            return int(expression, 0)
-        except ValueError:
-            variable = self._variable(expression)
-            value = text(variable.get("value"))
-            if value:
-                try:
-                    return int(value, 0)
-                except ValueError as exc:
-                    raise DebuggerDecodeError(
-                        f"Delve address is not an integer: {value!r}"
-                    ) from exc
-            children = mappings(variable.get("children"))
-            if children:
-                return integer(children[0].get("addr"))
-            return integer(variable.get("addr"))
-
-    @_operation
     def read_memory(
         self, address: str, count: int, *, offset: int = 0
-    ) -> OperationSuccess[MemoryReadInfo]:
-        self._scope()
-        begin = self._address(address) + offset
-        if begin < 0 or count < 0:
-            raise DelveRpcError("Memory address and count must be nonnegative", "validation_error")
-        contents = bytearray()
-        while len(contents) < count:
-            requested = min(65536, count - len(contents))
-            response = self._request(
-                "ExamineMemory", {"Address": begin + len(contents), "Length": requested}
-            )
-            raw = response.get("Mem")
-            if not isinstance(raw, str):
-                raise DelveRpcError("Delve memory response is not base64", "protocol_error")
-            try:
-                data = base64.b64decode(raw, validate=True)
-            except ValueError as exc:
-                raise DebuggerDecodeError("Delve memory response is not base64") from exc
-            if not data or len(data) > requested:
-                raise DelveRpcError("Delve memory response has an invalid length", "protocol_error")
-            contents.extend(data)
-        blocks = (
-            [
-                MemoryBlockRecord(
-                    begin=hex(begin),
-                    end=hex(begin + len(contents)),
-                    offset=hex(offset),
-                    contents=contents.hex(),
-                )
-            ]
-            if contents
-            else []
-        )
-        return OperationSuccess(MemoryReadInfo(address, count, offset, blocks, len(contents)))
+    ) -> OperationSuccess[MemoryReadInfo] | OperationError:
+        return self._inspection.read_memory(address, count, offset=offset)
 
-    def _locations(
-        self, expression: str, thread_id: int | None = None, frame: int | None = None
-    ) -> list[dict[str, object]]:
-        response = self._request(
-            "FindLocation", {"Scope": self._scope(thread_id, frame), "Loc": expression}
-        )
-        locations = mappings(response.get("Locations"))
-        if not locations:
-            raise DelveRpcError(f"No code location for {expression!r}", "not_found")
-        return locations
-
-    def _location(
-        self,
-        *,
-        thread_id: int | None,
-        frame: int | None,
-        function: str | None,
-        address: str | None,
-        file: str | None,
-        line: int | None,
-    ) -> tuple[dict[str, object], InspectionLocation]:
-        if function is not None:
-            location = self._locations(function, thread_id, frame)[0]
-            kind: Literal["current", "function", "address", "file_line"] = "function"
-        elif address is not None:
-            location = self._locations(f"*{hex(self._address(address))}", thread_id, frame)[0]
-            kind = "address"
-        elif file is not None and line is not None:
-            location = self._locations(f"{file}:{line}", thread_id, frame)[0]
-            kind = "file_line"
-        else:
-            number = frame if frame is not None else self.runtime.current_frame or 0
-            stack = self._stack(thread_id, number + 1)
-            if number < 0 or number >= len(stack):
-                raise DelveRpcError("No stack frame available", "no_stack_frame")
-            location = stack[number]
-            kind = "current"
-        normalized = InspectionLocation(
-            kind=kind,
-            function=text(mapping(location.get("function")).get("name")) or function,
-            address=hex(integer(location.get("pc"))),
-            file=text(location.get("file")) or file,
-            fullname=text(location.get("file")) or file,
-            line=optional_integer(location.get("line")) or line,
-        )
-        return location, normalized
-
-    @_operation
     def get_source_context(
-        self,
-        *,
-        thread_id: int | None = None,
-        frame: int | None = None,
-        function: str | None = None,
-        address: str | None = None,
-        file: str | None = None,
-        line: int | None = None,
-        start_line: int | None = None,
-        end_line: int | None = None,
-        context_before: int = 5,
-        context_after: int = 5,
-    ) -> OperationSuccess[SourceContextInfo]:
-        self._scope(thread_id, frame)
-        if file is not None and start_line is not None:
-            location = InspectionLocation(
-                kind="file_range", file=file, fullname=file, line=start_line
-            )
-            current_line = 0
-        else:
-            _, location = self._location(
-                thread_id=thread_id,
-                frame=frame,
-                function=function,
-                address=address,
-                file=file,
-                line=line,
-            )
-            current_line = location.line or 1
-        path = Path(location.fullname or location.file or "")
-        if (
-            not path.is_absolute()
-            and self.runtime.config is not None
-            and self.runtime.config.working_dir
-        ):
-            path = Path(self.runtime.config.working_dir) / path
-        source = path.read_text(encoding="utf-8", errors="replace").splitlines()
-        first = start_line if start_line is not None else max(1, current_line - context_before)
-        last = min(len(source), end_line if end_line is not None else current_line + context_after)
-        if first < 1 or last < first:
-            raise DelveRpcError("Requested source range is unavailable", "not_found")
-        lines = [
-            SourceLineRecord(
-                line_number=number, text=source[number - 1], is_current=number == current_line
-            )
-            for number in range(first, last + 1)
-        ]
-        return OperationSuccess(
-            SourceContextInfo(
-                InspectionContextInfo(
-                    thread_id if thread_id is not None else self.runtime.current_thread_id,
-                    frame if frame is not None else self.runtime.current_frame,
-                ),
-                location,
-                SourceRange(first, last),
-                lines,
-            )
-        )
+        self, request: SourceContextRequest
+    ) -> OperationSuccess[SourceContextInfo] | OperationError:
+        return self._inspection.get_source_context(request)
 
-    @_operation
     def disassemble(
-        self,
-        *,
-        thread_id: int | None = None,
-        frame: int | None = None,
-        function: str | None = None,
-        address: str | None = None,
-        start_address: str | None = None,
-        end_address: str | None = None,
-        file: str | None = None,
-        line: int | None = None,
-        instruction_count: int = 32,
-        mode: Literal["assembly", "mixed"] = "mixed",
-    ) -> OperationSuccess[DisassemblyInfo]:
-        scope = self._scope(thread_id, frame)
-        raw, location = self._location(
-            thread_id=thread_id,
-            frame=frame,
-            function=function,
-            address=start_address or address,
-            file=file,
-            line=line,
-        )
-        start = integer(raw.get("pc"))
-        end = self._address(end_address) if end_address is not None else 0
-        response = self._request(
-            "Disassemble", {"Scope": scope, "StartPC": start, "EndPC": end, "Flavour": 0}
-        )
-        instructions: list[DisassemblyInstructionRecord] = []
-        for item in mappings(response.get("Disassemble")):
-            loc = mapping(item.get("Loc"))
-            pc = integer(loc.get("pc"))
-            if pc < start:
-                continue
-            encoded = item.get("Bytes")
-            try:
-                opcodes = base64.b64decode(encoded).hex(" ") if isinstance(encoded, str) else None
-            except ValueError as exc:
-                raise DebuggerDecodeError("Delve instruction bytes are not base64") from exc
-            instructions.append(
-                DisassemblyInstructionRecord.from_payload(
-                    {
-                        **item,
-                        "address": hex(pc),
-                        "instruction": text(item.get("Text")),
-                        "opcodes": opcodes,
-                        "function": text(mapping(loc.get("function")).get("name")),
-                        "file": text(loc.get("file")) if mode == "mixed" else None,
-                        "line": optional_integer(loc.get("line")) if mode == "mixed" else None,
-                        "is_current": bool(item.get("AtPC")),
-                    }
-                )
-            )
-            if len(instructions) >= instruction_count:
-                break
-        return OperationSuccess(
-            DisassemblyInfo(
-                InspectionContextInfo(
-                    thread_id if thread_id is not None else self.runtime.current_thread_id,
-                    frame if frame is not None else self.runtime.current_frame,
-                ),
-                location,
-                AddressRange(hex(start), hex(end) if end else None),
-                mode,
-                instructions,
-            )
-        )
+        self, request: DisassemblyRequest
+    ) -> OperationSuccess[DisassemblyInfo] | OperationError:
+        return self._inspection.disassemble(request)
 
-    @_operation
     def set_breakpoint(
         self, location: str, condition: str | None = None, temporary: bool = False
-    ) -> OperationSuccess[BreakpointInfo]:
-        locations = self._locations(location)
-        addresses: list[int] = []
-        for loc in locations:
-            pcs = loc.get("pcs")
-            if pcs is None:
-                addresses.append(integer(loc.get("pc")))
-                continue
-            if not isinstance(pcs, list):
-                raise DebuggerDecodeError("Delve location pcs must be a list of integers")
-            addresses.extend(integer(pc) for pc in pcs)
-        response = self._request(
-            "CreateBreakpoint", {"Breakpoint": {"addrs": addresses, "Cond": condition or ""}}
-        )
-        breakpoint = mapping(response.get("Breakpoint"))
-        if temporary:
-            self._temporary.add(integer(breakpoint.get("id")))
-        return OperationSuccess(BreakpointInfo(breakpoint_record(breakpoint, temporary=temporary)))
+    ) -> OperationSuccess[BreakpointInfo] | OperationError:
+        return self._breakpoints.set_breakpoint(location, condition, temporary)
 
-    @_operation
     def set_watchpoint(
         self, expression: str, *, access: WatchpointAccessType = "write"
-    ) -> OperationSuccess[BreakpointInfo]:
-        response = self._request(
-            "CreateWatchpoint",
-            {
-                "Scope": self._scope(),
-                "Expr": expression,
-                "Type": {"read": 1, "write": 2, "access": 3}[access],
-            },
-        )
-        return OperationSuccess(BreakpointInfo(breakpoint_record(response)))
+    ) -> OperationSuccess[BreakpointInfo] | OperationError:
+        return self._breakpoints.set_watchpoint(expression, access=access)
 
-    @_operation
-    def delete_watchpoint(self, number: int) -> OperationSuccess[SessionMessage]:
-        self._scope()
-        self._request("ClearBreakpoint", {"Id": number})
-        return OperationSuccess(SessionMessage(f"Watchpoint {number} deleted"))
+    def delete_watchpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
+        return self._breakpoints.delete_watchpoint(number)
 
-    @_operation
-    def list_breakpoints(self) -> OperationSuccess[BreakpointListInfo]:
-        self._scope()
-        breakpoints = mappings(self._request("ListBreakpoints", {"All": False}).get("Breakpoints"))
-        return OperationSuccess(
-            BreakpointListInfo(
-                [
-                    breakpoint_record(value, temporary=integer(value.get("id")) in self._temporary)
-                    for value in breakpoints
-                ]
-            )
-        )
+    def list_breakpoints(self) -> OperationSuccess[BreakpointListInfo] | OperationError:
+        return self._breakpoints.list_breakpoints()
 
-    def _breakpoint(self, number: int) -> dict[str, object]:
-        self._scope()
-        breakpoint = mapping(self._request("GetBreakpoint", {"Id": number}).get("Breakpoint"))
-        integer(breakpoint.get("id"))
-        return breakpoint
+    def get_breakpoint(self, number: int) -> OperationSuccess[BreakpointInfo] | OperationError:
+        return self._breakpoints.get_breakpoint(number)
 
-    @_operation
-    def get_breakpoint(self, number: int) -> OperationSuccess[BreakpointInfo]:
-        return OperationSuccess(
-            BreakpointInfo(
-                breakpoint_record(self._breakpoint(number), temporary=number in self._temporary)
-            )
-        )
+    def delete_breakpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
+        return self._breakpoints.delete_breakpoint(number)
 
-    @_operation
-    def delete_breakpoint(self, number: int) -> OperationSuccess[SessionMessage]:
-        self._scope()
-        self._request("ClearBreakpoint", {"Id": number})
-        self._temporary.discard(number)
-        return OperationSuccess(SessionMessage(f"Breakpoint {number} deleted"))
+    def enable_breakpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
+        return self._breakpoints.enable_breakpoint(number)
 
-    def _remove_hit_temporary_breakpoints(self) -> None:
-        hit = {
-            optional_integer(mapping(thread.get("breakPoint")).get("id"))
-            for thread in mappings(self._last_state.get("Threads"))
-        }
-        hit.add(
-            optional_integer(
-                mapping(mapping(self._last_state.get("currentThread")).get("breakPoint")).get("id")
-            )
-        )
-        for number in hit & self._temporary:
-            self._request("ClearBreakpoint", {"Id": number})
-            self._temporary.discard(number)
+    def disable_breakpoint(self, number: int) -> OperationSuccess[SessionMessage] | OperationError:
+        return self._breakpoints.disable_breakpoint(number)
 
-    def _enable_breakpoint(self, number: int, enabled: bool) -> OperationSuccess[SessionMessage]:
-        breakpoint = self._breakpoint(number)
-        breakpoint["disabled"] = not enabled
-        self._request("AmendBreakpoint", {"Breakpoint": breakpoint})
-        return OperationSuccess(
-            SessionMessage(f"Breakpoint {number} {'enabled' if enabled else 'disabled'}")
-        )
-
-    @_operation
-    def enable_breakpoint(self, number: int) -> OperationSuccess[SessionMessage]:
-        return self._enable_breakpoint(number, True)
-
-    @_operation
-    def disable_breakpoint(self, number: int) -> OperationSuccess[SessionMessage]:
-        return self._enable_breakpoint(number, False)
-
-    @_operation
     def update_breakpoint(
         self, number: int, *, condition: str | None = None, clear_condition: bool = False
-    ) -> OperationSuccess[BreakpointInfo]:
-        breakpoint = self._breakpoint(number)
-        if clear_condition or condition is not None:
-            breakpoint["Cond"] = "" if clear_condition else condition
-            self._request("AmendBreakpoint", {"Breakpoint": breakpoint})
-        return OperationSuccess(
-            BreakpointInfo(breakpoint_record(breakpoint, temporary=number in self._temporary))
+    ) -> OperationSuccess[BreakpointInfo] | OperationError:
+        return self._breakpoints.update_breakpoint(
+            number, condition=condition, clear_condition=clear_condition
         )
 
-    @_operation
     def jump(
-        self, location: str, *, wait_for_stop: bool = True, timeout_sec: int = DEFAULT_TIMEOUT_SEC
-    ) -> OperationSuccess[LocationExecutionInfo]:
-        pc = integer(self._locations(location)[0].get("pc"))
-        try:
-            self._client_state(self._request("SetExecutionPoint", {"Addr": pc}))
-        except DelveRpcError as exc:
-            if exc.code == "unsupported_operation":
-                self._unsupported.add(ACTION_JUMP)
-            raise
-        self._execute("continue", wait_for_stop=wait_for_stop, timeout_sec=timeout_sec)
-        return OperationSuccess(
-            LocationExecutionInfo(
-                command=ACTION_JUMP,
-                backend_data=self._data(self._execution_result),
-                location=location,
-                execution_state=self.runtime.execution_state,
-                stop_reason=self.runtime.stop_reason,
-                stop_kind=self.runtime.stop_kind,
-                last_stop_event=(
-                    self.runtime.last_stop_event if self._execution_done.is_set() else None
-                ),
-            )
-        )
+        self,
+        location: str,
+        *,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
+    ) -> OperationSuccess[LocationExecutionInfo] | OperationError:
+        return self._execution.jump(location, options=options)
 
     @_operation
     def list_inferiors(self) -> OperationSuccess[InferiorListInfo]:
         self._require_client()
-        pid = integer(self._last_state.get("Pid"))
+        pid = integer(self._execution.last_state.get("Pid"))
         return OperationSuccess(
             InferiorListInfo(
                 [
@@ -1515,7 +696,10 @@ class DelveRpcBackend:
         return self._unsupported_operation("forcing a frame to return")
 
     def until(
-        self, location: str, *, wait_for_stop: bool = True, timeout_sec: int = DEFAULT_TIMEOUT_SEC
+        self,
+        location: str,
+        *,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
     ) -> OperationError:
         return self._unsupported_operation("frame-scoped until")
 

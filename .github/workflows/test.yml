@@ -78,7 +78,8 @@ jobs:
             python -m pip install -e ".[dev]"
             if [[ "${{ matrix.profile }}" == oldest-* || "${{ matrix.profile }}" == legacy-* ]]; then
               pytest tests/ -m "not integration" -v --tb=short -n auto -rs
-              pytest tests/integration/test_compatibility_baseline.py -v --tb=short -rs
+              pytest tests/integration/test_compatibility_baseline.py \
+                tests/integration/test_v2_session_delve.py -v --tb=short -rs
             else
               pytest tests/ -v --tb=short -n auto -rs
             fi

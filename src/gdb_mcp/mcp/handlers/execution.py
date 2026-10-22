@@ -40,90 +40,62 @@ def _handle_execution_manage(
     action_args = args.root
 
     match action_args:
-        case ExecutionRunAction():
-            timeout_sec, wait_for_stop = _execution_wait_policy(
-                action_args.execution.wait_until, action_args.execution.timeout_sec
-            )
-            run_args = _normalize_run_args(action_args.execution.args)
-            if isinstance(run_args, OperationError):
-                return run_args
-            return session.run(
-                args=run_args,
-                timeout_sec=timeout_sec,
-                wait_for_stop=wait_for_stop,
-            )
-        case ExecutionContinueAction():
-            timeout_sec, wait_for_stop = _execution_wait_policy(
-                action_args.execution.wait_until, action_args.execution.timeout_sec
-            )
-            return session.continue_execution(
-                wait_for_stop=wait_for_stop,
-                timeout_sec=timeout_sec,
-                reverse=action_args.execution.reverse,
-            )
         case ExecutionInterruptAction():
             return session.interrupt()
-        case ExecutionStepAction():
-            timeout_sec, wait_for_stop = _execution_wait_policy(
-                action_args.execution.wait_until, action_args.execution.timeout_sec
-            )
-            return session.step(
-                wait_for_stop=wait_for_stop,
-                timeout_sec=timeout_sec,
-                reverse=action_args.execution.reverse,
-            )
-        case ExecutionNextAction():
-            timeout_sec, wait_for_stop = _execution_wait_policy(
-                action_args.execution.wait_until, action_args.execution.timeout_sec
-            )
-            return session.next(
-                wait_for_stop=wait_for_stop,
-                timeout_sec=timeout_sec,
-                reverse=action_args.execution.reverse,
-            )
-        case ExecutionStepInstructionAction():
-            timeout_sec, wait_for_stop = _execution_wait_policy(
-                action_args.execution.wait_until, action_args.execution.timeout_sec
-            )
-            return session.step_instruction(
-                wait_for_stop=wait_for_stop,
-                timeout_sec=timeout_sec,
-                reverse=action_args.execution.reverse,
-            )
-        case ExecutionNextInstructionAction():
-            timeout_sec, wait_for_stop = _execution_wait_policy(
-                action_args.execution.wait_until, action_args.execution.timeout_sec
-            )
-            return session.next_instruction(
-                wait_for_stop=wait_for_stop,
-                timeout_sec=timeout_sec,
-                reverse=action_args.execution.reverse,
-            )
         case ExecutionReturnAction():
             return session.return_from_frame(value=action_args.execution.value)
-        case ExecutionJumpAction() | ExecutionUntilAction():
-            timeout_sec, wait_for_stop = _execution_wait_policy(
-                action_args.execution.wait_until, action_args.execution.timeout_sec
-            )
-            operation = (
-                session.jump if isinstance(action_args, ExecutionJumpAction) else session.until
-            )
-            return operation(
-                location=action_args.execution.location,
-                timeout_sec=timeout_sec,
-                wait_for_stop=wait_for_stop,
-            )
-        case ExecutionFinishAction():
-            timeout_sec, wait_for_stop = _execution_wait_policy(
-                action_args.execution.wait_until, action_args.execution.timeout_sec
-            )
-            return session.finish(
-                timeout_sec=timeout_sec,
-                wait_for_stop=wait_for_stop,
-                reverse=action_args.execution.reverse,
-            )
         case ExecutionWaitForStopAction():
             return session.wait_for_stop(
                 timeout_sec=action_args.execution.timeout_sec,
                 stop_reasons=tuple(action_args.execution.stop_reasons),
+            )
+    options = _execution_wait_policy(
+        action_args.execution.wait_until, action_args.execution.timeout_sec
+    )
+    match action_args:
+        case ExecutionRunAction():
+            run_args = _normalize_run_args(action_args.execution.args)
+            if isinstance(run_args, OperationError):
+                return run_args
+            return session.run(
+                options=options,
+                args=run_args,
+            )
+        case ExecutionContinueAction():
+            return session.continue_execution(
+                options=options,
+                reverse=action_args.execution.reverse,
+            )
+        case ExecutionStepAction():
+            return session.step(
+                options=options,
+                reverse=action_args.execution.reverse,
+            )
+        case ExecutionNextAction():
+            return session.next(
+                options=options,
+                reverse=action_args.execution.reverse,
+            )
+        case ExecutionStepInstructionAction():
+            return session.step_instruction(
+                options=options,
+                reverse=action_args.execution.reverse,
+            )
+        case ExecutionNextInstructionAction():
+            return session.next_instruction(
+                options=options,
+                reverse=action_args.execution.reverse,
+            )
+        case ExecutionJumpAction() | ExecutionUntilAction():
+            operation = (
+                session.jump if isinstance(action_args, ExecutionJumpAction) else session.until
+            )
+            return operation(
+                options=options,
+                location=action_args.execution.location,
+            )
+        case ExecutionFinishAction():
+            return session.finish(
+                options=options,
+                reverse=action_args.execution.reverse,
             )

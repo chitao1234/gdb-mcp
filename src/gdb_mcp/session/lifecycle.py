@@ -311,10 +311,12 @@ class SessionLifecycleService:
                         "Failed to disable pagination by default: " f"{pagination_result.message}"
                     )
 
-                self._runtime.target_loaded = self._startup_target_loaded(
-                    program=program,
-                    core=core,
-                    startup_output=startup_output_lower,
+                self._runtime.mark_target_loaded(
+                    self._startup_target_loaded(
+                        program=program,
+                        core=core,
+                        startup_output=startup_output_lower,
+                    )
                 )
 
                 startup_backend_data = BackendData(
@@ -380,7 +382,7 @@ class SessionLifecycleService:
                         f"{target_loaded_probe.message}"
                     )
                 else:
-                    self._runtime.target_loaded = target_loaded_probe
+                    self._runtime.mark_target_loaded(target_loaded_probe)
                 if self._runtime.execution_state == "unknown":
                     if core or any(
                         command.lower().strip().startswith("core-file ")
@@ -440,10 +442,13 @@ class SessionLifecycleService:
 
             try:
                 self._transport.exit()
-            except Exception as exc:
+            except OSError as exc:
                 logger.error("Failed to stop GDB session: %s", exc)
                 self._runtime.mark_failed(f"Failed to stop GDB session: {exc}")
                 return OperationError(message=str(exc))
+            except Exception as exc:
+                self._runtime.mark_failed(f"Failed to stop GDB session: {exc}")
+                raise
 
             self._runtime.mark_stopped()
             return OperationSuccess(SessionMessage(message="GDB session stopped"))
@@ -457,13 +462,6 @@ class SessionLifecycleService:
 
         snapshot = self._runtime.status_snapshot(
             debugger_alive=self._runtime.is_running,
-            state_detail=(
-                self._runtime.last_stop_event.state_detail
-                if self._runtime.execution_state == "paused"
-                and self._runtime.last_stop_event is not None
-                and self._runtime.last_stop_event.reason == self._runtime.stop_reason
-                else None
-            ),
         )
         return OperationSuccess(snapshot)
 

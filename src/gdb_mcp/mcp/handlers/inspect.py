@@ -11,6 +11,17 @@ from ...domain import (
     SourceContextInfo,
     VariablesInfo,
 )
+from ...session.requests import (
+    AddressLocation,
+    AddressRangeLocation,
+    CurrentLocation,
+    DisassemblyLocation,
+    DisassemblyRequest,
+    FileLineLocation,
+    FileRangeLocation,
+    FunctionLocation,
+    SourceContextRequest,
+)
 from ...session.service import SessionService
 from ..schemas import (
     InspectDisassemblyAction,
@@ -30,32 +41,31 @@ from ..schemas import (
 )
 from .common import (
     LocationArgs,
-    LocationSelection,
 )
 
 
-def _location_selection(location: LocationArgs) -> LocationSelection:
-    """Translate a location union payload into inspection keyword arguments."""
+def _location_selection(location: LocationArgs) -> DisassemblyLocation:
+    """Translate the public location union into a typed inspection selector."""
 
     match location:
         case LocationCurrentArgs():
-            return LocationSelection()
+            return CurrentLocation()
         case LocationFunctionArgs():
-            return LocationSelection(function=location.function)
+            return FunctionLocation(location.function)
         case LocationAddressArgs():
-            return LocationSelection(address=location.address)
+            return AddressLocation(location.address)
         case LocationAddressRangeArgs():
-            return LocationSelection(
+            return AddressRangeLocation(
                 start_address=location.start_address,
                 end_address=location.end_address,
             )
         case LocationFileLineArgs():
-            return LocationSelection(
+            return FileLineLocation(
                 file=location.file,
                 line=location.line,
             )
         case LocationFileRangeArgs():
-            return LocationSelection(
+            return FileRangeLocation(
                 file=location.file,
                 start_line=location.start_line,
                 end_line=location.end_line,
@@ -125,30 +135,26 @@ def _handle_inspect_query(
             thread_id, frame = _context_selector(disassembly_query.context)
             location = _location_selection(disassembly_query.location)
             return session.disassemble(
-                thread_id=thread_id,
-                frame=frame,
-                function=location.function,
-                address=location.address,
-                start_address=location.start_address,
-                end_address=location.end_address,
-                file=location.file,
-                line=location.line,
-                instruction_count=disassembly_query.instruction_count,
-                mode=disassembly_query.mode,
+                DisassemblyRequest(
+                    thread_id=thread_id,
+                    frame=frame,
+                    location=location,
+                    instruction_count=disassembly_query.instruction_count,
+                    mode=disassembly_query.mode,
+                )
             )
         case InspectSourceAction():
             source_query = action_args.query
             thread_id, frame = _context_selector(source_query.context)
             location = _location_selection(source_query.location)
+            if isinstance(location, AddressRangeLocation):
+                location = CurrentLocation()
             return session.get_source_context(
-                thread_id=thread_id,
-                frame=frame,
-                function=location.function,
-                address=location.address,
-                file=location.file,
-                line=location.line,
-                start_line=location.start_line,
-                end_line=location.end_line,
-                context_before=source_query.context_before,
-                context_after=source_query.context_after,
+                SourceContextRequest(
+                    thread_id=thread_id,
+                    frame=frame,
+                    location=location,
+                    context_before=source_query.context_before,
+                    context_after=source_query.context_after,
+                )
             )

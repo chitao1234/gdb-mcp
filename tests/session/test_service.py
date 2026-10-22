@@ -175,7 +175,7 @@ class TestSessionService:
                 controller_factory_calls += 1
             # Widen the race window so a missing workflow lock would create two controllers.
             time.sleep(0.05)
-            return MagicMock()
+            return MagicMock(gdb_process=MagicMock(poll=MagicMock(return_value=None)))
 
         fake_os = MagicMock()
         fake_os.environ.get.return_value = "gdb"

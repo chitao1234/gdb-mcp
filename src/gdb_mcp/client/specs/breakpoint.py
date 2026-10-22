@@ -16,12 +16,7 @@ from gdb_mcp.mcp.schemas import (
     BreakpointQueryArgs,
 )
 
-from ..builders.breakpoint import build_breakpoint_manage_payload, build_breakpoint_query_payload
-from ..inputs import (
-    BreakpointCreateInput,
-    BreakpointManageInput,
-    BreakpointQueryInput,
-)
+from ..namespace import NamespaceLike, ParsedOptions, one_of, snapshot
 from ..parsers import (
     CliUsageError,
     add_boolean_flag,
@@ -34,34 +29,34 @@ from .common import (
 )
 
 
-def _validate_breakpoint_query_input(typed_input: BreakpointQueryInput) -> None:
+def _validate_breakpoint_query_input(action: str, values: ParsedOptions) -> None:
     invalid_flags: list[str] = []
-    if typed_input.action == "list":
-        if typed_input.number is not None:
+    if action == "list":
+        if values.get("number") is not None:
             invalid_flags.append("--number")
-    elif typed_input.action == "get":
-        if typed_input.number is None:
+    elif action == "get":
+        if values.get("number") is None:
             raise CliUsageError("--number required with --action get")
-        if typed_input.kinds:
+        if values.get("kinds"):
             invalid_flags.append("--kind")
-        if typed_input.enabled is not None:
+        if values.get("enabled") is not None:
             invalid_flags.append("--enabled")
 
-    _raise_invalid_action_flags(typed_input.action, invalid_flags)
+    _raise_invalid_action_flags(action, invalid_flags)
 
 
-def _validate_breakpoint_create_input(typed_input: BreakpointCreateInput) -> None:
-    if typed_input.kind == "code":
-        if typed_input.location is None:
+def _validate_breakpoint_create_input(kind: str, values: ParsedOptions) -> None:
+    if kind == "code":
+        if values.get("location") is None:
             raise CliUsageError("--location required with --breakpoint-kind code")
         invalid_flags: list[str] = []
-        if typed_input.expression is not None:
+        if values.get("expression") is not None:
             invalid_flags.append("--expression")
-        if typed_input.access is not None:
+        if values.get("access") is not None:
             invalid_flags.append("--access")
-        if typed_input.event is not None:
+        if values.get("event") is not None:
             invalid_flags.append("--event")
-        if typed_input.argument is not None:
+        if values.get("argument") is not None:
             invalid_flags.append("--argument")
         if invalid_flags:
             raise CliUsageError(
@@ -69,19 +64,19 @@ def _validate_breakpoint_create_input(typed_input: BreakpointCreateInput) -> Non
             )
         return
 
-    if typed_input.kind == "watch":
-        if typed_input.expression is None:
+    if kind == "watch":
+        if values.get("expression") is None:
             raise CliUsageError("--expression required with --breakpoint-kind watch")
         invalid_flags = []
-        if typed_input.location is not None:
+        if values.get("location") is not None:
             invalid_flags.append("--location")
-        if typed_input.condition is not None:
+        if values.get("condition") is not None:
             invalid_flags.append("--condition")
-        if typed_input.temporary_explicit:
+        if values.get("temporary") is not None:
             invalid_flags.append("--temporary")
-        if typed_input.event is not None:
+        if values.get("event") is not None:
             invalid_flags.append("--event")
-        if typed_input.argument is not None:
+        if values.get("argument") is not None:
             invalid_flags.append("--argument")
         if invalid_flags:
             raise CliUsageError(
@@ -89,17 +84,17 @@ def _validate_breakpoint_create_input(typed_input: BreakpointCreateInput) -> Non
             )
         return
 
-    if typed_input.event is None:
+    if values.get("event") is None:
         raise CliUsageError("--event required with --breakpoint-kind catch")
 
     invalid_flags = []
-    if typed_input.location is not None:
+    if values.get("location") is not None:
         invalid_flags.append("--location")
-    if typed_input.condition is not None:
+    if values.get("condition") is not None:
         invalid_flags.append("--condition")
-    if typed_input.expression is not None:
+    if values.get("expression") is not None:
         invalid_flags.append("--expression")
-    if typed_input.access is not None:
+    if values.get("access") is not None:
         invalid_flags.append("--access")
     if invalid_flags:
         raise CliUsageError(
@@ -107,51 +102,52 @@ def _validate_breakpoint_create_input(typed_input: BreakpointCreateInput) -> Non
         )
 
 
-def _validate_breakpoint_manage_input(typed_input: BreakpointManageInput) -> None:
+def _validate_breakpoint_manage_input(action: str, values: ParsedOptions) -> None:
     invalid_flags: list[str] = []
-    if typed_input.action == "create":
-        if typed_input.number is not None:
+    if action == "create":
+        if values.get("number") is not None:
             invalid_flags.append("--number")
-        if typed_input.clear_condition is not None:
+        if values.get("clear_condition") is not None:
             invalid_flags.append("--clear-condition")
-        _raise_invalid_action_flags(typed_input.action, invalid_flags)
-        if typed_input.breakpoint is None or not typed_input.breakpoint.kind_explicit:
+        _raise_invalid_action_flags(action, invalid_flags)
+        if values.get("breakpoint_kind") is None:
             raise CliUsageError("--breakpoint-kind required with --action create")
-        _validate_breakpoint_create_input(typed_input.breakpoint)
+        _validate_breakpoint_create_input(
+            one_of(values, "breakpoint_kind", BREAKPOINT_KINDS), values
+        )
         return
 
-    if typed_input.breakpoint is not None:
-        if typed_input.breakpoint.kind_explicit:
-            invalid_flags.append("--breakpoint-kind")
-        if typed_input.breakpoint.location is not None:
-            invalid_flags.append("--location")
-        if typed_input.breakpoint.expression is not None:
-            invalid_flags.append("--expression")
-        if typed_input.breakpoint.access is not None:
-            invalid_flags.append("--access")
-        if typed_input.breakpoint.event is not None:
-            invalid_flags.append("--event")
-        if typed_input.breakpoint.argument is not None:
-            invalid_flags.append("--argument")
-        if typed_input.breakpoint.temporary_explicit:
-            invalid_flags.append("--temporary")
+    if values.get("breakpoint_kind") is not None:
+        invalid_flags.append("--breakpoint-kind")
+    if values.get("location") is not None:
+        invalid_flags.append("--location")
+    if values.get("expression") is not None:
+        invalid_flags.append("--expression")
+    if values.get("access") is not None:
+        invalid_flags.append("--access")
+    if values.get("event") is not None:
+        invalid_flags.append("--event")
+    if values.get("argument") is not None:
+        invalid_flags.append("--argument")
+    if values.get("temporary") is not None:
+        invalid_flags.append("--temporary")
 
-    if typed_input.action in {"delete", "enable", "disable"}:
-        if typed_input.condition is not None:
+    if action in {"delete", "enable", "disable"}:
+        if values.get("condition") is not None:
             invalid_flags.append("--condition")
-        if typed_input.clear_condition is not None:
+        if values.get("clear_condition") is not None:
             invalid_flags.append("--clear-condition")
 
-    _raise_invalid_action_flags(typed_input.action, invalid_flags)
+    _raise_invalid_action_flags(action, invalid_flags)
 
-    if typed_input.action == "update":
-        if typed_input.number is None:
+    if action == "update":
+        if values.get("number") is None:
             raise CliUsageError("--number required with --action update")
-        if typed_input.condition is None and typed_input.clear_condition is not True:
+        if values.get("condition") is None and values.get("clear_condition") is not True:
             raise CliUsageError("--condition or --clear-condition required with --action update")
 
-    if typed_input.action in {"delete", "enable", "disable"} and typed_input.number is None:
-        raise CliUsageError(f"--number required with --action {typed_input.action}")
+    if action in {"delete", "enable", "disable"} and values.get("number") is None:
+        raise CliUsageError(f"--number required with --action {action}")
 
 
 def _configure_breakpoint_query(parser: argparse.ArgumentParser) -> None:
@@ -173,12 +169,20 @@ def _configure_breakpoint_query(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_breakpoint_query(typed_input: BreakpointQueryInput) -> BreakpointQueryArgs:
-    _validate_breakpoint_query_input(typed_input)
-    payload = build_breakpoint_query_payload(typed_input)
-    query = payload.get("query")
-    if isinstance(query, dict) and query.get("kinds") == []:
-        query.pop("kinds", None)
+def _build_breakpoint_query(namespace: NamespaceLike) -> BreakpointQueryArgs:
+    values = snapshot(namespace)
+    action = one_of(values, "action", BREAKPOINT_QUERY_ACTIONS)
+    _validate_breakpoint_query_input(action, values)
+    query: dict[str, object] = {}
+    for name in ("number", "enabled"):
+        value = values.get(name)
+        if value is not None:
+            query[name] = value
+    if values.get("kinds"):
+        query["kinds"] = values.get("kinds")
+    payload: dict[str, object] = {"session_id": values.get("session_id"), "action": action}
+    if query:
+        payload["query"] = query
     return validate_model(BreakpointQueryArgs, payload)
 
 
@@ -215,7 +219,27 @@ def _configure_breakpoint_manage(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_breakpoint_manage(typed_input: BreakpointManageInput) -> BreakpointManageArgs:
-    _validate_breakpoint_manage_input(typed_input)
-    payload = build_breakpoint_manage_payload(typed_input)
+def _build_breakpoint_manage(namespace: NamespaceLike) -> BreakpointManageArgs:
+    values = snapshot(namespace)
+    action = one_of(values, "action", BREAKPOINT_MANAGE_ACTIONS)
+    _validate_breakpoint_manage_input(action, values)
+    payload: dict[str, object] = {"session_id": values.get("session_id"), "action": action}
+    if action == "create":
+        breakpoint: dict[str, object] = {
+            name: item
+            for name in ("location", "expression", "access", "event", "argument", "condition")
+            if (item := values.get(name)) is not None
+        }
+        breakpoint["kind"] = values.get("breakpoint_kind")
+        if values.get("temporary"):
+            breakpoint["temporary"] = True
+        payload["breakpoint"] = breakpoint
+    else:
+        payload["breakpoint"] = {"number": values.get("number")}
+        if action == "update":
+            payload["changes"] = {
+                name: change
+                for name in ("condition", "clear_condition")
+                if (change := values.get(name)) is not None
+            }
     return validate_model(BreakpointManageArgs, payload)

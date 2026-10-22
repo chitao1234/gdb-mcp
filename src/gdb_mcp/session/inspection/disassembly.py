@@ -18,6 +18,14 @@ from ...domain import (
 from ...domain.parsing import as_int, as_optional_mapping, as_text_or_number
 from ...transport import quote_mi_string
 from ..constants import DEFAULT_TIMEOUT_SEC
+from ..requests import (
+    AddressLocation,
+    AddressRangeLocation,
+    CurrentLocation,
+    DisassemblyRequest,
+    FileLineLocation,
+    FunctionLocation,
+)
 from ..result_utils import command_result_mapping
 from .base import (
     InspectionContext,
@@ -48,27 +56,16 @@ class InspectionDisassembly:
         self._disassemble_a_supported = None
 
     def disassemble(
-        self,
-        *,
-        thread_id: int | None = None,
-        frame: int | None = None,
-        function: str | None = None,
-        address: str | None = None,
-        start_address: str | None = None,
-        end_address: str | None = None,
-        file: str | None = None,
-        line: int | None = None,
-        instruction_count: int = 32,
-        mode: Literal["assembly", "mixed"] = "mixed",
+        self, request: DisassemblyRequest
     ) -> OperationSuccess[DisassemblyInfo] | OperationError:
         """Return structured disassembly for one resolved code location."""
 
         selection: _SelectionSnapshot | None = None
-        location_result: _ResolvedCodeLocation | OperationError
+        location_result: _ResolvedCodeLocation
+        thread_id, frame = request.thread_id, request.frame
+        location = request.location
 
-        if all(
-            value is None for value in (function, address, start_address, end_address, file, line)
-        ):
+        if isinstance(location, CurrentLocation):
             if thread_id is not None or frame is not None:
                 captured_selection = self._context.capture_selection()
                 if isinstance(captured_selection, OperationError):
@@ -105,32 +102,27 @@ class InspectionDisassembly:
                 ),
                 address="$pc",
             )
-        elif function is not None:
-            location_result = _ResolvedCodeLocation(scope="function", function=function)
-        elif address is not None:
-            location_result = _ResolvedCodeLocation(scope="address", address=address)
-        elif start_address is not None and end_address is not None:
+        elif isinstance(location, FunctionLocation):
+            location_result = _ResolvedCodeLocation(scope="function", function=location.function)
+        elif isinstance(location, AddressLocation):
+            location_result = _ResolvedCodeLocation(scope="address", address=location.address)
+        elif isinstance(location, AddressRangeLocation):
             location_result = _ResolvedCodeLocation(
                 scope="address_range",
-                start_address=start_address,
-                end_address=end_address,
+                start_address=location.start_address,
+                end_address=location.end_address,
             )
-        elif file is not None and line is not None:
+        elif isinstance(location, FileLineLocation):
             location_result = _ResolvedCodeLocation(
-                scope="file_line", file=file, fullname=file, line=line
+                scope="file_line", file=location.file, fullname=location.file, line=location.line
             )
         else:
             return OperationError(message="Invalid disassembly selector combination")
 
-        if isinstance(location_result, OperationError):
-            if selection is None:
-                return location_result
-            return self._context.selection_error_with_restore(selection, location_result)
-
         command = self._build_disassemble_command(
             location_result,
-            instruction_count=instruction_count,
-            mode=mode,
+            instruction_count=request.instruction_count,
+            mode=request.mode,
         )
         if isinstance(command, OperationError):
             if selection is None:
@@ -150,7 +142,7 @@ class InspectionDisassembly:
             raw_payload,
             current_address=location_result.address,
         )
-        instructions = instructions[:instruction_count]
+        instructions = instructions[: request.instruction_count]
 
         info = DisassemblyInfo(
             context=InspectionContextInfo(
@@ -171,7 +163,7 @@ class InspectionDisassembly:
                 end_address=location_result.end_address
                 or self._last_instruction_address(instructions),
             ),
-            mode=mode,
+            mode=request.mode,
             instructions=instructions,
         )
 
@@ -299,6 +291,9 @@ class InspectionDisassembly:
 
             nested = entry_payload.get("line_asm_insn")
             if isinstance(nested, list):
+                source_fields = {
+                    key: value for key, value in entry_payload.items() if key != "line_asm_insn"
+                }
                 line = as_int(entry_payload.get("line"))
                 file = as_text_or_number(entry_payload.get("file"))
                 fullname = as_text_or_number(entry_payload.get("fullname"))
@@ -307,7 +302,7 @@ class InspectionDisassembly:
                     if instruction_payload is None:
                         continue
                     record = self._normalize_disassembly_instruction(
-                        instruction_payload,
+                        {**source_fields, **instruction_payload},
                         file=file,
                         fullname=fullname,
                         line=line,
@@ -345,10 +340,12 @@ class InspectionDisassembly:
         if address is None or instruction is None:
             return None
 
-        record: dict[str, object] = {
-            "address": address,
-            "instruction": instruction,
-        }
+        record = dict(payload)
+        record.pop("inst", None)
+        record.pop("func-name", None)
+        record.pop("func", None)
+        record["address"] = address
+        record["instruction"] = instruction
         function = as_text_or_number(payload.get("func-name")) or as_text_or_number(
             payload.get("func")
         )
@@ -379,8 +376,7 @@ class InspectionDisassembly:
 
         if not instructions:
             return None
-        address = instructions[0].address
-        return address if isinstance(address, str) else None
+        return instructions[0].address
 
     @staticmethod
     def _last_instruction_address(
@@ -390,8 +386,7 @@ class InspectionDisassembly:
 
         if not instructions:
             return None
-        address = instructions[-1].address
-        return address if isinstance(address, str) else None
+        return instructions[-1].address
 
     @staticmethod
     def _first_instruction_function(
@@ -401,7 +396,7 @@ class InspectionDisassembly:
 
         for instruction in instructions:
             function = instruction.function
-            if isinstance(function, str):
+            if function is not None:
                 return function
         return None
 
@@ -413,7 +408,7 @@ class InspectionDisassembly:
 
         for instruction in instructions:
             file = instruction.file
-            if isinstance(file, str):
+            if file is not None:
                 return file
         return None
 
@@ -425,7 +420,7 @@ class InspectionDisassembly:
 
         for instruction in instructions:
             fullname = instruction.fullname
-            if isinstance(fullname, str):
+            if fullname is not None:
                 return fullname
         return None
 
@@ -437,7 +432,7 @@ class InspectionDisassembly:
 
         for instruction in instructions:
             line = instruction.line
-            if isinstance(line, int):
+            if line is not None:
                 return line
         return None
 

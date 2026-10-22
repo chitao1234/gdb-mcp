@@ -11,28 +11,35 @@ from gdb_mcp.mcp.schemas import (
     RunUntilFailureArgs,
 )
 
-from ..builders.workflow import build_run_until_failure_payload, build_workflow_batch_payload
-from ..inputs import (
-    RunUntilFailureInput,
-    WorkflowBatchInput,
-)
+from ..input_parsers import parse_step_inputs
+from ..inputs import SessionStepInput
 from ..namespace import (
     NamespaceLike,
     boolean,
     integer,
+    key_value_entries,
     optional_integer,
     optional_text,
     snapshot,
+    tagged_events,
     text_tuple,
 )
 from ..parsers import (
     StepLabelEvent,
     StepToolEvent,
     add_boolean_flag,
+    collapse_key_value_entries,
     dotted_assignment,
     key_value_entry,
     validate_model,
 )
+
+
+def _step_payload(step: SessionStepInput) -> dict[str, object]:
+    payload: dict[str, object] = {"tool": step.tool, "arguments": step.arguments}
+    if step.label is not None:
+        payload["label"] = step.label
+    return payload
 
 
 def _configure_capture_bundle(parser: argparse.ArgumentParser) -> None:
@@ -119,8 +126,19 @@ def _configure_workflow_batch(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_workflow_batch(typed_input: WorkflowBatchInput) -> BatchArgs:
-    payload = build_workflow_batch_payload(typed_input)
+def _build_workflow_batch(namespace: NamespaceLike) -> BatchArgs:
+    values = snapshot(namespace)
+    steps = parse_step_inputs(
+        tagged_events(values, "step_events"), required=True, step_flag="--step"
+    )
+    payload: dict[str, object] = {
+        "session_id": values.get("session_id"),
+        "steps": [_step_payload(step) for step in steps],
+    }
+    for name in ("fail_fast", "capture_stop_events"):
+        value = values.get(name)
+        if value is not None:
+            payload[name] = value
     return validate_model(BatchArgs, payload)
 
 
@@ -257,6 +275,65 @@ def _configure_run_until_failure(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_run_until_failure(typed_input: RunUntilFailureInput) -> RunUntilFailureArgs:
-    payload = build_run_until_failure_payload(typed_input)
+def _build_run_until_failure(namespace: NamespaceLike) -> RunUntilFailureArgs:
+    values = snapshot(namespace)
+    startup = {
+        name: value
+        for name in ("debugger", "program", "debugger_path", "working_dir", "core")
+        if (value := values.get("startup_" + name)) is not None
+    }
+    for name in ("args", "init_commands"):
+        items = values.get("startup_" + name)
+        if items:
+            startup[name] = items
+    env = collapse_key_value_entries(key_value_entries(values, "startup_env"))
+    if env is not None:
+        startup["env"] = env
+    failure: dict[str, object] = {
+        name: value
+        for name in ("failure_on_error", "failure_on_timeout")
+        if (value := values.get(name)) is not None
+    }
+    for name in ("stop_reasons", "execution_states", "exit_codes", "result_text_regex"):
+        value = values.get("failure_" + name)
+        if value is not None:
+            failure[name] = value
+    capture = {
+        name: value
+        for name in (
+            "enabled",
+            "output_dir",
+            "bundle_name_prefix",
+            "bundle_name",
+            "max_frames",
+            "include_threads",
+            "include_backtraces",
+            "include_frame",
+            "include_variables",
+            "include_registers",
+            "include_transcript",
+            "include_stop_history",
+        )
+        if (value := values.get("capture_" + name)) is not None
+    }
+    for name in ("expressions", "memory_ranges"):
+        items = values.get("capture_" + name)
+        if items:
+            capture[name] = items
+    payload: dict[str, object] = {
+        name: value
+        for name, value in (("startup", startup), ("failure", failure), ("capture", capture))
+        if value
+    }
+    steps = parse_step_inputs(
+        tagged_events(values, "setup_step_events"), required=False, step_flag="--setup-step"
+    )
+    if steps is not None:
+        payload["setup_steps"] = [_step_payload(step) for step in steps]
+    if values.get("run_args"):
+        payload["run_args"] = values.get("run_args")
+    for name in ("run_timeout_sec", "max_iterations"):
+        value = values.get(name)
+        if value is not None:
+            payload[name] = value
     return validate_model(RunUntilFailureArgs, payload)

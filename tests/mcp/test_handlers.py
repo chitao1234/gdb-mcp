@@ -55,6 +55,15 @@ from gdb_mcp.mcp.handlers import TOOL_SPECS, dispatch_tool_call
 from gdb_mcp.mcp.schemas import build_tool_definitions
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.registry import SessionRegistry
+from gdb_mcp.session.requests import (
+    CurrentLocation,
+    DisassemblyRequest,
+    ExecutionOptions,
+    FileLineLocation,
+    FileRangeLocation,
+    FunctionLocation,
+    SourceContextRequest,
+)
 from gdb_mcp.session.service import SessionService
 from tests.support import dig, mapping, mapping_list, text
 
@@ -152,10 +161,9 @@ def _continue_side_effect(
     """Build a continue stub that records a breakpoint stop on the session runtime."""
 
     def continue_side_effect(
-        *, wait_for_stop: bool, timeout_sec: int, reverse: bool
+        *, options: ExecutionOptions, reverse: bool
     ) -> OperationSuccess[CommandExecutionInfo]:
-        assert wait_for_stop is True
-        assert timeout_sec == 30
+        assert options == ExecutionOptions(timeout_sec=30, wait_for_stop=True)
         assert reverse is False
         session.runtime.mark_inferior_paused("breakpoint-hit")
         stop_event = StopEvent(
@@ -210,8 +218,7 @@ def test_location_execution_routes_location_and_wait_policy(action: str) -> None
     assert result["action"] == action
     operation.assert_called_once_with(
         location="*$pc + 4",
-        wait_for_stop=False,
-        timeout_sec=5,
+        options=ExecutionOptions(timeout_sec=5, wait_for_stop=False),
     )
 
 
@@ -666,9 +673,7 @@ class TestHandlerRouting:
 
         manager.resolve_session.assert_called_once_with(5)
         session.run.assert_called_once_with(
-            args=["--flag", "value"],
-            timeout_sec=7,
-            wait_for_stop=False,
+            args=["--flag", "value"], options=ExecutionOptions(timeout_sec=7, wait_for_stop=False)
         )
 
     def test_execution_run_accepts_omitted_execution_payload(self) -> None:
@@ -684,7 +689,9 @@ class TestHandlerRouting:
             manager,
         )
 
-        session.run.assert_called_once_with(args=None, timeout_sec=30, wait_for_stop=True)
+        session.run.assert_called_once_with(
+            args=None, options=ExecutionOptions(timeout_sec=30, wait_for_stop=True)
+        )
 
     def test_run_accepts_shell_style_string_args(self) -> None:
         """String-form run args should be shell-split before forwarding."""
@@ -708,8 +715,7 @@ class TestHandlerRouting:
 
         session.run.assert_called_once_with(
             args=["--flag", "hello world"],
-            timeout_sec=7,
-            wait_for_stop=True,
+            options=ExecutionOptions(timeout_sec=7, wait_for_stop=True),
         )
 
     def test_add_inferior_routes_to_correct_session(self) -> None:
@@ -782,9 +788,7 @@ class TestHandlerRouting:
         )
 
         session.continue_execution.assert_called_once_with(
-            wait_for_stop=False,
-            timeout_sec=5,
-            reverse=False,
+            reverse=False, options=ExecutionOptions(timeout_sec=5, wait_for_stop=False)
         )
 
     def test_execution_manage_reverse_direction_reaches_the_session(self) -> None:
@@ -804,7 +808,9 @@ class TestHandlerRouting:
             manager,
         )
 
-        session.step.assert_called_once_with(wait_for_stop=True, timeout_sec=30, reverse=True)
+        session.step.assert_called_once_with(
+            reverse=True, options=ExecutionOptions(timeout_sec=30, wait_for_stop=True)
+        )
 
     def test_finish_routes_to_execution_service(self) -> None:
         """Finish requests should forward timeout to the session execution API."""
@@ -823,7 +829,9 @@ class TestHandlerRouting:
             manager,
         )
 
-        session.finish.assert_called_once_with(timeout_sec=9, wait_for_stop=True, reverse=False)
+        session.finish.assert_called_once_with(
+            reverse=False, options=ExecutionOptions(timeout_sec=9, wait_for_stop=True)
+        )
 
     def test_attach_process_routes_to_correct_session(self) -> None:
         """Attach requests should forward pid and timeout."""
@@ -953,16 +961,9 @@ class TestHandlerRouting:
         )
 
         session.disassemble.assert_called_once_with(
-            thread_id=None,
-            frame=None,
-            function="main",
-            address=None,
-            start_address=None,
-            end_address=None,
-            file=None,
-            line=None,
-            instruction_count=8,
-            mode="mixed",
+            DisassemblyRequest(
+                location=FunctionLocation(function="main"), instruction_count=8, mode="mixed"
+            )
         )
 
     def test_inspect_query_variables_routes_context_selector(self) -> None:
@@ -1020,16 +1021,43 @@ class TestHandlerRouting:
         )
 
         session.get_source_context.assert_called_once_with(
-            thread_id=None,
-            frame=None,
-            function=None,
-            address=None,
-            file="main.c",
-            line=None,
-            start_line=10,
-            end_line=12,
-            context_before=0,
-            context_after=0,
+            SourceContextRequest(
+                location=FileRangeLocation(file="main.c", start_line=10, end_line=12),
+                context_before=0,
+                context_after=0,
+            )
+        )
+
+    def test_inspect_source_address_range_retains_current_location_behavior(self) -> None:
+        session = _session_double()
+        session.get_source_context.return_value = OperationSuccess(
+            SourceContextInfo(
+                context=InspectionContextInfo(thread_id=None, frame=None),
+                location=InspectionLocation(kind="current"),
+                range=SourceRange(start_line=1, end_line=1),
+                lines=[],
+            )
+        )
+
+        result = dispatch(
+            "gdb_inspect_query",
+            {
+                "session_id": 2,
+                "action": "source",
+                "query": {
+                    "location": {
+                        "kind": "address_range",
+                        "start_address": "0x123",
+                        "end_address": "0x456",
+                    }
+                },
+            },
+            _manager_for(session),
+        )
+
+        assert result["status"] == "success"
+        session.get_source_context.assert_called_once_with(
+            SourceContextRequest(location=CurrentLocation())
         )
 
     def test_breakpoint_query_get_routes_to_service(self) -> None:
@@ -1425,7 +1453,7 @@ class TestHandlerRouting:
             temporary=False,
         )
         continue_execution.assert_called_once_with(
-            wait_for_stop=True, timeout_sec=30, reverse=False
+            options=ExecutionOptions(timeout_sec=30), reverse=False
         )
 
     def test_workflow_batch_stops_on_first_error_by_default(self) -> None:
@@ -1707,7 +1735,9 @@ class TestHandlerRouting:
             core=None,
             rr_replay=None,
         )
-        session.run.assert_called_once_with(args=None, timeout_sec=30, wait_for_stop=True)
+        session.run.assert_called_once_with(
+            args=None, options=ExecutionOptions(timeout_sec=30, wait_for_stop=True)
+        )
         assert result_data["status"] == "success"
         iteration = mapping_list(dig(result_data, "result", "iterations"))[-1]
         assert iteration["matched_failure"] is True
@@ -1893,16 +1923,7 @@ class TestHandlerRouting:
         )
 
         session.disassemble.assert_called_once_with(
-            thread_id=2,
-            frame=1,
-            function=None,
-            address=None,
-            start_address=None,
-            end_address=None,
-            file=None,
-            line=None,
-            instruction_count=12,
-            mode="mixed",
+            DisassemblyRequest(thread_id=2, frame=1, instruction_count=12, mode="mixed")
         )
 
     def test_get_variables_accepts_numeric_string_context(self) -> None:
@@ -1946,16 +1967,9 @@ class TestHandlerRouting:
         )
 
         session.get_source_context.assert_called_once_with(
-            thread_id=None,
-            frame=None,
-            function=None,
-            address=None,
-            file="main.c",
-            line=12,
-            start_line=None,
-            end_line=None,
-            context_before=2,
-            context_after=3,
+            SourceContextRequest(
+                location=FileLineLocation(file="main.c", line=12), context_before=2, context_after=3
+            )
         )
 
     def test_tool_definitions_match_dispatch_registry(self) -> None:

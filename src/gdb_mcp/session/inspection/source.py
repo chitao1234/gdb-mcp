@@ -13,6 +13,15 @@ from ...domain import (
     SourceLineRecord,
     SourceRange,
 )
+from ..requests import (
+    AddressLocation,
+    CurrentLocation,
+    FileLineLocation,
+    FileRangeLocation,
+    FunctionLocation,
+    SourceContextRequest,
+    SourceLocation,
+)
 from .base import (
     CodeLocationResolver,
     InspectionContext,
@@ -57,25 +66,16 @@ class InspectionSource:
         self._resolver = resolver
 
     def get_source_context(
-        self,
-        *,
-        thread_id: int | None = None,
-        frame: int | None = None,
-        function: str | None = None,
-        address: str | None = None,
-        file: str | None = None,
-        line: int | None = None,
-        start_line: int | None = None,
-        end_line: int | None = None,
-        context_before: int = 5,
-        context_after: int = 5,
+        self, request: SourceContextRequest
     ) -> OperationSuccess[SourceContextInfo] | OperationError:
         """Return structured source lines for one resolved code location."""
 
         selection: _SelectionSnapshot | None = None
         location_result: _ResolvedCodeLocation | OperationError
+        thread_id, frame = request.thread_id, request.frame
+        location = request.location
 
-        if all(value is None for value in (function, address, file, line, start_line, end_line)):
+        if isinstance(location, CurrentLocation):
             if thread_id is not None or frame is not None:
                 captured_selection = self._context.capture_selection()
                 if isinstance(captured_selection, OperationError):
@@ -95,32 +95,32 @@ class InspectionSource:
                 frame=frame,
                 selection=selection,
             )
-        elif function is not None:
+        elif isinstance(location, FunctionLocation):
             location_result = self._resolver.resolve_info_line_location(
-                command=f"info line {function}",
+                command=f"info line {location.function}",
                 scope="function",
-                function=function,
+                function=location.function,
                 address=None,
             )
-        elif address is not None:
+        elif isinstance(location, AddressLocation):
             location_result = self._resolver.resolve_info_line_location(
-                command=f"info line *{address}",
+                command=f"info line *{location.address}",
                 scope="address",
                 function=None,
-                address=address,
+                address=location.address,
             )
-        elif file is not None and line is not None:
+        elif isinstance(location, FileLineLocation):
             location_result = _ResolvedCodeLocation(
                 scope="file_line",
-                file=file,
-                fullname=file,
-                line=line,
+                file=location.file,
+                fullname=location.file,
+                line=location.line,
             )
-        elif file is not None and start_line is not None and end_line is not None:
+        elif isinstance(location, FileRangeLocation):
             location_result = _ResolvedCodeLocation(
                 scope="file_range",
-                file=file,
-                fullname=file,
+                file=location.file,
+                fullname=location.file,
                 line=None,
             )
         else:
@@ -133,10 +133,9 @@ class InspectionSource:
 
         read_result = self._read_source_context(
             location_result,
-            requested_start_line=start_line,
-            requested_end_line=end_line,
-            context_before=context_before,
-            context_after=context_after,
+            requested_location=location,
+            context_before=request.context_before,
+            context_after=request.context_after,
         )
         if isinstance(read_result, OperationError):
             if selection is None:
@@ -174,8 +173,7 @@ class InspectionSource:
         self,
         location: _ResolvedCodeLocation,
         *,
-        requested_start_line: int | None,
-        requested_end_line: int | None,
+        requested_location: SourceLocation,
         context_before: int,
         context_after: int,
     ) -> _ResolvedSourceWindow | OperationError:
@@ -191,9 +189,9 @@ class InspectionSource:
         if file_selector is None:
             return OperationError(message="Resolved source location has no file path")
 
-        if requested_start_line is not None and requested_end_line is not None:
-            start_line = requested_start_line
-            end_line = requested_end_line
+        if isinstance(requested_location, FileRangeLocation):
+            start_line = requested_location.start_line
+            end_line = requested_location.end_line
             current_line = None
         else:
             current_line = location.line

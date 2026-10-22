@@ -54,6 +54,12 @@ from ..domain import (
 )
 from .config import SessionConfig
 from .constants import DEFAULT_TIMEOUT_SEC
+from .requests import (
+    DEFAULT_EXECUTION_OPTIONS,
+    DisassemblyRequest,
+    ExecutionOptions,
+    SourceContextRequest,
+)
 from .runtime import SessionRuntime
 
 BackendOperation: TypeAlias = Literal[
@@ -161,8 +167,7 @@ class DebuggerBackend(Protocol):
     def run(
         self,
         args: list[str] | None = None,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
-        wait_for_stop: bool = True,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError: ...
 
     def add_inferior(
@@ -191,8 +196,7 @@ class DebuggerBackend(Protocol):
     def continue_execution(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError: ...
 
@@ -206,32 +210,28 @@ class DebuggerBackend(Protocol):
     def step(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError: ...
 
     def next(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError: ...
 
     def step_instruction(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError: ...
 
     def next_instruction(
         self,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError: ...
 
@@ -243,23 +243,19 @@ class DebuggerBackend(Protocol):
         self,
         location: str,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
     ) -> OperationSuccess[LocationExecutionInfo] | OperationError: ...
 
     def until(
         self,
         location: str,
         *,
-        wait_for_stop: bool = True,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
     ) -> OperationSuccess[LocationExecutionInfo] | OperationError: ...
 
     def finish(
         self,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
-        *,
-        wait_for_stop: bool = True,
+        options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[FinishInfo] | OperationError: ...
 
@@ -323,33 +319,11 @@ class DebuggerBackend(Protocol):
     ) -> OperationSuccess[MemoryReadInfo] | OperationError: ...
 
     def disassemble(
-        self,
-        *,
-        thread_id: int | None = None,
-        frame: int | None = None,
-        function: str | None = None,
-        address: str | None = None,
-        start_address: str | None = None,
-        end_address: str | None = None,
-        file: str | None = None,
-        line: int | None = None,
-        instruction_count: int = 32,
-        mode: Literal["assembly", "mixed"] = "mixed",
+        self, request: DisassemblyRequest
     ) -> OperationSuccess[DisassemblyInfo] | OperationError: ...
 
     def get_source_context(
-        self,
-        *,
-        thread_id: int | None = None,
-        frame: int | None = None,
-        function: str | None = None,
-        address: str | None = None,
-        file: str | None = None,
-        line: int | None = None,
-        start_line: int | None = None,
-        end_line: int | None = None,
-        context_before: int = 5,
-        context_after: int = 5,
+        self, request: SourceContextRequest
     ) -> OperationSuccess[SourceContextInfo] | OperationError: ...
 
     def set_breakpoint(

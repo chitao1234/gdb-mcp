@@ -10,6 +10,7 @@ from ..domain import (
     CommandTranscriptEntry,
     ExecutionState,
     FollowForkMode,
+    InferiorRecord,
     InferiorStateRecord,
     SessionStatusSnapshot,
     StopEvent,
@@ -31,6 +32,47 @@ class InferiorRuntimeState:
     execution_state: ExecutionState = "unknown"
     stop_reason: str | None = None
     exit_code: int | None = None
+    refined_stop_kind: tuple[str | None, StopKind] | None = None
+    state_detail: Literal["crashed"] | None = None
+
+    @property
+    def stop_kind(self) -> StopKind:
+        refined = self.refined_stop_kind
+        if refined is not None and refined[0] == self.stop_reason:
+            return refined[1]
+        return stop_kind_from_reason(self.stop_reason)
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionObservation:
+    """Decoded debugger state applied as one runtime transition."""
+
+    execution_state: ExecutionState
+    target_loaded: bool
+    current_inferior_id: int | None
+    inferior_count: int | None
+    current_thread_id: int | None
+    current_frame: int | None
+    stop_reason: str | None = None
+    stop_kind: StopKind | None = None
+    exit_code: int | None = None
+    state_detail: Literal["crashed"] | None = None
+    stop_event: StopEvent | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeSnapshot:
+    """One observation of session metadata and bounded execution history."""
+
+    status: SessionStatusSnapshot
+    config: SessionConfig | None
+    attached_pid: int | None
+    current_thread_id: int | None
+    current_frame: int | None
+    last_failure_message: str | None
+    last_stop_event: StopEvent | None
+    stop_history: tuple[StopEvent, ...]
+    command_transcript: tuple[CommandTranscriptEntry, ...]
 
 
 @dataclass(slots=True)
@@ -62,10 +104,6 @@ class SessionRuntime:
     stop_history_limit: int = DEFAULT_STOP_HISTORY_LIMIT
     command_transcript: list[CommandTranscriptEntry] = field(default_factory=list)
     command_transcript_limit: int = DEFAULT_COMMAND_TRANSCRIPT_LIMIT
-    # A finer stop kind than the native reason expresses, tied to that reason.
-    _refined_stop_kind: tuple[str | None, StopKind] | None = field(
-        default=None, repr=False, compare=False
-    )
     # Leaf lock guarding the container state below. No other lock is taken while
     # it is held, so it cannot participate in a lock-order cycle.
     _state_lock: LockProtocol = field(default_factory=threading.RLock, repr=False, compare=False)
@@ -76,7 +114,8 @@ class SessionRuntime:
 
     @execution_state.setter
     def execution_state(self, state: ExecutionState) -> None:
-        self._selected_state.execution_state = state
+        with self._state_lock:
+            self._selected_state.execution_state = state
 
     @property
     def stop_reason(self) -> str | None:
@@ -84,7 +123,8 @@ class SessionRuntime:
 
     @stop_reason.setter
     def stop_reason(self, reason: str | None) -> None:
-        self._selected_state.stop_reason = reason
+        with self._state_lock:
+            self._selected_state.stop_reason = reason
 
     @property
     def exit_code(self) -> int | None:
@@ -92,7 +132,8 @@ class SessionRuntime:
 
     @exit_code.setter
     def exit_code(self, code: int | None) -> None:
-        self._selected_state.exit_code = code
+        with self._state_lock:
+            self._selected_state.exit_code = code
 
     @property
     def stop_kind(self) -> StopKind:
@@ -103,10 +144,7 @@ class SessionRuntime:
         it is used only while that stop reason is current.
         """
 
-        refined = self._refined_stop_kind
-        if refined is not None and refined[0] == self.stop_reason:
-            return refined[1]
-        return stop_kind_from_reason(self.stop_reason)
+        return self._selected_state.stop_kind
 
     def begin_startup(self, config: SessionConfig) -> None:
         """Record a startup attempt and reset transient state."""
@@ -171,6 +209,10 @@ class SessionRuntime:
 
         self.mark_failed(message)
 
+    def record_failure_message(self, message: str) -> None:
+        with self._state_lock:
+            self.last_failure_message = message
+
     def mark_stopped(self) -> None:
         """Record a clean stop of the current session."""
 
@@ -182,12 +224,14 @@ class SessionRuntime:
     def mark_thread_selected(self, thread_id: int | None) -> None:
         """Track the currently selected thread."""
 
-        self.current_thread_id = thread_id
+        with self._state_lock:
+            self.current_thread_id = thread_id
 
     def mark_frame_selected(self, frame_number: int | None) -> None:
         """Track the currently selected frame."""
 
-        self.current_frame = frame_number
+        with self._state_lock:
+            self.current_frame = frame_number
 
     def mark_inferior_selected(self, inferior_id: int | None) -> None:
         """Track the currently selected inferior and clear stale stack selection."""
@@ -238,6 +282,46 @@ class SessionRuntime:
             if self.inferior_count is None or self.inferior_count < len(self.inferior_states):
                 self.inferior_count = len(self.inferior_states)
 
+    def apply_inferior_inventory(
+        self, records: list[InferiorRecord], *, current_inferior_id: int | None
+    ) -> None:
+        """Apply an inventory without erasing stop details it does not report."""
+
+        with self._state_lock:
+            self.update_inferior_inventory(
+                current_inferior_id=current_inferior_id,
+                count=len(records),
+                inferior_ids=tuple(
+                    record.inferior_id for record in records if record.inferior_id is not None
+                ),
+            )
+            for record in records:
+                if record.inferior_id is None or record.execution_state is None:
+                    continue
+                state = self.inferior_states[record.inferior_id]
+                if state.execution_state != record.execution_state:
+                    self._update_inferior_state(
+                        inferior_id=record.inferior_id,
+                        execution_state=record.execution_state,
+                        stop_reason=record.stop_reason,
+                        exit_code=record.exit_code,
+                        refined_stop_kind=record.stop_kind,
+                    )
+                    continue
+                if "stop_reason" in record.model_fields_set:
+                    if record.stop_reason != state.stop_reason:
+                        state.state_detail = None
+                        state.refined_stop_kind = None
+                    state.stop_reason = record.stop_reason
+                if "exit_code" in record.model_fields_set:
+                    state.exit_code = record.exit_code
+                if "stop_kind" in record.model_fields_set:
+                    if record.stop_kind != state.stop_kind:
+                        state.state_detail = None
+                    state.refined_stop_kind = None
+                    if record.stop_kind is not None:
+                        state.refined_stop_kind = (state.stop_reason, record.stop_kind)
+
     def remove_inferior(self, inferior_id: int) -> None:
         """Remove one inferior from runtime tracking after thread-group removal."""
 
@@ -260,22 +344,34 @@ class SessionRuntime:
     def mark_follow_fork_mode(self, mode: FollowForkMode | None) -> None:
         """Track the configured follow-fork-mode value."""
 
-        self.follow_fork_mode = mode
+        with self._state_lock:
+            self.follow_fork_mode = mode
 
     def mark_detach_on_fork(self, enabled: bool | None) -> None:
         """Track the configured detach-on-fork value."""
 
-        self.detach_on_fork = enabled
+        with self._state_lock:
+            self.detach_on_fork = enabled
 
     def mark_attached(self, pid: int) -> None:
         """Track the PID of the currently attached process."""
 
-        self.attached_pid = pid
+        with self._state_lock:
+            self.attached_pid = pid
 
     def clear_attached_pid(self) -> None:
         """Clear any remembered attached process PID."""
 
-        self.attached_pid = None
+        with self._state_lock:
+            self.attached_pid = None
+
+    def mark_target_loaded(self, loaded: bool) -> None:
+        with self._state_lock:
+            self.target_loaded = loaded
+
+    def mark_debugger_running(self, running: bool) -> None:
+        with self._state_lock:
+            self.is_running = running
 
     def mark_inferior_not_started(self, inferior_id: int | None = None) -> None:
         """Record that a target is loaded but execution has not begun."""
@@ -286,6 +382,58 @@ class SessionRuntime:
             stop_reason=None,
             exit_code=None,
         )
+
+    def begin_execution(self) -> None:
+        with self._state_lock:
+            self.current_frame = None
+            self.mark_inferior_running()
+
+    def apply_execution_observation(
+        self, observation: ExecutionObservation
+    ) -> SessionStatusSnapshot:
+        with self._state_lock:
+            self.target_loaded = observation.target_loaded
+            self.is_running = True
+            if observation.inferior_count is not None:
+                self.update_inferior_inventory(
+                    current_inferior_id=observation.current_inferior_id,
+                    count=observation.inferior_count,
+                    inferior_ids=tuple(range(1, observation.inferior_count + 1)),
+                )
+            self.current_thread_id = observation.current_thread_id
+            self.current_frame = observation.current_frame
+            state = InferiorRuntimeState(
+                execution_state=observation.execution_state,
+                stop_reason=observation.stop_reason,
+                exit_code=observation.exit_code,
+                state_detail=observation.state_detail,
+            )
+            if observation.stop_kind is not None:
+                state.refined_stop_kind = (observation.stop_reason, observation.stop_kind)
+            self._selected_state = state
+            if self.current_inferior_id is not None:
+                self.inferior_states[self.current_inferior_id] = state
+            if observation.stop_event is not None:
+                self.record_stop_event(observation.stop_event)
+            return self.status_snapshot(debugger_alive=True)
+
+    def apply_stop_event(self, event: StopEvent) -> None:
+        """Apply a GDB stop notification and its selection as one transition."""
+
+        with self._state_lock:
+            if event.thread_id is not None:
+                self.current_thread_id = event.thread_id
+            if event.frame is not None and event.frame.level is not None:
+                self.current_frame = event.frame.level
+            self._update_inferior_state(
+                inferior_id=event.inferior_id,
+                execution_state=event.execution_state,
+                stop_reason=event.reason,
+                exit_code=event.exit_code,
+                refined_stop_kind=event.stop_kind,
+                state_detail=event.state_detail,
+            )
+            self.record_stop_event(event)
 
     def mark_inferior_running(self, inferior_id: int | None = None) -> None:
         """Record that the inferior is currently running."""
@@ -310,12 +458,12 @@ class SessionRuntime:
         it (DAP calls a watchpoint stop ``breakpoint``).
         """
 
-        self._refined_stop_kind = (reason, stop_kind) if stop_kind is not None else None
         self._update_inferior_state(
             inferior_id=inferior_id,
             execution_state="paused",
             stop_reason=reason,
             exit_code=None,
+            refined_stop_kind=stop_kind,
         )
 
     def mark_inferior_exited(
@@ -346,14 +494,13 @@ class SessionRuntime:
                         inferior_id=inferior_id,
                         execution_state=state.execution_state,
                         stop_reason=state.stop_reason,
+                        stop_kind=state.stop_kind,
                         exit_code=state.exit_code,
                     )
                 )
             return records
 
-    def status_snapshot(
-        self, *, debugger_alive: bool, state_detail: Literal["crashed"] | None = None
-    ) -> SessionStatusSnapshot:
+    def status_snapshot(self, *, debugger_alive: bool) -> SessionStatusSnapshot:
         """Read common status fields under the runtime state lock."""
 
         with self._state_lock:
@@ -362,7 +509,7 @@ class SessionRuntime:
                 target_loaded=self.target_loaded,
                 session_state=self.state,
                 execution_state=self.execution_state,
-                state_detail=state_detail,
+                state_detail=self._selected_state.state_detail,
                 stop_reason=self.stop_reason,
                 stop_kind=self.stop_kind,
                 exit_code=self.exit_code,
@@ -371,6 +518,20 @@ class SessionRuntime:
                 inferior_states=self.inferiors_state_summary() or None,
                 follow_fork_mode=self.follow_fork_mode,
                 detach_on_fork=self.detach_on_fork,
+            )
+
+    def snapshot(self, *, debugger_alive: bool) -> RuntimeSnapshot:
+        with self._state_lock:
+            return RuntimeSnapshot(
+                status=self.status_snapshot(debugger_alive=debugger_alive),
+                config=self.config,
+                attached_pid=self.attached_pid,
+                current_thread_id=self.current_thread_id,
+                current_frame=self.current_frame,
+                last_failure_message=self.last_failure_message,
+                last_stop_event=self.last_stop_event,
+                stop_history=tuple(self.stop_history),
+                command_transcript=tuple(self.command_transcript),
             )
 
     def record_stop_event(self, event: StopEvent) -> None:
@@ -407,6 +568,8 @@ class SessionRuntime:
         execution_state: ExecutionState,
         stop_reason: str | None,
         exit_code: int | None,
+        refined_stop_kind: StopKind | None = None,
+        state_detail: Literal["crashed"] | None = None,
     ) -> None:
         """Update the execution state owned by one inferior."""
 
@@ -420,6 +583,10 @@ class SessionRuntime:
             state.execution_state = execution_state
             state.stop_reason = stop_reason
             state.exit_code = exit_code
+            state.state_detail = state_detail
+            state.refined_stop_kind = (
+                (stop_reason, refined_stop_kind) if refined_stop_kind is not None else None
+            )
 
             if self.inferior_count is None or self.inferior_count < len(self.inferior_states):
                 self.inferior_count = len(self.inferior_states)

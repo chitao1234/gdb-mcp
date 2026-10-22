@@ -22,6 +22,7 @@ from ...domain import (
     VariablesInfo,
 )
 from ..command_runner import SessionCommandRunner
+from ..requests import DisassemblyRequest, SourceContextRequest
 from ..runtime import SessionRuntime
 from .base import CodeLocationResolver, InspectionContext
 from .disassembly import InspectionDisassembly
@@ -98,33 +99,11 @@ class SessionInspectionService:
         return self._threads.get_frame_info(thread_id=thread_id, frame=frame)
 
     def disassemble(
-        self,
-        *,
-        thread_id: int | None = None,
-        frame: int | None = None,
-        function: str | None = None,
-        address: str | None = None,
-        start_address: str | None = None,
-        end_address: str | None = None,
-        file: str | None = None,
-        line: int | None = None,
-        instruction_count: int = 32,
-        mode: Literal["assembly", "mixed"] = "mixed",
+        self, request: DisassemblyRequest
     ) -> OperationSuccess[DisassemblyInfo] | OperationError:
         """Return structured disassembly for one resolved code location."""
 
-        return self._disassembly.disassemble(
-            thread_id=thread_id,
-            frame=frame,
-            function=function,
-            address=address,
-            start_address=start_address,
-            end_address=end_address,
-            file=file,
-            line=line,
-            instruction_count=instruction_count,
-            mode=mode,
-        )
+        return self._disassembly.disassemble(request)
 
     def select_frame(
         self, frame_number: int
@@ -162,33 +141,11 @@ class SessionInspectionService:
         return self._variables.get_variables(thread_id, frame)
 
     def get_source_context(
-        self,
-        *,
-        thread_id: int | None = None,
-        frame: int | None = None,
-        function: str | None = None,
-        address: str | None = None,
-        file: str | None = None,
-        line: int | None = None,
-        start_line: int | None = None,
-        end_line: int | None = None,
-        context_before: int = 5,
-        context_after: int = 5,
+        self, request: SourceContextRequest
     ) -> OperationSuccess[SourceContextInfo] | OperationError:
         """Return structured source lines for one resolved code location."""
 
-        return self._source.get_source_context(
-            thread_id=thread_id,
-            frame=frame,
-            function=function,
-            address=address,
-            file=file,
-            line=line,
-            start_line=start_line,
-            end_line=end_line,
-            context_before=context_before,
-            context_after=context_after,
-        )
+        return self._source.get_source_context(request)
 
     def get_registers(
         self,

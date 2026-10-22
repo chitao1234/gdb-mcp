@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Callable
 from unittest.mock import Mock
 
@@ -37,7 +38,9 @@ def test_implementation_value_error_reaches_the_dispatch_boundary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     selected = backend()
-    monkeypatch.setattr(selected, "_variable", Mock(side_effect=ValueError("implementation bug")))
+    monkeypatch.setattr(
+        selected._inspection, "_variable", Mock(side_effect=ValueError("implementation bug"))
+    )
 
     with pytest.raises(ValueError, match="implementation bug"):
         selected.evaluate_expression("value")
@@ -51,7 +54,7 @@ def test_expected_delve_failures_remain_operation_errors(
     monkeypatch: pytest.MonkeyPatch, failure: Exception
 ) -> None:
     selected = backend()
-    monkeypatch.setattr(selected, "_variable", Mock(side_effect=failure))
+    monkeypatch.setattr(selected._inspection, "_variable", Mock(side_effect=failure))
 
     result = selected.evaluate_expression("value")
 
@@ -61,21 +64,86 @@ def test_expected_delve_failures_remain_operation_errors(
 
 def test_malformed_delve_address_is_a_decode_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     selected = backend()
-    monkeypatch.setattr(selected, "_variable", Mock(return_value={"value": "not an address"}))
+    monkeypatch.setattr(
+        selected._inspection, "_variable", Mock(return_value={"value": "not an address"})
+    )
 
     with pytest.raises(DebuggerDecodeError, match="address"):
-        selected._address("pointer")
+        selected._inspection.address("pointer")
 
 
 def test_malformed_delve_memory_encoding_is_a_decode_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     selected = backend()
-    monkeypatch.setattr(selected, "_scope", Mock(return_value={}))
+    monkeypatch.setattr(selected._inspection, "scope", Mock(return_value={}))
     monkeypatch.setattr(selected, "_request", Mock(return_value={"Mem": "%%%"}))
 
     with pytest.raises(DebuggerDecodeError, match="base64"):
         selected.read_memory("0x0", 1)
+
+
+def test_memory_reads_respect_older_delve_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    selected = backend()
+    monkeypatch.setattr(selected._inspection, "scope", Mock(return_value={}))
+    contents = bytes(range(256)) * 10
+    reads: list[tuple[int, int]] = []
+
+    def request(
+        method: str,
+        arguments: dict[str, object] | None = None,
+        *,
+        timeout_sec: float = 30,
+    ) -> dict[str, object]:
+        assert method == "ExamineMemory"
+        assert arguments is not None
+        address, length = integer(arguments["Address"]), integer(arguments["Length"])
+        assert 0 < length <= 1000
+        reads.append((address, length))
+        return {"Mem": base64.b64encode(contents[address - 16 : address - 16 + length]).decode()}
+
+    monkeypatch.setattr(selected, "_request", request)
+
+    result = selected.read_memory("0x10", len(contents) - 3, offset=3)
+
+    assert isinstance(result, OperationSuccess)
+    assert result.value.blocks[0].contents == contents[3:].hex()
+    assert reads == [(19, 1000), (1019, 1000), (2019, 557)]
+
+
+@pytest.mark.parametrize(
+    ("version", "supported", "memory_read_limit"),
+    [
+        ("Version: 1.6.1\nBuild: $Id: release $", False, 1000),
+        ("1.22.1", False, 1000),
+        ("1.23.0", True, 1000),
+        ("1.23.1", True, 1000),
+        ("1.24.0", True, 65536),
+        ("1.27.2", True, 65536),
+    ],
+)
+def test_handshake_applies_release_boundaries(
+    monkeypatch: pytest.MonkeyPatch, version: str, supported: bool, memory_read_limit: int
+) -> None:
+    selected = backend()
+    request = Mock(
+        side_effect=[{}, {"APIVersion": 2, "DelveVersion": version}, {"State": {"Pid": 42}}]
+    )
+    monkeypatch.setattr(selected, "_request", request)
+
+    selected._handshake(timeout_sec=1)
+
+    assert selected.capabilities.supports(c.ACTION_NEXT_INSTRUCTION) is supported
+    assert selected._inspection.memory_read_limit == memory_read_limit
+    if not supported:
+        request.reset_mock(side_effect=True)
+        execute = Mock()
+        monkeypatch.setattr(selected._execution, "_execute", execute)
+        for reverse in (False, True):
+            result = selected.next_instruction(reverse=reverse)
+            assert isinstance(result, OperationError) and result.code == "unsupported_operation"
+        request.assert_not_called()
+        execute.assert_not_called()
 
 
 def test_unexpected_startup_failure_cleans_up_and_propagates(
@@ -148,8 +216,8 @@ def test_native_stop_reasons_keep_their_canonical_kind(reason: str, kind: str) -
 
 def test_old_state_without_reason_uses_pending_operation() -> None:
     selected = backend()
-    selected._has_run = True
-    selected._command = "step"
+    selected._execution._has_run = True
+    selected._execution._command = "step"
     selected._client_state({"State": {"Pid": 42, "currentGoroutine": {"id": 7}}})
     assert selected.runtime.current_thread_id == 7
     assert selected.runtime.stop_kind == "step"
@@ -157,9 +225,30 @@ def test_old_state_without_reason_uses_pending_operation() -> None:
     assert len(selected.runtime.stop_history) == 1
 
 
+def test_malformed_stop_keeps_previous_runtime_and_can_be_retried() -> None:
+    selected = backend()
+    selected.runtime.mark_inferior_running()
+    selected.runtime.mark_thread_selected(99)
+    state: dict[str, object] = {
+        "stopReason": "manual",
+        "currentGoroutine": {"id": 7, "currentLoc": {"pc": "bad address"}},
+    }
+    with pytest.raises(DebuggerDecodeError):
+        selected._client_state({"State": state})
+
+    assert selected.runtime.execution_state == "running"
+    assert selected.runtime.current_thread_id == 99
+    assert selected.runtime.stop_history == []
+    selected._client_state(
+        {"State": {**state, "currentGoroutine": {"id": 7, "currentLoc": {"pc": 123}}}}
+    )
+    assert selected.runtime.status_snapshot(debugger_alive=True).execution_state == "paused"
+    assert len(selected.runtime.stop_history) == 1
+
+
 def test_missing_jump_method_is_remembered_per_session(monkeypatch: pytest.MonkeyPatch) -> None:
     selected = backend()
-    monkeypatch.setattr(selected, "_locations", Mock(return_value=[{"pc": 123}]))
+    monkeypatch.setattr(selected._inspection, "locations", Mock(return_value=[{"pc": 123}]))
     request = Mock(
         side_effect=DelveRpcError(
             "unknown method: RPCServer.SetExecutionPoint", "unsupported_operation"
@@ -286,7 +375,7 @@ def test_invalid_breakpoint_locations_do_not_send_fabricated_addresses(
     monkeypatch: pytest.MonkeyPatch, location: dict[str, object]
 ) -> None:
     selected = backend()
-    monkeypatch.setattr(selected, "_locations", Mock(return_value=[location]))
+    monkeypatch.setattr(selected._inspection, "locations", Mock(return_value=[location]))
     request = Mock()
     monkeypatch.setattr(selected, "_request", request)
 
@@ -299,7 +388,7 @@ def test_invalid_breakpoint_locations_do_not_send_fabricated_addresses(
 def test_delve_register_records_keep_debugger_extensions(monkeypatch: pytest.MonkeyPatch) -> None:
     selected = backend()
     native = {"DwarfNumber": 0, "Name": "rax", "Value": "0x0", "new-field": {"dash-key": True}}
-    monkeypatch.setattr(selected, "_scope", Mock(return_value={}))
+    monkeypatch.setattr(selected._inspection, "scope", Mock(return_value={}))
     monkeypatch.setattr(selected, "_request", Mock(return_value={"Regs": [native]}))
 
     result = selected.get_registers()

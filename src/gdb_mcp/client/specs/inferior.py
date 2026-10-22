@@ -14,11 +14,7 @@ from gdb_mcp.mcp.schemas import (
     InferiorQueryArgs,
 )
 
-from ..builders.inferior import build_inferior_manage_payload, build_inferior_query_payload
-from ..inputs import (
-    InferiorManageInput,
-    InferiorQueryInput,
-)
+from ..namespace import NamespaceLike, ParsedOptions, one_of, snapshot
 from ..parsers import (
     CliUsageError,
     add_boolean_flag,
@@ -31,48 +27,48 @@ from .common import (
 )
 
 
-def _validate_inferior_manage_input(typed_input: InferiorManageInput) -> None:
+def _validate_inferior_manage_input(action: str, values: ParsedOptions) -> None:
     invalid_flags: list[str] = []
-    if typed_input.action == "create":
-        if typed_input.inferior_id is not None:
+    if action == "create":
+        if values.get("inferior_id") is not None:
             invalid_flags.append("--inferior-id")
-        if typed_input.mode is not None:
+        if values.get("mode") is not None:
             invalid_flags.append("--mode")
-        if typed_input.enabled is not None:
+        if values.get("enabled") is not None:
             invalid_flags.append("--enabled")
-    elif typed_input.action in {"remove", "select"}:
-        if typed_input.inferior_id is None:
-            raise CliUsageError(f"--inferior-id required with --action {typed_input.action}")
-        if typed_input.executable is not None:
+    elif action in {"remove", "select"}:
+        if values.get("inferior_id") is None:
+            raise CliUsageError(f"--inferior-id required with --action {action}")
+        if values.get("executable") is not None:
             invalid_flags.append("--executable")
-        if typed_input.make_current is not None:
+        if values.get("make_current") is not None:
             invalid_flags.append("--make-current")
-        if typed_input.mode is not None:
+        if values.get("mode") is not None:
             invalid_flags.append("--mode")
-        if typed_input.enabled is not None:
+        if values.get("enabled") is not None:
             invalid_flags.append("--enabled")
-    elif typed_input.action == "set_follow_fork_mode":
-        if typed_input.mode is None:
+    elif action == "set_follow_fork_mode":
+        if values.get("mode") is None:
             raise CliUsageError("--mode required with --action set_follow_fork_mode")
-        if typed_input.inferior_id is not None:
+        if values.get("inferior_id") is not None:
             invalid_flags.append("--inferior-id")
-        if typed_input.executable is not None:
+        if values.get("executable") is not None:
             invalid_flags.append("--executable")
-        if typed_input.make_current is not None:
+        if values.get("make_current") is not None:
             invalid_flags.append("--make-current")
-        if typed_input.enabled is not None:
+        if values.get("enabled") is not None:
             invalid_flags.append("--enabled")
-    elif typed_input.action == "set_detach_on_fork":
-        if typed_input.inferior_id is not None:
+    elif action == "set_detach_on_fork":
+        if values.get("inferior_id") is not None:
             invalid_flags.append("--inferior-id")
-        if typed_input.executable is not None:
+        if values.get("executable") is not None:
             invalid_flags.append("--executable")
-        if typed_input.make_current is not None:
+        if values.get("make_current") is not None:
             invalid_flags.append("--make-current")
-        if typed_input.mode is not None:
+        if values.get("mode") is not None:
             invalid_flags.append("--mode")
 
-    _raise_invalid_action_flags(typed_input.action, invalid_flags)
+    _raise_invalid_action_flags(action, invalid_flags)
 
 
 def _configure_inferior_query(parser: argparse.ArgumentParser) -> None:
@@ -80,9 +76,15 @@ def _configure_inferior_query(parser: argparse.ArgumentParser) -> None:
     _add_action(parser, choices=INFERIOR_QUERY_ACTIONS)
 
 
-def _build_inferior_query(typed_input: InferiorQueryInput) -> InferiorQueryArgs:
-    payload = build_inferior_query_payload(typed_input)
-    return validate_model(InferiorQueryArgs, payload)
+def _build_inferior_query(namespace: NamespaceLike) -> InferiorQueryArgs:
+    values = snapshot(namespace)
+    return validate_model(
+        InferiorQueryArgs,
+        {
+            "session_id": values.get("session_id"),
+            "action": one_of(values, "action", INFERIOR_QUERY_ACTIONS),
+        },
+    )
 
 
 def _configure_inferior_manage(parser: argparse.ArgumentParser) -> None:
@@ -105,7 +107,18 @@ def _configure_inferior_manage(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_inferior_manage(typed_input: InferiorManageInput) -> InferiorManageArgs:
-    _validate_inferior_manage_input(typed_input)
-    payload = build_inferior_manage_payload(typed_input)
-    return validate_model(InferiorManageArgs, payload)
+def _build_inferior_manage(namespace: NamespaceLike) -> InferiorManageArgs:
+    values = snapshot(namespace)
+    action = one_of(values, "action", INFERIOR_MANAGE_ACTIONS)
+    _validate_inferior_manage_input(action, values)
+    inferior = {
+        name: value
+        for name in ("executable", "make_current", "inferior_id", "mode", "enabled")
+        if (value := values.get(name)) is not None
+    }
+    if action == "set_detach_on_fork":
+        inferior.setdefault("enabled", True)
+    return validate_model(
+        InferiorManageArgs,
+        {"session_id": values.get("session_id"), "action": action, "inferior": inferior},
+    )

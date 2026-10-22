@@ -99,20 +99,21 @@ class SessionCaptureService:
         failed_sections: list[str] = []
 
         status_result = self._backend.get_status()
-        artifacts.append(self._write_result_artifact(bundle_dir, "session-status", status_result))
-        status = status_result.value
+        snapshot = self._runtime.snapshot(
+            debugger_alive=status_result.value.debugger_alive,
+        )
+        status = snapshot.status
+        artifacts.append(
+            self._write_result_artifact(bundle_dir, "session-status", OperationSuccess(status))
+        )
         status_execution_state = status.execution_state
-        status_stop_reason = (
-            status.stop_reason if status.stop_reason is not None else self._runtime.stop_reason
-        )
-        status_stop_kind = (
-            status.stop_kind if status.stop_kind is not None else self._runtime.stop_kind
-        )
+        status_stop_reason = status.stop_reason
+        status_stop_kind = status.stop_kind
 
         stop_event_payload = self._write_payload_artifact(
             bundle_dir,
             "last-stop-event",
-            payload_to_mapping(self._runtime.last_stop_event),
+            payload_to_mapping(snapshot.last_stop_event),
         )
         artifacts.append(stop_event_payload)
 
@@ -120,7 +121,7 @@ class SessionCaptureService:
             stop_history_payload = self._write_payload_artifact(
                 bundle_dir,
                 "stop-history",
-                payload_to_mapping(self._runtime.stop_history),
+                payload_to_mapping(snapshot.stop_history),
             )
             artifacts.append(stop_history_payload)
 
@@ -128,7 +129,7 @@ class SessionCaptureService:
             transcript_payload = self._write_payload_artifact(
                 bundle_dir,
                 "command-transcript",
-                payload_to_mapping(self._runtime.command_transcript),
+                payload_to_mapping(snapshot.command_transcript),
             )
             artifacts.append(transcript_payload)
 
@@ -172,10 +173,8 @@ class SessionCaptureService:
                 self._write_payload_artifact(bundle_dir, "thread-backtraces", backtrace_payloads)
             )
 
-        current_thread_id = self._runtime.current_thread_id
-        current_frame = (
-            self._runtime.current_frame if self._runtime.current_frame is not None else 0
-        )
+        current_thread_id = snapshot.current_thread_id
+        current_frame = snapshot.current_frame if snapshot.current_frame is not None else 0
 
         if request.include_frame:
             frame_result = self._backend.get_frame_info()
@@ -201,7 +200,7 @@ class SessionCaptureService:
         if request.include_registers:
             registers_result = self._backend.get_registers(
                 thread_id=current_thread_id,
-                frame=self._runtime.current_frame,
+                frame=snapshot.current_frame,
             )
             registers_capture = self._write_result_artifact(
                 bundle_dir,
@@ -218,7 +217,7 @@ class SessionCaptureService:
                 expression_result = self._backend.evaluate_expression(
                     expression,
                     thread_id=current_thread_id,
-                    frame=self._runtime.current_frame,
+                    frame=snapshot.current_frame,
                 )
                 payload = result_to_mapping(expression_result)
                 payload["expression"] = expression
@@ -257,21 +256,19 @@ class SessionCaptureService:
             "execution_state": status_execution_state,
             "stop_reason": status_stop_reason,
             "stop_kind": status_stop_kind,
-            "last_stop_event": payload_to_mapping(self._runtime.last_stop_event),
+            "last_stop_event": payload_to_mapping(snapshot.last_stop_event),
             "requested_memory_ranges": payload_to_mapping(request.memory_ranges),
             "artifacts": payload_to_mapping(artifacts),
             "failed_sections": payload_to_mapping(sorted(set(failed_sections))),
             "session": {
-                "program": (
-                    self._runtime.config.program if self._runtime.config is not None else None
-                ),
-                "core": self._runtime.config.core if self._runtime.config is not None else None,
+                "program": (snapshot.config.program if snapshot.config is not None else None),
+                "core": snapshot.config.core if snapshot.config is not None else None,
                 "working_dir": (
-                    self._runtime.config.working_dir if self._runtime.config is not None else None
+                    snapshot.config.working_dir if snapshot.config is not None else None
                 ),
-                "attached_pid": self._runtime.attached_pid,
-                "current_thread_id": self._runtime.current_thread_id,
-                "current_frame": self._runtime.current_frame,
+                "attached_pid": snapshot.attached_pid,
+                "current_thread_id": snapshot.current_thread_id,
+                "current_frame": snapshot.current_frame,
             },
         }
         manifest_artifact = self._write_payload_artifact(bundle_dir, "manifest", manifest_payload)
@@ -292,7 +289,7 @@ class SessionCaptureService:
                 execution_state=status_execution_state,
                 stop_reason=status_stop_reason,
                 stop_kind=status_stop_kind,
-                last_stop_event=self._runtime.last_stop_event,
+                last_stop_event=snapshot.last_stop_event,
             ),
             warnings=warnings,
         )

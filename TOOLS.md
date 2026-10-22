@@ -71,6 +71,12 @@ debugger is behind the session:
   `step`, `signal`, `exception`, `exit`, `entry`, `pause`, `fork`, `vfork`,
   `exec`, `thread_exit`, or `unknown`. The debugger's own `stop_reason` string is
   kept as-is; `stop_reasons` request filters keep matching that native string
+- session status reports the selected inferior's stop kind; a stop on another
+  inferior does not replace it
+- each `inferior_states` entry carries its own canonical `stop_kind`, including
+  backend refinements such as watchpoints; GDB inferior listings retain it too
+- execution observations apply state, selection, and new stop history together;
+  status and capture readers do not observe a partially applied stop
 - `state_detail` is `"crashed"` when a paused inferior stopped on a fatal signal
   or LLDB reported a crashed process; the execution state itself stays `paused`
 - stop events expose portable signal fields once: `signal_name`,
@@ -177,12 +183,22 @@ before execution, so an invalid step does not execute earlier valid steps.
 
 Request validation is separate from decoding debugger output. Additional
 debugger record fields, including nested fields and hyphenated keys, are kept;
+disassembly keeps instruction extensions and carries mixed-source extensions
+onto each instruction from that source group.
 an unfamiliar notification or native stop reason is not a decoding failure.
 Unclassified stop reasons retain their text and use `stop_kind="unknown"`.
 If a field consumed by an operation cannot be decoded, that operation returns
 `code="protocol_error"`, not `validation_error`. The session remains usable
 while its debugger connection is usable. Unexpected implementation exceptions
 return `internal_error` and are logged by the server.
+This also applies to stop and interrupt: implementation failures are not
+converted to ordinary debugger errors during these operations.
+These distinctions also apply during startup: malformed consumed debugger data
+returns `protocol_error`, and unexpected implementation failures return
+`internal_error`, after startup resources are cleaned up. Failed startup does
+not publish a session id. Unknown GDB/MI result classes retain their original
+text in command backend data; only `error` is classified as a debugger error
+and only `running` directly changes execution state to running.
 
 A failure that a debugger reported carries **everything that debugger printed**: GDB's console context (`Thread 1 (...):`, the address `x` tried) followed by its MI `msg`. A timeout carries whatever arrived before the deadline. `message` is only a short sentence when this server itself rejected the request (no session, no frame, an unsupported option).
 
@@ -262,6 +278,11 @@ Inspection requests may carry an optional context override:
   }
 }
 ```
+
+LLDB source and disassembly use this context for current-location inspection,
+address expressions, and the current-instruction marker without changing the
+selected thread or frame. An unavailable explicit thread or frame returns
+`not_found`.
 
 ### Location Selector Union
 
@@ -433,10 +454,24 @@ This cleanup budget is additional to the existing startup command timeouts.
 ### Delve Sessions
 
 Set `debugger="delve"` to use Delve RPC API v2. The same backend supports
-multiple Delve releases; `debugger_path` selects a binary per session.
-Compatibility tests cover v1.20.2 / Go 1.20.14, v1.24.2 / Go 1.24.2, and
-v1.27.2 / Go 1.27.1. Delve's own target-Go compatibility checks remain enabled.
-TCP is available across these releases; Unix listeners require release support.
+Delve 1.6.1 and newer; `debugger_path` selects a binary per session. The oldest
+CI baseline pairs v1.6.1 with Go 1.16.4, and era profiles cover v1.21 through
+v1.27 with matching Go toolchains. Version 1.6.1 is the first release with
+breakpoint disabling; 1.6.0 silently ignores it. Delve's own target-Go
+compatibility checks remain enabled.
+
+| Capability | First Supported Delve Release |
+| --- | --- |
+| Core workflow, including breakpoint enable/disable | 1.6.1 (compatibility floor) |
+| Watchpoints | 1.7.0 |
+| External Unix listener | 1.22.1 |
+| `next_instruction`, including reverse | 1.23.0 |
+| `jump` (`SetExecutionPoint`) | 1.27.2 |
+
+TCP works throughout the supported range. Unavailable operations return
+`unsupported_operation`. Memory reads use at most 1,000 bytes per RPC before
+1.24.0 and 65,536 bytes from 1.24.0 onward; larger tool requests are assembled
+from multiple replies.
 
 With `program`, startup uses `dlv exec` and returns the target paused at entry.
 The first `run` resumes it; later `run` calls restart it, optionally replacing
@@ -474,9 +509,9 @@ Attach results include the version once Delve has started.
 Breakpoints, conditional and temporary breakpoints, watchpoints, goroutine
 selection, stacks, locals/arguments, evaluation, registers, memory, source,
 disassembly, stepping, finish, and function calls use structured tools.
-`jump` uses `SetExecutionPoint` when the selected release provides it; Delve
-restricts its destination to the current function. Older releases return
-`unsupported_operation`. Reverse execution requires a recorded Delve target.
+`jump` uses `SetExecutionPoint`; Delve restricts its destination to the current
+function. Release requirements are listed above. Reverse execution requires a
+recorded Delve target.
 There is one exposed inferior per session; use separate sessions for more
 targets. Raw command execution, `init_commands`, forced return, frame-scoped
 `until`, GDB catchpoints, inferior creation/removal, and GDB fork controls are
@@ -585,6 +620,14 @@ reverse-step operation, so connecting LLDB to rr gives up rr's reverse stepping.
 Use `debugger="gdb"` with `rr_replay` when reverse execution is required.
 
 ## LLDB Backend
+
+Inferior inventory reports the process execution state and preserves known stop
+details when its records omit them. A transition to running or not started clears
+the previous stop. A reported stop reason or kind change also clears stale
+`state_detail="crashed"`; omitted or unchanged stop fields preserve it.
+Status polling records a stop once per process and inferior;
+starting the session again resets stop identity. Unfamiliar execution states
+become `unknown` in both status output and the cached runtime state.
 
 The LLDB backend is compiled from this repository against the LLDB 4.0.1 SB API
 and talks to the selected real `liblldb` at runtime. Newer APIs are isolated in
@@ -986,6 +1029,8 @@ architecture cannot be inferred, only unambiguous vector names are removed.
 
 - `disassembly` accepts `function`, `address`, `address_range`, `file_line`, `file_range`, or `current`.
 - `source` accepts the same location union.
+  An `address_range` keeps the existing current-location source behavior;
+  use `address` for source around a specific instruction address.
 
 ### Source Notes
 
@@ -1097,6 +1142,10 @@ or shorthand string form:
 These fields are inside the success envelope's `result` object.
 
 Each artifact contains `name`, `path`, `status`, and `kind`.
+
+Capture status, manifest metadata, histories, selection, and returned stop
+metadata are read together before capture inspection begins. Individual
+inspection artifacts describe their subsequent debugger queries.
 
 ## `gdb_run_until_failure`
 
