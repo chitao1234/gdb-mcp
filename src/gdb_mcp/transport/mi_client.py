@@ -59,17 +59,20 @@ class MiClient:
     ) -> GdbControllerProtocol:
         """Start a new GDB controller process."""
 
-        if cwd is None:
-            controller = self._controller_factory(
-                command=command,
-                time_to_check_for_additional_output_sec=time_to_check_for_additional_output_sec,
-            )
-        else:
-            controller = self._controller_factory(
-                command=command,
-                time_to_check_for_additional_output_sec=time_to_check_for_additional_output_sec,
-                cwd=cwd,
-            )
+        try:
+            if cwd is None:
+                controller = self._controller_factory(
+                    command=command,
+                    time_to_check_for_additional_output_sec=time_to_check_for_additional_output_sec,
+                )
+            else:
+                controller = self._controller_factory(
+                    command=command,
+                    time_to_check_for_additional_output_sec=time_to_check_for_additional_output_sec,
+                    cwd=cwd,
+                )
+        except OSError as exc:
+            raise MiTransportError(str(exc)) from exc
         with self._command_lock:
             self._controller = controller
         return controller

@@ -11,6 +11,7 @@ from pygdbmi.gdbcontroller import GdbController
 from pygdbmi.IoManager import IoManager
 
 from ..contracts import DEBUGGER_DELVE, DEBUGGER_GDB, DEBUGGER_LLDB
+from ..transport import MiTransportError
 from ..transport.protocols import GdbControllerProtocol
 from .backends import DebuggerBackend
 from .constants import (
@@ -39,10 +40,14 @@ class _GdbController(GdbController):
         cwd: str | None = None,
     ) -> None:
         self._cwd = cwd
-        super().__init__(
-            command=command,
-            time_to_check_for_additional_output_sec=time_to_check_for_additional_output_sec,
-        )
+        try:
+            super().__init__(
+                command=command,
+                time_to_check_for_additional_output_sec=time_to_check_for_additional_output_sec,
+            )
+        except ValueError as exc:
+            # pygdbmi reports executable lookup failures as ValueError.
+            raise MiTransportError(str(exc)) from exc
 
     def spawn_new_gdb_subprocess(self) -> int:
         """Spawn the GDB subprocess using the configured working directory."""
