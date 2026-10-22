@@ -152,8 +152,8 @@ def test_native_stop_reasons_keep_their_canonical_kind(reason: str, kind: str) -
 
 def test_old_state_without_reason_uses_pending_operation() -> None:
     selected = backend()
-    selected._has_run = True
-    selected._command = "step"
+    selected._execution._has_run = True
+    selected._execution._command = "step"
     selected._client_state({"State": {"Pid": 42, "currentGoroutine": {"id": 7}}})
     assert selected.runtime.current_thread_id == 7
     assert selected.runtime.stop_kind == "step"
