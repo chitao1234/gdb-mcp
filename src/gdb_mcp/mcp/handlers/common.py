@@ -26,6 +26,7 @@ from ...domain import (
     ToolPayload,
     payload_to_mapping,
 )
+from ...session.backends import BackendOperation
 from ...session.constants import DEFAULT_TIMEOUT_SEC
 from ...session.registry import SessionRegistry
 from ...session.service import SessionService
@@ -77,6 +78,7 @@ class SessionToolInvocation:
     session_id: int
     action: str | None
     execute: Callable[[SessionService], ToolResult]
+    operation: BackendOperation | None = None
 
 
 @dataclass(frozen=True)
@@ -122,16 +124,32 @@ def session_tool_spec(
     *,
     session_id: Callable[[ToolArgsT], int],
     action: Callable[[ToolArgsT], str | None] = lambda args: None,
+    operation: Callable[[ToolArgsT], BackendOperation | None] = lambda args: None,
 ) -> RegisteredToolSpec[SessionToolInvocation]:
     """Wrap a ``(session, args)`` handler as a session-scoped tool spec."""
 
     def prepare(arguments: object) -> SessionToolInvocation:
         args = model.model_validate(arguments)
+        backend_operation = operation(args)
 
         def execute(session: SessionService) -> ToolResult:
+            if backend_operation is not None and not session.capabilities.supports(
+                backend_operation
+            ):
+                return OperationError(
+                    message=(
+                        f"{session.capabilities.debugger} does not support "
+                        f"operation {backend_operation!r}"
+                    ),
+                    code="unsupported_operation",
+                    details={
+                        "debugger": session.capabilities.debugger,
+                        "operation": backend_operation,
+                    },
+                )
             return handler(session, args)
 
-        return SessionToolInvocation(session_id(args), action(args), execute)
+        return SessionToolInvocation(session_id(args), action(args), execute, backend_operation)
 
     return RegisteredToolSpec(model=model, scope="session", prepare=prepare)
 

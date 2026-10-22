@@ -112,6 +112,7 @@ class BackendCapabilities:
 
     debugger: str
     operations: frozenset[BackendOperation]
+    concurrent_control: bool = False
 
     def supports(self, operation: BackendOperation) -> bool:
         """Return whether this backend implements one operation."""

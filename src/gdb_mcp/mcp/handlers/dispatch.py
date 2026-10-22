@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from contextlib import nullcontext
 
 from mcp.types import CallToolResult
 from pydantic import ValidationError
@@ -42,7 +44,11 @@ def _dispatch_tool(
         session = session_manager.resolve_session(invocation.session_id)
         if isinstance(session, OperationError):
             return _wrap_action_result(invocation.action, session)
-        with session_workflow_context(session):
+        concurrent_control = (
+            session.capabilities.concurrent_control is True
+            and invocation.operation in {"interrupt", "status"}
+        )
+        with nullcontext() if concurrent_control else session_workflow_context(session):
             result = invocation.execute(session)
         result = _annotate_session_failure(result, session, session_id=invocation.session_id)
     else:
@@ -77,7 +83,8 @@ async def dispatch_tool_call(
         )
 
     try:
-        return serialize_result(_dispatch_tool(name, normalized_args, session_manager))
+        result = await asyncio.to_thread(_dispatch_tool, name, normalized_args, session_manager)
+        return serialize_result(result)
     except ValidationError as exc:
         return serialize_result(
             build_validation_error(exc, tool_name=name, model=TOOL_SPECS[name].model)
