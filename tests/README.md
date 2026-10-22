@@ -48,6 +48,19 @@ uv run pytest -q tests/integration
 
 ### Run Specific Tests
 
+Delve integration tests use `dlv` on `PATH`, `DLV_PATH`, or a path-separated
+`DELVE_TEST_BINARIES` list. `GO_PATH` selects the Go compiler; `GOTOOLCHAIN`
+can select a matching toolchain. For example:
+
+```bash
+GOTOOLCHAIN=go1.24.2 DLV_PATH=/opt/delve/1.24.2/dlv \
+  .venv/bin/pytest -q tests/integration/test_v2_session_delve.py -rs
+```
+
+The compatibility workflow tests Delve v1.20.2, v1.24.2, and v1.27.2 with
+matching Go versions. Attach tests require permission to trace sibling
+processes; on Linux the CI job sets `kernel.yama.ptrace_scope=0`.
+
 ```bash
 # Run only unit tests (excluding integration tests)
 .venv/bin/pytest -m "not integration"

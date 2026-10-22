@@ -30,6 +30,30 @@ Without `--server-url` (or `GDB_MCP_SERVER_URL`) the client starts one backgroun
 
 Prefer the structured MCP tools directly when the environment does not grant shell access, or when results must stay inside an existing MCP conversation.
 
+## Go With Delve
+
+```bash
+gdb-mcp-client start ./app --debugger delve --debugger-path /opt/delve/dlv
+gdb-mcp-client break add main.main
+gdb-mcp-client run
+gdb-mcp-client threads
+gdb-mcp-client bt
+gdb-mcp-client locals
+gdb-mcp-client stop
+```
+
+For attach, use `start --debugger delve` followed by `attach PID`. Delve starts
+when attach is called. `stop` detaches and leaves the process alive. Use
+`continue` on attached targets. Thread IDs are goroutine IDs. The `exec`
+command and init commands are unsupported; use structured commands.
+
+Each session can choose a different `--debugger-path`. An external headless
+Delve server is reached with `connect tcp://host:port --debugger delve`; start
+that server with `--accept-multiclient` to preserve it after disconnect.
+`campaign --startup-debugger delve` selects Delve for repeated launches.
+An execution timeout leaves the target active; `interrupt` and `wait-stop`
+remain available.
+
 ## Core Rules
 
 1. **`--help` is authoritative.** Every command lists its exact flags and, for `tool` subcommands, validated payload examples. Use `references/commands.md` to pick the command, then `--help` for flag details.
@@ -68,7 +92,7 @@ gdb-mcp-client until --location '*$pc + 4' --wait-until acknowledged
 ```
 
 These commands call `gdb_execution_manage` with `action="jump"` or
-`action="until"` and work on both debugger backends. `jump` relocates and resumes;
+`action="until"` and work on GDB and LLDB. `jump` relocates and resumes;
 `until` executes normally with the debugger's frame-return boundary. The
 debugger resolves the destination and reports unsupported locations or states.
 Locations use the same plain string form as code breakpoints; pass one
@@ -228,7 +252,7 @@ Each of these has many flags; read `gdb-mcp-client campaign --help` before compo
 | `GDB_MCP_STATE_DIR` | Where cookies, locks, and daemon logs live (defaults to the platform cache dir) |
 | `GDB_MCP_DAEMON_IDLE_SEC` | Idle timeout for client-spawned servers (default 900, `0` disables) |
 | `GDB_PATH` / `gdb_session_start.debugger_path` | Debugger binary selection; GDB for the GDB/MI backend, LLDB for the LLDB backend |
-| `--debugger-arg ARG` | Repeatable extra startup argument for the selected debugger, applied before the program loads. For GDB: auto-load `safe-path`, script directories, e.g. `start --debugger-arg=-iex --debugger-arg='add-auto-load-safe-path /dir'`. Currently unused by the LLDB backend |
+| `--debugger-arg ARG` | Repeatable extra startup argument for GDB or Delve, applied before the program loads. LLDB rejects this field. |
 
 ## Troubleshooting
 

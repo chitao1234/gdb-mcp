@@ -20,7 +20,25 @@ The workflow is transport-independent: every tool and payload below works the sa
 - Need deterministic multi-step workflows or repeated run-until-failure campaigns
 - Need structured artifacts for handoff or postmortem
 
-Use a different approach when the task is not GDB-based or when some other debugger is the real tool.
+Use `debugger="lldb"` for LLDB or `debugger="delve"` for Go through Delve RPC.
+
+## Go With Delve
+
+Start with `gdb_session_start` using `debugger="delve"` and a prebuilt Go
+`program`. Set `debugger_path` to select a particular Delve release. Set code
+breakpoints before `gdb_execution_manage(action="run")`, then inspect with the
+usual context and inspection tools. Thread IDs represent goroutine IDs.
+
+For attach, omit `program` from startup, then call `gdb_attach_process` with the
+returned session ID and PID. Delve starts at attach time. The empty session
+reports `debugger_alive=false` and `execution_state="not_started"`. Stop leaves
+attached processes alive. Resume attached targets with `continue`.
+
+Use structured tools for initialization; Delve rejects `init_commands` and
+`gdb_execute_command`. Unsupported operations return `unsupported_operation`.
+After `command_timeout`, query status, interrupt, or wait for stop; the
+execution request remains active. `gdb_run_until_failure` accepts
+`startup.debugger="delve"` for repeated launches.
 
 ## Tool Families
 
@@ -107,7 +125,7 @@ LLDB moved execution before its resume attempt failed.
 | `init_commands` | GDB settings or commands not covered by dedicated tools | Keep launch config in structured fields when possible |
 | `core` | Post-mortem debugging | Do not combine with `args` |
 | `debugger_path` | Non-default debugger binary | For GDB: pick a specific version or build (with `rr_replay` it becomes rr's `-d` debugger, and `rust-gdb` also loads Rust's pretty-printers). For LLDB: an LLDB binary or installation |
-| `debugger_args` | Extra startup arguments for the selected debugger, applied before the program loads | The only channel for GDB pre-load settings such as auto-load `safe-path` and script directories; each argument is one list entry. The native LLDB backend currently ignores them |
+| `debugger_args` | Extra startup arguments for GDB or Delve, applied before the program loads | The channel for GDB pre-load settings such as auto-load `safe-path`; each argument is one list entry. LLDB rejects this field |
 | `rr_replay` | Replay an rr trace instead of launching a program | GDB only. `program` is ignored with a warning; `args` and `core` are rejected; enables `execution.reverse`. LLDB rejects this field; connect it to an external `rr replay -s` server for forward replay only |
 
 ### Environment and Launch Setup Rules

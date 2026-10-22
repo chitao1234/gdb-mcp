@@ -176,7 +176,9 @@ Session-scoped failures also carry the session's state in `details` (`session_id
 
 Common machine-readable codes include:
 
-- `validation_error`, `unsupported_combination` — the request was rejected before any debugger work
+- `validation_error`, `unsupported_combination` — invalid arguments or incompatible options
+- `unsupported_operation` — the selected backend or Delve release lacks the requested operation;
+  capability checks apply to direct calls and workflow batch steps
 - `invalid_session`, `session_closing` — the session is gone or shutting down
 - `no_registers`, `inferior_not_running`, `inferior_running`, `no_stack_frame`, `memory_unavailable`, `symbol_unavailable`, `no_symbols_loaded`, `value_unavailable`, `command_timeout` — classified GDB failures
 - `not_started`, `unknown_operation`, `protocol_error`, `build_failed` — LLDB
@@ -283,7 +285,7 @@ In practice, string shorthand is most useful for dedicated tools with empty or d
 | Tool | Role |
 | --- | --- |
 | `gdb_session_start` | Start a new debugger session (gdb-mcp spawns it) |
-| `gdb_session_connect` | Connect to an externally owned GDB/MI stream or LLDB remote stub |
+| `gdb_session_connect` | Connect to an external GDB/MI stream, LLDB remote stub, or Delve RPC server |
 | `gdb_session_query` | Query session inventory or one live session |
 | `gdb_session_manage` | Mutate session lifecycle |
 | `gdb_inferior_query` | Query inferior inventory or current inferior |
@@ -309,7 +311,7 @@ Dedicated startup tool. This is not action-based.
 
 - `program`: optional executable path
 - `debugger`: backend to drive, default `gdb`; supported values are `gdb`
-  (GDB/MI) and `lldb` (native SB API bridge). The value is validated against the
+  (GDB/MI), `lldb` (native SB API bridge), and `delve` (JSON-RPC API v2). The value is validated against the
   implemented set, and a backend that cannot perform an operation answers with
   `code="unsupported_operation"`.
 - `args`: optional argv override as `list[str]` or shell-style string
@@ -317,9 +319,10 @@ Dedicated startup tool. This is not action-based.
 - `init_commands`: optional list of debugger commands to run after environment setup
 - `env`: optional environment mapping applied before `init_commands`
 - `debugger_path`: optional GDB binary override; for `debugger="lldb"` it selects an
-  LLDB binary/installation instead
-- `debugger_args`: optional extra GDB command-line arguments, inserted before the program;
-  ignored by the LLDB backend
+  LLDB binary/installation instead; for Delve it selects the `dlv` executable,
+  overriding `DLV_PATH` and the default `dlv`
+- `debugger_args`: optional extra startup arguments, validated for the selected backend;
+  GDB and Delve forward them, while LLDB rejects nonempty arguments
 - `working_dir`: optional working directory for the debugger process
 - `rr_replay`: optional rr trace directory to replay instead of launching a program;
   GDB only. LLDB rejects this field because auto-starting rr would hide the loss
@@ -409,6 +412,65 @@ This cleanup budget is additional to the existing startup command timeouts.
 }
 ```
 
+### Delve Sessions
+
+Set `debugger="delve"` to use Delve RPC API v2. The same backend supports
+multiple Delve releases; `debugger_path` selects a binary per session.
+Compatibility tests cover v1.20.2 / Go 1.20.14, v1.24.2 / Go 1.24.2, and
+v1.27.2 / Go 1.27.1. Delve's own target-Go compatibility checks remain enabled.
+TCP is available across these releases; Unix listeners require release support.
+
+With `program`, startup uses `dlv exec` and returns the target paused at entry.
+The first `run` resumes it; later `run` calls restart it, optionally replacing
+arguments. `core` uses `dlv core` and requires `program`.
+
+Without `program`, startup registers a configured session and defers spawning
+Delve until `gdb_attach_process`. The deferred session reports
+`session_state="ready"`, `execution_state="not_started"`, `debugger_alive=false`,
+`target_loaded=false`, and `inferior_count=0`. It can be stopped without a
+debugger ever being started. A failed attach can be retried. Attached targets
+use `continue`; `run` rejects them with `unsupported_combination`.
+
+```json
+{"debugger":"delve","debugger_path":"/opt/delve/1.24.2/dlv"}
+```
+
+Follow with `gdb_attach_process`:
+
+```json
+{"session_id":1,"pid":12345,"timeout_sec":30}
+```
+
+Thread and context IDs are goroutine IDs throughout inspection, selection,
+stop events, and capture bundles. Thread records retain native OS thread IDs
+as `native_thread_id`. Variables retain Delve's aggregate children and loading
+metadata. Source text is read on the MCP server host.
+
+Execution requests remain active after `command_timeout`; a late reply updates
+the session and stop history. Delve status and interrupt calls can run during
+a blocking execution or workflow wait. `wait_for_stop` reports the existing
+stop or waits for the pending command. Startup diagnostics include
+`backend_data.data.version` from `GetVersion`, or `deferred=true` before attach.
+Attach results include the version once Delve has started.
+
+Breakpoints, conditional and temporary breakpoints, watchpoints, goroutine
+selection, stacks, locals/arguments, evaluation, registers, memory, source,
+disassembly, stepping, finish, and function calls use structured tools.
+`jump` uses `SetExecutionPoint` when the selected release provides it; Delve
+restricts its destination to the current function. Older releases return
+`unsupported_operation`. Reverse execution requires a recorded Delve target.
+There is one exposed inferior per session; use separate sessions for more
+targets. Raw command execution, `init_commands`, forced return, frame-scoped
+`until`, GDB catchpoints, inferior creation/removal, and GDB fork controls are
+unsupported.
+
+Delve arguments cannot override headless mode, RPC API version, listener,
+multiclient mode, startup continuation, init file, working directory, or log
+destination. These fields belong to session setup. Other flags are forwarded
+to the selected binary. Stop kills targets launched by this session, detaches
+from attached targets, and only disconnects from externally owned servers.
+Owned debugger cleanup uses the shared 10-second budget.
+
 ## `gdb_session_connect`
 
 Dedicated tool for connecting to a target that **another process already owns**.
@@ -430,10 +492,17 @@ is a remote stub URL such as `connect://host:port`. The optional `program`
 names the executable to associate with the remote target. LLDB remote sessions
 support the same inspection, breakpoint, and execution tools as local sessions.
 
+With `debugger="delve"`, `endpoint` is a JSON-RPC socket at `tcp://host:port`
+or `unix:///path`. Use `dlv --headless --api-version=2 --accept-multiclient
+--listen=127.0.0.1:2345 exec ./app` to keep an external server alive after
+disconnect. Stopping the MCP session closes its connection without issuing
+Delve's `Detach` RPC. The external server controls what disconnect does; in
+single-client mode Delve itself exits when its client disconnects.
+
 ### Request Fields
 
 - `endpoint` (required): a GDB/MI endpoint or an LLDB remote stub URL
-- `debugger`: `gdb` (default) or `lldb`
+- `debugger`: `gdb` (default), `lldb`, or `delve`
 - `program`: executable for an LLDB remote target; the GDB/MI path rejects it
   because the external process already owns the target
 - `debugger_path`: LLDB binary/installation path for the LLDB path; ignored by GDB/MI
@@ -1011,6 +1080,10 @@ Each artifact contains `name`, `path`, `status`, and `kind`.
 ## `gdb_run_until_failure`
 
 Repeat fresh debugger sessions until failure predicates match or the iteration limit is reached.
+
+`startup.debugger` selects the backend for each iteration, including Delve;
+the CLI exposes this as `campaign --startup-debugger delve`. Startup arguments,
+binary selection, and replay settings are forwarded to each fresh session.
 
 ### Request Fields
 

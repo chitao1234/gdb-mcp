@@ -1,8 +1,8 @@
 # GDB MCP Server
 
 `gdb-mcp-server` gives AI assistants and other MCP clients structured access to
-GDB and LLDB. GDB is driven over GDB/MI; LLDB is driven through a native SB API
-bridge, without requiring the official Python `lldb` package. Every call answers
+GDB, LLDB, and Delve. GDB is driven over GDB/MI; LLDB uses a native SB API
+bridge; Delve uses its JSON-RPC API v2. Every call answers
 with machine-readable state — session status, stop reasons, breakpoints, frames,
 variables, registers, memory — instead of terminal text that a client has to
 screen-scrape.
@@ -11,14 +11,15 @@ screen-scrape.
 keeps one background server per project, so a debug session survives between
 commands and reads like an ordinary debugger.
 
-- Structured GDB and LLDB control with machine-readable success and error payloads
+- Structured GDB, LLDB, and Delve control with machine-readable success and error payloads
 - Native `jump` (relocate and resume) and frame-scoped `until` with explicit
-  function, source-line, or address-expression destinations on both backends
+  function, source-line, or address-expression destinations on GDB and LLDB
 - Several concurrent sessions, addressed explicitly by `session_id`
 - Debugger termination and cleanup share a 10-second budget, including recovery
   from failed startup
 - Multi-inferior workflows, including fork-follow controls
 - LLDB remote targets through `gdb_session_connect` with `debugger="lldb"`
+- Go debugging with Delve, including goroutine contexts and deferred attach
 - Read/write split by domain instead of one tool per operation
 - Workflow helpers: locked batches, capture bundles, run-until-failure campaigns
 - Dedicated privileged tools for attaching to processes and calling functions
@@ -32,7 +33,8 @@ commands and reads like an ordinary debugger.
 
 GDB/MI is the protocol family IDEs such as VS Code and CLion use to drive GDB.
 The LLDB backend instead compiles a small bridge against the stable SB API and
-loads the selected `liblldb` at runtime. Both feed the same domain tools, so
+loads the selected `liblldb` at runtime. Delve connects through a streaming RPC
+socket and needs no native bridge. All three feed the same domain tools, so
 callers see one contract.
 
 - strict JSON-schema validation for every tool input
@@ -58,6 +60,8 @@ partial reads remain explicit.
   toolchain pretty-printers can load)
 - Optional: LLDB 4.0.1 or newer with headers for the native bridge; a C++17
   compiler is used to build it on first use
+- Optional: Delve on `PATH`, or selected through `DLV_PATH` / `debugger_path`;
+  compatibility tests cover v1.20.2, v1.24.2, and v1.27.2 with matching Go toolchains
 - Optional: `rr` for reverse debugging (GDB), `rust-gdb` or similar wrappers for
   language-specific pretty-printers
 
@@ -141,6 +145,39 @@ envelopes. `gdb-mcp-client session current` prints this project's default sessio
 and `session use <id>` switches it; stopping that session clears the default. The
 [gdb-mcp-cli skill](skills/gdb-mcp-cli/SKILL.md) is the guided tour for scripted
 and agent-driven use.
+
+### Debug Go With Delve
+
+```bash
+go build -gcflags='all=-N -l' -o ./build/app .
+gdb-mcp-client start ./build/app --debugger delve --debugger-path /opt/delve/dlv
+gdb-mcp-client break add main.main
+gdb-mcp-client run
+gdb-mcp-client threads
+gdb-mcp-client bt
+gdb-mcp-client locals
+gdb-mcp-client stop
+```
+
+For attach, start an empty session, then call `attach PID`. The empty session
+stores configuration without spawning `dlv`; attach starts the selected Delve
+binary against that PID. Stopping an attached session leaves the target alive.
+
+```bash
+gdb-mcp-client start --debugger delve
+gdb-mcp-client attach 12345
+gdb-mcp-client bt
+gdb-mcp-client continue --wait-until acknowledged
+gdb-mcp-client interrupt
+gdb-mcp-client stop
+```
+
+For Delve, thread IDs in the tools are goroutine IDs. Each session can select a
+different `dlv` binary. `gdb_session_connect` also accepts external Delve RPC
+servers over TCP or Unix sockets where the selected release supports them.
+Execution timeouts leave the command active; `interrupt`, `wait-stop`, and
+status queries remain available. Delve has no terminal-command RPC, so use the
+structured tools instead of `exec` or `init_commands`.
 
 ## Where To Go Next
 
@@ -238,6 +275,7 @@ MIT
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `GDB_PATH` | `gdb` | GDB binary to spawn. `gdb_session_start.debugger_path` overrides it per session. |
+| `DLV_PATH` | `dlv` | Delve binary to spawn. `debugger_path` overrides it per session. |
 | `LLDB_PREFIX` / `LLDB_PATH` | discovered | LLDB installation used by `debugger="lldb"`. |
 | `LLDB_LIBRARY` | discovered | Explicit `liblldb` path or directory for the LLDB backend. |
 | `LLDB_BRIDGE_CXX` | `c++`/`g++`/`clang++` | C++ compiler used to build the LLDB SB API bridge and its layers. |
