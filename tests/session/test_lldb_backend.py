@@ -246,6 +246,45 @@ def test_lldb_memory_rejects_missing_read_count() -> None:
         backend.read_memory("0x10", 1)
 
 
+@pytest.mark.parametrize("number", [None, "not-a-number", True])
+def test_lldb_breakpoint_creation_rejects_invalid_numbers(number: object) -> None:
+    backend, _ = _backend()
+    with (
+        patch.object(backend, "_request", return_value={"number": number}),
+        pytest.raises(DebuggerDecodeError),
+    ):
+        backend.set_breakpoint("main")
+
+
+@pytest.mark.parametrize("thread_id", [[], {}, True])
+def test_lldb_thread_ids_do_not_stringify_malformed_values(thread_id: object) -> None:
+    backend, _ = _backend()
+    with pytest.raises(DebuggerDecodeError):
+        backend._thread({"id": thread_id})
+
+
+def test_lldb_memory_keeps_zero_address_and_count() -> None:
+    backend, _ = _backend()
+    with patch.object(backend, "_request", return_value={"address": "0x0", "data": "", "read": 0}):
+        memory = _value(backend.read_memory("0x0", 0))
+
+    assert memory.captured_bytes == 0
+    assert memory.blocks[0].begin == "0x0"
+    assert memory.blocks[0].end == "0x0"
+    assert memory.blocks[0].contents == ""
+
+
+def test_lldb_memory_rejects_malformed_address() -> None:
+    backend, _ = _backend()
+    with (
+        patch.object(
+            backend, "_request", return_value={"address": "invalid", "data": "00", "read": 1}
+        ),
+        pytest.raises(DebuggerDecodeError, match="hexadecimal"),
+    ):
+        backend.read_memory("0x10", 1)
+
+
 @pytest.mark.parametrize("action", [ACTION_JUMP, ACTION_UNTIL])
 def test_lldb_location_request_is_sent_without_preflight_checks(action: str) -> None:
     backend, _ = _backend()
