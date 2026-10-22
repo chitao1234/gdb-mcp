@@ -81,7 +81,7 @@ def test_start_with_endpoint_adopts_external_controller(monkeypatch: pytest.Monk
     assert payload["endpoint"] == "tcp://127.0.0.1:4399"
     assert payload["target_loaded"] is True
     assert created["endpoint"] == "tcp://127.0.0.1:4399"
-    assert session.runtime.controller is controller
+    assert gdb_backend(session).transport.controller is controller
 
 
 def test_start_rejects_endpoint_with_program() -> None:

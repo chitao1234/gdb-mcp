@@ -704,7 +704,7 @@ class TestExecutionApi:
         """Interrupt should report success when a stopped notification arrives."""
 
         # running_session installs a MagicMock controller (see conftest).
-        controller = cast(MagicMock, running_session.runtime.controller)
+        controller = cast(MagicMock, gdb_backend(running_session).transport.controller)
         controller.gdb_process.pid = 12345
         controller.get_gdb_response.return_value = [
             {"type": "notify", "message": "stopped", "payload": {"reason": "signal-received"}}
@@ -733,7 +733,7 @@ class TestExecutionApi:
         """Interrupt should warn when no stopped notification is received."""
 
         # running_session installs a MagicMock controller (see conftest).
-        controller = cast(MagicMock, running_session.runtime.controller)
+        controller = cast(MagicMock, gdb_backend(running_session).transport.controller)
         controller.gdb_process.pid = 12345
         controller.get_gdb_response.return_value = []
 

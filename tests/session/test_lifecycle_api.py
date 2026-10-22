@@ -65,7 +65,7 @@ class TestLifecycleApi:
     def test_start_session_already_running(self, session_service: SessionService) -> None:
         """Starting twice should be rejected before touching transport."""
 
-        session_service.runtime.controller = Mock(spec=GdbControllerProtocol)
+        gdb_backend(session_service).transport.controller = Mock(spec=GdbControllerProtocol)
 
         result = result_to_mapping(session_service.start(program="/bin/ls"))
 
@@ -515,8 +515,8 @@ class TestLifecycleApi:
         """Shutdown failures should not leave the session marked as running."""
 
         # running_session installs a MagicMock controller (see conftest).
-        cast(MagicMock, running_session.runtime.controller).exit.side_effect = RuntimeError(
-            "exit failed"
+        cast(MagicMock, gdb_backend(running_session).transport.controller).exit.side_effect = (
+            RuntimeError("exit failed")
         )
 
         result = result_to_mapping(running_session.stop())

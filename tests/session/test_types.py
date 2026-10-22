@@ -131,7 +131,7 @@ class TestSessionState:
         """Stopping an active session should move it to STOPPED."""
 
         session = create_default_session_service()
-        session.runtime.controller = MagicMock(spec=GdbControllerProtocol)
+        gdb_backend(session).transport.controller = MagicMock(spec=GdbControllerProtocol)
         session.runtime.mark_ready()
 
         result = result_to_mapping(session.stop())

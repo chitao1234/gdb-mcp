@@ -130,4 +130,3 @@ def attach_controller(service: SessionService, controller: object) -> None:
     """Attach a controller double, as a started GDB backend would."""
 
     gdb_backend(service).transport.controller = cast("GdbControllerProtocol", controller)
-    service.runtime.controller = controller

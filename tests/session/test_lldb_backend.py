@@ -372,7 +372,9 @@ def test_factory_selects_the_lldb_backend() -> None:
 
 
 def test_lldb_rr_replay_points_to_connect_mode_and_reverse_caveat() -> None:
-    backend, _ = _backend()
+    backend = LldbSbBackend(
+        os_module=cast(OsModuleProtocol, os), time_module=cast(TimeModuleProtocol, time)
+    )
 
     result = backend.start(SessionConfig.from_inputs(debugger="lldb", rr_replay="/tmp/rr-trace"))
 
