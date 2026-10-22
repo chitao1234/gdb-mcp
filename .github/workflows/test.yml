@@ -2,87 +2,100 @@ name: Tests
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [master, main]
   pull_request:
-    branches: [ master, main ]
+    branches: [master, main]
 
 jobs:
-  test:
+  profiles:
+    name: Discover compatibility profiles
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.10", "3.11", "3.12"]
-
+    outputs:
+      names: ${{ steps.discover.outputs.names }}
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        cache: "pip"
-        cache-dependency-path: pyproject.toml
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e ".[dev]"
+      - name: Read curated toolchain names from flake.nix
+        id: discover
+        run: |
+          echo "names=$(nix eval --json .#ciProfileNames)" >> "$GITHUB_OUTPUT"
 
-    - name: Install GDB, GCC, rr, and LLDB
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y gdb g++ rr lldb-18 liblldb-18-dev
+  compatibility:
+    name: ${{ matrix.profile }}
+    needs: profiles
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: ${{ fromJSON(needs.profiles.outputs.names) }}
+    steps:
+      - uses: actions/checkout@v4
 
-    # rr records with perf events, so it needs a low perf_event_paranoid and an
-    # unrestricted kptr. These are enough on a self-hosted runner, but the
-    # GitHub-hosted VMs expose no hardware counters: even with both set,
-    # `perf_event_open` fails and rr cannot record. The rr integration test then
-    # skips itself (see `-rs` output) instead of failing.
-    - name: Prepare rr
-      run: |
-        sudo sysctl -w kernel.perf_event_paranoid=1
-        sudo sysctl -w kernel.kptr_restrict=0
-        echo "perf_event_paranoid=$(cat /proc/sys/kernel/perf_event_paranoid)"
-        echo "kptr_restrict=$(cat /proc/sys/kernel/kptr_restrict)"
-        rr record -o "$RUNNER_TEMP/rr-probe" /bin/true \
-          || echo "::warning::rr cannot record on this runner; the rr integration test will skip"
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
 
-    - name: Run unit tests
-      env:
-        LLDB_PREFIX: /usr/lib/llvm-18
-      run: |
-        pytest tests/ -v --tb=short -n auto -rs
+      - name: Show toolchain versions
+        run: |
+          nix develop ".#${{ matrix.profile }}" --command bash -c '
+            python --version
+            gdb --version | head -n 1
+            lldb --version | head -n 1
+            go version
+            dlv version | head -n 3
+            c++ --version | head -n 1
+          '
 
-    - name: Check Python syntax
-      run: |
-        python -m py_compile src/gdb_mcp/*.py
+      # Delve attach and some LLDB/GDB attach tests need to trace a sibling
+      # process rather than only their own child.
+      - name: Allow sibling debugger attach
+        run: sudo sysctl -w kernel.yama.ptrace_scope=0
+
+      # Hosted runners do not expose the perf events rr needs, so rr is not
+      # installed; test_v2_rr_replay.py skips when it is absent.
+      - name: Run tests
+        run: |
+          nix develop ".#${{ matrix.profile }}" --command bash -euo pipefail -c '
+            python -m venv .venv
+            . .venv/bin/activate
+            python -m pip install --upgrade pip
+            python -m pip install -e ".[dev]"
+            pytest tests/ -v --tb=short -n auto -rs
+          '
 
   lint:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.10"
-        cache: "pip"
-        cache-dependency-path: pyproject.toml
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: pyproject.toml
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e ".[dev]"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
 
-    - name: Check code formatting with black
-      run: |
-        black --check src/ tests/
+      - name: Check code formatting with black
+        run: |
+          black --check src/ tests/
 
-    - name: Lint with ruff
-      run: |
-        ruff check src/ tests/
+      - name: Lint with ruff
+        run: |
+          ruff check src/ tests/
 
-    - name: Type check with mypy
-      run: |
-        mypy src tests
+      - name: Type check with mypy
+        run: |
+          mypy src tests

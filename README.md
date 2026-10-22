@@ -69,7 +69,7 @@ partial reads remain explicit.
 - Optional: LLDB 4.0.1 or newer with headers for the native bridge; a C++17
   compiler is used to build it on first use
 - Optional: Delve on `PATH`, or selected through `DLV_PATH` / `debugger_path`;
-  compatibility tests cover v1.20.2, v1.24.2, and v1.27.2 with matching Go toolchains
+  CI exercises Delve 1.21 through 1.27 with matching Go toolchains
 - Optional: `rr` for reverse debugging (GDB), `rust-gdb` or similar wrappers for
   language-specific pretty-printers
 
@@ -264,6 +264,20 @@ More installation and platform troubleshooting: [INSTALL.md](INSTALL.md).
 .venv/bin/pytest -q     # includes tests/integration/, which needs gdb and g++
 git diff --check
 ```
+
+### Compatibility Profiles
+
+CI does not cross every Python, GDB, LLDB, Go, and Delve version. It runs a few
+curated eras, each pinned to one Nixpkgs snapshot so the tools were released
+together. `flake.nix` is the source of truth:
+
+```bash
+nix eval --json .#ciProfileNames      # names CI runs
+nix develop .#py310-gdb13-lldb14-delve121
+```
+
+The current rows cover Python 3.10-3.14, GDB 13-17, LLDB 14-21, and Delve
+1.21-1.27. The `flake.lock` file pins the exact snapshots.
 
 See [AGENTS.md](AGENTS.md) for repository conventions.
 
