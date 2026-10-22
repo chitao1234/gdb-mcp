@@ -170,6 +170,15 @@ Errors are uniform across all tools and are returned as MCP tool results with `i
 
 Validation failures use `code="validation_error"` and populate `details.field_errors`; the top-level `message` lists every failure, including the selecting union tag when one applies, and is not truncated.
 
+Request validation is separate from decoding debugger output. Additional
+debugger record fields, including nested fields and hyphenated keys, are kept;
+an unfamiliar notification or native stop reason is not a decoding failure.
+Unclassified stop reasons retain their text and use `stop_kind="unknown"`.
+If a field consumed by an operation cannot be decoded, that operation returns
+`code="protocol_error"`, not `validation_error`. The session remains usable
+while its debugger connection is usable. Unexpected implementation exceptions
+return `internal_error` and are logged by the server.
+
 A failure that a debugger reported carries **everything that debugger printed**: GDB's console context (`Thread 1 (...):`, the address `x` tried) followed by its MI `msg`. A timeout carries whatever arrived before the deadline. `message` is only a short sentence when this server itself rejected the request (no session, no frame, an unsupported option).
 
 Session-scoped failures also carry the session's state in `details` (`session_id`, `execution_state`, `stop_reason`, `exit_code`), so a failure whose message is only `No registers.` still tells the caller that the inferior exited.
@@ -181,8 +190,10 @@ Common machine-readable codes include:
   capability checks apply to direct calls and workflow batch steps
 - `invalid_session`, `session_closing` — the session is gone or shutting down
 - `no_registers`, `inferior_not_running`, `inferior_running`, `no_stack_frame`, `memory_unavailable`, `symbol_unavailable`, `no_symbols_loaded`, `value_unavailable`, `command_timeout` — classified GDB failures
-- `not_started`, `unknown_operation`, `protocol_error`, `build_failed` — LLDB
-  bridge/session lifecycle failures
+- `protocol_error` — debugger data could not be decoded, or a debugger transport
+  reported a protocol failure
+- `not_started`, `unknown_operation`, `build_failed` — debugger session or LLDB
+  bridge lifecycle failures
 - `unknown_tool`, `internal_error`, `not_found` — dispatch and lookup failures
 - `error` — fallback when a debugger failure matches no specific classification
 

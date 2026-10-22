@@ -45,6 +45,12 @@ callers see one contract.
 - stable, domain-oriented tool names
 - structured session snapshots instead of parsed terminal output
 
+Debugger records preserve additional fields and their original keys, including
+hyphenated GDB/MI keys. A field the server cannot decode returns a
+`protocol_error` for that operation; invalid caller input returns
+`validation_error`. Unfamiliar debugger error messages keep their text and use
+the fallback `error` code. These failures do not end an otherwise live session.
+
 Workflow batches return `requested_steps` and the completed `steps`. Each step
 contains the complete tool envelope under `result`; read its `status`, `action`,
 and error `code` there. The CLI exits nonzero if any step returned an error.
