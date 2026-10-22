@@ -11,78 +11,37 @@ from gdb_mcp.client.builders.breakpoint import (
     build_breakpoint_manage_payload,
     build_breakpoint_query_payload,
 )
-from gdb_mcp.client.builders.context import build_context_query_payload
-from gdb_mcp.client.builders.inferior import build_inferior_manage_payload
 from gdb_mcp.client.builders.inspect import build_inspect_query_payload
-from gdb_mcp.client.builders.session import (
-    build_session_query_payload,
-    build_session_start_payload,
-)
 from gdb_mcp.client.builders.workflow import (
     build_run_until_failure_payload,
     build_workflow_batch_payload,
-)
-from gdb_mcp.client.input_parsers import (
-    parse_session_query_input,
-    parse_session_start_input,
 )
 from gdb_mcp.client.inputs import (
     BreakpointCreateInput,
     BreakpointManageInput,
     BreakpointQueryInput,
-    ContextQueryInput,
-    InferiorManageInput,
     InspectQueryInput,
     LocationInput,
     RunUntilFailureInput,
-    SessionQueryInput,
-    SessionStartInput,
     SessionStepInput,
     WorkflowBatchInput,
 )
 from gdb_mcp.client.parsers import serialize_model
+from gdb_mcp.client.specs.context import _build_context_query
 from gdb_mcp.client.specs.execution import _build_execution_manage
-
-
-def test_parse_session_start_input_from_namespace() -> None:
-    """Namespace fields are converted into the typed session-start input."""
-
-    namespace = argparse.Namespace(
-        program="/bin/true",
-        debugger="gdb",
-        args=["--mode", "fast"],
-        init_commands=["set pagination off"],
-        env=[("TERM", "dumb")],
-        core=None,
-        debugger_path=None,
-        debugger_args=["-iex", "set pagination off"],
-        working_dir=None,
-        rr_replay=None,
-    )
-
-    assert parse_session_start_input(namespace) == SessionStartInput(
-        program="/bin/true",
-        debugger="gdb",
-        args=("--mode", "fast"),
-        init_commands=("set pagination off",),
-        env={"TERM": "dumb"},
-        core=None,
-        debugger_path=None,
-        debugger_args=("-iex", "set pagination off"),
-        working_dir=None,
-        rr_replay=None,
-    )
+from gdb_mcp.client.specs.inferior import _build_inferior_manage
+from gdb_mcp.client.specs.session import _build_session_query, _build_session_start
 
 
 def test_build_session_start_payload_from_typed_input() -> None:
     """The typed input drops empty optional fields from the wire payload."""
 
-    typed_input = SessionStartInput(
+    typed_input = argparse.Namespace(
         program="/bin/true",
         debugger=None,
         args=("--mode", "fast"),
         init_commands=("set pagination off",),
-        env={"TERM": "dumb"},
+        env=[("TERM", "dumb")],
         core=None,
         debugger_path=None,
         debugger_args=(),
@@ -90,7 +49,7 @@ def test_build_session_start_payload_from_typed_input() -> None:
         rr_replay=None,
     )
 
-    assert build_session_start_payload(typed_input) == {
+    assert serialize_model(_build_session_start(typed_input)) == {
         "program": "/bin/true",
         "args": ["--mode", "fast"],
         "init_commands": ["set pagination off"],
@@ -98,34 +57,18 @@ def test_build_session_start_payload_from_typed_input() -> None:
     }
 
 
-def test_parse_session_query_input_from_namespace() -> None:
-    """The namespace action and session id map onto the typed query input."""
-
-    namespace = argparse.Namespace(action="status", session_id=7)
-
-    assert parse_session_query_input(namespace) == SessionQueryInput(
-        action="status",
-        session_id=7,
-    )
-
-
-def test_parse_session_query_input_without_session_id_argument() -> None:
-    """A missing session id stays ``None`` for list queries."""
-
-    namespace = argparse.Namespace(action="list", session_id=None)
-
-    assert parse_session_query_input(namespace) == SessionQueryInput(
-        action="list",
-        session_id=None,
-    )
+def test_build_session_list_without_session_id() -> None:
+    assert serialize_model(_build_session_query(argparse.Namespace(action="list"))) == {
+        "action": "list"
+    }
 
 
 def test_build_session_query_payload_from_typed_input() -> None:
     """The session query payload mirrors the typed fields."""
 
-    typed_input = SessionQueryInput(action="status", session_id=7)
+    typed_input = argparse.Namespace(action="status", session_id=7)
 
-    assert build_session_query_payload(typed_input) == {
+    assert serialize_model(_build_session_query(typed_input)) == {
         "action": "status",
         "session_id": 7,
     }
@@ -134,7 +77,7 @@ def test_build_session_query_payload_from_typed_input() -> None:
 def test_build_inferior_manage_create_payload() -> None:
     """A create action nests the inferior fields expected by the tool."""
 
-    typed_input = InferiorManageInput(
+    typed_input = argparse.Namespace(
         action="create",
         session_id=7,
         executable="/bin/true",
@@ -144,7 +87,7 @@ def test_build_inferior_manage_create_payload() -> None:
         enabled=None,
     )
 
-    assert build_inferior_manage_payload(typed_input) == {
+    assert serialize_model(_build_inferior_manage(typed_input)) == {
         "session_id": 7,
         "action": "create",
         "inferior": {
@@ -157,7 +100,7 @@ def test_build_inferior_manage_create_payload() -> None:
 def test_build_inferior_manage_detach_on_fork_defaults_enabled() -> None:
     """Detach-on-fork defaults to enabled when no value is supplied."""
 
-    typed_input = InferiorManageInput(
+    typed_input = argparse.Namespace(
         action="set_detach_on_fork",
         session_id=7,
         executable=None,
@@ -167,10 +110,32 @@ def test_build_inferior_manage_detach_on_fork_defaults_enabled() -> None:
         enabled=None,
     )
 
-    assert build_inferior_manage_payload(typed_input) == {
+    assert serialize_model(_build_inferior_manage(typed_input)) == {
         "session_id": 7,
         "action": "set_detach_on_fork",
         "inferior": {"enabled": True},
+    }
+
+
+def test_build_inferior_manage_preserves_explicit_false() -> None:
+    namespace = argparse.Namespace(action="set_detach_on_fork", session_id=7, enabled=False)
+
+    assert serialize_model(_build_inferior_manage(namespace)) == {
+        "session_id": 7,
+        "action": "set_detach_on_fork",
+        "inferior": {"enabled": False},
+    }
+
+
+def test_build_context_manage_preserves_frame_zero() -> None:
+    from gdb_mcp.client.specs.context import _build_context_manage
+
+    namespace = argparse.Namespace(action="select_frame", session_id=7, frame=0)
+
+    assert serialize_model(_build_context_manage(namespace)) == {
+        "session_id": 7,
+        "action": "select_frame",
+        "context": {"frame": 0},
     }
 
 
@@ -234,7 +199,7 @@ def test_build_return_payload_includes_value() -> None:
 def test_build_session_start_payload_includes_debugger_args() -> None:
     """Extra GDB arguments are forwarded under ``debugger_args``."""
 
-    typed_input = SessionStartInput(
+    typed_input = argparse.Namespace(
         program="/bin/true",
         debugger=None,
         args=(),
@@ -247,7 +212,7 @@ def test_build_session_start_payload_includes_debugger_args() -> None:
         rr_replay=None,
     )
 
-    assert build_session_start_payload(typed_input) == {
+    assert serialize_model(_build_session_start(typed_input)) == {
         "program": "/bin/true",
         "debugger_args": ["-iex", "set pagination off"],
     }
@@ -256,7 +221,7 @@ def test_build_session_start_payload_includes_debugger_args() -> None:
 def test_build_session_start_payload_includes_debugger() -> None:
     """The selected backend is forwarded under ``debugger``."""
 
-    typed_input = SessionStartInput(
+    typed_input = argparse.Namespace(
         program="/bin/true",
         debugger="gdb",
         args=(),
@@ -269,7 +234,7 @@ def test_build_session_start_payload_includes_debugger() -> None:
         rr_replay=None,
     )
 
-    assert build_session_start_payload(typed_input) == {
+    assert serialize_model(_build_session_start(typed_input)) == {
         "program": "/bin/true",
         "debugger": "gdb",
     }
@@ -278,7 +243,7 @@ def test_build_session_start_payload_includes_debugger() -> None:
 def test_build_session_start_payload_includes_rr_replay() -> None:
     """A replay trace becomes the only field in the payload."""
 
-    typed_input = SessionStartInput(
+    typed_input = argparse.Namespace(
         program=None,
         debugger=None,
         args=(),
@@ -291,7 +256,7 @@ def test_build_session_start_payload_includes_rr_replay() -> None:
         rr_replay="/traces/app-0",
     )
 
-    assert build_session_start_payload(typed_input) == {"rr_replay": "/traces/app-0"}
+    assert serialize_model(_build_session_start(typed_input)) == {"rr_replay": "/traces/app-0"}
 
 
 def test_build_execution_manage_run_payload() -> None:
@@ -338,7 +303,7 @@ def test_build_execution_manage_wait_for_stop_rejects_explicit_zero_timeout() ->
 def test_build_context_query_backtrace_payload() -> None:
     """Backtrace filters are nested under the query block."""
 
-    typed_input = ContextQueryInput(
+    typed_input = argparse.Namespace(
         action="backtrace",
         session_id=7,
         thread_id=3,
@@ -346,7 +311,7 @@ def test_build_context_query_backtrace_payload() -> None:
         max_frames=20,
     )
 
-    assert build_context_query_payload(typed_input) == {
+    assert serialize_model(_build_context_query(typed_input)) == {
         "session_id": 7,
         "action": "backtrace",
         "query": {"thread_id": 3, "max_frames": 20},
