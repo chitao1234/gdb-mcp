@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from gdb_mcp.domain.errors import DebuggerDecodeError
+from gdb_mcp.transport.mi_models import MiNotifyRecord
 from gdb_mcp.transport.mi_parser import (
     extract_mi_result_payload,
     mi_payload,
@@ -29,7 +30,7 @@ class TestMiParser:
         assert "Test output\n" in parsed.console
         assert parsed.result == {"msg": "done"}
         assert parsed.result_class == "done"
-        assert {"message": None, "payload": {"msg": "thread-created"}} in parsed.notify
+        assert MiNotifyRecord(message=None, payload={"msg": "thread-created"}) in parsed.notify
 
     def test_a_result_record_without_fields_has_no_payload(self) -> None:
         """`^done` carries no fields, which the parser records as an absent payload."""
@@ -68,6 +69,21 @@ class TestMiParser:
 
         assert mi_payload(payload) is payload
         assert mi_payload(None) is None
+
+    def test_typed_notification_keeps_unknown_and_dashed_payload_fields(self) -> None:
+        """Typing the notification envelope must leave its MI payload extensible."""
+
+        payload = {
+            "reason": "breakpoint-hit",
+            "thread-id": "2",
+            "future-field": {"nested-key": "kept"},
+        }
+        parsed = parse_mi_responses([{"type": "notify", "message": "stopped", "payload": payload}])
+
+        notify = parsed.notify[0]
+        assert notify.message == "stopped"
+        assert notify.payload is payload
+        assert parsed.to_dict()["notify"] == [{"message": "stopped", "payload": payload}]
 
     def test_error_message_keeps_the_context_gdb_printed(self) -> None:
         """GDB puts the error in `msg` and context in the console; both are the message."""
