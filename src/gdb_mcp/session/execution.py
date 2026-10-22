@@ -37,7 +37,6 @@ from ..transport import (
     MiClient,
     ParsedMiResponse,
     build_exec_arguments_command,
-    extract_mi_result_payload,
     parse_mi_responses,
     quote_mi_string,
     wrap_cli_command,
@@ -45,7 +44,7 @@ from ..transport import (
 from .command_runner import SessionCommandRunner
 from .constants import DEFAULT_TIMEOUT_SEC, INTERRUPT_RESPONSE_TIMEOUT_SEC
 from .inferiors import inferior_ids, parse_inferiors_output
-from .result_utils import command_result_payload
+from .result_utils import command_result_mapping
 from .runtime import SessionRuntime
 
 logger = logging.getLogger(__name__)
@@ -277,8 +276,8 @@ class SessionExecutionService:
             )
             if not isinstance(result, OperationError):
                 self._runtime.inferior_mi_supported = True
-                payload = extract_mi_result_payload(command_result_payload(result))
-                inferior_token = payload.get("inferior") if isinstance(payload, dict) else None
+                payload = command_result_mapping(result)
+                inferior_token = payload.get("inferior")
                 inferior_id = self._command_runner.parse_inferior_id_from_thread_group(
                     inferior_token
                 )
@@ -653,8 +652,7 @@ class SessionExecutionService:
         if isinstance(result, OperationError):
             return result
 
-        raw_payload = extract_mi_result_payload(command_result_payload(result))
-        payload_mapping = raw_payload if isinstance(raw_payload, dict) else {}
+        payload_mapping = command_result_mapping(result)
         stop_event = self._runtime.last_stop_event
         if not payload_mapping and stop_event is not None and stop_event.backend_data is not None:
             payload_mapping = stop_event.backend_data.data

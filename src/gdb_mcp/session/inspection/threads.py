@@ -17,11 +17,8 @@ from ...domain import (
     thread_selection_info_from_payload,
 )
 from ...domain.parsing import as_int
-from ...transport import (
-    extract_mi_result_payload,
-)
 from ..constants import DEFAULT_MAX_BACKTRACE_FRAMES, DEFAULT_TIMEOUT_SEC
-from ..result_utils import command_result_payload
+from ..result_utils import command_result_mapping
 from .base import (
     InspectionContext,
     logger,
@@ -45,10 +42,10 @@ class InspectionThreads:
         if isinstance(result, OperationError):
             return result
 
-        thread_info = extract_mi_result_payload(command_result_payload(result))
+        thread_info = command_result_mapping(result)
 
-        if thread_info is None:
-            logger.warning("get_threads: thread_info is None - GDB returned incomplete data")
+        if not thread_info:
+            logger.warning("get_threads: GDB returned incomplete data")
             return OperationError(
                 message="GDB returned incomplete data - may still be loading symbols"
             )
@@ -67,19 +64,13 @@ class InspectionThreads:
         if isinstance(result, OperationError):
             return result
 
-        raw_payload = extract_mi_result_payload(command_result_payload(result))
-        if isinstance(raw_payload, dict):
-            frame_payload = raw_payload.get("frame")
-            if isinstance(frame_payload, dict):
-                self._runtime.mark_frame_selected(as_int(frame_payload.get("level")))
+        raw_payload = command_result_mapping(result)
+        thread_info = thread_selection_info_from_payload(thread_id, raw_payload)
+        if thread_info.frame is not None:
+            self._runtime.mark_frame_selected(as_int(thread_info.frame.level))
         self._runtime.mark_thread_selected(thread_id)
 
-        return OperationSuccess(
-            thread_selection_info_from_payload(
-                thread_id,
-                raw_payload,
-            )
-        )
+        return OperationSuccess(thread_info)
 
     def get_backtrace(
         self, thread_id: int | None = None, max_frames: int = DEFAULT_MAX_BACKTRACE_FRAMES
@@ -112,7 +103,7 @@ class InspectionThreads:
         )
         payload = backtrace_info_from_payload(
             effective_thread_id,
-            extract_mi_result_payload(command_result_payload(result)),
+            command_result_mapping(result),
         )
 
         if selection is not None and selection.thread_id != thread_id:
@@ -153,9 +144,7 @@ class InspectionThreads:
         if isinstance(result, OperationError):
             return self._context.selection_error_with_restore(selection, result)
 
-        frame_info = frame_info_from_payload(
-            extract_mi_result_payload(command_result_payload(result))
-        )
+        frame_info = frame_info_from_payload(command_result_mapping(result))
         frame_details = frame_info.frame
         level = frame_details.level if frame_details is not None else None
         self._runtime.mark_frame_selected(as_int(level))
@@ -195,6 +184,6 @@ class InspectionThreads:
         return OperationSuccess(
             frame_selection_info_from_payload(
                 frame_number,
-                extract_mi_result_payload(command_result_payload(frame_info_result)),
+                command_result_mapping(frame_info_result),
             )
         )

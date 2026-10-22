@@ -13,11 +13,8 @@ from ...domain import (
     registers_info_from_payload,
     variables_info_from_payload,
 )
-from ...transport import (
-    extract_mi_result_payload,
-)
 from ..constants import DEFAULT_TIMEOUT_SEC
-from ..result_utils import command_result_payload
+from ..result_utils import command_result_mapping
 from .base import InspectionContext
 from .register_classes import (
     RegisterFamily,
@@ -64,7 +61,7 @@ class InspectionVariables:
         payload = variables_info_from_payload(
             effective_thread_id,
             frame,
-            extract_mi_result_payload(command_result_payload(result)),
+            command_result_mapping(result),
         )
         restore_error = self._context.restore_selection_if_changed(selection, selection_changed)
         if restore_error is not None:
@@ -129,9 +126,7 @@ class InspectionVariables:
                     return restore_error
             return result
 
-        payload = registers_info_from_payload(
-            extract_mi_result_payload(command_result_payload(result))
-        )
+        payload = registers_info_from_payload(command_result_mapping(result))
         filtered_registers = payload.registers
 
         if not include_vector_registers and not explicit_selector:
@@ -224,10 +219,7 @@ class InspectionVariables:
         if isinstance(result, OperationError):
             return result
 
-        payload = extract_mi_result_payload(command_result_payload(result))
-        if not isinstance(payload, dict):
-            return OperationError(message="GDB returned malformed register-name payload")
-
+        payload = command_result_mapping(result)
         raw_names = payload.get("register-names")
         if not isinstance(raw_names, list):
             return OperationError(

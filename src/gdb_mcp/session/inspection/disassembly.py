@@ -16,12 +16,9 @@ from ...domain import (
     OperationSuccess,
 )
 from ...domain.parsing import as_int, as_optional_mapping, as_text_or_number
-from ...transport import (
-    extract_mi_result_payload,
-    quote_mi_string,
-)
+from ...transport import quote_mi_string
 from ..constants import DEFAULT_TIMEOUT_SEC
-from ..result_utils import command_result_payload
+from ..result_utils import command_result_mapping
 from .base import (
     InspectionContext,
     _ResolvedCodeLocation,
@@ -142,7 +139,7 @@ class InspectionDisassembly:
                 return result
             return self._context.selection_error_with_restore(selection, result)
 
-        raw_payload = extract_mi_result_payload(command_result_payload(result))
+        raw_payload = command_result_mapping(result)
         instructions = self._normalize_disassembly_payload(
             raw_payload,
             current_address=location_result.address,
@@ -249,11 +246,10 @@ class InspectionDisassembly:
         )
         supported = False
         if isinstance(result, OperationSuccess):
-            payload = extract_mi_result_payload(command_result_payload(result))
-            if isinstance(payload, dict):
-                features = payload.get("features")
-                if isinstance(features, list):
-                    supported = _FEATURE_DISASSEMBLE_A in features
+            payload = command_result_mapping(result)
+            features = payload.get("features")
+            if isinstance(features, list):
+                supported = _FEATURE_DISASSEMBLE_A in features
         self._runtime.disassemble_a_supported = supported
         return supported
 
@@ -281,14 +277,11 @@ class InspectionDisassembly:
 
     def _normalize_disassembly_payload(
         self,
-        payload: Mapping[str, object] | None,
+        payload: Mapping[str, object],
         *,
         current_address: str | None,
     ) -> list[DisassemblyInstructionRecord]:
         """Flatten MI disassembly payloads into stable instruction records."""
-
-        if payload is None:
-            return []
 
         raw_instructions = payload.get("asm_insns")
         if not isinstance(raw_instructions, list):

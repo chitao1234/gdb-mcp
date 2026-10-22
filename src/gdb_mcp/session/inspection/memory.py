@@ -16,11 +16,10 @@ from ...domain.parsing import as_record_list, as_text
 from ...transport import (
     build_evaluate_expression_command,
     build_read_memory_command,
-    extract_mi_result_payload,
     quote_mi_string,
 )
 from ..constants import DEFAULT_TIMEOUT_SEC
-from ..result_utils import command_result_payload
+from ..result_utils import command_result_mapping
 from .base import (
     InspectionContext,
 )
@@ -28,15 +27,13 @@ from .base import (
 _FEATURE_READ_MEMORY_BYTES = "data-read-memory-bytes"
 
 
-def _legacy_memory_contents(payload: Mapping[str, object] | None) -> str:
+def _legacy_memory_contents(payload: Mapping[str, object]) -> str:
     """Flatten a `-data-read-memory` table into one hex string.
 
     That command performs a single read and marks every byte behind the first
     unreadable one `N/A`, so the readable prefix is all the data there is.
     """
 
-    if payload is None:
-        return ""
     rows = as_record_list(payload.get("memory"))
 
     parts: list[str] = []
@@ -53,13 +50,13 @@ def _legacy_memory_contents(payload: Mapping[str, object] | None) -> str:
 
 
 def _legacy_memory_block(
-    payload: Mapping[str, object] | None,
+    payload: Mapping[str, object],
     contents: str,
 ) -> MemoryBlockRecord:
     """Build one bytes-style block from a `-data-read-memory` payload."""
 
     block: dict[str, object] = {"offset": "0x0", "contents": contents}
-    start = as_text(payload.get("addr")) if payload is not None else None
+    start = as_text(payload.get("addr"))
     if start is not None:
         block["begin"] = start
         try:
@@ -126,8 +123,7 @@ class InspectionMemory:
                     return restore_error
             return result
 
-        raw_payload = extract_mi_result_payload(command_result_payload(result))
-        value = raw_payload.get("value") if isinstance(raw_payload, dict) else None
+        value = command_result_mapping(result).get("value")
         if selection is not None:
             restore_error = self._context.restore_selection_if_changed(selection, selection_changed)
             if restore_error is not None:
@@ -173,7 +169,7 @@ class InspectionMemory:
         if isinstance(result, OperationError):
             return result
 
-        payload = extract_mi_result_payload(command_result_payload(result))
+        payload = command_result_mapping(result)
         blocks = memory_block_records(payload)
         captured_bytes = sum(len(block.contents or "") // 2 for block in blocks)
         return OperationSuccess(
@@ -208,7 +204,7 @@ class InspectionMemory:
         if isinstance(result, OperationError):
             return result
 
-        payload = extract_mi_result_payload(command_result_payload(result))
+        payload = command_result_mapping(result)
         contents = _legacy_memory_contents(payload)
         blocks = [_legacy_memory_block(payload, contents)] if contents else []
         return OperationSuccess(
@@ -233,10 +229,8 @@ class InspectionMemory:
         )
         supported = False
         if isinstance(result, OperationSuccess):
-            payload = extract_mi_result_payload(command_result_payload(result))
-            if payload is not None:
-                features = payload.get("features")
-                if isinstance(features, list):
-                    supported = _FEATURE_READ_MEMORY_BYTES in features
+            features = command_result_mapping(result).get("features")
+            if isinstance(features, list):
+                supported = _FEATURE_READ_MEMORY_BYTES in features
         self._runtime.read_memory_bytes_supported = supported
         return supported

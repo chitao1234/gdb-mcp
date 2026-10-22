@@ -11,13 +11,10 @@ from ...domain import (
     OperationError,
     SourceLineRecord,
 )
-from ...domain.parsing import as_int, as_text_or_number
-from ...transport import (
-    extract_mi_result_payload,
-)
+from ...domain.parsing import as_int, as_mapping, as_text_or_number
 from ..command_runner import SessionCommandRunner
 from ..constants import DEFAULT_TIMEOUT_SEC
-from ..result_utils import command_result_payload
+from ..result_utils import command_result_mapping
 from ..runtime import SessionRuntime
 
 
@@ -90,10 +87,8 @@ class InspectionContext:
         if isinstance(thread_result, OperationError):
             return thread_result
 
-        thread_payload = extract_mi_result_payload(command_result_payload(thread_result))
-        current_thread = None
-        if isinstance(thread_payload, dict):
-            current_thread = as_int(thread_payload.get("current-thread-id"))
+        thread_payload = command_result_mapping(thread_result)
+        current_thread = as_int(thread_payload.get("current-thread-id"))
 
         frame_result = self.command_runner.execute_command_result(
             "-stack-info-frame", timeout_sec=DEFAULT_TIMEOUT_SEC
@@ -101,12 +96,9 @@ class InspectionContext:
         if isinstance(frame_result, OperationError):
             return frame_result
 
-        frame_payload = extract_mi_result_payload(command_result_payload(frame_result))
-        current_frame = None
-        if isinstance(frame_payload, dict):
-            current_frame_payload = frame_payload.get("frame")
-            if isinstance(current_frame_payload, dict):
-                current_frame = as_int(current_frame_payload.get("level"))
+        frame_payload = command_result_mapping(frame_result)
+        current_frame_payload = as_mapping(frame_payload.get("frame"))
+        current_frame = as_int(current_frame_payload.get("level"))
 
         self.runtime.mark_thread_selected(current_thread)
         self.runtime.mark_frame_selected(current_frame)
@@ -235,12 +227,8 @@ class CodeLocationResolver:
         if isinstance(result, OperationError):
             return result
 
-        raw_payload = extract_mi_result_payload(command_result_payload(result))
-        if not isinstance(raw_payload, dict):
-            return OperationError(message="GDB returned malformed frame data")
-
-        frame_payload = raw_payload.get("frame")
-        if not isinstance(frame_payload, dict):
+        frame_payload = as_mapping(command_result_mapping(result).get("frame"))
+        if not frame_payload:
             return OperationError(message="GDB did not return frame data")
 
         resolved_thread_id = (

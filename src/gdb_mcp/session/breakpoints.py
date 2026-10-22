@@ -22,11 +22,11 @@ from ..domain import (
     payload_to_mapping,
     result_to_mapping,
 )
-from ..domain.parsing import as_int, as_optional_mapping
-from ..transport import extract_mi_result_payload, quote_mi_string
+from ..domain.parsing import as_int, as_mapping
+from ..transport import quote_mi_string
 from .command_runner import SessionCommandRunner
 from .constants import DEFAULT_TIMEOUT_SEC
-from .result_utils import command_result_payload
+from .result_utils import command_result_mapping
 
 logger = logging.getLogger(__name__)
 _CATCHPOINT_NUMBER_RE = re.compile(
@@ -135,10 +135,10 @@ class SessionBreakpointService:
         if isinstance(result, OperationError):
             return self._attribute_insert_failure(location, result)
 
-        payload = extract_mi_result_payload(command_result_payload(result))
+        payload = command_result_mapping(result)
         logger.debug("Breakpoint MI result: %s", payload)
 
-        if payload is None:
+        if not payload:
             logger.warning("No MI result for breakpoint at %s", location)
             return OperationError(
                 message=f"Failed to set breakpoint at {location}: no result from GDB",
@@ -146,13 +146,6 @@ class SessionBreakpointService:
             )
 
         bp = breakpoint_record(payload)
-
-        if not bp:
-            logger.warning("Empty breakpoint result for %s: %s", location, payload)
-            return OperationError(
-                message=f"Breakpoint set but no info returned for {location}",
-                details={"raw_result": payload_to_mapping(result.value)},
-            )
 
         return OperationSuccess(BreakpointInfo(breakpoint=bp))
 
@@ -177,7 +170,7 @@ class SessionBreakpointService:
         if isinstance(result, OperationError):
             return result
 
-        payload = extract_mi_result_payload(command_result_payload(result))
+        payload = command_result_mapping(result)
         number = self._extract_created_breakpoint_number(payload)
         if number is None:
             return OperationError(
@@ -260,11 +253,7 @@ class SessionBreakpointService:
         if isinstance(result, OperationError):
             return result
 
-        return OperationSuccess(
-            breakpoint_list_info_from_payload(
-                extract_mi_result_payload(command_result_payload(result))
-            )
-        )
+        return OperationSuccess(breakpoint_list_info_from_payload(command_result_mapping(result)))
 
     def get_breakpoint(self, number: int) -> OperationSuccess[BreakpointInfo] | OperationError:
         """Return one breakpoint by its numeric identifier."""
@@ -544,21 +533,16 @@ class SessionBreakpointService:
     @classmethod
     def _extract_created_breakpoint_number(
         cls,
-        payload: Mapping[str, object] | None,
+        payload: Mapping[str, object],
     ) -> int | None:
         """Extract the created breakpoint number from an MI result payload."""
-
-        if payload is None:
-            return None
 
         number = cls._extract_breakpoint_number(payload)
         if number is not None:
             return number
 
         for key in ("wpt", "awpt", "hw-awpt", "hw-rwpt"):
-            watchpoint = as_optional_mapping(payload.get(key))
-            if watchpoint is None:
-                continue
+            watchpoint = as_mapping(payload.get(key))
             number = cls._extract_breakpoint_number(watchpoint)
             if number is not None:
                 return number

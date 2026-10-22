@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
-from ..domain import CommandExecutionInfo, OperationSuccess, StructuredPayload
+from collections.abc import Mapping
+
+from ..domain import CommandExecutionInfo, OperationSuccess
+from ..transport.mi_parser import extract_mi_result_payload
 
 
-def command_result_payload(result: OperationSuccess[CommandExecutionInfo]) -> StructuredPayload:
-    """Extract the MI command-result container from a successful execution result."""
+def command_result_mapping(
+    result: OperationSuccess[CommandExecutionInfo],
+) -> Mapping[str, object]:
+    """Return the raw MI result mapping from one typed command result."""
 
-    return result.value.backend_data.data
+    payload = extract_mi_result_payload(result.value.backend_data.data)
+    if payload is None:
+        return {}
+    return payload
