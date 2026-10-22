@@ -284,6 +284,37 @@ class TestRuntimeFoundations:
         runtime.mark_inferior_running(inferior_id=2)
         assert _stop_kind(session_service) == "unknown"
 
+    def test_inferior_summaries_keep_each_canonical_stop_kind(
+        self, session_service: SessionService
+    ) -> None:
+        runtime = session_service.runtime
+        runtime.mark_inferior_paused("breakpoint-hit", inferior_id=1)
+        runtime.mark_inferior_paused("breakpoint", stop_kind="watchpoint", inferior_id=2)
+        runtime.mark_inferior_paused("future-stop", inferior_id=3)
+        runtime.mark_inferior_exited("exited-normally", 0, inferior_id=4)
+
+        status = runtime.status_snapshot(debugger_alive=True)
+        assert status.stop_kind == "breakpoint"
+        assert status.inferior_states is not None
+        assert [record.stop_kind for record in status.inferior_states] == [
+            "breakpoint",
+            "watchpoint",
+            "unknown",
+            "exit",
+        ]
+
+        runtime.mark_inferior_selected(2)
+        runtime.mark_inferior_running(inferior_id=1)
+        status = runtime.status_snapshot(debugger_alive=True)
+        assert status.stop_kind == "watchpoint"
+        assert status.inferior_states is not None
+        assert [record.stop_kind for record in status.inferior_states] == [
+            "unknown",
+            "watchpoint",
+            "unknown",
+            "exit",
+        ]
+
     def test_startup_discards_stop_kind_refinement(self, session_service: SessionService) -> None:
         runtime = session_service.runtime
         runtime.mark_inferior_paused(None, stop_kind="watchpoint")

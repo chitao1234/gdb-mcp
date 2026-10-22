@@ -148,7 +148,7 @@ class TestThreadAndStackInspectionApi:
                 "* 2    <null>                                 /tmp/app ",
             )
         )
-        session.runtime.mark_inferior_paused("signal-received", inferior_id=2)
+        session.runtime.mark_inferior_paused("breakpoint", stop_kind="watchpoint", inferior_id=2)
         session.runtime.mark_inferior_selected(2)
 
         result = result_to_mapping(session.list_inferiors())
@@ -159,7 +159,8 @@ class TestThreadAndStackInspectionApi:
         assert inferiors[0]["execution_state"] == "unknown"
         assert inferiors[1]["inferior_id"] == 2
         assert inferiors[1]["execution_state"] == "paused"
-        assert inferiors[1]["stop_reason"] == "signal-received"
+        assert inferiors[1]["stop_reason"] == "breakpoint"
+        assert inferiors[1]["stop_kind"] == "watchpoint"
 
     def test_select_inferior(
         self,
