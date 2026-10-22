@@ -2,14 +2,25 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from unittest.mock import Mock
 
 import pytest
 
 from gdb_mcp import contracts as c
 from gdb_mcp.domain import OperationError, OperationSuccess
+from gdb_mcp.domain.errors import DebuggerDecodeError
 from gdb_mcp.session.delve_backend import DelveRpcBackend
-from gdb_mcp.session.delve_values import breakpoint_record, variable_record, variable_value
+from gdb_mcp.session.delve_values import (
+    breakpoint_record,
+    frame_record,
+    integer,
+    mapping,
+    mappings,
+    text,
+    variable_record,
+    variable_value,
+)
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.registry import SessionRegistry
 from gdb_mcp.transport.delve_rpc import DelveRpcError
@@ -117,3 +128,61 @@ def test_go_values_keep_aggregate_children_and_unreadable_details() -> None:
     )
     breakpoint = breakpoint_record({"id": 1, "addr": 123})
     assert breakpoint.number == "1" and breakpoint.locations[0].addr == "0x7b"
+
+
+@pytest.mark.parametrize(
+    ("decoder", "payload"),
+    [
+        (mapping, "not a mapping"),
+        (mappings, "not a list"),
+        (mappings, [{"ok": True}, "not a mapping"]),
+        (integer, "not an integer"),
+        (text, 123),
+    ],
+)
+def test_malformed_delve_values_raise_decode_errors(
+    decoder: Callable[[object], object], payload: object
+) -> None:
+    with pytest.raises(DebuggerDecodeError):
+        decoder(payload)
+
+
+def test_frame_record_keeps_unknown_fields_and_omits_absent_optional_values() -> None:
+    record = frame_record({"pc": 16, "new-field": {"nested-key": "value"}})
+
+    assert record.to_payload() == {
+        "level": 0,
+        "addr": "0x10",
+        "pc": 16,
+        "new-field": {"nested-key": "value"},
+    }
+
+
+def test_frame_record_rejects_malformed_consumed_fields() -> None:
+    with pytest.raises(DebuggerDecodeError, match="integer"):
+        frame_record({"pc": "sixteen"})
+
+
+def test_breakpoint_record_does_not_invent_missing_location_values() -> None:
+    record = breakpoint_record({"id": 3, "new-field": "retained"})
+
+    assert record.to_payload() == {
+        "id": 3,
+        "number": "3",
+        "type": "breakpoint",
+        "temporary": False,
+        "locations": [],
+        "new-field": "retained",
+    }
+
+
+def test_breakpoint_record_rejects_malformed_consumed_fields() -> None:
+    with pytest.raises(DebuggerDecodeError, match="integer"):
+        breakpoint_record({"id": "three"})
+    with pytest.raises(DebuggerDecodeError, match="addresses"):
+        breakpoint_record({"id": 3, "addrs": "0x10"})
+
+
+def test_variable_record_rejects_malformed_children() -> None:
+    with pytest.raises(DebuggerDecodeError, match="list of mappings"):
+        variable_record({"name": "value", "children": "not a list"})
