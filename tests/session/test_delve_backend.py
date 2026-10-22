@@ -33,6 +33,66 @@ def backend() -> DelveRpcBackend:
     return selected
 
 
+def test_implementation_value_error_reaches_the_dispatch_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selected = backend()
+    monkeypatch.setattr(selected, "_variable", Mock(side_effect=ValueError("implementation bug")))
+
+    with pytest.raises(ValueError, match="implementation bug"):
+        selected.evaluate_expression("value")
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [DelveRpcError("future debugger failure"), OSError("connection failed")],
+)
+def test_expected_delve_failures_remain_operation_errors(
+    monkeypatch: pytest.MonkeyPatch, failure: Exception
+) -> None:
+    selected = backend()
+    monkeypatch.setattr(selected, "_variable", Mock(side_effect=failure))
+
+    result = selected.evaluate_expression("value")
+
+    assert isinstance(result, OperationError)
+    assert result.message == str(failure)
+
+
+def test_malformed_delve_address_is_a_decode_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    selected = backend()
+    monkeypatch.setattr(selected, "_variable", Mock(return_value={"value": "not an address"}))
+
+    with pytest.raises(DebuggerDecodeError, match="address"):
+        selected._address("pointer")
+
+
+def test_malformed_delve_memory_encoding_is_a_decode_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selected = backend()
+    monkeypatch.setattr(selected, "_scope", Mock(return_value={}))
+    monkeypatch.setattr(selected, "_request", Mock(return_value={"Mem": "%%%"}))
+
+    with pytest.raises(DebuggerDecodeError, match="base64"):
+        selected.read_memory("0x0", 1)
+
+
+def test_unexpected_startup_failure_cleans_up_and_propagates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selected = backend()
+    monkeypatch.setattr(selected, "_spawn", Mock(side_effect=ValueError("implementation bug")))
+    cleanup = Mock()
+    monkeypatch.setattr(selected, "_cleanup", cleanup)
+
+    with pytest.raises(ValueError, match="implementation bug"):
+        selected.start(SessionConfig(debugger=c.DEBUGGER_DELVE, program="app"))
+
+    cleanup.assert_called_once_with()
+    assert selected.runtime.state is c.SessionState.FAILED
+
+
 def test_empty_session_does_not_resolve_or_spawn_delve(monkeypatch: pytest.MonkeyPatch) -> None:
     spawn = Mock(side_effect=AssertionError("must defer spawning"))
     monkeypatch.setattr("gdb_mcp.session.delve_backend.subprocess.Popen", spawn)
