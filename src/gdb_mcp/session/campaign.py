@@ -12,8 +12,10 @@ from re import Pattern
 from ..contracts import DEBUGGER_GDB
 from ..domain import (
     CaptureBundleInfo,
+    CommandExecutionInfo,
     MemoryCaptureRange,
     OperationError,
+    OperationResult,
     OperationSuccess,
     RunUntilFailureInfo,
     RunUntilFailureIterationInfo,
@@ -165,6 +167,7 @@ class RunUntilFailureService:
 
                 matched, trigger = self._matches_failure(
                     request.failure,
+                    result=run_result,
                     payload=run_payload,
                     status=status_snapshot,
                     stop_event=session.last_stop_event,
@@ -238,6 +241,7 @@ class RunUntilFailureService:
     def _matches_failure(
         criteria: RunUntilFailureCriteria,
         *,
+        result: OperationResult[CommandExecutionInfo],
         payload: StructuredPayload,
         status: SessionStatusSnapshot,
         stop_event: StopEvent | None,
@@ -245,16 +249,11 @@ class RunUntilFailureService:
     ) -> tuple[bool, str | None]:
         """Return whether one iteration matches the configured failure predicates."""
 
-        payload_status = payload.get("status")
-        message = RunUntilFailureService._payload_message(payload)
-        if (
-            criteria.failure_on_timeout
-            and isinstance(message, str)
-            and "timeout" in message.lower()
-        ):
-            return True, "timeout"
-        if criteria.failure_on_error and payload_status == "error":
-            return True, "run_error"
+        if isinstance(result, OperationError):
+            if criteria.failure_on_timeout and "timeout" in result.message.lower():
+                return True, "timeout"
+            if criteria.failure_on_error:
+                return True, "run_error"
 
         stop_reason = stop_event.reason if stop_event is not None else status.stop_reason
         if stop_reason is not None and stop_reason in criteria.stop_reasons:
@@ -272,13 +271,6 @@ class RunUntilFailureService:
                 return True, "result_text_regex"
 
         return False, None
-
-    @staticmethod
-    def _payload_message(payload: StructuredPayload) -> str | None:
-        """Extract a human-readable message from a serialized result payload."""
-
-        value = payload.get("message")
-        return value if isinstance(value, str) else None
 
     @staticmethod
     def _bundle_name(
