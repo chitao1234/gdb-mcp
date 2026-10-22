@@ -664,6 +664,8 @@ def test_source_range_falls_back_to_typed_request_metadata() -> None:
         file="main.c",
         start_line=7,
         end_line=10,
+        thread_id=None,
+        frame=None,
         context_before=5,
         context_after=5,
     )
