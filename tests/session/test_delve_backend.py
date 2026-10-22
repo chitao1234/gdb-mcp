@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Callable
 from unittest.mock import Mock
 
@@ -80,6 +81,69 @@ def test_malformed_delve_memory_encoding_is_a_decode_failure(
 
     with pytest.raises(DebuggerDecodeError, match="base64"):
         selected.read_memory("0x0", 1)
+
+
+def test_memory_reads_respect_older_delve_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    selected = backend()
+    monkeypatch.setattr(selected._inspection, "scope", Mock(return_value={}))
+    contents = bytes(range(256)) * 10
+    reads: list[tuple[int, int]] = []
+
+    def request(
+        method: str,
+        arguments: dict[str, object] | None = None,
+        *,
+        timeout_sec: float = 30,
+    ) -> dict[str, object]:
+        assert method == "ExamineMemory"
+        assert arguments is not None
+        address, length = integer(arguments["Address"]), integer(arguments["Length"])
+        assert 0 < length <= 1000
+        reads.append((address, length))
+        return {"Mem": base64.b64encode(contents[address - 16 : address - 16 + length]).decode()}
+
+    monkeypatch.setattr(selected, "_request", request)
+
+    result = selected.read_memory("0x10", len(contents) - 3, offset=3)
+
+    assert isinstance(result, OperationSuccess)
+    assert result.value.blocks[0].contents == contents[3:].hex()
+    assert reads == [(19, 1000), (1019, 1000), (2019, 557)]
+
+
+@pytest.mark.parametrize(
+    ("version", "supported", "memory_read_limit"),
+    [
+        ("Version: 1.6.1\nBuild: $Id: release $", False, 1000),
+        ("1.22.1", False, 1000),
+        ("1.23.0", True, 1000),
+        ("1.23.1", True, 1000),
+        ("1.24.0", True, 65536),
+        ("1.27.2", True, 65536),
+    ],
+)
+def test_handshake_applies_release_boundaries(
+    monkeypatch: pytest.MonkeyPatch, version: str, supported: bool, memory_read_limit: int
+) -> None:
+    selected = backend()
+    request = Mock(
+        side_effect=[{}, {"APIVersion": 2, "DelveVersion": version}, {"State": {"Pid": 42}}]
+    )
+    monkeypatch.setattr(selected, "_request", request)
+
+    selected._handshake(timeout_sec=1)
+
+    assert selected.capabilities.supports(c.ACTION_NEXT_INSTRUCTION) is supported
+    assert selected._inspection.memory_read_limit == memory_read_limit
+    if not supported:
+        request.reset_mock(side_effect=True)
+        execute = Mock()
+        monkeypatch.setattr(selected._execution, "_execute", execute)
+        for reverse in (False, True):
+            result = selected.next_instruction(reverse=reverse)
+            assert isinstance(result, OperationError) and result.code == "unsupported_operation"
+        request.assert_not_called()
+        execute.assert_not_called()
 
 
 def test_unexpected_startup_failure_cleans_up_and_propagates(

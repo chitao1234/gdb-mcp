@@ -17,7 +17,7 @@ import pytest
 
 from gdb_mcp import contracts as c
 from gdb_mcp.contracts import DEBUGGER_DELVE
-from gdb_mcp.domain import OperationError, OperationSuccess
+from gdb_mcp.domain import OperationError, OperationSuccess, SessionStartupInfo
 from gdb_mcp.mcp.handlers import dispatch_tool_call
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.registry import SessionRegistry
@@ -29,7 +29,7 @@ pytestmark = pytest.mark.integration
 
 PROGRAM = """package main
 import ("fmt"; "os"; "time")
-var buffer = [8]byte{1,2,3,4,5,6,7,8}
+var buffer = [2507]byte{1,2,3,4,5,6,7,8}
 //go:noinline
 func sum(left, right int) int {
     total := left + right
@@ -49,6 +49,13 @@ func main() {
 def success(result: OperationSuccess[T] | OperationError) -> T:
     assert isinstance(result, OperationSuccess), result
     return result.value
+
+
+def _release(started: SessionStartupInfo) -> tuple[int, int, int]:
+    version = str(dig(started.diagnostics.backend_data.data, "version", "DelveVersion"))
+    release = re.search(r"(\d+)\.(\d+)\.(\d+)", version)
+    assert release is not None, version
+    return int(release[1]), int(release[2]), int(release[3])
 
 
 def _binaries() -> list[str]:
@@ -123,6 +130,8 @@ def test_delve_go_workflow(
         assert registers
         memory = success(session.read_memory("&main.buffer", 8))
         assert memory.blocks[0].contents == "0102030405060708"
+        large_memory = success(session.read_memory("&main.buffer", 2504, offset=3))
+        assert large_memory.blocks[0].contents == "0405060708" + "00" * 2499
         assert success(session.disassemble(DisassemblyRequest(instruction_count=5))).instructions
         context = success(
             session.get_source_context(SourceContextRequest(context_before=1, context_after=1))
@@ -136,7 +145,16 @@ def test_delve_go_workflow(
         assert not capture.failed_sections
         success(session.delete_breakpoint(number))
         success(session.step_instruction(options=ExecutionOptions(timeout_sec=10)))
-        success(session.next_instruction(options=ExecutionOptions(timeout_sec=10)))
+        previous_frame = success(session.get_frame_info()).frame
+        assert previous_frame is not None
+        instruction_step = session.next_instruction(options=ExecutionOptions(timeout_sec=10))
+        if _release(started) < (1, 23, 0):
+            assert isinstance(instruction_step, OperationError)
+            assert instruction_step.code == "unsupported_operation"
+        else:
+            success(instruction_step)
+            current_frame = success(session.get_frame_info()).frame
+            assert current_frame is not None and current_frame.addr != previous_frame.addr
         success(session.next(options=ExecutionOptions(timeout_sec=10)))
         finished = success(session.finish(options=ExecutionOptions(timeout_sec=10)))
         assert finished.return_value == "5"
@@ -201,16 +219,22 @@ def test_delve_temporary_breakpoint_and_watchpoint(
     program, source, line = go_program
     session = create_default_session_service(DEBUGGER_DELVE)
     try:
-        success(session.start(program=program, debugger=DEBUGGER_DELVE, debugger_path=delve_binary))
+        started = success(
+            session.start(program=program, debugger=DEBUGGER_DELVE, debugger_path=delve_binary)
+        )
         created = success(session.set_breakpoint(f"{source}:{line}", temporary=True))
         success(session.run(options=ExecutionOptions(timeout_sec=10)))
         assert all(
             record.number != created.breakpoint.number
             for record in success(session.list_breakpoints()).breakpoints
         )
-        watch = success(session.set_watchpoint("main.buffer[0]"))
-        assert watch.breakpoint.watch is not None
-        success(session.delete_watchpoint(int(watch.breakpoint.number or "0")))
+        watch = session.set_watchpoint("main.buffer[0]")
+        if _release(started) < (1, 7, 0):
+            assert isinstance(watch, OperationError) and watch.code == "unsupported_operation"
+        else:
+            breakpoint = success(watch).breakpoint
+            assert breakpoint.watch is not None
+            success(session.delete_watchpoint(int(breakpoint.number or "0")))
         success(session.call_function("sum(7, 8)", timeout_sec=10))
     finally:
         success(session.stop())
@@ -361,10 +385,7 @@ def test_delve_jump_depends_on_selected_release(
         success(session.set_breakpoint(f"{source}:{line}"))
         success(session.run(options=ExecutionOptions(timeout_sec=10)))
         result = session.jump(f"{source}:{line + 1}", options=ExecutionOptions(timeout_sec=10))
-        version = str(dig(started.diagnostics.backend_data.data, "version", "DelveVersion"))
-        release = re.search(r"(\d+)\.(\d+)", version)
-        assert release is not None, version
-        if (int(release.group(1)), int(release.group(2))) < (1, 27):
+        if _release(started) < (1, 27, 2):
             assert isinstance(result, OperationError) and result.code == "unsupported_operation"
         else:
             success(result)
