@@ -8,7 +8,6 @@ from ...domain import (
     InferiorSelectionInfo,
     OperationError,
     OperationSuccess,
-    stop_kind_from_reason,
 )
 from ..constants import DEFAULT_TIMEOUT_SEC
 from ..inferiors import inferior_ids, parse_inferiors_output
@@ -151,7 +150,7 @@ class InspectionInferiorState:
                 state_record.stop_reason if isinstance(state_record.stop_reason, str) else None
             )
             update["stop_reason"] = stop_reason_value
-            update["stop_kind"] = stop_kind_from_reason(stop_reason_value)
+            update["stop_kind"] = state_record.stop_kind
             exit_code = state_record.exit_code
             update["exit_code"] = int(exit_code) if isinstance(exit_code, int) else None
             enriched.append(inferior.model_copy(update=update))

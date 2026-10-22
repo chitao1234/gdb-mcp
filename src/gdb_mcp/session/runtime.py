@@ -35,6 +35,13 @@ class InferiorRuntimeState:
     refined_stop_kind: tuple[str | None, StopKind] | None = None
     state_detail: Literal["crashed"] | None = None
 
+    @property
+    def stop_kind(self) -> StopKind:
+        refined = self.refined_stop_kind
+        if refined is not None and refined[0] == self.stop_reason:
+            return refined[1]
+        return stop_kind_from_reason(self.stop_reason)
+
 
 @dataclass(frozen=True, slots=True)
 class ExecutionObservation:
@@ -137,10 +144,7 @@ class SessionRuntime:
         it is used only while that stop reason is current.
         """
 
-        refined = self._selected_state.refined_stop_kind
-        if refined is not None and refined[0] == self.stop_reason:
-            return refined[1]
-        return stop_kind_from_reason(self.stop_reason)
+        return self._selected_state.stop_kind
 
     def begin_startup(self, config: SessionConfig) -> None:
         """Record a startup attempt and reset transient state."""
@@ -481,6 +485,7 @@ class SessionRuntime:
                         inferior_id=inferior_id,
                         execution_state=state.execution_state,
                         stop_reason=state.stop_reason,
+                        stop_kind=state.stop_kind,
                         exit_code=state.exit_code,
                     )
                 )
