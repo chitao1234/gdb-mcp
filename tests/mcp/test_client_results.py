@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
+
 from gdb_mcp.client.results import ToolEnvelope
 from gdb_mcp.contracts import ACTION_LIST, ACTION_STATUS
+from gdb_mcp.domain import ToolResultStatus
 
 
 def test_success_envelope_reads_nested_fields_and_keeps_original_result() -> None:
@@ -59,3 +62,36 @@ def test_error_envelope_has_no_success_fields_and_keeps_the_error_message() -> N
     assert envelope.is_list_action()
     assert "result" not in payload
     assert payload["details"] == {"future-field": {"nested-key": "kept"}}
+
+
+@pytest.mark.parametrize(
+    ("statuses", "expected"),
+    [
+        ([], False),
+        (["success", "success"], False),
+        (["success", "error"], True),
+        (["error", "success"], True),
+    ],
+)
+def test_workflow_step_errors_are_read_without_changing_step_payloads(
+    statuses: list[ToolResultStatus], expected: bool
+) -> None:
+    steps = [
+        {
+            "result": {
+                "status": status,
+                "future-field": {"nested-key": "kept"},
+                "future_field": "distinct",
+            }
+        }
+        for status in statuses
+    ]
+    result = {"steps": steps}
+    envelope = ToolEnvelope.from_payload({"status": "success", "result": result})
+
+    assert envelope.has_step_errors() is expected
+    assert envelope.result is result
+    assert envelope.result["steps"] is steps
+    for step in steps:
+        assert step["result"]["future-field"] == {"nested-key": "kept"}
+        assert step["result"]["future_field"] == "distinct"

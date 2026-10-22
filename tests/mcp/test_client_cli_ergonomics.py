@@ -9,6 +9,7 @@ import pytest
 from gdb_mcp.client.cli import build_parser, parse_client_args
 from gdb_mcp.client.daemon import DaemonError, ResolvedServer
 from gdb_mcp.contracts import ACTION_THREADS, TOOL_CONTEXT_QUERY
+from gdb_mcp.domain import ToolResultStatus
 from tests.support import json_object
 
 from .cli_support import SERVER_URL, invoke_cli
@@ -179,10 +180,19 @@ def test_payload_json_is_validated_against_the_tool_schema(
     result.invoke.assert_not_awaited()
 
 
-def test_batch_step_failures_set_a_nonzero_exit_code(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("statuses", "exit_code"),
+    [
+        ([], 0),
+        (["success", "success"], 0),
+        (["success", "error"], 1),
+        (["error", "success"], 1),
+    ],
+)
+def test_batch_step_results_determine_the_exit_code(
+    monkeypatch: pytest.MonkeyPatch, statuses: list[ToolResultStatus], exit_code: int
 ) -> None:
-    """A batch that reports failures should make the CLI exit with status one."""
+    """A failed step makes the CLI exit nonzero wherever it appears in the batch."""
 
     monkeypatch.setenv("GDB_MCP_SERVER_URL", SERVER_URL)
 
@@ -195,13 +205,13 @@ def test_batch_step_failures_set_a_nonzero_exit_code(
         response={
             "status": "success",
             "result": {
-                "requested_steps": 2,
-                "steps": [{"result": {"status": "error", "code": "error", "message": "failed"}}],
+                "requested_steps": len(statuses),
+                "steps": [{"result": {"status": status}} for status in statuses],
             },
         },
     )
 
-    assert result.exit_code == 1
+    assert result.exit_code == exit_code
 
 
 def test_subcommand_help_lists_validated_payload_examples(
