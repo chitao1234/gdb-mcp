@@ -17,7 +17,8 @@ import pytest
 
 from gdb_mcp.domain import OperationError, OperationSuccess, SessionStartInfo
 from gdb_mcp.session.factory import create_gdb_controller
-from gdb_mcp.session.lldb_bridge import BridgeClient, BridgeError, BridgeLaunch
+from gdb_mcp.session.lldb_bridge import BridgeClient
+from gdb_mcp.session.lldb_bridge_types import BridgeError, BridgeLaunch
 from gdb_mcp.session.process_cleanup import cleanup_process
 from gdb_mcp.session.registry import SessionRegistry
 
