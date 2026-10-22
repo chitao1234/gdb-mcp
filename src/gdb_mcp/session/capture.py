@@ -101,7 +101,6 @@ class SessionCaptureService:
         status_result = self._backend.get_status()
         snapshot = self._runtime.snapshot(
             debugger_alive=status_result.value.debugger_alive,
-            state_detail=status_result.value.state_detail,
         )
         status = snapshot.status
         artifacts.append(

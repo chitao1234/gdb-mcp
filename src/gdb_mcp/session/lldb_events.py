@@ -19,7 +19,7 @@ from ..domain.results import payload_to_mapping
 from .lldb_breakpoints import LldbBreakpoints
 from .lldb_values import frame as frame_record
 from .lldb_values import integer, text
-from .runtime import SessionRuntime
+from .runtime import ExecutionObservation, SessionRuntime
 
 
 class LldbEvents:
@@ -28,82 +28,71 @@ class LldbEvents:
     def __init__(self, runtime: SessionRuntime, breakpoints: LldbBreakpoints) -> None:
         self.runtime = runtime
         self._breakpoints = breakpoints
-        self.state_detail: Literal["crashed"] | None = None
         self._last_stop_key: tuple[object, ...] | None = None
 
     def reset(self) -> None:
-        self.state_detail = None
         self._last_stop_key = None
 
     def apply(self, payload: Mapping[str, object]) -> SessionStatusSnapshot:
         execution = as_execution_state(text(payload, "execution_state")) or "unknown"
         detail = text(payload, "state_detail")
-        self.state_detail = "crashed" if detail == "crashed" else None
+        state_detail: Literal["crashed"] | None = "crashed" if detail == "crashed" else None
         reason = text(payload, "stop_reason")
         stop_kind = as_stop_kind(payload.get("stop_kind"))
         exit_code = integer(payload, "exit_code")
         target_loaded = bool(payload.get("target_loaded"))
         current_inferior = integer(payload, "current_inferior_id")
         inferior_count = integer(payload, "inferior_count")
-        self.runtime.mark_target_loaded(target_loaded)
-        if inferior_count is not None:
-            self.runtime.update_inferior_inventory(
-                current_inferior_id=current_inferior,
-                count=inferior_count,
-                inferior_ids=tuple(range(1, inferior_count + 1)),
-            )
         current_thread = integer(payload, "current_thread_id")
         current_frame = integer(payload, "current_frame")
-        self.runtime.mark_thread_selected(current_thread)
-        self.runtime.mark_frame_selected(current_frame)
-        if execution == "paused":
-            self.runtime.mark_inferior_paused(reason, stop_kind=stop_kind)
-        elif execution == "running":
-            self.runtime.mark_inferior_running()
-        elif execution == "exited":
-            self.runtime.mark_inferior_exited(reason, exit_code)
-        elif execution == "not_started":
-            self.runtime.mark_inferior_not_started()
-        self.runtime.mark_debugger_running(True)
-        self._record_stop(payload, execution)
-        return SessionStatusSnapshot(
-            debugger_alive=True,
-            target_loaded=target_loaded,
-            session_state=self.runtime.state,
-            execution_state=execution,
-            state_detail=self.state_detail,
-            stop_reason=reason,
-            stop_kind=stop_kind,
-            exit_code=exit_code,
-            current_inferior_id=current_inferior,
-            inferior_count=inferior_count,
-            inferior_states=self.runtime.inferiors_state_summary() or None,
-            follow_fork_mode=self.runtime.follow_fork_mode,
-            detach_on_fork=self.runtime.detach_on_fork,
+        event = self._build_stop(payload, execution, state_detail)
+        key: tuple[object, ...] = ()
+        if event is not None:
+            key = (
+                integer(payload, "pid"),
+                current_inferior,
+                integer(payload, "stop_id"),
+                reason,
+                current_thread,
+                event.frame.addr if event.frame is not None else None,
+                exit_code,
+                integer(payload, "breakpoint_id"),
+                integer(payload, "watchpoint_id"),
+                detail,
+            )
+            if self._last_stop_key == key:
+                event = None
+        status = self.runtime.apply_execution_observation(
+            ExecutionObservation(
+                execution_state=execution,
+                target_loaded=target_loaded,
+                current_inferior_id=current_inferior,
+                inferior_count=inferior_count,
+                current_thread_id=current_thread,
+                current_frame=current_frame,
+                state_detail=state_detail,
+                stop_reason=reason,
+                stop_kind=stop_kind,
+                exit_code=exit_code,
+                stop_event=event,
+            )
         )
+        if event is not None:
+            self._last_stop_key = key
+        return status
 
-    def _record_stop(self, payload: Mapping[str, object], execution: ExecutionState) -> None:
+    def _build_stop(
+        self,
+        payload: Mapping[str, object],
+        execution: ExecutionState,
+        state_detail: Literal["crashed"] | None,
+    ) -> StopEvent | None:
         if execution not in {"paused", "exited"}:
-            return
+            return None
         reason = text(payload, "stop_reason")
         stop_frame = frame_record(payload.get("frame"))
         breakpoint_id = integer(payload, "breakpoint_id")
         watchpoint_id = integer(payload, "watchpoint_id")
-        key = (
-            integer(payload, "pid"),
-            integer(payload, "current_inferior_id"),
-            integer(payload, "stop_id"),
-            reason,
-            integer(payload, "current_thread_id"),
-            stop_frame.addr if stop_frame is not None else None,
-            integer(payload, "exit_code"),
-            breakpoint_id,
-            watchpoint_id,
-            text(payload, "state_detail"),
-        )
-        if self._last_stop_key == key:
-            return
-        self._last_stop_key = key
         signal_number = integer(payload, "signal")
         signal_name = text(payload, "signal_name")
         signal_meaning: str | None = None
@@ -148,9 +137,9 @@ class LldbEvents:
             breakpoint_number = str(
                 self._breakpoints.public_number(("breakpoint", breakpoint_id), breakpoint_id)
             )
-        event = StopEvent(
+        return StopEvent(
             execution_state=execution,
-            state_detail=self.state_detail,
+            state_detail=state_detail,
             reason=reason,
             stop_kind=as_stop_kind(payload.get("stop_kind")),
             inferior_id=integer(payload, "current_inferior_id"),
@@ -167,4 +156,3 @@ class LldbEvents:
                 BackendData(debugger="lldb", console_output="", data=details) if details else None
             ),
         )
-        self.runtime.record_stop_event(event)

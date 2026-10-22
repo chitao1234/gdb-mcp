@@ -284,24 +284,7 @@ class SessionCommandRunner:
                 self._refresh_inferior_inventory_from_gdb()
 
             stop_event = self._build_stop_event(command, stopped_payload)
-            if stop_event.thread_id is not None:
-                self._runtime.mark_thread_selected(stop_event.thread_id)
-            frame = stop_event.frame
-            if frame is not None and frame.level is not None:
-                self._runtime.mark_frame_selected(frame.level)
-
-            if stop_event.execution_state == "exited":
-                self._runtime.mark_inferior_exited(
-                    stop_event.reason,
-                    stop_event.exit_code,
-                    inferior_id=stop_event.inferior_id,
-                )
-            else:
-                self._runtime.mark_inferior_paused(
-                    stop_event.reason,
-                    inferior_id=stop_event.inferior_id,
-                )
-            self._runtime.record_stop_event(stop_event)
+            self._runtime.apply_stop_event(stop_event)
         elif parsed.result_class == "running":
             self._runtime.mark_inferior_running(inferior_id=self._runtime.current_inferior_id)
 

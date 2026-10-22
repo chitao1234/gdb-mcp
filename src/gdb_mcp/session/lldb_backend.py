@@ -322,19 +322,7 @@ class LldbSbBackend:
             if exc.code == "not_started":
                 self._cleanup_failed_start(str(exc))
             return OperationSuccess(
-                SessionStatusSnapshot(
-                    debugger_alive=self.runtime.is_running,
-                    target_loaded=self.runtime.target_loaded,
-                    session_state=self.runtime.state,
-                    execution_state=self.runtime.execution_state,
-                    state_detail=self._events.state_detail,
-                    stop_reason=self.runtime.stop_reason,
-                    stop_kind=self.runtime.stop_kind,
-                    exit_code=self.runtime.exit_code,
-                    current_inferior_id=self.runtime.current_inferior_id,
-                    inferior_count=self.runtime.inferior_count,
-                    inferior_states=self.runtime.inferiors_state_summary() or None,
-                )
+                self.runtime.status_snapshot(debugger_alive=self.runtime.is_running)
             )
 
     # -- execution ----------------------------------------------------------

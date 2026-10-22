@@ -462,13 +462,6 @@ class SessionLifecycleService:
 
         snapshot = self._runtime.status_snapshot(
             debugger_alive=self._runtime.is_running,
-            state_detail=(
-                self._runtime.last_stop_event.state_detail
-                if self._runtime.execution_state == "paused"
-                and self._runtime.last_stop_event is not None
-                and self._runtime.last_stop_event.reason == self._runtime.stop_reason
-                else None
-            ),
         )
         return OperationSuccess(snapshot)
 

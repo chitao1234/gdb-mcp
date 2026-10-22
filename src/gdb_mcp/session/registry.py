@@ -198,9 +198,7 @@ class SessionRegistry:
         with session_workflow_context(session), session.runtime.lifecycle_lock:
             status = session.get_status().value
             runtime = session.runtime
-            snapshot = runtime.snapshot(
-                debugger_alive=status.debugger_alive, state_detail=status.state_detail
-            )
+            snapshot = runtime.snapshot(debugger_alive=status.debugger_alive)
             status = snapshot.status
             config = snapshot.config
             session_state = SessionState.CLOSING if closing else status.session_state

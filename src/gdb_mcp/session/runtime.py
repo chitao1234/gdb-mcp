@@ -33,6 +33,24 @@ class InferiorRuntimeState:
     stop_reason: str | None = None
     exit_code: int | None = None
     refined_stop_kind: tuple[str | None, StopKind] | None = None
+    state_detail: Literal["crashed"] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionObservation:
+    """Decoded debugger state applied as one runtime transition."""
+
+    execution_state: ExecutionState
+    target_loaded: bool
+    current_inferior_id: int | None
+    inferior_count: int | None
+    current_thread_id: int | None
+    current_frame: int | None
+    stop_reason: str | None = None
+    stop_kind: StopKind | None = None
+    exit_code: int | None = None
+    state_detail: Literal["crashed"] | None = None
+    stop_event: StopEvent | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -352,6 +370,58 @@ class SessionRuntime:
             exit_code=None,
         )
 
+    def begin_execution(self) -> None:
+        with self._state_lock:
+            self.current_frame = None
+            self.mark_inferior_running()
+
+    def apply_execution_observation(
+        self, observation: ExecutionObservation
+    ) -> SessionStatusSnapshot:
+        with self._state_lock:
+            self.target_loaded = observation.target_loaded
+            self.is_running = True
+            if observation.inferior_count is not None:
+                self.update_inferior_inventory(
+                    current_inferior_id=observation.current_inferior_id,
+                    count=observation.inferior_count,
+                    inferior_ids=tuple(range(1, observation.inferior_count + 1)),
+                )
+            self.current_thread_id = observation.current_thread_id
+            self.current_frame = observation.current_frame
+            state = InferiorRuntimeState(
+                execution_state=observation.execution_state,
+                stop_reason=observation.stop_reason,
+                exit_code=observation.exit_code,
+                state_detail=observation.state_detail,
+            )
+            if observation.stop_kind is not None:
+                state.refined_stop_kind = (observation.stop_reason, observation.stop_kind)
+            self._selected_state = state
+            if self.current_inferior_id is not None:
+                self.inferior_states[self.current_inferior_id] = state
+            if observation.stop_event is not None:
+                self.record_stop_event(observation.stop_event)
+            return self.status_snapshot(debugger_alive=True)
+
+    def apply_stop_event(self, event: StopEvent) -> None:
+        """Apply a GDB stop notification and its selection as one transition."""
+
+        with self._state_lock:
+            if event.thread_id is not None:
+                self.current_thread_id = event.thread_id
+            if event.frame is not None and event.frame.level is not None:
+                self.current_frame = event.frame.level
+            self._update_inferior_state(
+                inferior_id=event.inferior_id,
+                execution_state=event.execution_state,
+                stop_reason=event.reason,
+                exit_code=event.exit_code,
+                refined_stop_kind=event.stop_kind,
+                state_detail=event.state_detail,
+            )
+            self.record_stop_event(event)
+
     def mark_inferior_running(self, inferior_id: int | None = None) -> None:
         """Record that the inferior is currently running."""
 
@@ -416,9 +486,7 @@ class SessionRuntime:
                 )
             return records
 
-    def status_snapshot(
-        self, *, debugger_alive: bool, state_detail: Literal["crashed"] | None = None
-    ) -> SessionStatusSnapshot:
+    def status_snapshot(self, *, debugger_alive: bool) -> SessionStatusSnapshot:
         """Read common status fields under the runtime state lock."""
 
         with self._state_lock:
@@ -427,7 +495,7 @@ class SessionRuntime:
                 target_loaded=self.target_loaded,
                 session_state=self.state,
                 execution_state=self.execution_state,
-                state_detail=state_detail,
+                state_detail=self._selected_state.state_detail,
                 stop_reason=self.stop_reason,
                 stop_kind=self.stop_kind,
                 exit_code=self.exit_code,
@@ -438,14 +506,10 @@ class SessionRuntime:
                 detach_on_fork=self.detach_on_fork,
             )
 
-    def snapshot(
-        self, *, debugger_alive: bool, state_detail: Literal["crashed"] | None = None
-    ) -> RuntimeSnapshot:
+    def snapshot(self, *, debugger_alive: bool) -> RuntimeSnapshot:
         with self._state_lock:
             return RuntimeSnapshot(
-                status=self.status_snapshot(
-                    debugger_alive=debugger_alive, state_detail=state_detail
-                ),
+                status=self.status_snapshot(debugger_alive=debugger_alive),
                 config=self.config,
                 attached_pid=self.attached_pid,
                 current_thread_id=self.current_thread_id,
@@ -491,6 +555,7 @@ class SessionRuntime:
         stop_reason: str | None,
         exit_code: int | None,
         refined_stop_kind: StopKind | None = None,
+        state_detail: Literal["crashed"] | None = None,
     ) -> None:
         """Update the execution state owned by one inferior."""
 
@@ -504,6 +569,7 @@ class SessionRuntime:
             state.execution_state = execution_state
             state.stop_reason = stop_reason
             state.exit_code = exit_code
+            state.state_detail = state_detail
             state.refined_stop_kind = (
                 (stop_reason, refined_stop_kind) if refined_stop_kind is not None else None
             )

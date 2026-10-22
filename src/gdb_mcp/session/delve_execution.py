@@ -12,6 +12,7 @@ from ..domain import (
     BackendData,
     CommandExecutionInfo,
     CommandTranscriptEntry,
+    ExecutionState,
     FinishInfo,
     FunctionCallInfo,
     LocationExecutionInfo,
@@ -20,6 +21,7 @@ from ..domain import (
     StopEvent,
     StopKind,
     WaitForStopInfo,
+    stop_kind_from_reason,
 )
 from ..domain.errors import DebuggerDecodeError
 from ..transport.delve_rpc import DelveRpcClient, DelveRpcError, RpcRequest
@@ -42,7 +44,7 @@ from .requests import (
     DEFAULT_EXECUTION_OPTIONS,
     ExecutionOptions,
 )
-from .runtime import SessionRuntime
+from .runtime import ExecutionObservation, SessionRuntime
 from .state import SessionState
 
 
@@ -108,27 +110,36 @@ class DelveExecution:
                 and not state.get("Running")
             ):
                 return
-            self.last_state = state
-            self.runtime.mark_target_loaded(True)
-            self.runtime.update_inferior_inventory(
-                current_inferior_id=1, count=1, inferior_ids=(1,)
-            )
             thread = mapping(state.get("currentThread"))
             goroutine = mapping(state.get("currentGoroutine"))
             goroutine_id = integer(goroutine.get("id"), 0) or integer(thread.get("goroutineID"), 0)
-            previous_goroutine = self.runtime.current_thread_id
-            self.runtime.mark_thread_selected(goroutine_id or None)
-            if previous_goroutine != (goroutine_id or None) or self.runtime.current_frame is None:
-                self.runtime.mark_frame_selected(0)
+            snapshot = self.runtime.snapshot(debugger_alive=True)
+            current_frame = snapshot.current_frame
+            if snapshot.current_thread_id != (goroutine_id or None) or current_frame is None:
+                current_frame = 0
             if state.get("Running"):
-                self.runtime.mark_inferior_running()
+                self.runtime.apply_execution_observation(
+                    ExecutionObservation(
+                        execution_state="running",
+                        target_loaded=True,
+                        current_inferior_id=1,
+                        inferior_count=1,
+                        current_thread_id=goroutine_id or None,
+                        current_frame=current_frame,
+                    )
+                )
+                self.last_state = state
                 return
             breakpoint = mapping(thread.get("breakPoint"))
             native_reason = text(state.get("stopReason"))
             reason = native_reason
+            execution: ExecutionState = "paused"
+            canonical: StopKind | None = None
+            exit_code: int | None = None
             if state.get("exited"):
                 reason = reason or "exited"
-                self.runtime.mark_inferior_exited(reason, optional_integer(state.get("exitStatus")))
+                execution = "exited"
+                exit_code = optional_integer(state.get("exitStatus"))
             else:
                 if optional_integer(breakpoint.get("id")) == -1:
                     reason = "panic"
@@ -155,35 +166,48 @@ class DelveExecution:
                 if reason == "panic":
                     canonical = "exception"
                 reason = native_reason or reason
-                self.runtime.mark_inferior_paused(reason, stop_kind=canonical)
-            if not record:
-                return
-            frame = frame_record(goroutine.get("currentLoc") or thread)
-            key = (
-                self._generation,
-                self.runtime.execution_state,
-                reason,
-                goroutine_id,
-                frame.addr,
-                optional_integer(breakpoint.get("id")),
-            )
-            if key == self._last_stop_key:
-                return
-            self._last_stop_key = key
-            self.runtime.record_stop_event(
-                StopEvent(
-                    execution_state=self.runtime.execution_state,
-                    reason=reason,
-                    stop_kind=self.runtime.stop_kind,
-                    thread_id=goroutine_id or None,
-                    inferior_id=1,
-                    frame=frame,
-                    breakpoint_number=str(breakpoint["id"]) if "id" in breakpoint else None,
-                    exit_code=self.runtime.exit_code,
-                    timestamp=time.time(),
-                    backend_data=self._bridge._data({"State": state}),
+            event: StopEvent | None = None
+            key: tuple[object, ...] = ()
+            if record:
+                frame = frame_record(goroutine.get("currentLoc") or thread)
+                key = (
+                    self._generation,
+                    execution,
+                    reason,
+                    goroutine_id,
+                    frame.addr,
+                    optional_integer(breakpoint.get("id")),
+                )
+                if key != self._last_stop_key:
+                    event = StopEvent(
+                        execution_state=execution,
+                        reason=reason,
+                        stop_kind=canonical or stop_kind_from_reason(reason),
+                        thread_id=goroutine_id or None,
+                        inferior_id=1,
+                        frame=frame,
+                        breakpoint_number=str(breakpoint["id"]) if "id" in breakpoint else None,
+                        exit_code=exit_code,
+                        timestamp=time.time(),
+                        backend_data=self._bridge._data({"State": state}),
+                    )
+            self.runtime.apply_execution_observation(
+                ExecutionObservation(
+                    execution_state=execution,
+                    target_loaded=True,
+                    current_inferior_id=1,
+                    inferior_count=1,
+                    current_thread_id=goroutine_id or None,
+                    current_frame=current_frame,
+                    stop_reason=reason,
+                    stop_kind=canonical,
+                    exit_code=exit_code,
+                    stop_event=event,
                 )
             )
+            self.last_state = state
+            if event is not None:
+                self._last_stop_key = key
 
     def _begin_execution(self, command: str, arguments: dict[str, object] | None = None) -> None:
         with self._command_lock:
@@ -206,8 +230,7 @@ class DelveExecution:
             done = self.done
             self._execution_error = None
             self._has_run = True
-            self.runtime.mark_frame_selected(None)
-            self.runtime.mark_inferior_running()
+            self.runtime.begin_execution()
 
         def complete() -> None:
             try:
