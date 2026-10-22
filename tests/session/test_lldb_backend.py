@@ -11,7 +11,7 @@ import os
 import time
 from collections.abc import Callable
 from typing import TypeVar, cast
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 import pytest
 
@@ -659,7 +659,13 @@ def test_source_range_falls_back_to_typed_request_metadata() -> None:
     assert source.range.start_line == 7
     assert source.range.end_line == 10
     source_request.assert_called_once_with(
-        "source", file="main.c", start_line=7, end_line=10, context_before=5, context_after=5
+        "source",
+        timeout_sec=ANY,
+        file="main.c",
+        start_line=7,
+        end_line=10,
+        context_before=5,
+        context_after=5,
     )
 
 
