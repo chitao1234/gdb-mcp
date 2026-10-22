@@ -291,6 +291,9 @@ class InspectionDisassembly:
 
             nested = entry_payload.get("line_asm_insn")
             if isinstance(nested, list):
+                source_fields = {
+                    key: value for key, value in entry_payload.items() if key != "line_asm_insn"
+                }
                 line = as_int(entry_payload.get("line"))
                 file = as_text_or_number(entry_payload.get("file"))
                 fullname = as_text_or_number(entry_payload.get("fullname"))
@@ -299,7 +302,7 @@ class InspectionDisassembly:
                     if instruction_payload is None:
                         continue
                     record = self._normalize_disassembly_instruction(
-                        instruction_payload,
+                        {**source_fields, **instruction_payload},
                         file=file,
                         fullname=fullname,
                         line=line,
@@ -337,10 +340,12 @@ class InspectionDisassembly:
         if address is None or instruction is None:
             return None
 
-        record: dict[str, object] = {
-            "address": address,
-            "instruction": instruction,
-        }
+        record = dict(payload)
+        record.pop("inst", None)
+        record.pop("func-name", None)
+        record.pop("func", None)
+        record["address"] = address
+        record["instruction"] = instruction
         function = as_text_or_number(payload.get("func-name")) or as_text_or_number(
             payload.get("func")
         )
