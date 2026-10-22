@@ -56,6 +56,7 @@ from gdb_mcp.mcp.schemas import build_tool_definitions
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.registry import SessionRegistry
 from gdb_mcp.session.requests import (
+    CurrentLocation,
     DisassemblyRequest,
     ExecutionOptions,
     FileLineLocation,
@@ -1025,6 +1026,38 @@ class TestHandlerRouting:
                 context_before=0,
                 context_after=0,
             )
+        )
+
+    def test_inspect_source_address_range_retains_current_location_behavior(self) -> None:
+        session = _session_double()
+        session.get_source_context.return_value = OperationSuccess(
+            SourceContextInfo(
+                context=InspectionContextInfo(thread_id=None, frame=None),
+                location=InspectionLocation(kind="current"),
+                range=SourceRange(start_line=1, end_line=1),
+                lines=[],
+            )
+        )
+
+        result = dispatch(
+            "gdb_inspect_query",
+            {
+                "session_id": 2,
+                "action": "source",
+                "query": {
+                    "location": {
+                        "kind": "address_range",
+                        "start_address": "0x123",
+                        "end_address": "0x456",
+                    }
+                },
+            },
+            _manager_for(session),
+        )
+
+        assert result["status"] == "success"
+        session.get_source_context.assert_called_once_with(
+            SourceContextRequest(location=CurrentLocation())
         )
 
     def test_breakpoint_query_get_routes_to_service(self) -> None:
