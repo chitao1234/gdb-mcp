@@ -19,11 +19,11 @@ class TestSessionErrorPaths:
     """Test error and fatal-path behavior through the public API."""
 
     def test_start_session_exception(self, start_session: StartHarness) -> None:
-        """Startup exceptions should be surfaced as user-facing errors."""
+        """OS failures during startup should remain ordinary operation errors."""
 
         result = start_session(
             program="/bin/ls",
-            controller_side_effect=Exception("GDB not found"),
+            controller_side_effect=FileNotFoundError("GDB not found"),
         )
 
         assert result["status"] == "error"
