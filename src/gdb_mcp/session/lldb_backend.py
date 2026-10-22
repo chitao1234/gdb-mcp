@@ -181,17 +181,15 @@ class LldbSbBackend:
         )
 
     def _frame(self, payload: object) -> FrameRecord | None:
-        mapping = dict(self._mapping(payload))
-        if mapping.get("line") is not None:
-            mapping["line"] = self._integer(mapping, "line")
+        mapping = self._mapping(payload)
         return FrameRecord.from_payload(mapping) if mapping else None
 
     def _thread(self, payload: object) -> ThreadRecord | None:
         mapping = dict(self._mapping(payload))
-        if mapping.get("id") is not None:
-            mapping["id"] = str(mapping["id"])
-        if mapping.get("target-id") is not None:
-            mapping["target-id"] = str(mapping["target-id"])
+        for key in ("id", "target-id"):
+            value = mapping.get(key)
+            if isinstance(value, int) and not isinstance(value, bool):
+                mapping[key] = str(value)
         return ThreadRecord.from_payload(mapping) if mapping else None
 
     def _apply_status(self, payload: Mapping[str, object]) -> SessionStatusSnapshot:
@@ -328,6 +326,17 @@ class LldbSbBackend:
 
     # -- breakpoint inventory ----------------------------------------------
 
+    def _native_number(self, payload: Mapping[str, object]) -> int:
+        number = self._text(payload, "number")
+        if number is None:
+            raise DebuggerDecodeError("LLDB breakpoint response has no number")
+        try:
+            return int(number)
+        except ValueError as exc:
+            raise DebuggerDecodeError(
+                f"LLDB breakpoint number must be an integer: {number!r}"
+            ) from exc
+
     def _public_for_native(self, kind: str, native: int) -> int:
         key = (kind, native)
         existing = self._native_public.get(key)
@@ -369,14 +378,14 @@ class LldbSbBackend:
         response = self._request("breakpoint_list")
         for payload in self._mappings(response.get("breakpoints")):
             mapping = dict(payload)
-            native = int(str(mapping.get("number", "0")))
+            native = self._native_number(mapping)
             record = BreakpointRecord.from_payload(mapping)
             self._apply_breakpoint(record, "breakpoint", native)
             seen.add(("breakpoint", native))
         response = self._request("watchpoint_list")
         for payload in self._mappings(response.get("watchpoints")):
             mapping = dict(payload)
-            native = int(str(mapping.get("number", "0")))
+            native = self._native_number(mapping)
             record = BreakpointRecord.from_payload(mapping)
             self._apply_breakpoint(record, "watchpoint", native)
             seen.add(("watchpoint", native))
@@ -709,10 +718,10 @@ class LldbSbBackend:
             result = self._request(
                 "target_create", executable=executable or "", make_current=make_current
             )
-            self._refresh_inferiors()
             inferior_id = self._integer(result, "inferior_id")
             if inferior_id is None:
                 raise DebuggerDecodeError("LLDB target_create response has no inferior_id")
+            self._refresh_inferiors()
             return OperationSuccess(
                 InferiorAddInfo(
                     inferior_id=inferior_id,
@@ -1339,17 +1348,19 @@ class LldbSbBackend:
     ) -> OperationSuccess[MemoryReadInfo] | OperationError:
         try:
             payload = self._request("memory", address=address, count=count, offset=offset)
-            begin = str(payload.get("address") or address)
-            data = str(payload.get("data") or "")
+            begin = self._text(payload, "address")
+            data = self._text(payload, "data")
             read = self._integer(payload, "read")
-            if read is None:
-                raise DebuggerDecodeError("LLDB memory response has no read count")
-            end_address: str | None = None
-            if begin.startswith("0x"):
-                try:
-                    end_address = hex(int(begin, 16) + read)
-                except ValueError:
-                    end_address = None
+            if begin is None or data is None or read is None:
+                raise DebuggerDecodeError(
+                    "LLDB memory response requires address, data, and read count"
+                )
+            try:
+                end_address = hex(int(begin, 16) + read)
+            except ValueError as exc:
+                raise DebuggerDecodeError(
+                    f"LLDB memory address is not hexadecimal: {begin!r}"
+                ) from exc
             block = MemoryBlockRecord(
                 begin=begin,
                 offset="0x0",
@@ -1519,7 +1530,7 @@ class LldbSbBackend:
                 original=location,
                 **fields,
             )
-            native = int(str(payload.get("number") or "0"))
+            native = self._native_number(payload)
             public = self._public_for_native("breakpoint", native)
             self._origins[public] = location
             record = self._apply_breakpoint(
@@ -1542,7 +1553,7 @@ class LldbSbBackend:
                 write=write,
                 access=access,
             )
-            native = int(str(payload.get("number") or "0"))
+            native = self._native_number(payload)
             public = self._public_for_native("watchpoint", native)
             self._origins[public] = expression
             self._watch_specs[public] = (expression, access)
@@ -1583,7 +1594,7 @@ class LldbSbBackend:
                 temporary=temporary,
                 original=kind,
             )
-            native = int(str(payload.get("number") or "0"))
+            native = self._native_number(payload)
             public = self._public_for_native("breakpoint", native)
             self._catchpoints.add(public)
             self._origins[public] = kind
