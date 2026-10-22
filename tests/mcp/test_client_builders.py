@@ -7,14 +7,11 @@ import argparse
 import pytest
 from pydantic import ValidationError
 
-from gdb_mcp.client.builders.inspect import build_inspect_query_payload
 from gdb_mcp.client.builders.workflow import (
     build_run_until_failure_payload,
     build_workflow_batch_payload,
 )
 from gdb_mcp.client.inputs import (
-    InspectQueryInput,
-    LocationInput,
     RunUntilFailureInput,
     SessionStepInput,
     WorkflowBatchInput,
@@ -24,6 +21,7 @@ from gdb_mcp.client.specs.breakpoint import _build_breakpoint_manage, _build_bre
 from gdb_mcp.client.specs.context import _build_context_query
 from gdb_mcp.client.specs.execution import _build_execution_manage
 from gdb_mcp.client.specs.inferior import _build_inferior_manage
+from gdb_mcp.client.specs.inspect import _build_inspect_query
 from gdb_mcp.client.specs.session import _build_session_query, _build_session_start
 
 
@@ -351,7 +349,7 @@ def test_build_breakpoint_manage_create_payload() -> None:
 def test_build_inspect_source_payload() -> None:
     """Source inspection preserves the location and context window."""
 
-    typed_input = InspectQueryInput(
+    typed_input = argparse.Namespace(
         action="source",
         session_id=7,
         thread_id=None,
@@ -362,17 +360,18 @@ def test_build_inspect_source_payload() -> None:
         include_vector_registers=None,
         max_registers=None,
         value_format=None,
-        memory_address=None,
         count=None,
         offset=None,
-        location=LocationInput(kind="file_line", file="src/main.c", line=42),
+        location_kind="file_line",
+        file="src/main.c",
+        line=42,
         instruction_count=None,
         mode=None,
         context_before=2,
         context_after=3,
     )
 
-    assert build_inspect_query_payload(typed_input) == {
+    assert serialize_model(_build_inspect_query(typed_input)) == {
         "session_id": 7,
         "action": "source",
         "query": {
