@@ -251,10 +251,10 @@ class SessionRegistry:
                 else:
                     session.runtime.mark_stopped()
                     result = OperationSuccess(SessionMessage(message="Session removed"))
-        except Exception as exc:
+        except Exception:
             with self._lock:
                 self._closing_sessions.discard(session_id)
-            return OperationError(message=str(exc))
+            raise
 
         if isinstance(result, OperationError):
             with self._lock:

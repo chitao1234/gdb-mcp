@@ -609,9 +609,14 @@ class LldbSbBackend:
             )
             try:
                 self._client.close(detach=detach)
+            except (BridgeError, OSError) as exc:
+                self.runtime.mark_failed(str(exc))
+                if isinstance(exc, BridgeError):
+                    return _operation_error(exc)
+                return OperationError(message=str(exc))
             except Exception as exc:
                 self.runtime.mark_failed(str(exc))
-                return OperationError(message=str(exc))
+                raise
             finally:
                 self._client = None
             self.runtime.mark_stopped()

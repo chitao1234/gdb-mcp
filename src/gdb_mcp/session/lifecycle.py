@@ -440,10 +440,13 @@ class SessionLifecycleService:
 
             try:
                 self._transport.exit()
-            except Exception as exc:
+            except OSError as exc:
                 logger.error("Failed to stop GDB session: %s", exc)
                 self._runtime.mark_failed(f"Failed to stop GDB session: {exc}")
                 return OperationError(message=str(exc))
+            except Exception as exc:
+                self._runtime.mark_failed(f"Failed to stop GDB session: {exc}")
+                raise
 
             self._runtime.mark_stopped()
             return OperationSuccess(SessionMessage(message="GDB session stopped"))
