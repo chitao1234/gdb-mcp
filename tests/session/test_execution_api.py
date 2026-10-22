@@ -796,6 +796,22 @@ class TestExecutionApi:
         assert "result" in mapping(mapping(result["backend_data"])["data"])
         assert controller.decoded_writes[0].endswith("-thread-info\n")
 
+    def test_execute_command_preserves_unknown_mi_result_classes(
+        self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
+    ) -> None:
+        """Future MI result classes should remain data until their meaning is known."""
+
+        session, _ = scripted_running_session(
+            [mi_result({"future-field": {"target-id": "i1"}}, message="future-result-class")]
+        )
+
+        result = result_to_mapping(session.execute_command("-thread-info"))
+
+        assert result["status"] == "success"
+        data = mapping(mapping(result["backend_data"])["data"])
+        assert data["result_class"] == "future-result-class"
+        assert data["result"] == {"future-field": {"target-id": "i1"}}
+
     def test_execute_command_mi_error_result(
         self, scripted_running_session: ScriptedSessionBuilder, mi_result: MiRecordBuilder
     ) -> None:
