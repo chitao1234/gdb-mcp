@@ -3,17 +3,11 @@
 from __future__ import annotations
 
 import logging
-import signal
-import time
 from collections.abc import Mapping
 from typing import Literal, cast
 
 from ..contracts import (
-    ACTION_JUMP,
-    ACTION_UNTIL,
     DEBUGGER_LLDB,
-    ActionJumpName,
-    ActionUntilName,
 )
 from ..domain import (
     BackendData,
@@ -22,10 +16,8 @@ from ..domain import (
     BreakpointListInfo,
     CatchpointType,
     CommandExecutionInfo,
-    CommandTranscriptEntry,
     DetachOnForkInfo,
     DisassemblyInfo,
-    ExecutionState,
     ExpressionValueInfo,
     FinishInfo,
     FollowForkMode,
@@ -48,7 +40,6 @@ from ..domain import (
     SessionStatusSnapshot,
     SourceContextInfo,
     StartupDiagnostics,
-    StopEvent,
     StructuredPayload,
     ThreadListInfo,
     ThreadSelectionInfo,
@@ -57,18 +48,18 @@ from ..domain import (
     WatchpointAccessType,
 )
 from ..domain.errors import DebuggerDecodeError
-from ..domain.parsing import as_execution_state, as_stop_kind
 from ..domain.results import payload_to_mapping, result_to_envelope
 from .backends import BackendCapabilities
 from .config import SessionConfig
 from .constants import DEFAULT_TIMEOUT_SEC
-from .lldb_breakpoints import LldbBreakpoints, parse_breakpoint_location
+from .lldb_breakpoints import LldbBreakpoints
 from .lldb_bridge import BridgeClient
 from .lldb_bridge_build import prepare_bridge
 from .lldb_bridge_types import BridgeError
+from .lldb_events import LldbEvents
+from .lldb_execution import LldbExecution
 from .lldb_inspection import LldbInspection
-from .lldb_values import frame as frame_record
-from .lldb_values import integer, operation_error, text
+from .lldb_values import integer, operation_error
 from .protocols import OsModuleProtocol, TimeModuleProtocol
 from .requests import (
     DEFAULT_EXECUTION_OPTIONS,
@@ -92,10 +83,10 @@ class LldbSbBackend:
         self.runtime = SessionRuntime(os_module=os_module, time_module=time_module)
         self._client: BridgeClient | None = None
         self._capabilities = BackendCapabilities.full_surface(DEBUGGER_LLDB)
-        self._state_detail: Literal["crashed"] | None = None
-        self._last_stop_key: tuple[object, ...] | None = None
         self._breakpoints = LldbBreakpoints(self)
+        self._events = LldbEvents(self.runtime, self._breakpoints)
         self._inspection = LldbInspection(self.runtime, self)
+        self._execution = LldbExecution(self.runtime, self, self._events, self._inspection)
 
     @property
     def capabilities(self) -> BackendCapabilities:
@@ -123,142 +114,6 @@ class LldbSbBackend:
         )
         response = self._require_client().request(operation, timeout_sec=request_timeout, **payload)
         return cast(Mapping[str, object], response)
-
-    # -- mapping ------------------------------------------------------------
-
-    def _apply_status(self, payload: Mapping[str, object]) -> SessionStatusSnapshot:
-        execution = as_execution_state(text(payload, "execution_state")) or "unknown"
-        detail = text(payload, "state_detail")
-        self._state_detail = "crashed" if detail == "crashed" else None
-        reason = text(payload, "stop_reason")
-        stop_kind = as_stop_kind(payload.get("stop_kind"))
-        exit_code = integer(payload, "exit_code")
-        target_loaded = bool(payload.get("target_loaded"))
-        current_inferior = integer(payload, "current_inferior_id")
-        inferior_count = integer(payload, "inferior_count")
-        self.runtime.mark_target_loaded(target_loaded)
-        if inferior_count is not None:
-            self.runtime.update_inferior_inventory(
-                current_inferior_id=current_inferior,
-                count=inferior_count,
-                inferior_ids=tuple(range(1, inferior_count + 1)),
-            )
-        current_thread = integer(payload, "current_thread_id")
-        current_frame = integer(payload, "current_frame")
-        self.runtime.mark_thread_selected(current_thread)
-        self.runtime.mark_frame_selected(current_frame)
-        if execution == "paused":
-            self.runtime.mark_inferior_paused(reason, stop_kind=stop_kind)
-        elif execution == "running":
-            self.runtime.mark_inferior_running()
-        elif execution == "exited":
-            self.runtime.mark_inferior_exited(reason, exit_code)
-        elif execution == "not_started":
-            self.runtime.mark_inferior_not_started()
-        self.runtime.mark_debugger_running(True)
-        self._record_stop(payload, execution)
-        return SessionStatusSnapshot(
-            debugger_alive=True,
-            target_loaded=target_loaded,
-            session_state=self.runtime.state,
-            execution_state=execution,
-            state_detail=self._state_detail,
-            stop_reason=reason,
-            stop_kind=stop_kind,
-            exit_code=exit_code,
-            current_inferior_id=current_inferior,
-            inferior_count=inferior_count,
-            inferior_states=self.runtime.inferiors_state_summary() or None,
-            follow_fork_mode=self.runtime.follow_fork_mode,
-            detach_on_fork=self.runtime.detach_on_fork,
-        )
-
-    def _record_stop(self, payload: Mapping[str, object], execution: ExecutionState) -> None:
-        if execution not in {"paused", "exited"}:
-            return
-        reason = text(payload, "stop_reason")
-        stop_frame = frame_record(payload.get("frame"))
-        breakpoint_id = integer(payload, "breakpoint_id")
-        watchpoint_id = integer(payload, "watchpoint_id")
-        key = (
-            integer(payload, "stop_id"),
-            reason,
-            integer(payload, "current_thread_id"),
-            stop_frame.addr if stop_frame is not None else None,
-            integer(payload, "exit_code"),
-            breakpoint_id,
-            watchpoint_id,
-            text(payload, "state_detail"),
-        )
-        if self._last_stop_key == key:
-            return
-        self._last_stop_key = key
-        signal_number = integer(payload, "signal")
-        signal_name = text(payload, "signal_name")
-        signal_meaning: str | None = None
-        if signal_number is not None:
-            try:
-                signal_meaning = signal.strsignal(signal_number)
-            except (ValueError, AttributeError):
-                signal_meaning = None
-        crash = payload.get("crash")
-        details: StructuredPayload = {}
-        if signal_number is not None:
-            details["signal_number"] = signal_number
-        if isinstance(crash, dict):
-            exception_details = {
-                name: value
-                for name, value in crash.items()
-                if name
-                not in {
-                    "signal",
-                    "signal_name",
-                    "signal_meaning",
-                    "code",
-                    "signal_code",
-                    "fault_address",
-                }
-            }
-            if exception_details:
-                details["exception"] = payload_to_mapping(exception_details)
-        for name in ("stop_data", "pid"):
-            if name in payload:
-                details[name] = payload_to_mapping(payload[name])
-        if breakpoint_id is not None:
-            details["native_breakpoint_id"] = breakpoint_id
-        if watchpoint_id is not None:
-            details["native_watchpoint_id"] = watchpoint_id
-        breakpoint_number: str | None = None
-        if watchpoint_id is not None:
-            breakpoint_number = str(
-                self._breakpoints.public_number(("watchpoint", watchpoint_id), watchpoint_id)
-            )
-        elif breakpoint_id is not None:
-            breakpoint_number = str(
-                self._breakpoints.public_number(("breakpoint", breakpoint_id), breakpoint_id)
-            )
-        event = StopEvent(
-            execution_state=execution,
-            state_detail=self._state_detail,
-            reason=reason,
-            stop_kind=as_stop_kind(payload.get("stop_kind")),
-            inferior_id=integer(payload, "current_inferior_id"),
-            thread_id=integer(payload, "current_thread_id"),
-            frame=stop_frame,
-            signal_name=signal_name,
-            signal_meaning=signal_meaning,
-            signal_code=integer(payload, "signal_code"),
-            fault_address=text(payload, "fault_address"),
-            breakpoint_number=breakpoint_number,
-            exit_code=integer(payload, "exit_code"),
-            timestamp=time.time(),
-            backend_data=(
-                BackendData(debugger="lldb", console_output="", data=details) if details else None
-            ),
-        )
-        self.runtime.record_stop_event(event)
-
-    # -- breakpoint inventory ----------------------------------------------
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -361,7 +216,7 @@ class LldbSbBackend:
                             },
                         )
                 status = client.request("status")
-                snapshot = self._apply_status(status)
+                snapshot = self._events.apply(status)
                 self.runtime.mark_ready()
                 self.runtime.mark_detach_on_fork(None)
                 if snapshot.inferior_count is not None:
@@ -461,7 +316,7 @@ class LldbSbBackend:
                 )
             )
         try:
-            return OperationSuccess(self._apply_status(self._request("status")))
+            return OperationSuccess(self._events.apply(self._request("status")))
         except BridgeError as exc:
             if exc.code == "not_started":
                 self._cleanup_failed_start(str(exc))
@@ -471,7 +326,7 @@ class LldbSbBackend:
                     target_loaded=self.runtime.target_loaded,
                     session_state=self.runtime.state,
                     execution_state=self.runtime.execution_state,
-                    state_detail=self._state_detail,
+                    state_detail=self._events.state_detail,
                     stop_reason=self.runtime.stop_reason,
                     stop_kind=self.runtime.stop_kind,
                     exit_code=self.runtime.exit_code,
@@ -486,162 +341,39 @@ class LldbSbBackend:
     def execute_command(
         self, command: str, timeout_sec: int = DEFAULT_TIMEOUT_SEC
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
-        try:
-            result = self._request("command", command=command)
-            output = str(result.get("output") or "") + str(result.get("error") or "")
-            succeeded = bool(result.get("succeeded"))
-            self.runtime.record_command_transcript(
-                CommandTranscriptEntry(
-                    command=command,
-                    sent_command=command,
-                    status="success" if succeeded else "error",
-                    result_class="lldb",
-                    error=None if succeeded else output.strip() or None,
-                    execution_state=self.runtime.execution_state,
-                    stop_reason=self.runtime.stop_reason,
-                    stop_kind=self.runtime.stop_kind,
-                    timestamp=time.time(),
-                )
-            )
-            if not succeeded:
-                return OperationError(
-                    message=output.strip() or "LLDB command failed",
-                )
-            return OperationSuccess(
-                CommandExecutionInfo(
-                    command=command,
-                    backend_data=BackendData(
-                        debugger=DEBUGGER_LLDB,
-                        console_output=output,
-                        data=_structured(
-                            {
-                                name: value
-                                for name, value in result.items()
-                                if name not in {"output", "error", "succeeded"}
-                            }
-                        ),
-                    ),
-                )
-            )
-        except BridgeError as exc:
-            return operation_error(exc)
+        return self._execution.execute_command(command, timeout_sec)
 
     def run(
         self,
         args: list[str] | None = None,
         options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
-        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
-        try:
-            launch_payload: dict[str, object] = {}
-            if args is not None:
-                launch_payload["args"] = args
-            self._request("launch", **launch_payload)
-            result = (
-                self._request("wait", timeout_ms=timeout_sec * 1000)
-                if wait_for_stop
-                else self._request("status")
-            )
-            self._apply_status(result)
-            return OperationSuccess(
-                CommandExecutionInfo(
-                    command="run",
-                    backend_data=BackendData(
-                        debugger=DEBUGGER_LLDB,
-                        console_output="",
-                        data=_structured(result),
-                    ),
-                )
-            )
-        except BridgeError as exc:
-            return operation_error(exc)
+        return self._execution.run(args, options)
 
     def add_inferior(
         self, *, executable: str | None = None, make_current: bool = False
     ) -> OperationSuccess[InferiorAddInfo] | OperationError:
-        try:
-            result = self._request(
-                "target_create", executable=executable or "", make_current=make_current
-            )
-            inferior_id = integer(result, "inferior_id")
-            if inferior_id is None:
-                raise DebuggerDecodeError("LLDB target_create response has no inferior_id")
-            self._inspection.refresh_inferiors()
-            return OperationSuccess(
-                InferiorAddInfo(
-                    inferior_id=inferior_id,
-                    display=text(result, "display"),
-                    description=text(result, "description"),
-                    executable=text(result, "executable"),
-                    current_inferior_id=self.runtime.current_inferior_id,
-                    inferior_count=self.runtime.inferior_count,
-                    message="Inferior created",
-                )
-            )
-        except BridgeError as exc:
-            return operation_error(exc)
+        return self._execution.add_inferior(executable=executable, make_current=make_current)
 
     def remove_inferior(
         self, inferior_id: int
     ) -> OperationSuccess[InferiorRemoveInfo] | OperationError:
-        try:
-            result = self._request("target_delete", inferior_id=inferior_id)
-            self._inspection.refresh_inferiors()
-            return OperationSuccess(
-                InferiorRemoveInfo(
-                    inferior_id=inferior_id,
-                    current_inferior_id=integer(result, "current_inferior_id"),
-                    inferior_count=self.runtime.inferior_count,
-                    message=f"Inferior {inferior_id} removed",
-                )
-            )
-        except BridgeError as exc:
-            return operation_error(exc)
+        return self._execution.remove_inferior(inferior_id)
 
     def attach_process(
         self, pid: int, timeout_sec: int = DEFAULT_TIMEOUT_SEC
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
-        try:
-            if not self.runtime.target_loaded:
-                self._request("create_target", program="")
-            result = self._request("attach", pid=pid)
-            self._apply_status(result)
-            self.runtime.mark_attached(pid)
-            return OperationSuccess(
-                CommandExecutionInfo(
-                    command="attach",
-                    backend_data=BackendData(
-                        debugger=DEBUGGER_LLDB,
-                        console_output="",
-                        data=_structured(result),
-                    ),
-                )
-            )
-        except BridgeError as exc:
-            return operation_error(exc)
+        return self._execution.attach_process(pid, timeout_sec)
 
     def set_follow_fork_mode(
         self, mode: FollowForkMode
     ) -> OperationSuccess[FollowForkModeInfo] | OperationError:
-        try:
-            self._request("setting_set", name="target.process.follow-fork-mode", value=mode)
-            self.runtime.mark_follow_fork_mode(mode)
-            return OperationSuccess(
-                FollowForkModeInfo(mode=mode, message=f"Follow-fork mode set to {mode}")
-            )
-        except BridgeError as exc:
-            return operation_error(exc)
+        return self._execution.set_follow_fork_mode(mode)
 
     def set_detach_on_fork(
         self, enabled: bool
     ) -> OperationSuccess[DetachOnForkInfo] | OperationError:
-        return OperationError(
-            message=(
-                "LLDB has no detach-on-fork setting. Use target.process.follow-fork-mode "
-                "through set_follow_fork_mode; the non-followed process is left detached."
-            ),
-            code="unsupported_operation",
-        )
+        return self._execution.set_detach_on_fork(enabled)
 
     def continue_execution(
         self,
@@ -649,55 +381,12 @@ class LldbSbBackend:
         options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
-        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
-        if reverse:
-            return OperationError(
-                message="LLDB reverse execution is not supported", code="unsupported_combination"
-            )
-        try:
-            self._request("continue")
-            result = (
-                self._request("wait", timeout_ms=timeout_sec * 1000)
-                if wait_for_stop
-                else self._request("status")
-            )
-            self._apply_status(result)
-            return OperationSuccess(
-                CommandExecutionInfo(
-                    command="continue",
-                    backend_data=BackendData(
-                        debugger=DEBUGGER_LLDB,
-                        console_output="",
-                        data=_structured(result),
-                    ),
-                )
-            )
-        except BridgeError as exc:
-            return operation_error(exc)
+        return self._execution.continue_execution(options=options, reverse=reverse)
 
     def wait_for_stop(
         self, *, timeout_sec: int = DEFAULT_TIMEOUT_SEC, stop_reasons: tuple[str, ...] = ()
     ) -> OperationSuccess[WaitForStopInfo] | OperationError:
-        try:
-            result = self._request("wait", timeout_ms=timeout_sec * 1000)
-            snapshot = self._apply_status(result)
-            reason = snapshot.stop_reason
-            matched = not stop_reasons or (reason in stop_reasons if reason is not None else False)
-            return OperationSuccess(
-                WaitForStopInfo(
-                    message="Stop observed" if matched else "No matching stop observed",
-                    matched=matched,
-                    timed_out=bool(result.get("timed_out")),
-                    source="waited",
-                    execution_state=snapshot.execution_state,
-                    stop_reason=reason,
-                    stop_kind=snapshot.stop_kind,
-                    reason_filter=list(stop_reasons) or None,
-                    last_stop_event=self.runtime.last_stop_event,
-                )
-            )
-        except BridgeError as exc:
-            return operation_error(exc)
+        return self._execution.wait_for_stop(timeout_sec=timeout_sec, stop_reasons=stop_reasons)
 
     def step(
         self,
@@ -705,8 +394,7 @@ class LldbSbBackend:
         options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
-        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
-        return self._step("into", wait_for_stop, timeout_sec, reverse)
+        return self._execution.step(options=options, reverse=reverse)
 
     def next(
         self,
@@ -714,36 +402,7 @@ class LldbSbBackend:
         options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
-        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
-        return self._step("over", wait_for_stop, timeout_sec, reverse)
-
-    def _step(
-        self, kind: str, wait_for_stop: bool, timeout_sec: int, reverse: bool
-    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
-        if reverse:
-            return OperationError(
-                message="LLDB reverse execution is not supported", code="unsupported_combination"
-            )
-        try:
-            self._request("step", kind=kind)
-            result = (
-                self._request("wait", timeout_ms=timeout_sec * 1000)
-                if wait_for_stop
-                else self._request("status")
-            )
-            self._apply_status(result)
-            return OperationSuccess(
-                CommandExecutionInfo(
-                    command=kind,
-                    backend_data=BackendData(
-                        debugger=DEBUGGER_LLDB,
-                        console_output="",
-                        data=_structured(result),
-                    ),
-                )
-            )
-        except BridgeError as exc:
-            return operation_error(exc)
+        return self._execution.next(options=options, reverse=reverse)
 
     def step_instruction(
         self,
@@ -751,8 +410,7 @@ class LldbSbBackend:
         options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
-        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
-        return self._step("instruction_into", wait_for_stop, timeout_sec, reverse)
+        return self._execution.step_instruction(options=options, reverse=reverse)
 
     def next_instruction(
         self,
@@ -760,27 +418,12 @@ class LldbSbBackend:
         options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
-        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
-        return self._step("instruction_over", wait_for_stop, timeout_sec, reverse)
+        return self._execution.next_instruction(options=options, reverse=reverse)
 
     def return_from_frame(
         self, *, value: str | None = None
     ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
-        try:
-            result = self._request("return_from_frame", value=value or "")
-            self._apply_status(result)
-            return OperationSuccess(
-                CommandExecutionInfo(
-                    command="return",
-                    backend_data=BackendData(
-                        debugger=DEBUGGER_LLDB,
-                        console_output="",
-                        data=_structured(result),
-                    ),
-                )
-            )
-        except BridgeError as exc:
-            return operation_error(exc)
+        return self._execution.return_from_frame(value=value)
 
     def jump(
         self,
@@ -788,12 +431,7 @@ class LldbSbBackend:
         *,
         options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
     ) -> OperationSuccess[LocationExecutionInfo] | OperationError:
-        """Relocate through LLDB, then resume without restricting the function."""
-        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
-
-        return self._execute_location(
-            ACTION_JUMP, location, wait_for_stop=wait_for_stop, timeout_sec=timeout_sec
-        )
+        return self._execution.jump(location, options=options)
 
     def until(
         self,
@@ -801,152 +439,22 @@ class LldbSbBackend:
         *,
         options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
     ) -> OperationSuccess[LocationExecutionInfo] | OperationError:
-        """Use LLDB's native until plan, including its return boundary and errors."""
-        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
-
-        return self._execute_location(
-            ACTION_UNTIL, location, wait_for_stop=wait_for_stop, timeout_sec=timeout_sec
-        )
-
-    def _execute_location(
-        self,
-        action: ActionJumpName | ActionUntilName,
-        location: str,
-        *,
-        wait_for_stop: bool,
-        timeout_sec: int,
-    ) -> OperationSuccess[LocationExecutionInfo] | OperationError:
-        try:
-            destination = location.strip()
-            fields: dict[str, object]
-            if destination.lstrip("+-").isdigit():
-                kind, fields = "line", {"line": destination}
-            else:
-                mode, fields = parse_breakpoint_location(destination)
-                kind = "file_line" if mode == "location" else "address"
-                if mode == "function":
-                    fields = {"address": fields["name"]}
-            previous_stop = self.runtime.last_stop_event
-            result = self._request(
-                "execute_location",
-                relocate=action == ACTION_JUMP,
-                kind=kind,
-                **fields,
-            )
-            snapshot = self._apply_status(result)
-            command = text(result, "command") or action
-            if not result.get("succeeded"):
-                return OperationError(
-                    (text(result, "console_output") or "")
-                    + (text(result, "error") or "LLDB execution failed"),
-                    details={
-                        "relocated": bool(result.get("relocated")),
-                        "execution_state": snapshot.execution_state,
-                        "backend_data": _structured(result),
-                    },
-                )
-            console_output = text(result, "console_output") or ""
-            if wait_for_stop and snapshot.execution_state == "running":
-                waited = self._request("wait", timeout_ms=timeout_sec * 1000)
-                snapshot = self._apply_status(waited)
-                result = {**result, **waited}
-                if waited.get("timed_out") and snapshot.execution_state == "running":
-                    return OperationError(
-                        f"Timeout waiting for execution to stop after {timeout_sec}s",
-                        code="command_timeout",
-                        details={
-                            "relocated": bool(result.get("relocated")),
-                            "execution_state": snapshot.execution_state,
-                            "backend_data": _structured(result),
-                        },
-                    )
-            event = self.runtime.last_stop_event
-            if event is previous_stop:
-                event = None
-            return OperationSuccess(
-                LocationExecutionInfo(
-                    command=command,
-                    backend_data=BackendData(
-                        debugger=DEBUGGER_LLDB,
-                        console_output=console_output,
-                        data=_structured(result),
-                    ),
-                    location=location,
-                    execution_state=snapshot.execution_state,
-                    stop_reason=event.reason if event is not None else None,
-                    stop_kind=event.stop_kind if event is not None else None,
-                    last_stop_event=event,
-                )
-            )
-        except BridgeError as exc:
-            return operation_error(exc)
+        return self._execution.until(location, options=options)
 
     def finish(
         self,
         options: ExecutionOptions = DEFAULT_EXECUTION_OPTIONS,
         reverse: bool = False,
     ) -> OperationSuccess[FinishInfo] | OperationError:
-        timeout_sec, wait_for_stop = options.timeout_sec, options.wait_for_stop
-        if reverse:
-            return OperationError(
-                message="LLDB reverse execution is not supported", code="unsupported_combination"
-            )
-        try:
-            self._request("step", kind="out")
-            result = (
-                self._request("wait", timeout_ms=timeout_sec * 1000)
-                if wait_for_stop
-                else self._request("status")
-            )
-            snapshot = self._apply_status(result)
-            return OperationSuccess(
-                FinishInfo(
-                    message="LLDB finish",
-                    return_value=text(result, "return_value"),
-                    frame=frame_record(result.get("frame")),
-                    execution_state=snapshot.execution_state,
-                    stop_reason=snapshot.stop_reason,
-                    stop_kind=snapshot.stop_kind,
-                    last_stop_event=self.runtime.last_stop_event,
-                )
-            )
-        except BridgeError as exc:
-            return operation_error(exc)
+        return self._execution.finish(options, reverse)
 
     def interrupt(self) -> OperationSuccess[MessageResult] | OperationError:
-        try:
-            result = self._request("interrupt")
-            self._apply_status(result)
-            return OperationSuccess(
-                MessageResult(
-                    message="LLDB interrupted",
-                    backend_data=BackendData(
-                        debugger=DEBUGGER_LLDB,
-                        console_output="",
-                        data=_structured(result),
-                    ),
-                )
-            )
-        except BridgeError as exc:
-            return operation_error(exc)
+        return self._execution.interrupt()
 
     def call_function(
         self, function_call: str, timeout_sec: int = DEFAULT_TIMEOUT_SEC
     ) -> OperationSuccess[FunctionCallInfo] | OperationError:
-        try:
-            result = self._request(
-                "evaluate", expression=function_call, timeout_ms=timeout_sec * 1000
-            )
-            return OperationSuccess(
-                FunctionCallInfo(
-                    function_call=function_call,
-                    result=str(result.get("value") or ""),
-                    type=text(result, "type"),
-                    summary=text(result, "summary"),
-                )
-            )
-        except BridgeError as exc:
-            return operation_error(exc)
+        return self._execution.call_function(function_call, timeout_sec)
 
     # -- inferior/context inspection ---------------------------------------
 
