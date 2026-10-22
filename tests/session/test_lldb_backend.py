@@ -559,6 +559,35 @@ def test_crash_detail_follows_selected_inferior() -> None:
     assert backend.runtime.status_snapshot(debugger_alive=True).state_detail == "crashed"
 
 
+@pytest.mark.parametrize(
+    ("details", "expected"),
+    [
+        ({}, "crashed"),
+        ({"stop_reason": "signal", "stop_kind": "signal"}, "crashed"),
+        ({"stop_reason": "breakpoint", "stop_kind": "breakpoint"}, None),
+        ({"stop_reason": "breakpoint"}, None),
+        ({"stop_kind": "breakpoint"}, None),
+        ({"stop_reason": None}, None),
+    ],
+)
+def test_inventory_crash_detail_belongs_to_the_reported_stop(
+    details: dict[str, object], expected: str | None
+) -> None:
+    backend, bridge = _backend()
+    backend._events.apply(bridge.request("status"))
+    with patch.object(
+        bridge,
+        "request",
+        return_value={
+            "current_inferior_id": 1,
+            "targets": [{"inferior_id": 1, "execution_state": "paused", **details}],
+        },
+    ):
+        assert isinstance(backend.list_inferiors(), OperationSuccess)
+
+    assert backend.runtime.status_snapshot(debugger_alive=True).state_detail == expected
+
+
 def test_status_enriches_crash_and_stop_event() -> None:
     backend, _ = _backend()
 
