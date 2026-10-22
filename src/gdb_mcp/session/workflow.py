@@ -12,7 +12,6 @@ from ..domain import (
     OperationError,
     OperationResult,
     OperationSuccess,
-    StopEvent,
     ToolPayload,
     result_to_envelope,
 )
@@ -60,12 +59,12 @@ class SessionWorkflowService:
         results: list[BatchStepResult] = []
 
         for index, step in enumerate(steps):
-            previous_stop_history_size = len(self._runtime.stop_history)
+            previous_stop = self._runtime.last_stop_event
             step_result = step.execute()
             serialized_result = result_to_envelope(step_result)
             stop_event = None
-            if capture_stop_events:
-                stop_event = self._step_stop_event(previous_stop_history_size)
+            if capture_stop_events and self._runtime.last_stop_event is not previous_stop:
+                stop_event = self._runtime.last_stop_event
 
             results.append(
                 BatchStepResult(
@@ -117,10 +116,3 @@ class SessionWorkflowService:
             fail_fast=fail_fast,
             capture_stop_events=capture_stop_events,
         )
-
-    def _step_stop_event(self, previous_stop_history_size: int) -> StopEvent | None:
-        """Return the new stop event produced by the most recent step, if any."""
-
-        if len(self._runtime.stop_history) > previous_stop_history_size:
-            return self._runtime.stop_history[-1]
-        return None
