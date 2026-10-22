@@ -305,10 +305,15 @@ class SessionRuntime:
                     )
                     continue
                 if "stop_reason" in record.model_fields_set:
+                    if record.stop_reason != state.stop_reason:
+                        state.state_detail = None
+                        state.refined_stop_kind = None
                     state.stop_reason = record.stop_reason
                 if "exit_code" in record.model_fields_set:
                     state.exit_code = record.exit_code
                 if "stop_kind" in record.model_fields_set:
+                    if record.stop_kind != state.stop_kind:
+                        state.state_detail = None
                     state.refined_stop_kind = None
                     if record.stop_kind is not None:
                         state.refined_stop_kind = (state.stop_reason, record.stop_kind)
