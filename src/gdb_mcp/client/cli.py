@@ -9,7 +9,7 @@ import os
 import sys
 from collections.abc import Sequence
 from contextlib import redirect_stderr
-from typing import Literal, Protocol, TextIO, TypedDict, cast, runtime_checkable
+from typing import Protocol, TextIO, runtime_checkable
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -173,31 +173,6 @@ def _payload_from_json(
         return validate_model(TOOL_MODELS[tool_name], parsed)
     except ValidationError as exc:
         parser.error(format_validation_error(exc))
-
-
-def _payload_reports_step_failures(payload: dict[str, object]) -> bool:
-    """Return whether any completed workflow step returned an error envelope."""
-
-    batch = cast(WorkflowBatchEnvelope, payload["result"])
-    return any(step["result"]["status"] == "error" for step in batch["steps"])
-
-
-class WorkflowStepEnvelope(TypedDict):
-    """The status-bearing part of a nested tool result."""
-
-    status: Literal["success", "error"]
-
-
-class WorkflowStep(TypedDict):
-    """One completed workflow step as published in its result array."""
-
-    result: WorkflowStepEnvelope
-
-
-class WorkflowBatchEnvelope(TypedDict):
-    """The workflow fields the CLI reads from a successful result."""
-
-    steps: list[WorkflowStep]
 
 
 def _normalize_tool_name(tool_name: str) -> str | None:
@@ -768,7 +743,7 @@ async def main(
 
     if response.is_error:
         return 1
-    if args.tool_name == TOOL_WORKFLOW_BATCH and _payload_reports_step_failures(response.payload):
+    if args.tool_name == TOOL_WORKFLOW_BATCH and response.envelope().has_step_errors():
         return 1
     return 0
 

@@ -11,11 +11,23 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast
+from typing import TypedDict, cast
 
 from gdb_mcp.contracts import ACTION_LIST
 from gdb_mcp.domain import ToolResultStatus
 from gdb_mcp.domain.parsing import as_int, as_text
+
+
+class _WorkflowStepEnvelope(TypedDict):
+    """The status-bearing part of a completed workflow step result."""
+
+    status: ToolResultStatus
+
+
+class _WorkflowStep(TypedDict):
+    """The fields read from one completed workflow step."""
+
+    result: _WorkflowStepEnvelope
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +71,12 @@ class ToolEnvelope:
         """Return whether this payload is a session-list action envelope."""
 
         return self.action == ACTION_LIST
+
+    def has_step_errors(self) -> bool:
+        """Return whether a successful workflow batch contains a failed step."""
+
+        steps = cast(list[_WorkflowStep], self.result["steps"])
+        return any(step["result"]["status"] == "error" for step in steps)
 
 
 def _as_bool(value: object) -> bool | None:
