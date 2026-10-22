@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import threading
 
+import pytest
+
 from gdb_mcp.domain import CommandTranscriptEntry, StopEvent
 from gdb_mcp.session.config import SessionConfig
 from gdb_mcp.session.service import SessionService
@@ -214,8 +216,9 @@ class TestRuntimeFoundations:
         assert runtime.inferior_count == 2
         assert runtime.current_inferior_id == 1
 
-    def test_inferior_summary_reads_are_serialized_by_the_state_lock(
-        self, session_service: SessionService
+    @pytest.mark.parametrize("status", [False, True])
+    def test_summary_reads_are_serialized_by_the_state_lock(
+        self, session_service: SessionService, status: bool
     ) -> None:
         """Snapshot readers must take the state lock instead of racing writers."""
 
@@ -224,7 +227,10 @@ class TestRuntimeFoundations:
         finished = threading.Event()
 
         def read_summary() -> None:
-            runtime.inferiors_state_summary()
+            if status:
+                runtime.status_snapshot(debugger_alive=True)
+            else:
+                runtime.inferiors_state_summary()
             finished.set()
 
         with runtime._state_lock:
@@ -235,3 +241,23 @@ class TestRuntimeFoundations:
 
         worker.join(timeout=1.0)
         assert finished.is_set()
+
+    def test_status_snapshot_keeps_execution_and_inventory_together(
+        self, session_service: SessionService
+    ) -> None:
+        runtime = session_service.runtime
+        runtime.mark_ready()
+        runtime.mark_inferior_paused("breakpoint-hit", inferior_id=1)
+        runtime.mark_inferior_exited("exited-normally", 0, inferior_id=2)
+
+        snapshot = runtime.status_snapshot(debugger_alive=True)
+        runtime.mark_inferior_selected(2)
+        runtime.mark_inferior_running(inferior_id=1)
+
+        assert snapshot.execution_state == "paused"
+        assert snapshot.current_inferior_id == 1
+        assert snapshot.stop_reason == "breakpoint-hit"
+        assert snapshot.stop_kind == "breakpoint"
+        assert snapshot.inferior_states is not None
+        assert snapshot.inferior_states[0].execution_state == "paused"
+        assert snapshot.inferior_states[1].exit_code == 0

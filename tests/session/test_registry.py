@@ -51,6 +51,9 @@ def _session_double() -> Mock:
         last_failure_message=None,
     )
     session.runtime.inferiors_state_summary.return_value = []
+    session.runtime.status_snapshot.return_value = SessionStatusSnapshot(
+        debugger_alive=False, target_loaded=False, session_state=SessionState.CREATED
+    )
     session.has_controller = False
     session.is_running = False
     session.state = SessionState.CREATED
@@ -291,6 +294,18 @@ class TestSessionRegistry:
                 execution_state="paused",
                 stop_reason="breakpoint-hit",
                 exit_code=None,
+                current_inferior_id=1,
+                inferior_count=2,
+                follow_fork_mode="child",
+                detach_on_fork=False,
+                inferior_states=[
+                    InferiorStateRecord(
+                        inferior_id=1,
+                        execution_state="paused",
+                        stop_reason="breakpoint-hit",
+                    ),
+                    InferiorStateRecord(inferior_id=2, execution_state="running"),
+                ],
             )
         )
         session.state = SessionState.READY
@@ -304,25 +319,9 @@ class TestSessionRegistry:
             attached_pid=None,
             current_thread_id=2,
             current_frame=1,
-            current_inferior_id=1,
-            inferior_count=2,
-            follow_fork_mode="child",
-            detach_on_fork=False,
             last_failure_message=None,
         )
-        session.runtime.inferiors_state_summary.return_value = [
-            InferiorStateRecord(
-                inferior_id=1,
-                is_current=True,
-                execution_state="paused",
-                stop_reason="breakpoint-hit",
-            ),
-            InferiorStateRecord(
-                inferior_id=2,
-                is_current=False,
-                execution_state="running",
-            ),
-        ]
+        session.runtime.status_snapshot.return_value = session.get_status.return_value.value
         manager = SessionRegistry(session_factory=lambda _debugger: session)
 
         session_id = _publish_session(manager, session)
