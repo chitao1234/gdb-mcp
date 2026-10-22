@@ -29,7 +29,7 @@ from gdb_mcp.session.lldb_backend import LldbSbBackend
 from gdb_mcp.session.lldb_bridge import BridgeClient
 from gdb_mcp.session.lldb_bridge_types import BridgeError
 from gdb_mcp.session.protocols import OsModuleProtocol, TimeModuleProtocol
-from gdb_mcp.session.requests import FileLineLocation, SourceContextRequest
+from gdb_mcp.session.requests import ExecutionOptions, FileLineLocation, SourceContextRequest
 
 
 class FakeBridge:
@@ -367,7 +367,7 @@ def test_lldb_location_acknowledgement_does_not_reuse_a_stop(action: str) -> Non
         },
     ) as request:
         operation = backend.jump if action == ACTION_JUMP else backend.until
-        result = _value(operation("*$pc + 4", wait_for_stop=False))
+        result = _value(operation("*$pc + 4", options=ExecutionOptions(wait_for_stop=False)))
 
     assert request.call_count == 1
     assert result.execution_state == "running"
@@ -418,7 +418,7 @@ def test_lldb_rr_replay_points_to_connect_mode_and_reverse_caveat() -> None:
 def test_finish_publishes_the_return_value() -> None:
     backend, _ = _backend()
 
-    finished = _value(backend.finish(timeout_sec=1))
+    finished = _value(backend.finish(options=ExecutionOptions(timeout_sec=1)))
 
     assert finished.return_value == "5"
     assert finished.stop_reason == "signal"

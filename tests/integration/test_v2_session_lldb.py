@@ -17,6 +17,7 @@ from gdb_mcp.domain import OperationError, OperationSuccess
 from gdb_mcp.session.config import SessionConfig
 from gdb_mcp.session.lldb_backend import LldbSbBackend
 from gdb_mcp.session.protocols import OsModuleProtocol, TimeModuleProtocol
+from gdb_mcp.session.requests import ExecutionOptions
 
 from .conftest import CompileProgram
 
@@ -51,7 +52,7 @@ def test_lldb_start_breakpoint_run_and_status(compile_program: CompileProgram) -
         assert isinstance(breakpoint, OperationSuccess)
         assert breakpoint.value.breakpoint.number == "1"
 
-        ran = backend.run(timeout_sec=10)
+        ran = backend.run(options=ExecutionOptions(timeout_sec=10))
         assert isinstance(ran, OperationSuccess)
         status = backend.get_status()
         assert isinstance(status, OperationSuccess)
@@ -68,7 +69,7 @@ def test_lldb_start_breakpoint_run_and_status(compile_program: CompileProgram) -
         assert isinstance(variables, OperationSuccess)
         assert {variable.name for variable in variables.value.variables} >= {"left", "right"}
 
-        finished = backend.finish(timeout_sec=10)
+        finished = backend.finish(options=ExecutionOptions(timeout_sec=10))
         assert isinstance(finished, OperationSuccess)
         assert finished.value.return_value == "5"
     finally:
@@ -88,16 +89,20 @@ def test_lldb_instruction_steps_and_return(
         )
         assert isinstance(started, OperationSuccess)
         backend.set_breakpoint("add")
-        ran = backend.run(timeout_sec=10)
+        ran = backend.run(options=ExecutionOptions(timeout_sec=10))
         assert isinstance(ran, OperationSuccess)
 
-        step_into = backend.step_instruction(wait_for_stop=True, timeout_sec=10)
+        step_into = backend.step_instruction(
+            options=ExecutionOptions(timeout_sec=10, wait_for_stop=True)
+        )
         assert isinstance(step_into, OperationSuccess)
         status = backend.get_status()
         assert isinstance(status, OperationSuccess)
         assert status.value.execution_state == "paused"
 
-        step_over = backend.next_instruction(wait_for_stop=True, timeout_sec=10)
+        step_over = backend.next_instruction(
+            options=ExecutionOptions(timeout_sec=10, wait_for_stop=True)
+        )
         assert isinstance(step_over, OperationSuccess)
 
         returned = backend.return_from_frame(value="42")

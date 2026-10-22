@@ -21,7 +21,7 @@ from gdb_mcp.domain import OperationError, OperationSuccess
 from gdb_mcp.mcp.handlers import dispatch_tool_call
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.registry import SessionRegistry
-from gdb_mcp.session.requests import DisassemblyRequest, SourceContextRequest
+from gdb_mcp.session.requests import DisassemblyRequest, ExecutionOptions, SourceContextRequest
 from tests.support import dig, mapping_list
 
 T = TypeVar("T")
@@ -100,7 +100,7 @@ def test_delve_go_workflow(
         success(session.disable_breakpoint(number))
         assert success(session.get_breakpoint(number)).breakpoint.enabled is False
         success(session.enable_breakpoint(number))
-        success(session.run(timeout_sec=10))
+        success(session.run(options=ExecutionOptions(timeout_sec=10)))
         assert session.execution_state == "paused"
         assert session.runtime.stop_kind == "breakpoint"
         assert success(session.evaluate_expression("total")).value == "5"
@@ -135,15 +135,15 @@ def test_delve_go_workflow(
         )
         assert not capture.failed_sections
         success(session.delete_breakpoint(number))
-        success(session.step_instruction(timeout_sec=10))
-        success(session.next_instruction(timeout_sec=10))
-        success(session.next(timeout_sec=10))
-        finished = success(session.finish(timeout_sec=10))
+        success(session.step_instruction(options=ExecutionOptions(timeout_sec=10)))
+        success(session.next_instruction(options=ExecutionOptions(timeout_sec=10)))
+        success(session.next(options=ExecutionOptions(timeout_sec=10)))
+        finished = success(session.finish(options=ExecutionOptions(timeout_sec=10)))
         assert finished.return_value == "5"
-        success(session.continue_execution(timeout_sec=10))
+        success(session.continue_execution(options=ExecutionOptions(timeout_sec=10)))
         assert session.get_status().value.execution_state == "exited"
         assert session.runtime.exit_code == 0
-        success(session.run(timeout_sec=10))
+        success(session.run(options=ExecutionOptions(timeout_sec=10)))
         assert session.get_status().value.execution_state == "exited"
     finally:
         success(session.stop())
@@ -158,7 +158,7 @@ def test_delve_timeout_then_interrupt(delve_binary: str, go_program: tuple[str, 
                 program=program, args=["loop"], debugger=DEBUGGER_DELVE, debugger_path=delve_binary
             )
         )
-        result = session.run(timeout_sec=1)
+        result = session.run(options=ExecutionOptions(timeout_sec=1))
         assert isinstance(result, OperationError) and result.code == "command_timeout"
         assert session.get_status().value.execution_state == "running"
         success(session.interrupt())
@@ -203,7 +203,7 @@ def test_delve_temporary_breakpoint_and_watchpoint(
     try:
         success(session.start(program=program, debugger=DEBUGGER_DELVE, debugger_path=delve_binary))
         created = success(session.set_breakpoint(f"{source}:{line}", temporary=True))
-        success(session.run(timeout_sec=10))
+        success(session.run(options=ExecutionOptions(timeout_sec=10)))
         assert all(
             record.number != created.breakpoint.number
             for record in success(session.list_breakpoints()).breakpoints
@@ -256,7 +256,7 @@ def test_external_delve_disconnect_preserves_server(
         )
         success(session.start(debugger=DEBUGGER_DELVE, endpoint=endpoint))
         success(session.set_breakpoint("main.sum"))
-        success(session.continue_execution(timeout_sec=10))
+        success(session.continue_execution(options=ExecutionOptions(timeout_sec=10)))
         assert success(session.get_backtrace()).frames
         success(session.stop())
         assert server.poll() is None
@@ -359,8 +359,8 @@ def test_delve_jump_depends_on_selected_release(
             session.start(program=program, debugger=DEBUGGER_DELVE, debugger_path=delve_binary)
         )
         success(session.set_breakpoint(f"{source}:{line}"))
-        success(session.run(timeout_sec=10))
-        result = session.jump(f"{source}:{line + 1}", timeout_sec=10)
+        success(session.run(options=ExecutionOptions(timeout_sec=10)))
+        result = session.jump(f"{source}:{line + 1}", options=ExecutionOptions(timeout_sec=10))
         version = str(dig(started.diagnostics.backend_data.data, "version", "DelveVersion"))
         if re.search(r"\b1\.(20|24)\.", version):
             assert isinstance(result, OperationError) and result.code == "unsupported_operation"

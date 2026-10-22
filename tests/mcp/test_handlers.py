@@ -57,6 +57,7 @@ from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.registry import SessionRegistry
 from gdb_mcp.session.requests import (
     DisassemblyRequest,
+    ExecutionOptions,
     FileLineLocation,
     FileRangeLocation,
     FunctionLocation,
@@ -159,10 +160,9 @@ def _continue_side_effect(
     """Build a continue stub that records a breakpoint stop on the session runtime."""
 
     def continue_side_effect(
-        *, wait_for_stop: bool, timeout_sec: int, reverse: bool
+        *, options: ExecutionOptions, reverse: bool
     ) -> OperationSuccess[CommandExecutionInfo]:
-        assert wait_for_stop is True
-        assert timeout_sec == 30
+        assert options == ExecutionOptions(timeout_sec=30, wait_for_stop=True)
         assert reverse is False
         session.runtime.mark_inferior_paused("breakpoint-hit")
         stop_event = StopEvent(
@@ -217,8 +217,7 @@ def test_location_execution_routes_location_and_wait_policy(action: str) -> None
     assert result["action"] == action
     operation.assert_called_once_with(
         location="*$pc + 4",
-        wait_for_stop=False,
-        timeout_sec=5,
+        options=ExecutionOptions(timeout_sec=5, wait_for_stop=False),
     )
 
 
@@ -673,9 +672,7 @@ class TestHandlerRouting:
 
         manager.resolve_session.assert_called_once_with(5)
         session.run.assert_called_once_with(
-            args=["--flag", "value"],
-            timeout_sec=7,
-            wait_for_stop=False,
+            args=["--flag", "value"], options=ExecutionOptions(timeout_sec=7, wait_for_stop=False)
         )
 
     def test_execution_run_accepts_omitted_execution_payload(self) -> None:
@@ -691,7 +688,9 @@ class TestHandlerRouting:
             manager,
         )
 
-        session.run.assert_called_once_with(args=None, timeout_sec=30, wait_for_stop=True)
+        session.run.assert_called_once_with(
+            args=None, options=ExecutionOptions(timeout_sec=30, wait_for_stop=True)
+        )
 
     def test_run_accepts_shell_style_string_args(self) -> None:
         """String-form run args should be shell-split before forwarding."""
@@ -715,8 +714,7 @@ class TestHandlerRouting:
 
         session.run.assert_called_once_with(
             args=["--flag", "hello world"],
-            timeout_sec=7,
-            wait_for_stop=True,
+            options=ExecutionOptions(timeout_sec=7, wait_for_stop=True),
         )
 
     def test_add_inferior_routes_to_correct_session(self) -> None:
@@ -789,9 +787,7 @@ class TestHandlerRouting:
         )
 
         session.continue_execution.assert_called_once_with(
-            wait_for_stop=False,
-            timeout_sec=5,
-            reverse=False,
+            reverse=False, options=ExecutionOptions(timeout_sec=5, wait_for_stop=False)
         )
 
     def test_execution_manage_reverse_direction_reaches_the_session(self) -> None:
@@ -811,7 +807,9 @@ class TestHandlerRouting:
             manager,
         )
 
-        session.step.assert_called_once_with(wait_for_stop=True, timeout_sec=30, reverse=True)
+        session.step.assert_called_once_with(
+            reverse=True, options=ExecutionOptions(timeout_sec=30, wait_for_stop=True)
+        )
 
     def test_finish_routes_to_execution_service(self) -> None:
         """Finish requests should forward timeout to the session execution API."""
@@ -830,7 +828,9 @@ class TestHandlerRouting:
             manager,
         )
 
-        session.finish.assert_called_once_with(timeout_sec=9, wait_for_stop=True, reverse=False)
+        session.finish.assert_called_once_with(
+            reverse=False, options=ExecutionOptions(timeout_sec=9, wait_for_stop=True)
+        )
 
     def test_attach_process_routes_to_correct_session(self) -> None:
         """Attach requests should forward pid and timeout."""
@@ -1420,7 +1420,7 @@ class TestHandlerRouting:
             temporary=False,
         )
         continue_execution.assert_called_once_with(
-            wait_for_stop=True, timeout_sec=30, reverse=False
+            options=ExecutionOptions(timeout_sec=30), reverse=False
         )
 
     def test_workflow_batch_stops_on_first_error_by_default(self) -> None:
@@ -1702,7 +1702,9 @@ class TestHandlerRouting:
             core=None,
             rr_replay=None,
         )
-        session.run.assert_called_once_with(args=None, timeout_sec=30, wait_for_stop=True)
+        session.run.assert_called_once_with(
+            args=None, options=ExecutionOptions(timeout_sec=30, wait_for_stop=True)
+        )
         assert result_data["status"] == "success"
         iteration = mapping_list(dig(result_data, "result", "iterations"))[-1]
         assert iteration["matched_failure"] is True

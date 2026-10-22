@@ -15,6 +15,7 @@ from gdb_mcp.mcp.handlers import dispatch_tool_call
 from gdb_mcp.session.backends import BackendCapabilities
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.registry import SessionRegistry
+from gdb_mcp.session.requests import ExecutionOptions
 
 
 def test_capabilities_reject_direct_and_batch_operations(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -73,7 +74,7 @@ def test_interrupt_reaches_backend_while_execution_waits(monkeypatch: pytest.Mon
     data = BackendData(c.DEBUGGER_GDB, "", {})
 
     def continue_execution(
-        *, wait_for_stop: bool, timeout_sec: int, reverse: bool
+        *, options: ExecutionOptions, reverse: bool
     ) -> OperationSuccess[CommandExecutionInfo]:
         started.set()
         assert released.wait(3)
