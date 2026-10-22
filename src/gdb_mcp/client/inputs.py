@@ -6,51 +6,7 @@ from dataclasses import dataclass
 
 from gdb_mcp.contracts import (
     BatchStepToolName,
-    DisassemblyMode,
-    InspectQueryAction,
-    LocationKind,
-    RegisterValueFormat,
 )
-
-
-@dataclass(frozen=True, slots=True)
-class LocationInput:
-    """Typed source/disassembly location selector."""
-
-    kind: LocationKind
-    function: str | None = None
-    address: str | None = None
-    start_address: str | None = None
-    end_address: str | None = None
-    file: str | None = None
-    line: int | None = None
-    start_line: int | None = None
-    end_line: int | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class InspectQueryInput:
-    """Parsed input for ``gdb_inspect_query``."""
-
-    action: InspectQueryAction
-    session_id: int | None
-    thread_id: int | None
-    frame: int | None
-    expression: str | None
-    register_numbers: tuple[int, ...]
-    register_names: tuple[str, ...]
-    include_vector_registers: bool | None
-    max_registers: int | None
-    value_format: RegisterValueFormat | None
-    memory_address: str | None
-    count: int | None
-    offset: int | None
-    location: LocationInput | None
-    instruction_count: int | None
-    mode: DisassemblyMode | None
-    context_before: int | None
-    context_after: int | None
-    location_fields: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

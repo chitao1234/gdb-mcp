@@ -14,11 +14,7 @@ from gdb_mcp.mcp.schemas import (
     InspectQueryArgs,
 )
 
-from ..builders.inspect import build_inspect_query_payload
-from ..inputs import (
-    InspectQueryInput,
-    LocationInput,
-)
+from ..namespace import NamespaceLike, ParsedOptions, one_of, snapshot
 from ..parsers import (
     CliUsageError,
     add_boolean_flag,
@@ -32,27 +28,27 @@ from .common import (
 )
 
 
-def _validate_location_input(typed_input: LocationInput | None, *, context: str) -> None:
-    if typed_input is None:
+def _validate_location_input(kind: str | None, values: ParsedOptions, *, context: str) -> None:
+    if kind is None:
         raise CliUsageError(f"--location-kind required with {context}")
 
-    if typed_input.kind == "current":
+    if kind == "current":
         invalid_flags: list[str] = []
-        if typed_input.function is not None:
+        if values.get("function") is not None:
             invalid_flags.append("--function")
-        if typed_input.address is not None:
+        if values.get("address") is not None:
             invalid_flags.append("--address")
-        if typed_input.start_address is not None:
+        if values.get("start_address") is not None:
             invalid_flags.append("--start-address")
-        if typed_input.end_address is not None:
+        if values.get("end_address") is not None:
             invalid_flags.append("--end-address")
-        if typed_input.file is not None:
+        if values.get("file") is not None:
             invalid_flags.append("--file")
-        if typed_input.line is not None:
+        if values.get("line") is not None:
             invalid_flags.append("--line")
-        if typed_input.start_line is not None:
+        if values.get("start_line") is not None:
             invalid_flags.append("--start-line")
-        if typed_input.end_line is not None:
+        if values.get("end_line") is not None:
             invalid_flags.append("--end-line")
         if invalid_flags:
             raise CliUsageError(
@@ -60,23 +56,23 @@ def _validate_location_input(typed_input: LocationInput | None, *, context: str)
             )
         return
 
-    if typed_input.kind == "function":
-        if typed_input.function is None:
+    if kind == "function":
+        if values.get("function") is None:
             raise CliUsageError("--function required with --location-kind function")
         invalid_flags = []
-        if typed_input.address is not None:
+        if values.get("address") is not None:
             invalid_flags.append("--address")
-        if typed_input.start_address is not None:
+        if values.get("start_address") is not None:
             invalid_flags.append("--start-address")
-        if typed_input.end_address is not None:
+        if values.get("end_address") is not None:
             invalid_flags.append("--end-address")
-        if typed_input.file is not None:
+        if values.get("file") is not None:
             invalid_flags.append("--file")
-        if typed_input.line is not None:
+        if values.get("line") is not None:
             invalid_flags.append("--line")
-        if typed_input.start_line is not None:
+        if values.get("start_line") is not None:
             invalid_flags.append("--start-line")
-        if typed_input.end_line is not None:
+        if values.get("end_line") is not None:
             invalid_flags.append("--end-line")
         if invalid_flags:
             raise CliUsageError(
@@ -84,23 +80,23 @@ def _validate_location_input(typed_input: LocationInput | None, *, context: str)
             )
         return
 
-    if typed_input.kind == "address":
-        if typed_input.address is None:
+    if kind == "address":
+        if values.get("address") is None:
             raise CliUsageError("--address required with --location-kind address")
         invalid_flags = []
-        if typed_input.function is not None:
+        if values.get("function") is not None:
             invalid_flags.append("--function")
-        if typed_input.start_address is not None:
+        if values.get("start_address") is not None:
             invalid_flags.append("--start-address")
-        if typed_input.end_address is not None:
+        if values.get("end_address") is not None:
             invalid_flags.append("--end-address")
-        if typed_input.file is not None:
+        if values.get("file") is not None:
             invalid_flags.append("--file")
-        if typed_input.line is not None:
+        if values.get("line") is not None:
             invalid_flags.append("--line")
-        if typed_input.start_line is not None:
+        if values.get("start_line") is not None:
             invalid_flags.append("--start-line")
-        if typed_input.end_line is not None:
+        if values.get("end_line") is not None:
             invalid_flags.append("--end-line")
         if invalid_flags:
             raise CliUsageError(
@@ -108,23 +104,23 @@ def _validate_location_input(typed_input: LocationInput | None, *, context: str)
             )
         return
 
-    if typed_input.kind == "address_range":
-        if typed_input.start_address is None:
+    if kind == "address_range":
+        if values.get("start_address") is None:
             raise CliUsageError("--start-address required with --location-kind address-range")
-        if typed_input.end_address is None:
+        if values.get("end_address") is None:
             raise CliUsageError("--end-address required with --location-kind address-range")
         invalid_flags = []
-        if typed_input.function is not None:
+        if values.get("function") is not None:
             invalid_flags.append("--function")
-        if typed_input.address is not None:
+        if values.get("address") is not None:
             invalid_flags.append("--address")
-        if typed_input.file is not None:
+        if values.get("file") is not None:
             invalid_flags.append("--file")
-        if typed_input.line is not None:
+        if values.get("line") is not None:
             invalid_flags.append("--line")
-        if typed_input.start_line is not None:
+        if values.get("start_line") is not None:
             invalid_flags.append("--start-line")
-        if typed_input.end_line is not None:
+        if values.get("end_line") is not None:
             invalid_flags.append("--end-line")
         if invalid_flags:
             raise CliUsageError(
@@ -132,23 +128,23 @@ def _validate_location_input(typed_input: LocationInput | None, *, context: str)
             )
         return
 
-    if typed_input.kind == "file_line":
-        if typed_input.file is None:
+    if kind == "file_line":
+        if values.get("file") is None:
             raise CliUsageError("--file required with --location-kind file-line")
-        if typed_input.line is None:
+        if values.get("line") is None:
             raise CliUsageError("--line required with --location-kind file-line")
         invalid_flags = []
-        if typed_input.function is not None:
+        if values.get("function") is not None:
             invalid_flags.append("--function")
-        if typed_input.address is not None:
+        if values.get("address") is not None:
             invalid_flags.append("--address")
-        if typed_input.start_address is not None:
+        if values.get("start_address") is not None:
             invalid_flags.append("--start-address")
-        if typed_input.end_address is not None:
+        if values.get("end_address") is not None:
             invalid_flags.append("--end-address")
-        if typed_input.start_line is not None:
+        if values.get("start_line") is not None:
             invalid_flags.append("--start-line")
-        if typed_input.end_line is not None:
+        if values.get("end_line") is not None:
             invalid_flags.append("--end-line")
         if invalid_flags:
             raise CliUsageError(
@@ -156,22 +152,22 @@ def _validate_location_input(typed_input: LocationInput | None, *, context: str)
             )
         return
 
-    if typed_input.file is None:
+    if values.get("file") is None:
         raise CliUsageError("--file required with --location-kind file-range")
-    if typed_input.start_line is None:
+    if values.get("start_line") is None:
         raise CliUsageError("--start-line required with --location-kind file-range")
-    if typed_input.end_line is None:
+    if values.get("end_line") is None:
         raise CliUsageError("--end-line required with --location-kind file-range")
     invalid_flags = []
-    if typed_input.function is not None:
+    if values.get("function") is not None:
         invalid_flags.append("--function")
-    if typed_input.address is not None:
+    if values.get("address") is not None:
         invalid_flags.append("--address")
-    if typed_input.start_address is not None:
+    if values.get("start_address") is not None:
         invalid_flags.append("--start-address")
-    if typed_input.end_address is not None:
+    if values.get("end_address") is not None:
         invalid_flags.append("--end-address")
-    if typed_input.line is not None:
+    if values.get("line") is not None:
         invalid_flags.append("--line")
     if invalid_flags:
         raise CliUsageError(
@@ -179,167 +175,171 @@ def _validate_location_input(typed_input: LocationInput | None, *, context: str)
         )
 
 
-def _validate_inspect_query_input(typed_input: InspectQueryInput) -> None:
+def _validate_inspect_query_input(action: str, values: ParsedOptions, kind: str | None) -> None:
     invalid_flags: list[str] = []
-    location_flags = [format_cli_flag(field_name) for field_name in typed_input.location_fields]
-    if typed_input.action == "evaluate":
-        if typed_input.expression is None:
+    location_flags = [
+        format_cli_flag(name)
+        for name in (
+            "location_kind",
+            "function",
+            "address",
+            "start_address",
+            "end_address",
+            "file",
+            "line",
+            "start_line",
+            "end_line",
+        )
+        if values.get(name) is not None and not (name == "address" and action == "memory")
+    ]
+    if action == "evaluate":
+        if values.get("expression") is None:
             raise CliUsageError("--expression required with --action evaluate")
-        if typed_input.register_numbers:
+        if values.get("register_numbers"):
             invalid_flags.append("--register-number")
-        if typed_input.register_names:
+        if values.get("register_names"):
             invalid_flags.append("--register-name")
-        if typed_input.include_vector_registers is not None:
+        if values.get("include_vector_registers") is not None:
             invalid_flags.append("--include-vector-registers")
-        if typed_input.max_registers is not None:
+        if values.get("max_registers") is not None:
             invalid_flags.append("--max-registers")
-        if typed_input.value_format is not None:
+        if values.get("value_format") is not None:
             invalid_flags.append("--value-format")
-        if typed_input.memory_address is not None:
-            invalid_flags.append("--address")
-        if typed_input.count is not None:
+        if values.get("count") is not None:
             invalid_flags.append("--count")
-        if typed_input.offset is not None:
+        if values.get("offset") is not None:
             invalid_flags.append("--offset")
         invalid_flags.extend(location_flags)
-        if typed_input.instruction_count is not None:
+        if values.get("instruction_count") is not None:
             invalid_flags.append("--instruction-count")
-        if typed_input.mode is not None:
+        if values.get("mode") is not None:
             invalid_flags.append("--mode")
-        if typed_input.context_before is not None:
+        if values.get("context_before") is not None:
             invalid_flags.append("--context-before")
-        if typed_input.context_after is not None:
+        if values.get("context_after") is not None:
             invalid_flags.append("--context-after")
-    elif typed_input.action == "variables":
-        if typed_input.expression is not None:
+    elif action == "variables":
+        if values.get("expression") is not None:
             invalid_flags.append("--expression")
-        if typed_input.register_numbers:
+        if values.get("register_numbers"):
             invalid_flags.append("--register-number")
-        if typed_input.register_names:
+        if values.get("register_names"):
             invalid_flags.append("--register-name")
-        if typed_input.include_vector_registers is not None:
+        if values.get("include_vector_registers") is not None:
             invalid_flags.append("--include-vector-registers")
-        if typed_input.max_registers is not None:
+        if values.get("max_registers") is not None:
             invalid_flags.append("--max-registers")
-        if typed_input.value_format is not None:
+        if values.get("value_format") is not None:
             invalid_flags.append("--value-format")
-        if typed_input.memory_address is not None:
-            invalid_flags.append("--address")
-        if typed_input.count is not None:
+        if values.get("count") is not None:
             invalid_flags.append("--count")
-        if typed_input.offset is not None:
+        if values.get("offset") is not None:
             invalid_flags.append("--offset")
         invalid_flags.extend(location_flags)
-        if typed_input.instruction_count is not None:
+        if values.get("instruction_count") is not None:
             invalid_flags.append("--instruction-count")
-        if typed_input.mode is not None:
+        if values.get("mode") is not None:
             invalid_flags.append("--mode")
-        if typed_input.context_before is not None:
+        if values.get("context_before") is not None:
             invalid_flags.append("--context-before")
-        if typed_input.context_after is not None:
+        if values.get("context_after") is not None:
             invalid_flags.append("--context-after")
-    elif typed_input.action == "registers":
-        if typed_input.expression is not None:
+    elif action == "registers":
+        if values.get("expression") is not None:
             invalid_flags.append("--expression")
-        if typed_input.memory_address is not None:
-            invalid_flags.append("--address")
-        if typed_input.count is not None:
+        if values.get("count") is not None:
             invalid_flags.append("--count")
-        if typed_input.offset is not None:
+        if values.get("offset") is not None:
             invalid_flags.append("--offset")
         invalid_flags.extend(location_flags)
-        if typed_input.instruction_count is not None:
+        if values.get("instruction_count") is not None:
             invalid_flags.append("--instruction-count")
-        if typed_input.mode is not None:
+        if values.get("mode") is not None:
             invalid_flags.append("--mode")
-        if typed_input.context_before is not None:
+        if values.get("context_before") is not None:
             invalid_flags.append("--context-before")
-        if typed_input.context_after is not None:
+        if values.get("context_after") is not None:
             invalid_flags.append("--context-after")
-    elif typed_input.action == "memory":
-        if typed_input.memory_address is None:
+    elif action == "memory":
+        if values.get("address") is None:
             raise CliUsageError("--address required with --action memory")
-        if typed_input.count is None:
+        if values.get("count") is None:
             raise CliUsageError("--count required with --action memory")
-        if typed_input.thread_id is not None:
+        if values.get("thread_id") is not None:
             invalid_flags.append("--thread-id")
-        if typed_input.frame is not None:
+        if values.get("frame") is not None:
             invalid_flags.append("--frame")
-        if typed_input.expression is not None:
+        if values.get("expression") is not None:
             invalid_flags.append("--expression")
-        if typed_input.register_numbers:
+        if values.get("register_numbers"):
             invalid_flags.append("--register-number")
-        if typed_input.register_names:
+        if values.get("register_names"):
             invalid_flags.append("--register-name")
-        if typed_input.include_vector_registers is not None:
+        if values.get("include_vector_registers") is not None:
             invalid_flags.append("--include-vector-registers")
-        if typed_input.max_registers is not None:
+        if values.get("max_registers") is not None:
             invalid_flags.append("--max-registers")
-        if typed_input.value_format is not None:
+        if values.get("value_format") is not None:
             invalid_flags.append("--value-format")
         invalid_flags.extend(location_flags)
-        if typed_input.instruction_count is not None:
+        if values.get("instruction_count") is not None:
             invalid_flags.append("--instruction-count")
-        if typed_input.mode is not None:
+        if values.get("mode") is not None:
             invalid_flags.append("--mode")
-        if typed_input.context_before is not None:
+        if values.get("context_before") is not None:
             invalid_flags.append("--context-before")
-        if typed_input.context_after is not None:
+        if values.get("context_after") is not None:
             invalid_flags.append("--context-after")
-    elif typed_input.action == "disassembly":
-        if typed_input.expression is not None:
+    elif action == "disassembly":
+        if values.get("expression") is not None:
             invalid_flags.append("--expression")
-        if typed_input.register_numbers:
+        if values.get("register_numbers"):
             invalid_flags.append("--register-number")
-        if typed_input.register_names:
+        if values.get("register_names"):
             invalid_flags.append("--register-name")
-        if typed_input.include_vector_registers is not None:
+        if values.get("include_vector_registers") is not None:
             invalid_flags.append("--include-vector-registers")
-        if typed_input.max_registers is not None:
+        if values.get("max_registers") is not None:
             invalid_flags.append("--max-registers")
-        if typed_input.value_format is not None:
+        if values.get("value_format") is not None:
             invalid_flags.append("--value-format")
-        if typed_input.memory_address is not None:
-            invalid_flags.append("--address")
-        if typed_input.count is not None:
+        if values.get("count") is not None:
             invalid_flags.append("--count")
-        if typed_input.offset is not None:
+        if values.get("offset") is not None:
             invalid_flags.append("--offset")
-        if typed_input.context_before is not None:
+        if values.get("context_before") is not None:
             invalid_flags.append("--context-before")
-        if typed_input.context_after is not None:
+        if values.get("context_after") is not None:
             invalid_flags.append("--context-after")
-        _raise_invalid_action_flags(typed_input.action, invalid_flags)
-        _validate_location_input(typed_input.location, context="--action disassembly")
+        _raise_invalid_action_flags(action, invalid_flags)
+        _validate_location_input(kind, values, context="--action disassembly")
         return
-    elif typed_input.action == "source":
-        if typed_input.expression is not None:
+    elif action == "source":
+        if values.get("expression") is not None:
             invalid_flags.append("--expression")
-        if typed_input.register_numbers:
+        if values.get("register_numbers"):
             invalid_flags.append("--register-number")
-        if typed_input.register_names:
+        if values.get("register_names"):
             invalid_flags.append("--register-name")
-        if typed_input.include_vector_registers is not None:
+        if values.get("include_vector_registers") is not None:
             invalid_flags.append("--include-vector-registers")
-        if typed_input.max_registers is not None:
+        if values.get("max_registers") is not None:
             invalid_flags.append("--max-registers")
-        if typed_input.value_format is not None:
+        if values.get("value_format") is not None:
             invalid_flags.append("--value-format")
-        if typed_input.memory_address is not None:
-            invalid_flags.append("--address")
-        if typed_input.count is not None:
+        if values.get("count") is not None:
             invalid_flags.append("--count")
-        if typed_input.offset is not None:
+        if values.get("offset") is not None:
             invalid_flags.append("--offset")
-        if typed_input.instruction_count is not None:
+        if values.get("instruction_count") is not None:
             invalid_flags.append("--instruction-count")
-        if typed_input.mode is not None:
+        if values.get("mode") is not None:
             invalid_flags.append("--mode")
-        _raise_invalid_action_flags(typed_input.action, invalid_flags)
-        _validate_location_input(typed_input.location, context="--action source")
+        _raise_invalid_action_flags(action, invalid_flags)
+        _validate_location_input(kind, values, context="--action source")
         return
 
-    _raise_invalid_action_flags(typed_input.action, invalid_flags)
+    _raise_invalid_action_flags(action, invalid_flags)
 
 
 def _configure_inspect_query(parser: argparse.ArgumentParser) -> None:
@@ -394,7 +394,77 @@ def _configure_inspect_query(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--context-after", type=int, default=None)
 
 
-def _build_inspect_query(typed_input: InspectQueryInput) -> InspectQueryArgs:
-    _validate_inspect_query_input(typed_input)
-    payload = build_inspect_query_payload(typed_input)
+def _build_inspect_query(namespace: NamespaceLike) -> InspectQueryArgs:
+    values = snapshot(namespace)
+    action = one_of(values, "action", INSPECT_QUERY_ACTIONS)
+    raw_kind = values.get("location_kind")
+    kind = raw_kind.replace("-", "_") if raw_kind is not None else None
+    if (
+        kind is None
+        and action in {"source", "disassembly"}
+        and all(
+            values.get(name) is None
+            for name in (
+                "function",
+                "address",
+                "start_address",
+                "end_address",
+                "file",
+                "line",
+                "start_line",
+                "end_line",
+            )
+        )
+    ):
+        kind = "current"
+    _validate_inspect_query_input(action, values, kind)
+    query: dict[str, object] = {
+        name: value
+        for name in (
+            "expression",
+            "include_vector_registers",
+            "max_registers",
+            "value_format",
+            "count",
+            "offset",
+            "instruction_count",
+            "mode",
+            "context_before",
+            "context_after",
+        )
+        if (value := values.get(name)) is not None
+    }
+    for name in ("register_numbers", "register_names"):
+        items = values.get(name)
+        if items:
+            query[name] = items
+    context = {
+        name: selector
+        for name in ("thread_id", "frame")
+        if (selector := values.get(name)) is not None
+    }
+    if context:
+        query["context"] = context
+    if action == "memory":
+        query["address"] = values.get("address")
+    elif action in {"source", "disassembly"}:
+        location = {
+            name: field
+            for name in (
+                "function",
+                "address",
+                "start_address",
+                "end_address",
+                "file",
+                "line",
+                "start_line",
+                "end_line",
+            )
+            if (field := values.get(name)) is not None
+        }
+        location["kind"] = kind
+        query["location"] = location
+    payload: dict[str, object] = {"session_id": values.get("session_id"), "action": action}
+    if query:
+        payload["query"] = query
     return validate_model(InspectQueryArgs, payload)

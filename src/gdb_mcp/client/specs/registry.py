@@ -24,7 +24,6 @@ from gdb_mcp.contracts import (
 )
 
 from ..input_parsers import (
-    parse_inspect_query_input,
     parse_run_until_failure_input,
     parse_workflow_batch_input,
 )
@@ -210,7 +209,7 @@ CLIENT_TOOL_SPECS: dict[str, RegisteredToolCliSpec] = {
         ToolCliSpec(
             name=TOOL_INSPECT_QUERY,
             configure_parser=_configure_inspect_query,
-            parse_input=parse_inspect_query_input,
+            parse_input=_parse_namespace,
             build_arguments=_build_inspect_query,
             render_human=render_action_payload,
         )

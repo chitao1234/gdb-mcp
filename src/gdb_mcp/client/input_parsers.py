@@ -10,33 +10,23 @@ from pydantic import ValidationError
 import gdb_mcp.contracts as shared_contracts
 from gdb_mcp.contracts import (
     BATCH_STEP_TOOL_NAMES,
-    DISASSEMBLY_MODES,
-    INSPECT_QUERY_ACTIONS,
-    LOCATION_KINDS,
-    REGISTER_VALUE_FORMATS,
     TOOL_SESSION_MANAGE,
     TOOL_SESSION_QUERY,
 )
 from gdb_mcp.mcp.schemas import BATCH_STEP_TOOL_MODELS
 
 from .inputs import (
-    InspectQueryInput,
-    LocationInput,
     RunUntilFailureInput,
     SessionStepInput,
     WorkflowBatchInput,
 )
 from .namespace import (
     NamespaceLike,
-    ParsedOptions,
     choice,
-    integer_tuple,
     key_value_entries,
-    one_of,
     optional_boolean,
     optional_integer,
     optional_integer_tuple,
-    optional_one_of,
     optional_text,
     optional_text_tuple,
     snapshot,
@@ -66,24 +56,6 @@ def _normalize_step_tool_name(tool_name: str) -> str:
     if prefixed in shared_contracts.PUBLIC_TOOL_NAMES:
         return prefixed
     return tool_name
-
-
-def _parse_location_input(values: ParsedOptions) -> LocationInput | None:
-    location_kind = optional_text(values, "location_kind")
-    if location_kind is None:
-        return None
-
-    return LocationInput(
-        kind=choice(location_kind.replace("-", "_"), LOCATION_KINDS, name="location_kind"),
-        function=optional_text(values, "function"),
-        address=optional_text(values, "address"),
-        start_address=optional_text(values, "start_address"),
-        end_address=optional_text(values, "end_address"),
-        file=optional_text(values, "file"),
-        line=optional_integer(values, "line"),
-        start_line=optional_integer(values, "start_line"),
-        end_line=optional_integer(values, "end_line"),
-    )
 
 
 def _validate_workflow_step(
@@ -193,55 +165,6 @@ def parse_step_inputs(
         )
 
     return tuple(validated_steps)
-
-
-def parse_inspect_query_input(namespace: NamespaceLike) -> InspectQueryInput:
-    """Parse one inspect-query namespace into a typed input object."""
-
-    values = snapshot(namespace)
-    action = one_of(values, "action", INSPECT_QUERY_ACTIONS)
-    location_fields = tuple(
-        field_name
-        for field_name in (
-            "location_kind",
-            "function",
-            "address",
-            "start_address",
-            "end_address",
-            "file",
-            "line",
-            "start_line",
-            "end_line",
-        )
-        if values.get(field_name) is not None
-        and not (field_name == "address" and action == "memory")
-    )
-    location = _parse_location_input(values)
-    if location is None and action in ("source", "disassembly") and not location_fields:
-        # Bare `list`/`disasm` operate on the current location rather than
-        # forcing callers to spell out `--location-kind current`.
-        location = LocationInput(kind="current")
-    return InspectQueryInput(
-        action=action,
-        session_id=optional_integer(values, "session_id"),
-        thread_id=optional_integer(values, "thread_id"),
-        frame=optional_integer(values, "frame"),
-        expression=optional_text(values, "expression"),
-        register_numbers=integer_tuple(values, "register_numbers"),
-        register_names=text_tuple(values, "register_names"),
-        include_vector_registers=optional_boolean(values, "include_vector_registers"),
-        max_registers=optional_integer(values, "max_registers"),
-        value_format=optional_one_of(values, "value_format", REGISTER_VALUE_FORMATS),
-        memory_address=optional_text(values, "address") if action == "memory" else None,
-        count=optional_integer(values, "count"),
-        offset=optional_integer(values, "offset"),
-        location=location,
-        instruction_count=optional_integer(values, "instruction_count"),
-        mode=optional_one_of(values, "mode", DISASSEMBLY_MODES),
-        context_before=optional_integer(values, "context_before"),
-        context_after=optional_integer(values, "context_after"),
-        location_fields=location_fields,
-    )
 
 
 def parse_workflow_batch_input(namespace: NamespaceLike) -> WorkflowBatchInput:

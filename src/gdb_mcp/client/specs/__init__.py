@@ -1,7 +1,6 @@
 """Static CLI specs for MCP tools."""
 
 from ..input_parsers import (
-    parse_inspect_query_input,
     parse_run_until_failure_input,
     parse_workflow_batch_input,
 )
@@ -139,7 +138,6 @@ __all__ = [
     "_validate_inferior_manage_input",
     "_validate_inspect_query_input",
     "_validate_location_input",
-    "parse_inspect_query_input",
     "parse_run_until_failure_input",
     "parse_workflow_batch_input",
 ]
