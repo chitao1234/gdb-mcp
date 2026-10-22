@@ -1108,6 +1108,10 @@ These fields are inside the success envelope's `result` object.
 
 Each artifact contains `name`, `path`, `status`, and `kind`.
 
+Capture status, manifest metadata, histories, selection, and returned stop
+metadata are read together before capture inspection begins. Individual
+inspection artifacts describe their subsequent debugger queries.
+
 ## `gdb_run_until_failure`
 
 Repeat fresh debugger sessions until failure predicates match or the iteration limit is reached.

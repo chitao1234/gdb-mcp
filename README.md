@@ -61,6 +61,8 @@ contains the complete tool envelope under `result`; read its `status`, `action`,
 and error `code` there. The CLI exits nonzero if any step returned an error.
 Each step captures its new stop event even when the retained history is full.
 Invalid batch or campaign setup steps report every field error with its step path.
+Capture status, manifest metadata, and returned stop metadata share one runtime
+snapshot taken before the inspection sections run.
 
 Collection results expose their arrays directly; use the array length for the
 number returned. Memory reads report `requested_bytes` and `captured_bytes` so
