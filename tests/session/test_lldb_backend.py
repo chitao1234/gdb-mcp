@@ -23,6 +23,7 @@ from gdb_mcp.domain import (
     StopEvent,
 )
 from gdb_mcp.domain.errors import DebuggerDecodeError
+from gdb_mcp.session import lldb_values
 from gdb_mcp.session.config import SessionConfig
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.lldb_backend import LldbSbBackend
@@ -257,11 +258,11 @@ def test_lldb_unexpected_startup_exception_is_not_reclassified() -> None:
 @pytest.mark.parametrize(
     ("decoder", "payload"),
     [
-        (LldbSbBackend._mapping, "not a mapping"),
-        (LldbSbBackend._mappings, "not a list"),
-        (LldbSbBackend._mappings, [{"ok": True}, "not a mapping"]),
-        (lambda value: LldbSbBackend._text({"field": value}, "field"), 1),
-        (lambda value: LldbSbBackend._integer({"field": value}, "field"), "1"),
+        (lldb_values.mapping, "not a mapping"),
+        (lldb_values.mappings, "not a list"),
+        (lldb_values.mappings, [{"ok": True}, "not a mapping"]),
+        (lambda value: lldb_values.text({"field": value}, "field"), 1),
+        (lambda value: lldb_values.integer({"field": value}, "field"), "1"),
     ],
 )
 def test_lldb_decoders_reject_malformed_values(
@@ -305,9 +306,8 @@ def test_lldb_breakpoint_creation_rejects_invalid_numbers(number: object) -> Non
 
 @pytest.mark.parametrize("thread_id", [[], {}, True])
 def test_lldb_thread_ids_do_not_stringify_malformed_values(thread_id: object) -> None:
-    backend, _ = _backend()
     with pytest.raises(DebuggerDecodeError):
-        backend._thread({"id": thread_id})
+        lldb_values.thread({"id": thread_id})
 
 
 def test_lldb_memory_keeps_zero_address_and_count() -> None:
