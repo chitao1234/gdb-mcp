@@ -2,84 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
 from pydantic import (
     Field,
+    ValidationInfo,
     field_validator,
 )
 
 from ...contracts import DEBUGGER_GDB, DebuggerName
+from ...session.debugger_args import debugger_args_problems
 from .common import (
     SessionId,
     StrictArgsModel,
 )
-
-# GDB options that would fight this server's own target wiring or replace the MI
-# interpreter it speaks, plus the value-taking options whose operand is allowed
-# to be a bare word (for example ``-iex "set X"``).
-_GDB_ARG_CONFLICTING_OPTIONS = frozenset(
-    {"-i", "--interpreter", "--args", "-c", "--core", "-p", "--pid", "--attach"}
-)
-_GDB_ARG_CONFLICTING_PREFIXES = ("--interpreter=", "--core=", "--pid=")
-_GDB_ARG_CONFLICTING_REASONS = {
-    "-i": "would replace the MI interpreter this server speaks",
-    "--interpreter": "would replace the MI interpreter this server speaks",
-    "--args": "conflicts with the 'program' and 'args' parameters",
-    "-c": "conflicts with the 'core' parameter",
-    "--core": "conflicts with the 'core' parameter",
-    "-p": "conflicts with gdb_attach_process",
-    "--pid": "conflicts with gdb_attach_process",
-    "--attach": "conflicts with gdb_attach_process",
-}
-_GDB_ARG_VALUE_OPTIONS = frozenset(
-    {
-        "-iex",
-        "--init-eval-command",
-        "-ix",
-        "--init-command",
-        "-ex",
-        "--eval-command",
-        "-x",
-        "--command",
-        "-d",
-        "--directory",
-        "-cd",
-        "--cwd",
-        "-s",
-        "-symbols",
-        "--symbols",
-        "-tty",
-        "--tty",
-    }
-)
-
-
-def _debugger_args_problems(values: Sequence[str]) -> list[str]:
-    """Return one message per ``debugger_args`` entry this server cannot pass through."""
-
-    problems: list[str] = []
-    previous = ""
-    for index, raw in enumerate(values):
-        entry = raw.strip()
-        if not entry:
-            problems.append(f"debugger_args[{index}] must not be empty")
-        elif entry in _GDB_ARG_CONFLICTING_OPTIONS:
-            problems.append(
-                f"debugger_args[{index}] {entry!r} {_GDB_ARG_CONFLICTING_REASONS[entry]}"
-            )
-        elif entry.startswith(_GDB_ARG_CONFLICTING_PREFIXES):
-            option = entry.split("=", 1)[0]
-            problems.append(
-                f"debugger_args[{index}] {entry!r} {_GDB_ARG_CONFLICTING_REASONS[option]}"
-            )
-        elif not entry.startswith("-") and previous not in _GDB_ARG_VALUE_OPTIONS:
-            problems.append(
-                f"debugger_args[{index}] {entry!r} is a bare argument: pass it as the operand of "
-                "a preceding option such as '-iex' or '-d', or use 'program'/'args'"
-            )
-        previous = entry
-    return problems
 
 
 class StartSessionArgs(StrictArgsModel):
@@ -87,7 +21,8 @@ class StartSessionArgs(StrictArgsModel):
     debugger: DebuggerName = Field(
         DEBUGGER_GDB,
         description=(
-            "Debugger backend to drive: 'gdb' (GDB/MI) or 'lldb' (native SB API). "
+            "Debugger backend: 'gdb' (GDB/MI), 'lldb' (native SB API), or 'delve' (JSON-RPC v2). "
+            "An empty Delve session defers spawning dlv until gdb_attach_process. "
             "The value is validated against the implemented set; operations a backend "
             "cannot perform answer with code='unsupported_operation'."
         ),
@@ -119,7 +54,7 @@ class StartSessionArgs(StrictArgsModel):
         description=(
             "Path to the debugger executable or installation. For debugger='gdb', the "
             "default is from GDB_PATH or 'gdb'; for debugger='lldb', provide an LLDB "
-            "binary or installation instead."
+            "binary or installation instead. Delve uses this path, DLV_PATH, or 'dlv'."
         ),
     )
     debugger_args: list[str] | None = Field(
@@ -129,16 +64,18 @@ class StartSessionArgs(StrictArgsModel):
             "program is loaded. GDB/MI sessions validate and forward GDB options such as "
             "'--directory=<dir>' and '-iex add-auto-load-safe-path <dir>'; with 'rr_replay' "
             "they are forwarded to the debugger rr starts. The native LLDB backend currently "
-            "does not consume command-line arguments through this field."
+            "rejects this field. Delve accepts flags that do not override session wiring."
         ),
     )
 
     @field_validator("debugger_args")
     @classmethod
-    def validate_debugger_args(cls, value: list[str] | None) -> list[str] | None:
+    def validate_debugger_args(
+        cls, value: list[str] | None, info: ValidationInfo
+    ) -> list[str] | None:
         if value is None:
             return None
-        problems = _debugger_args_problems(value)
+        problems = debugger_args_problems(value, info.data.get("debugger", DEBUGGER_GDB))
         if problems:
             raise ValueError("; ".join(problems))
         return value
@@ -185,12 +122,13 @@ class ConnectSessionArgs(StrictArgsModel):
             "'tcp://host:port', 'unix:///path/to/socket', or 'pty:///dev/pts/N'. "
             "For 'lldb', a remote stub URL accepted by SBTarget::ConnectRemote, "
             "for example 'connect://host:port'. An 'rr replay -s PORT TRACE' server is "
-            "also such a stub; connecting LLDB to it gives up rr's reverse stepping."
+            "also such a stub; connecting LLDB to it gives up rr's reverse stepping. "
+            "For 'delve', use tcp://host:port or unix:///path for a headless Delve RPC server."
         ),
     )
     debugger: DebuggerName = Field(
         DEBUGGER_GDB,
-        description="Debugger backend that owns the endpoint: 'gdb' or 'lldb'.",
+        description="Debugger backend that owns the endpoint: 'gdb', 'lldb', or 'delve'.",
     )
     program: str | None = Field(
         None,

@@ -37,7 +37,7 @@ def _configure_session_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--debugger",
         choices=list(DEBUGGER_NAMES),
-        help="Debugger backend to drive: gdb or lldb",
+        help="Debugger backend to drive: gdb, lldb, or delve",
     )
     parser.add_argument("--arg", dest="args", action="append", default=[])
     parser.add_argument("--init-command", dest="init_commands", action="append", default=[])
@@ -49,7 +49,7 @@ def _configure_session_start(parser: argparse.ArgumentParser) -> None:
         action="append",
         default=[],
         help=(
-            "Extra GDB command-line argument, repeatable; inserted before the program loads "
+            "Extra debugger startup argument, repeatable; inserted before the program loads "
             "(e.g. --debugger-arg=--directory=/usr/lib/rustlib/etc "
             "--debugger-arg=-iex --debugger-arg='add-auto-load-safe-path /usr/lib/rustlib/etc')"
         ),

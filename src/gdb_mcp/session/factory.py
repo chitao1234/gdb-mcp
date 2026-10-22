@@ -10,13 +10,14 @@ from typing import BinaryIO, cast
 from pygdbmi.gdbcontroller import GdbController
 from pygdbmi.IoManager import IoManager
 
-from ..contracts import DEBUGGER_GDB, DEBUGGER_LLDB
+from ..contracts import DEBUGGER_DELVE, DEBUGGER_GDB, DEBUGGER_LLDB
 from ..transport.protocols import GdbControllerProtocol
 from .backends import DebuggerBackend
 from .constants import (
     INITIAL_COMMAND_TOKEN,
     POLL_TIMEOUT_SEC,
 )
+from .delve_backend import DelveRpcBackend
 from .gdb_backend import GdbMiBackend
 from .lldb_backend import LldbSbBackend
 from .process_cleanup import cleanup_process
@@ -136,12 +137,14 @@ def create_default_session_service(debugger: str = DEBUGGER_GDB) -> SessionServi
     """
 
     backend: DebuggerBackend
-    if debugger == DEBUGGER_LLDB:
+    if debugger == DEBUGGER_DELVE:
+        backend = DelveRpcBackend(os_module=cast(OsModuleProtocol, os), time_module=time)
+    elif debugger == DEBUGGER_LLDB:
         backend = LldbSbBackend(
             os_module=cast(OsModuleProtocol, os),
             time_module=time,
         )
-    else:
+    elif debugger == DEBUGGER_GDB:
         backend = GdbMiBackend(
             controller_factory=create_gdb_controller,
             os_module=cast(OsModuleProtocol, os),
@@ -149,4 +152,6 @@ def create_default_session_service(debugger: str = DEBUGGER_GDB) -> SessionServi
             initial_command_token=INITIAL_COMMAND_TOKEN,
             poll_timeout_sec=POLL_TIMEOUT_SEC,
         )
+    else:
+        raise ValueError(f"Unknown debugger: {debugger!r}")
     return SessionService(backend=backend)

@@ -28,7 +28,8 @@ TOOL_CALL_FUNCTION = "gdb_call_function"
 
 DEBUGGER_GDB: Final[DebuggerName] = "gdb"
 DEBUGGER_LLDB: Final[DebuggerName] = "lldb"
-DebuggerName: TypeAlias = Literal["gdb", "lldb"]
+DEBUGGER_DELVE: Final[DebuggerName] = "delve"
+DebuggerName: TypeAlias = Literal["gdb", "lldb", "delve"]
 DEBUGGER_NAMES: tuple[DebuggerName, ...] = get_args(DebuggerName)
 
 ExecutionState: TypeAlias = Literal["unknown", "not_started", "running", "paused", "exited"]

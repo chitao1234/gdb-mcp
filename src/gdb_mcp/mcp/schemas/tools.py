@@ -66,14 +66,15 @@ def build_tool_definitions() -> list[Tool]:
         Tool(
             name=TOOL_SESSION_START,
             description=(
-                "Start a new GDB debugging session. Can load an executable, core dump, "
+                "Start a GDB, LLDB, or Delve debugging session. Can load an executable, core dump, "
                 "or run custom initialization commands. "
                 "Returns a success envelope with the startup payload under 'result'. "
                 "Automatically detects and reports important warnings such as: "
                 "missing debug symbols (not compiled with -g), file not found, or invalid executable. "
                 "Check the top-level 'warnings' field in the response for critical issues that may affect debugging. "
                 "Available parameters: program (executable path), debugger (backend to drive: "
-                "'gdb' or 'lldb'), args (program arguments), "
+                "'gdb', 'lldb', or 'delve'), args (program arguments), "
+                "An empty Delve session starts dlv only when gdb_attach_process is called. "
                 "core (core dump path - uses --core flag for proper symbol resolution), "
                 "init_commands (debugger commands to run after environment setup), "
                 "env (environment variables applied before init_commands), debugger_path (debugger executable or installation path), "
@@ -105,6 +106,9 @@ def build_tool_definitions() -> list[Tool]:
                 "'connect://host:port', with 'program' naming the executable. This is also "
                 "how LLDB connects to an external 'rr replay -s' server, but LLDB cannot "
                 "reverse-step rr; use GDB with 'rr_replay' when reverse execution matters. "
+                "For debugger='delve', use a headless JSON-RPC server at tcp://host:port "
+                "or unix:///path. Use --accept-multiclient on the external Delve server "
+                "to keep it alive after disconnect. "
                 "The external process owns the target; stopping the session only detaches "
                 "from it. Returns a session_id integer that must be passed to the other debugger tools."
             ),
@@ -187,7 +191,7 @@ def build_tool_definitions() -> list[Tool]:
         ),
         Tool(
             name=TOOL_CONTEXT_QUERY,
-            description="List threads or inspect backtraces and frame information.",
+            description="List threads (goroutines for Delve) or inspect backtraces and frame information.",
             outputSchema=public_output_schema(TOOL_CONTEXT_QUERY),
             inputSchema=public_input_schema(ContextQueryArgs),
         ),

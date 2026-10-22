@@ -37,7 +37,7 @@ def _configure_session_connect(parser: argparse.ArgumentParser) -> None:
             "LLDB remote stub (connect://host:port)"
         ),
     )
-    parser.add_argument("--debugger", choices=["gdb", "lldb"], default="gdb")
+    parser.add_argument("--debugger", choices=list(DEBUGGER_NAMES), default=DEBUGGER_GDB)
     parser.add_argument("--program", help="Executable for an LLDB remote target")
     parser.add_argument("--debugger-path", help="LLDB binary or installation path")
     parser.add_argument("--init-command", dest="init_commands", action="append", default=[])

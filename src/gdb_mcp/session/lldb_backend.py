@@ -414,6 +414,11 @@ class LldbSbBackend:
                     message=f"LLDB backend cannot start debugger {debugger!r}",
                     code="unsupported_combination",
                 )
+            if debugger_args:
+                return OperationError(
+                    message="debugger_args is not supported by the LLDB SB API backend",
+                    code="unsupported_combination",
+                )
             if replay:
                 return OperationError(
                     message=(
