@@ -3,12 +3,115 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 
 import pytest
 
+from gdb_mcp import contracts as c
 from gdb_mcp.domain import CommandTranscriptEntry, StopEvent
 from gdb_mcp.session.config import SessionConfig
+from gdb_mcp.session.delve_backend import DelveRpcBackend
+from gdb_mcp.session.factory import create_default_session_service
+from gdb_mcp.session.gdb_backend import GdbMiBackend
+from gdb_mcp.session.lldb_backend import LldbSbBackend
+from gdb_mcp.session.runtime import RuntimeSnapshot, SessionRuntime
 from gdb_mcp.session.service import SessionService
+from gdb_mcp.transport import parse_mi_responses
+
+
+@pytest.mark.parametrize("debugger", [c.DEBUGGER_GDB, c.DEBUGGER_LLDB, c.DEBUGGER_DELVE])
+def test_backend_stop_updates_are_atomic(
+    debugger: c.DebuggerName, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session = create_default_session_service(debugger)
+    backend = session.backend
+    runtime = session.runtime
+    runtime.mark_ready()
+    runtime.mark_inferior_running()
+    runtime.mark_thread_selected(1)
+    runtime.mark_frame_selected(3)
+    apply: Callable[[], object]
+    if isinstance(backend, LldbSbBackend):
+        apply = lambda: backend._events.apply(
+            {
+                "execution_state": "paused",
+                "target_loaded": True,
+                "current_inferior_id": 1,
+                "inferior_count": 1,
+                "current_thread_id": 7,
+                "current_frame": 0,
+                "stop_reason": "breakpoint",
+                "stop_kind": "breakpoint",
+            }
+        )
+    elif isinstance(backend, DelveRpcBackend):
+        apply = lambda: backend._client_state(
+            {"State": {"stopReason": "breakpoint", "currentGoroutine": {"id": 7}}}
+        )
+    else:
+        assert isinstance(backend, GdbMiBackend)
+        parsed = parse_mi_responses(
+            [
+                {
+                    "type": "notify",
+                    "message": "stopped",
+                    "payload": {
+                        "reason": "breakpoint-hit",
+                        "thread-id": "7",
+                        "frame": {"level": "0"},
+                    },
+                }
+            ]
+        )
+        apply = lambda: backend._command_runner.update_runtime_after_command("-exec-run", parsed)
+    recording = threading.Event()
+    release = threading.Event()
+    read_started = threading.Event()
+    read_finished = threading.Event()
+    snapshots: list[RuntimeSnapshot] = []
+    failures: list[Exception] = []
+    record = SessionRuntime.record_stop_event
+
+    def pause_before_history(self: SessionRuntime, event: StopEvent) -> None:
+        recording.set()
+        assert release.wait(timeout=5)
+        record(self, event)
+
+    def write() -> None:
+        try:
+            apply()
+        except Exception as exc:
+            failures.append(exc)
+
+    def read() -> None:
+        read_started.set()
+        snapshots.append(runtime.snapshot(debugger_alive=True))
+        read_finished.set()
+
+    monkeypatch.setattr(SessionRuntime, "record_stop_event", pause_before_history)
+    writer = threading.Thread(target=write)
+    reader = threading.Thread(target=read)
+    writer.start()
+    try:
+        assert recording.wait(timeout=5)
+        reader.start()
+        assert read_started.wait(timeout=5)
+        assert not read_finished.wait(timeout=0.1)
+    finally:
+        release.set()
+        writer.join(timeout=5)
+        if reader.ident is not None:
+            reader.join(timeout=5)
+    assert not failures
+    assert read_finished.is_set()
+    snapshot = snapshots[0]
+    assert snapshot.status.execution_state == "paused"
+    assert snapshot.status.stop_kind == "breakpoint"
+    assert snapshot.current_thread_id == 7
+    assert snapshot.current_frame == 0
+    assert snapshot.last_stop_event is not None
+    assert snapshot.last_stop_event.thread_id == 7
+    assert snapshot.stop_history == (snapshot.last_stop_event,)
 
 
 def _stop_kind(session: SessionService) -> str:

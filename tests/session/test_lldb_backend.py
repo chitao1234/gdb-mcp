@@ -501,6 +501,52 @@ def test_inventory_state_transition_clears_previous_stop(state: str) -> None:
     assert backend.runtime.stop_kind == "unknown"
 
 
+def test_unknown_execution_state_replaces_previous_runtime_state() -> None:
+    backend, _ = _backend()
+    backend.runtime.mark_inferior_running()
+
+    status = backend._events.apply(
+        {
+            "execution_state": "future-state",
+            "target_loaded": True,
+            "current_inferior_id": 1,
+            "inferior_count": 1,
+        }
+    )
+
+    assert status.execution_state == "unknown"
+    assert backend.runtime.execution_state == "unknown"
+    assert backend.runtime.stop_history == []
+
+
+def test_malformed_stop_does_not_partially_update_runtime() -> None:
+    backend, bridge = _backend()
+    backend.runtime.mark_inferior_running()
+    backend.runtime.mark_thread_selected(99)
+    payload = bridge.request("status")
+    with pytest.raises(DebuggerDecodeError):
+        backend._events.apply({**payload, "signal_code": "bad integer"})
+
+    assert backend.runtime.execution_state == "running"
+    assert backend.runtime.current_thread_id == 99
+    assert backend.runtime.stop_history == []
+    backend._events.apply(payload)
+    assert len(backend.runtime.stop_history) == 1
+
+
+def test_crash_detail_follows_selected_inferior() -> None:
+    backend, bridge = _backend()
+    backend._events.apply(bridge.request("status"))
+    assert backend.runtime.status_snapshot(debugger_alive=True).state_detail == "crashed"
+
+    backend.runtime.mark_inferior_paused("breakpoint", inferior_id=2)
+    backend.runtime.mark_inferior_selected(2)
+    assert backend.runtime.status_snapshot(debugger_alive=True).state_detail is None
+
+    backend.runtime.mark_inferior_selected(1)
+    assert backend.runtime.status_snapshot(debugger_alive=True).state_detail == "crashed"
+
+
 def test_status_enriches_crash_and_stop_event() -> None:
     backend, _ = _backend()
 

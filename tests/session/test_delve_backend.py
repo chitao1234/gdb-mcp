@@ -161,6 +161,27 @@ def test_old_state_without_reason_uses_pending_operation() -> None:
     assert len(selected.runtime.stop_history) == 1
 
 
+def test_malformed_stop_keeps_previous_runtime_and_can_be_retried() -> None:
+    selected = backend()
+    selected.runtime.mark_inferior_running()
+    selected.runtime.mark_thread_selected(99)
+    state: dict[str, object] = {
+        "stopReason": "manual",
+        "currentGoroutine": {"id": 7, "currentLoc": {"pc": "bad address"}},
+    }
+    with pytest.raises(DebuggerDecodeError):
+        selected._client_state({"State": state})
+
+    assert selected.runtime.execution_state == "running"
+    assert selected.runtime.current_thread_id == 99
+    assert selected.runtime.stop_history == []
+    selected._client_state(
+        {"State": {**state, "currentGoroutine": {"id": 7, "currentLoc": {"pc": 123}}}}
+    )
+    assert selected.runtime.status_snapshot(debugger_alive=True).execution_state == "paused"
+    assert len(selected.runtime.stop_history) == 1
+
+
 def test_missing_jump_method_is_remembered_per_session(monkeypatch: pytest.MonkeyPatch) -> None:
     selected = backend()
     monkeypatch.setattr(selected._inspection, "locations", Mock(return_value=[{"pc": 123}]))
