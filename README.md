@@ -69,7 +69,7 @@ partial reads remain explicit.
 - Optional: LLDB 4.0.1 or newer with headers for the native bridge; a C++17
   compiler is used to build it on first use
 - Optional: Delve on `PATH`, or selected through `DLV_PATH` / `debugger_path`;
-  CI exercises Delve 1.21 through 1.27 with matching Go toolchains
+  CI exercises Delve 1.20.2 through 1.27 with matching Go toolchains
 - Optional: `rr` for reverse debugging (GDB), `rust-gdb` or similar wrappers for
   language-specific pretty-printers
 
@@ -268,16 +268,23 @@ git diff --check
 ### Compatibility Profiles
 
 CI does not cross every Python, GDB, LLDB, Go, and Delve version. It runs a few
-curated eras, each pinned to one Nixpkgs snapshot so the tools were released
-together. `flake.nix` is the source of truth:
+curated eras plus one oldest-version baseline. Each era pins its tools to one
+Nixpkgs snapshot; the baseline mixes pins because GDB 7.1a, LLDB 4.0.1, and the
+server Python do not coexist in one snapshot. `flake.nix` is the source of
+truth:
 
 ```bash
 nix eval --json .#ciProfileNames      # names CI runs
-nix develop .#py310-gdb13-lldb14-delve121
+nix develop .#oldest-py310-gdb71a-lldb40-delve120
 ```
 
-The current rows cover Python 3.10-3.14, GDB 13-17, LLDB 14-21, and Delve
-1.21-1.27. The `flake.lock` file pins the exact snapshots.
+The era rows cover Python 3.10-3.14, GDB 13-17, LLDB 14-21, and Delve
+1.21-1.27. The baseline row covers GDB 7.1a with Python 2.6 scripting support,
+LLDB 4.0.1, Delve 1.20.2, and a modern Python 3.10 server. The `flake.lock`
+file pins the exact snapshots.
+
+The baseline runs unit tests plus the core GDB, LLDB, and Delve integration
+files instead of the full modern-feature suite.
 
 See [AGENTS.md](AGENTS.md) for repository conventions.
 

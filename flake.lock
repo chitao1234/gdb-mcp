@@ -1,5 +1,73 @@
 {
   "nodes": {
+    "nixpkgs-1310": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1420745977,
+        "narHash": "sha256-OESpWlz2JEScNMpzIOX6urEQudghigydUPD7Sc8J2IU=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "081d5aaabaf2dc52bb77407648514af2bebe0e1c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "release-13.10",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs-1609": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1475375830,
+        "narHash": "sha256-8K9wvu82flzlzpU1uJv/T8IaLGQlsCASwjxGcrVjpbM=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "f22817d8d2bc17d2bcdb8ac4308a4bce6f5d1d2b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "16.09",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs-1709": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1506657975,
+        "narHash": "sha256-UI+jQUhxRreVrn2kl7SsUBjFdQiBRv2CXRLScBMk/U4=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "39cd40f7bea40116ecb756d46a687bfd0d2e550e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "17.09",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs-2305": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1685566663,
+        "narHash": "sha256-btHN1czJ6rzteeCuE/PNrdssqYD2nIA4w48miQAFloM=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "4ecab3273592f27479a583fb6d975d4aba3486fe",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "23.05",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
     "nixpkgs-2311": {
       "locked": {
         "lastModified": 1720535198,
@@ -82,6 +150,10 @@
     },
     "root": {
       "inputs": {
+        "nixpkgs-1310": "nixpkgs-1310",
+        "nixpkgs-1609": "nixpkgs-1609",
+        "nixpkgs-1709": "nixpkgs-1709",
+        "nixpkgs-2305": "nixpkgs-2305",
         "nixpkgs-2311": "nixpkgs-2311",
         "nixpkgs-2405": "nixpkgs-2405",
         "nixpkgs-2411": "nixpkgs-2411",
