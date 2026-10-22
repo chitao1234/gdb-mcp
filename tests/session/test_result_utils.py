@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from gdb_mcp.domain import (
     BackendData,
     CommandExecutionInfo,
@@ -20,8 +22,11 @@ def _command_result(data: StructuredPayload) -> OperationSuccess[CommandExecutio
     )
 
 
-def test_missing_mi_result_becomes_one_empty_mapping_at_session_boundary() -> None:
-    assert command_result_mapping(_command_result({})) == {}
+@pytest.mark.parametrize("data", [{}, {"result": None}])
+def test_missing_mi_result_becomes_one_empty_mapping_at_session_boundary(
+    data: StructuredPayload,
+) -> None:
+    assert command_result_mapping(_command_result(data)) == {}
 
 
 def test_mi_result_mapping_is_passed_through_without_key_normalization() -> None:
