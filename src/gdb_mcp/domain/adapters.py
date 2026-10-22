@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from .errors import DebuggerDecodeError
 from .models import (
     BacktraceInfo,
     BreakpointListInfo,
@@ -47,7 +48,7 @@ def _flag(value: object) -> bool:
         return True
     if text == "n":
         return False
-    raise ValueError(f"MI flag must be 'y' or 'n', got {value!r}")
+    raise DebuggerDecodeError(f"MI flag must be 'y' or 'n', got {value!r}")
 
 
 def _count(value: object) -> int:
@@ -62,8 +63,11 @@ def _count(value: object) -> int:
         return value
     text = as_text(value)
     if text is None:
-        raise ValueError(f"MI count must be a number, got {type(value).__name__}")
-    return int(text)
+        raise DebuggerDecodeError(f"MI count must be a number, got {type(value).__name__}")
+    try:
+        return int(text)
+    except ValueError as exc:
+        raise DebuggerDecodeError(f"MI count must be a number, got {value!r}") from exc
 
 
 def _canonical_breakpoint(payload: Mapping[str, object]) -> BreakpointRecord:

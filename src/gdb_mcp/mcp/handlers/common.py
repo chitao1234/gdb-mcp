@@ -26,6 +26,7 @@ from ...domain import (
     ToolPayload,
     payload_to_mapping,
 )
+from ...domain.errors import DebuggerDecodeError
 from ...session.backends import BackendOperation
 from ...session.constants import DEFAULT_TIMEOUT_SEC
 from ...session.registry import SessionRegistry
@@ -147,7 +148,10 @@ def session_tool_spec(
                         "operation": backend_operation,
                     },
                 )
-            return handler(session, args)
+            try:
+                return handler(session, args)
+            except DebuggerDecodeError as exc:
+                return OperationError(message=str(exc), code="protocol_error")
 
         return SessionToolInvocation(session_id(args), action(args), execute, backend_operation)
 

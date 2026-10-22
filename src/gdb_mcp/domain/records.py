@@ -17,10 +17,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from typing_extensions import Self
 
 from ..contracts import ExecutionState
+from .errors import DebuggerDecodeError
 from .stop_kinds import StopKind
 
 
@@ -38,7 +39,10 @@ class RecordModel(BaseModel):
     def from_payload(cls, payload: Mapping[str, object]) -> Self:
         """Validate a payload into a record, keeping fields we do not declare."""
 
-        return cls.model_validate(dict(payload))
+        try:
+            return cls.model_validate(dict(payload))
+        except ValidationError as exc:
+            raise DebuggerDecodeError(str(exc)) from exc
 
     def to_payload(self) -> dict[str, object]:
         """Return the payload this record was built from."""

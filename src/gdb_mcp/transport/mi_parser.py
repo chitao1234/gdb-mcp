@@ -2,6 +2,7 @@
 
 from collections.abc import Mapping
 
+from ..domain.errors import DebuggerDecodeError
 from .mi_models import MiRecord, ParsedMiResponse
 
 
@@ -46,7 +47,9 @@ def mi_payload(value: object) -> Mapping[str, object] | None:
 
     if value is None or isinstance(value, Mapping):
         return value
-    raise TypeError(f"MI record payload must be a mapping or absent, got {type(value).__name__}")
+    raise DebuggerDecodeError(
+        f"MI record payload must be a mapping or absent, got {type(value).__name__}"
+    )
 
 
 def extract_mi_result_payload(

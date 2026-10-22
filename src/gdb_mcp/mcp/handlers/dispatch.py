@@ -13,6 +13,7 @@ from ...contracts import SessionState
 from ...domain import (
     OperationError,
 )
+from ...domain.errors import DebuggerDecodeError
 from ...session.locking import session_workflow_context
 from ...session.registry import SessionRegistry
 from ..serializer import serialize_exception, serialize_result
@@ -39,7 +40,10 @@ def _dispatch_tool(
     if spec is None:
         return OperationError(message=f"Unknown tool: {name}", code="unknown_tool")
 
-    invocation = spec.prepare(arguments)
+    try:
+        invocation = spec.prepare(arguments)
+    except ValidationError as exc:
+        return build_validation_error(exc, tool_name=name, model=spec.model)
     result: ToolResult
 
     if isinstance(invocation, SessionToolInvocation):
@@ -92,9 +96,9 @@ async def dispatch_tool_call(
     try:
         result = await asyncio.to_thread(_dispatch_tool, name, normalized_args, session_manager)
         return serialize_result(result)
-    except ValidationError as exc:
+    except DebuggerDecodeError as exc:
         return serialize_result(
-            build_validation_error(exc, tool_name=name, model=TOOL_SPECS[name].model)
+            OperationError(message=str(exc), code="protocol_error", details={"tool": name})
         )
     except Exception as exc:
         logger.exception("Error executing tool %s", name)
