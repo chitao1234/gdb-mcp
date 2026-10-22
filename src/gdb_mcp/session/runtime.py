@@ -34,6 +34,21 @@ class InferiorRuntimeState:
     refined_stop_kind: tuple[str | None, StopKind] | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class RuntimeSnapshot:
+    """One observation of session metadata and bounded execution history."""
+
+    status: SessionStatusSnapshot
+    config: SessionConfig | None
+    attached_pid: int | None
+    current_thread_id: int | None
+    current_frame: int | None
+    last_failure_message: str | None
+    last_stop_event: StopEvent | None
+    stop_history: tuple[StopEvent, ...]
+    command_transcript: tuple[CommandTranscriptEntry, ...]
+
+
 @dataclass(slots=True)
 class SessionRuntime:
     """Single source of truth for common session and inferior state."""
@@ -73,7 +88,8 @@ class SessionRuntime:
 
     @execution_state.setter
     def execution_state(self, state: ExecutionState) -> None:
-        self._selected_state.execution_state = state
+        with self._state_lock:
+            self._selected_state.execution_state = state
 
     @property
     def stop_reason(self) -> str | None:
@@ -81,7 +97,8 @@ class SessionRuntime:
 
     @stop_reason.setter
     def stop_reason(self, reason: str | None) -> None:
-        self._selected_state.stop_reason = reason
+        with self._state_lock:
+            self._selected_state.stop_reason = reason
 
     @property
     def exit_code(self) -> int | None:
@@ -89,7 +106,8 @@ class SessionRuntime:
 
     @exit_code.setter
     def exit_code(self, code: int | None) -> None:
-        self._selected_state.exit_code = code
+        with self._state_lock:
+            self._selected_state.exit_code = code
 
     @property
     def stop_kind(self) -> StopKind:
@@ -179,12 +197,14 @@ class SessionRuntime:
     def mark_thread_selected(self, thread_id: int | None) -> None:
         """Track the currently selected thread."""
 
-        self.current_thread_id = thread_id
+        with self._state_lock:
+            self.current_thread_id = thread_id
 
     def mark_frame_selected(self, frame_number: int | None) -> None:
         """Track the currently selected frame."""
 
-        self.current_frame = frame_number
+        with self._state_lock:
+            self.current_frame = frame_number
 
     def mark_inferior_selected(self, inferior_id: int | None) -> None:
         """Track the currently selected inferior and clear stale stack selection."""
@@ -257,22 +277,34 @@ class SessionRuntime:
     def mark_follow_fork_mode(self, mode: FollowForkMode | None) -> None:
         """Track the configured follow-fork-mode value."""
 
-        self.follow_fork_mode = mode
+        with self._state_lock:
+            self.follow_fork_mode = mode
 
     def mark_detach_on_fork(self, enabled: bool | None) -> None:
         """Track the configured detach-on-fork value."""
 
-        self.detach_on_fork = enabled
+        with self._state_lock:
+            self.detach_on_fork = enabled
 
     def mark_attached(self, pid: int) -> None:
         """Track the PID of the currently attached process."""
 
-        self.attached_pid = pid
+        with self._state_lock:
+            self.attached_pid = pid
 
     def clear_attached_pid(self) -> None:
         """Clear any remembered attached process PID."""
 
-        self.attached_pid = None
+        with self._state_lock:
+            self.attached_pid = None
+
+    def mark_target_loaded(self, loaded: bool) -> None:
+        with self._state_lock:
+            self.target_loaded = loaded
+
+    def mark_debugger_running(self, running: bool) -> None:
+        with self._state_lock:
+            self.is_running = running
 
     def mark_inferior_not_started(self, inferior_id: int | None = None) -> None:
         """Record that a target is loaded but execution has not begun."""
@@ -368,6 +400,24 @@ class SessionRuntime:
                 inferior_states=self.inferiors_state_summary() or None,
                 follow_fork_mode=self.follow_fork_mode,
                 detach_on_fork=self.detach_on_fork,
+            )
+
+    def snapshot(
+        self, *, debugger_alive: bool, state_detail: Literal["crashed"] | None = None
+    ) -> RuntimeSnapshot:
+        with self._state_lock:
+            return RuntimeSnapshot(
+                status=self.status_snapshot(
+                    debugger_alive=debugger_alive, state_detail=state_detail
+                ),
+                config=self.config,
+                attached_pid=self.attached_pid,
+                current_thread_id=self.current_thread_id,
+                current_frame=self.current_frame,
+                last_failure_message=self.last_failure_message,
+                last_stop_event=self.last_stop_event,
+                stop_history=tuple(self.stop_history),
+                command_transcript=tuple(self.command_transcript),
             )
 
     def record_stop_event(self, event: StopEvent) -> None:

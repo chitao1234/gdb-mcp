@@ -307,7 +307,7 @@ class SessionCommandRunner:
 
         normalized_command = command.strip().lower()
         if self._loads_target(normalized_command):
-            self._runtime.target_loaded = True
+            self._runtime.mark_target_loaded(True)
             self._runtime.clear_attached_pid()
             if self._runtime.execution_state == "unknown":
                 if normalized_command.startswith("core-file "):
@@ -319,7 +319,7 @@ class SessionCommandRunner:
                         inferior_id=self._runtime.current_inferior_id
                     )
         elif normalized_command.startswith("attach ") and not parsed.is_error_result():
-            self._runtime.target_loaded = True
+            self._runtime.mark_target_loaded(True)
             attached_pid = self._parse_attached_pid(normalized_command)
             if attached_pid is not None:
                 self._runtime.mark_attached(attached_pid)

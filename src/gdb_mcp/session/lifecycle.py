@@ -311,10 +311,12 @@ class SessionLifecycleService:
                         "Failed to disable pagination by default: " f"{pagination_result.message}"
                     )
 
-                self._runtime.target_loaded = self._startup_target_loaded(
-                    program=program,
-                    core=core,
-                    startup_output=startup_output_lower,
+                self._runtime.mark_target_loaded(
+                    self._startup_target_loaded(
+                        program=program,
+                        core=core,
+                        startup_output=startup_output_lower,
+                    )
                 )
 
                 startup_backend_data = BackendData(
@@ -380,7 +382,7 @@ class SessionLifecycleService:
                         f"{target_loaded_probe.message}"
                     )
                 else:
-                    self._runtime.target_loaded = target_loaded_probe
+                    self._runtime.mark_target_loaded(target_loaded_probe)
                 if self._runtime.execution_state == "unknown":
                     if core or any(
                         command.lower().strip().startswith("core-file ")

@@ -414,10 +414,10 @@ class DelveRpcBackend:
                 self.runtime.mark_failed(str(exc))
                 raise
             self.runtime.mark_ready()
-            self.runtime.follow_fork_mode = None
-            self.runtime.detach_on_fork = None
+            self.runtime.mark_follow_fork_mode(None)
+            self.runtime.mark_detach_on_fork(None)
             if self._client is None:
-                self.runtime.is_running = False
+                self.runtime.mark_debugger_running(False)
                 self.runtime.update_inferior_inventory(
                     current_inferior_id=None, count=0, inferior_ids=()
                 )
@@ -510,7 +510,7 @@ class DelveRpcBackend:
             if self.runtime.state != SessionState.READY:
                 raise DelveRpcError("Start a Delve session before attaching", "not_started")
             self._spawn(pid=pid, timeout_sec=timeout_sec)
-            self.runtime.is_running = True
+            self.runtime.mark_debugger_running(True)
             return OperationSuccess(
                 CommandExecutionInfo(
                     command="attach",
@@ -531,7 +531,7 @@ class DelveRpcBackend:
             ):
                 return
             self._last_state = state
-            self.runtime.target_loaded = True
+            self.runtime.mark_target_loaded(True)
             self.runtime.update_inferior_inventory(
                 current_inferior_id=1, count=1, inferior_ids=(1,)
             )

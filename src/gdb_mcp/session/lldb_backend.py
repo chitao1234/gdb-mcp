@@ -210,7 +210,7 @@ class LldbSbBackend:
         target_loaded = bool(payload.get("target_loaded"))
         current_inferior = self._integer(payload, "current_inferior_id")
         inferior_count = self._integer(payload, "inferior_count")
-        self.runtime.target_loaded = target_loaded
+        self.runtime.mark_target_loaded(target_loaded)
         if inferior_count is not None:
             self.runtime.update_inferior_inventory(
                 current_inferior_id=current_inferior,
@@ -229,7 +229,7 @@ class LldbSbBackend:
             self.runtime.mark_inferior_exited(reason, exit_code)
         elif execution == "not_started":
             self.runtime.mark_inferior_not_started()
-        self.runtime.is_running = True
+        self.runtime.mark_debugger_running(True)
         self._record_stop(payload, execution)
         return SessionStatusSnapshot(
             debugger_alive=True,
@@ -542,7 +542,7 @@ class LldbSbBackend:
                         count=snapshot.inferior_count,
                         inferior_ids=tuple(range(1, snapshot.inferior_count + 1)),
                     )
-                self.runtime.target_loaded = snapshot.target_loaded
+                self.runtime.mark_target_loaded(snapshot.target_loaded)
                 return OperationSuccess(
                     SessionStartupInfo(
                         message="LLDB session started",

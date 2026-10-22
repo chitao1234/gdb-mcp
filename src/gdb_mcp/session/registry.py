@@ -197,10 +197,13 @@ class SessionRegistry:
 
         with session_workflow_context(session), session.runtime.lifecycle_lock:
             status = session.get_status().value
-            config = session.config
             runtime = session.runtime
-            snapshot = runtime.status_snapshot(debugger_alive=status.debugger_alive)
-            session_state = SessionState.CLOSING if closing else session.state
+            snapshot = runtime.snapshot(
+                debugger_alive=status.debugger_alive, state_detail=status.state_detail
+            )
+            status = snapshot.status
+            config = snapshot.config
+            session_state = SessionState.CLOSING if closing else status.session_state
 
             return SessionSummary(
                 session_id=session_id,
@@ -211,17 +214,17 @@ class SessionRegistry:
                 program=config.program if config is not None else None,
                 core=config.core if config is not None else None,
                 working_dir=config.working_dir if config is not None else None,
-                attached_pid=runtime.attached_pid,
-                current_thread_id=runtime.current_thread_id,
-                current_frame=runtime.current_frame,
+                attached_pid=snapshot.attached_pid,
+                current_thread_id=snapshot.current_thread_id,
+                current_frame=snapshot.current_frame,
                 stop_reason=status.stop_reason,
                 exit_code=status.exit_code,
-                current_inferior_id=snapshot.current_inferior_id,
-                inferior_count=snapshot.inferior_count,
-                inferior_states=snapshot.inferior_states,
-                follow_fork_mode=snapshot.follow_fork_mode,
-                detach_on_fork=snapshot.detach_on_fork,
-                last_failure_message=runtime.last_failure_message,
+                current_inferior_id=status.current_inferior_id,
+                inferior_count=status.inferior_count,
+                inferior_states=status.inferior_states,
+                follow_fork_mode=status.follow_fork_mode,
+                detach_on_fork=status.detach_on_fork,
+                last_failure_message=snapshot.last_failure_message,
                 endpoint=config.endpoint if config is not None else None,
                 rr_replay=config.rr_replay if config is not None else None,
             )
