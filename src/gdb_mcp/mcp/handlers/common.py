@@ -106,20 +106,6 @@ class RegisteredToolSpec(Generic[InvocationT_co]):
     prepare: Callable[[object], InvocationT_co]
 
 
-@dataclass(frozen=True, slots=True)
-class LocationSelection:
-    """Typed inspection location resolved from one schema-discriminated selector."""
-
-    function: str | None = None
-    address: str | None = None
-    start_address: str | None = None
-    end_address: str | None = None
-    file: str | None = None
-    line: int | None = None
-    start_line: int | None = None
-    end_line: int | None = None
-
-
 def session_tool_spec(
     model: type[ToolArgsT],
     handler: Callable[[SessionService, ToolArgsT], ToolResult],

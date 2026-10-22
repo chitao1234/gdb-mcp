@@ -6,6 +6,7 @@ import logging
 import signal
 import time
 from collections.abc import Mapping
+from dataclasses import asdict
 from typing import Literal, cast
 
 from ..contracts import (
@@ -14,7 +15,6 @@ from ..contracts import (
     DEBUGGER_LLDB,
     ActionJumpName,
     ActionUntilName,
-    LocationKind,
 )
 from ..domain import (
     AddressRange,
@@ -80,6 +80,7 @@ from .lldb_bridge import BridgeClient
 from .lldb_bridge_build import prepare_bridge
 from .lldb_bridge_types import BridgeError
 from .protocols import OsModuleProtocol, TimeModuleProtocol
+from .requests import DisassemblyRequest, FileRangeLocation, SourceContextRequest
 from .runtime import SessionRuntime
 
 logger = logging.getLogger(__name__)
@@ -1397,63 +1398,42 @@ class LldbSbBackend:
             return _operation_error(exc)
 
     def disassemble(
-        self,
-        *,
-        thread_id: int | None = None,
-        frame: int | None = None,
-        function: str | None = None,
-        address: str | None = None,
-        start_address: str | None = None,
-        end_address: str | None = None,
-        file: str | None = None,
-        line: int | None = None,
-        instruction_count: int = 32,
-        mode: Literal["assembly", "mixed"] = "mixed",
+        self, request: DisassemblyRequest
     ) -> OperationSuccess[DisassemblyInfo] | OperationError:
+        fields: dict[str, object] = asdict(request.location)
         try:
             payload = self._request(
                 "disassemble",
-                function=function or "",
-                address=address or "",
-                start_address=start_address or "",
-                end_address=end_address or "",
-                file=file or "",
-                line=line or 0,
-                instruction_count=instruction_count,
-                mode=mode,
+                **fields,
+                instruction_count=request.instruction_count,
+                mode=request.mode,
             )
             instructions = [
                 DisassemblyInstructionRecord.from_payload(item)
                 for item in self._mappings(payload.get("instructions"))
             ]
             first = instructions[0] if instructions else None
-            scope: LocationKind
-            if function:
-                scope = "function"
-            elif file:
+            scope = request.location.kind
+            if isinstance(request.location, FileRangeLocation):
                 scope = "file_line"
-            elif start_address is not None and end_address is not None:
-                scope = "address_range"
-            elif address:
-                scope = "address"
-            else:
-                scope = "current"
             return OperationSuccess(
                 DisassemblyInfo(
-                    context=InspectionContextInfo(thread_id=thread_id, frame=frame),
+                    context=InspectionContextInfo(thread_id=request.thread_id, frame=request.frame),
                     location=InspectionLocation(
                         kind=scope,
-                        function=self._text(payload, "function") or function,
-                        address=address,
-                        file=first.file if first is not None else file,
-                        fullname=first.fullname if first is not None else file,
-                        line=first.line if first is not None else line,
+                        function=self._text(payload, "function") or self._text(fields, "function"),
+                        address=self._text(fields, "address"),
+                        file=first.file if first is not None else self._text(fields, "file"),
+                        fullname=(
+                            first.fullname if first is not None else self._text(fields, "file")
+                        ),
+                        line=first.line if first is not None else self._integer(fields, "line"),
                     ),
                     range=AddressRange(
                         start_address=self._text(payload, "start_address"),
                         end_address=self._text(payload, "end_address"),
                     ),
-                    mode=mode,
+                    mode=request.mode,
                     instructions=instructions,
                 )
             )
@@ -1461,59 +1441,38 @@ class LldbSbBackend:
             return _operation_error(exc)
 
     def get_source_context(
-        self,
-        *,
-        thread_id: int | None = None,
-        frame: int | None = None,
-        function: str | None = None,
-        address: str | None = None,
-        file: str | None = None,
-        line: int | None = None,
-        start_line: int | None = None,
-        end_line: int | None = None,
-        context_before: int = 5,
-        context_after: int = 5,
+        self, request: SourceContextRequest
     ) -> OperationSuccess[SourceContextInfo] | OperationError:
+        fields: dict[str, object] = asdict(request.location)
         try:
             payload = self._request(
                 "source",
-                function=function or "",
-                address=address or "",
-                file=file or "",
-                line=line or 0,
-                start_line=start_line or 0,
-                end_line=end_line or 0,
-                context_before=context_before,
-                context_after=context_after,
+                **fields,
+                context_before=request.context_before,
+                context_after=request.context_after,
             )
             lines = [
                 SourceLineRecord.from_payload(item) for item in self._mappings(payload.get("lines"))
             ]
-            scope: LocationKind
-            if function:
-                scope = "function"
-            elif address:
-                scope = "address"
-            elif file is not None and start_line is not None:
-                scope = "file_range"
-            elif file:
-                scope = "file_line"
-            else:
-                scope = "current"
+            scope = request.location.kind
             return OperationSuccess(
                 SourceContextInfo(
-                    context=InspectionContextInfo(thread_id=thread_id, frame=frame),
+                    context=InspectionContextInfo(thread_id=request.thread_id, frame=request.frame),
                     location=InspectionLocation(
                         kind=scope,
-                        function=self._text(payload, "function") or function,
-                        address=address,
-                        file=str(payload.get("file") or file or ""),
+                        function=self._text(payload, "function") or self._text(fields, "function"),
+                        address=self._text(fields, "address"),
+                        file=str(payload.get("file") or self._text(fields, "file") or ""),
                         fullname=self._text(payload, "fullname"),
-                        line=self._integer(payload, "line") or line,
+                        line=self._integer(payload, "line") or self._integer(fields, "line"),
                     ),
                     range=SourceRange(
-                        start_line=self._integer(payload, "start_line") or start_line or 1,
-                        end_line=self._integer(payload, "end_line") or end_line or len(lines),
+                        start_line=self._integer(payload, "start_line")
+                        or self._integer(fields, "start_line")
+                        or 1,
+                        end_line=self._integer(payload, "end_line")
+                        or self._integer(fields, "end_line")
+                        or len(lines),
                     ),
                     lines=lines,
                 )

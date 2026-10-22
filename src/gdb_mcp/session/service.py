@@ -56,6 +56,7 @@ from .backends import BackendCapabilities, DebuggerBackend
 from .capture import SessionCaptureService
 from .config import SessionConfig
 from .constants import DEFAULT_TIMEOUT_SEC
+from .requests import DisassemblyRequest, SourceContextRequest
 from .runtime import SessionRuntime
 from .state import SessionState
 from .workflow import BatchStepInvocation, BatchStepTemplate, SessionWorkflowService
@@ -403,33 +404,11 @@ class SessionService:
         return self._backend.get_frame_info(thread_id=thread_id, frame=frame)
 
     def disassemble(
-        self,
-        *,
-        thread_id: int | None = None,
-        frame: int | None = None,
-        function: str | None = None,
-        address: str | None = None,
-        start_address: str | None = None,
-        end_address: str | None = None,
-        file: str | None = None,
-        line: int | None = None,
-        instruction_count: int = 32,
-        mode: Literal["assembly", "mixed"] = "mixed",
+        self, request: DisassemblyRequest
     ) -> OperationSuccess[DisassemblyInfo] | OperationError:
         """Delegate structured disassembly to the debugger backend."""
 
-        return self._backend.disassemble(
-            thread_id=thread_id,
-            frame=frame,
-            function=function,
-            address=address,
-            start_address=start_address,
-            end_address=end_address,
-            file=file,
-            line=line,
-            instruction_count=instruction_count,
-            mode=mode,
-        )
+        return self._backend.disassemble(request)
 
     def select_frame(
         self, frame_number: int
@@ -462,33 +441,11 @@ class SessionService:
         return self._backend.get_variables(thread_id=thread_id, frame=frame)
 
     def get_source_context(
-        self,
-        *,
-        thread_id: int | None = None,
-        frame: int | None = None,
-        function: str | None = None,
-        address: str | None = None,
-        file: str | None = None,
-        line: int | None = None,
-        start_line: int | None = None,
-        end_line: int | None = None,
-        context_before: int = 5,
-        context_after: int = 5,
+        self, request: SourceContextRequest
     ) -> OperationSuccess[SourceContextInfo] | OperationError:
         """Delegate structured source-context retrieval to the inspection service."""
 
-        return self._backend.get_source_context(
-            thread_id=thread_id,
-            frame=frame,
-            function=function,
-            address=address,
-            file=file,
-            line=line,
-            start_line=start_line,
-            end_line=end_line,
-            context_before=context_before,
-            context_after=context_after,
-        )
+        return self._backend.get_source_context(request)
 
     def get_registers(
         self,

@@ -88,6 +88,16 @@ from .delve_values import (
 from .inspection.register_classes import guess_register_family, is_vector_register
 from .process_cleanup import cleanup_process
 from .protocols import OsModuleProtocol, TimeModuleProtocol
+from .requests import (
+    AddressLocation,
+    AddressRangeLocation,
+    DisassemblyLocation,
+    DisassemblyRequest,
+    FileLineLocation,
+    FileRangeLocation,
+    FunctionLocation,
+    SourceContextRequest,
+)
 from .runtime import SessionRuntime
 from .state import SessionState
 
@@ -1161,21 +1171,30 @@ class DelveRpcBackend:
         *,
         thread_id: int | None,
         frame: int | None,
-        function: str | None,
-        address: str | None,
-        file: str | None,
-        line: int | None,
+        selector: DisassemblyLocation,
     ) -> tuple[dict[str, object], InspectionLocation]:
-        if function is not None:
+        function: str | None = None
+        file: str | None = None
+        line: int | None = None
+        if isinstance(selector, FunctionLocation):
+            function = selector.function
             location = self._locations(function, thread_id, frame)[0]
             kind: Literal["current", "function", "address", "file_line"] = "function"
-        elif address is not None:
+        elif isinstance(selector, (AddressLocation, AddressRangeLocation)):
+            address = (
+                selector.address
+                if isinstance(selector, AddressLocation)
+                else selector.start_address
+            )
             location = self._locations(f"*{hex(self._address(address))}", thread_id, frame)[0]
             kind = "address"
-        elif file is not None and line is not None:
+        elif isinstance(selector, FileLineLocation):
+            file, line = selector.file, selector.line
             location = self._locations(f"{file}:{line}", thread_id, frame)[0]
             kind = "file_line"
         else:
+            if isinstance(selector, FileRangeLocation):
+                file = selector.file
             number = frame if frame is not None else self.runtime.current_frame or 0
             stack = self._stack(thread_id, number + 1)
             if number < 0 or number >= len(stack):
@@ -1194,33 +1213,24 @@ class DelveRpcBackend:
 
     @_operation
     def get_source_context(
-        self,
-        *,
-        thread_id: int | None = None,
-        frame: int | None = None,
-        function: str | None = None,
-        address: str | None = None,
-        file: str | None = None,
-        line: int | None = None,
-        start_line: int | None = None,
-        end_line: int | None = None,
-        context_before: int = 5,
-        context_after: int = 5,
+        self, request: SourceContextRequest
     ) -> OperationSuccess[SourceContextInfo]:
+        thread_id, frame = request.thread_id, request.frame
         self._scope(thread_id, frame)
-        if file is not None and start_line is not None:
+        selector = request.location
+        if isinstance(selector, FileRangeLocation):
             location = InspectionLocation(
-                kind="file_range", file=file, fullname=file, line=start_line
+                kind="file_range",
+                file=selector.file,
+                fullname=selector.file,
+                line=selector.start_line,
             )
             current_line = 0
         else:
             _, location = self._location(
                 thread_id=thread_id,
                 frame=frame,
-                function=function,
-                address=address,
-                file=file,
-                line=line,
+                selector=selector,
             )
             current_line = location.line or 1
         path = Path(location.fullname or location.file or "")
@@ -1231,8 +1241,11 @@ class DelveRpcBackend:
         ):
             path = Path(self.runtime.config.working_dir) / path
         source = path.read_text(encoding="utf-8", errors="replace").splitlines()
-        first = start_line if start_line is not None else max(1, current_line - context_before)
-        last = min(len(source), end_line if end_line is not None else current_line + context_after)
+        if isinstance(selector, FileRangeLocation):
+            first, last = selector.start_line, min(len(source), selector.end_line)
+        else:
+            first = max(1, current_line - request.context_before)
+            last = min(len(source), current_line + request.context_after)
         if first < 1 or last < first:
             raise DelveRpcError("Requested source range is unavailable", "not_found")
         lines = [
@@ -1254,31 +1267,18 @@ class DelveRpcBackend:
         )
 
     @_operation
-    def disassemble(
-        self,
-        *,
-        thread_id: int | None = None,
-        frame: int | None = None,
-        function: str | None = None,
-        address: str | None = None,
-        start_address: str | None = None,
-        end_address: str | None = None,
-        file: str | None = None,
-        line: int | None = None,
-        instruction_count: int = 32,
-        mode: Literal["assembly", "mixed"] = "mixed",
-    ) -> OperationSuccess[DisassemblyInfo]:
+    def disassemble(self, request: DisassemblyRequest) -> OperationSuccess[DisassemblyInfo]:
+        thread_id, frame = request.thread_id, request.frame
         scope = self._scope(thread_id, frame)
         raw, location = self._location(
             thread_id=thread_id,
             frame=frame,
-            function=function,
-            address=start_address or address,
-            file=file,
-            line=line,
+            selector=request.location,
         )
         start = integer(raw.get("pc"))
-        end = self._address(end_address) if end_address is not None else 0
+        end = 0
+        if isinstance(request.location, AddressRangeLocation):
+            end = self._address(request.location.end_address)
         response = self._request(
             "Disassemble", {"Scope": scope, "StartPC": start, "EndPC": end, "Flavour": 0}
         )
@@ -1301,13 +1301,15 @@ class DelveRpcBackend:
                         "instruction": text(item.get("Text")),
                         "opcodes": opcodes,
                         "function": text(mapping(loc.get("function")).get("name")),
-                        "file": text(loc.get("file")) if mode == "mixed" else None,
-                        "line": optional_integer(loc.get("line")) if mode == "mixed" else None,
+                        "file": text(loc.get("file")) if request.mode == "mixed" else None,
+                        "line": (
+                            optional_integer(loc.get("line")) if request.mode == "mixed" else None
+                        ),
                         "is_current": bool(item.get("AtPC")),
                     }
                 )
             )
-            if len(instructions) >= instruction_count:
+            if len(instructions) >= request.instruction_count:
                 break
         return OperationSuccess(
             DisassemblyInfo(
@@ -1317,7 +1319,7 @@ class DelveRpcBackend:
                 ),
                 location,
                 AddressRange(hex(start), hex(end) if end else None),
-                mode,
+                request.mode,
                 instructions,
             )
         )

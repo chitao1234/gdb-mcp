@@ -54,6 +54,7 @@ from ..domain import (
 )
 from .config import SessionConfig
 from .constants import DEFAULT_TIMEOUT_SEC
+from .requests import DisassemblyRequest, SourceContextRequest
 from .runtime import SessionRuntime
 
 BackendOperation: TypeAlias = Literal[
@@ -323,33 +324,11 @@ class DebuggerBackend(Protocol):
     ) -> OperationSuccess[MemoryReadInfo] | OperationError: ...
 
     def disassemble(
-        self,
-        *,
-        thread_id: int | None = None,
-        frame: int | None = None,
-        function: str | None = None,
-        address: str | None = None,
-        start_address: str | None = None,
-        end_address: str | None = None,
-        file: str | None = None,
-        line: int | None = None,
-        instruction_count: int = 32,
-        mode: Literal["assembly", "mixed"] = "mixed",
+        self, request: DisassemblyRequest
     ) -> OperationSuccess[DisassemblyInfo] | OperationError: ...
 
     def get_source_context(
-        self,
-        *,
-        thread_id: int | None = None,
-        frame: int | None = None,
-        function: str | None = None,
-        address: str | None = None,
-        file: str | None = None,
-        line: int | None = None,
-        start_line: int | None = None,
-        end_line: int | None = None,
-        context_before: int = 5,
-        context_after: int = 5,
+        self, request: SourceContextRequest
     ) -> OperationSuccess[SourceContextInfo] | OperationError: ...
 
     def set_breakpoint(
