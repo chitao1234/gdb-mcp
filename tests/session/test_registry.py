@@ -130,6 +130,32 @@ class TestSessionRegistry:
             result_3.value.session_id,
         ] == [1, 2, 3]
 
+    def test_close_waits_for_a_deferred_attach_before_checking_controller(self) -> None:
+        session = _session_double()
+        manager = SessionRegistry(session_factory=lambda _debugger: session)
+        session_id = _publish_session(manager, session)
+        lock = threading.RLock()
+        session.runtime.workflow_lock = lock
+        session.stop.return_value = OperationSuccess(SessionMessage("stopped"))
+        entered, finished = threading.Event(), threading.Event()
+        outcomes: list[OperationSuccess[SessionMessage] | OperationError] = []
+
+        def close() -> None:
+            entered.set()
+            outcomes.append(manager.close_session(session_id))
+            finished.set()
+
+        with lock:
+            worker = threading.Thread(target=close)
+            worker.start()
+            assert entered.wait(1)
+            assert not finished.wait(0.05)
+            session.has_controller = True
+        worker.join(timeout=1)
+        assert not worker.is_alive()
+        assert isinstance(outcomes[0], OperationSuccess)
+        session.stop.assert_called_once()
+
     def test_get_session_returns_correct_session(self) -> None:
         """get_session should return the exact published session object."""
 
