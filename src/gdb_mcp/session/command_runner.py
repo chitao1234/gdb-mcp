@@ -24,6 +24,7 @@ from ..domain.adapters import frame_record
 from ..domain.parsing import as_int, as_mapping, as_optional_mapping, as_text_or_number
 from ..transport import (
     MiClient,
+    MiTransportResponse,
     ParsedMiResponse,
     is_cli_command,
     parse_mi_responses,
@@ -54,7 +55,7 @@ class SessionCommandRunner:
         timeout_sec: float = DEFAULT_TIMEOUT_SEC,
         *,
         return_on_running: bool = False,
-    ) -> dict[str, object]:
+    ) -> MiTransportResponse:
         """Send a command through transport and update fatal session state."""
 
         result = self._transport.send_command_and_wait_for_prompt(
@@ -65,14 +66,14 @@ class SessionCommandRunner:
             failure_message = result.error or "GDB transport failed"
             self._runtime.mark_transport_terminated(failure_message)
 
-        return result.to_dict()
+        return result
 
     def interrupt_and_wait_for_stop(
         self,
         *,
         send_interrupt: Callable[[], None],
         timeout_sec: float,
-    ) -> dict[str, object]:
+    ) -> MiTransportResponse:
         """Interrupt the inferior while reusing transport serialization rules."""
 
         result = self._transport.interrupt_and_wait_for_stop(
@@ -84,9 +85,9 @@ class SessionCommandRunner:
             failure_message = result.error or "GDB transport failed"
             self._runtime.mark_transport_terminated(failure_message)
 
-        return result.to_dict()
+        return result
 
-    def wait_for_stop(self, timeout_sec: float) -> dict[str, object]:
+    def wait_for_stop(self, timeout_sec: float) -> MiTransportResponse:
         """Wait for a stopped notification without sending a debugger command."""
 
         result = self._transport.wait_for_stop(timeout_sec=timeout_sec)
@@ -95,7 +96,7 @@ class SessionCommandRunner:
             failure_message = result.error or "GDB transport failed"
             self._runtime.mark_transport_terminated(failure_message)
 
-        return result.to_dict()
+        return result
 
     def handle_dead_transport(self, message: str) -> None:
         """Transition the session into a terminal state after GDB has exited."""
@@ -149,31 +150,27 @@ class SessionCommandRunner:
             else self.send_command_and_wait_for_prompt(actual_command, timeout_sec)
         )
 
-        if "error" in result:
+        if result.error is not None:
             self._record_command_transcript(
                 command=command,
                 sent_command=actual_command,
                 status="error",
-                error=str(result["error"]),
-                fatal=bool(result.get("fatal", False)),
+                error=result.error,
+                fatal=result.fatal,
             )
             return OperationError(
-                message=str(result["error"]),
-                fatal=bool(result.get("fatal", False)),
+                message=result.error,
+                fatal=result.fatal,
                 details={"command": command},
             )
 
-        raw_responses = result.get("command_responses", [])
-        command_responses = raw_responses if isinstance(raw_responses, list) else []
-        parsed = parse_mi_responses(command_responses)
-        raw_async = result.get("async_notifications", [])
-        async_notifications = raw_async if isinstance(raw_async, list) else []
-        if async_notifications:
-            async_parsed = parse_mi_responses(async_notifications)
+        parsed = parse_mi_responses(result.command_responses)
+        if result.async_notifications:
+            async_parsed = parse_mi_responses(result.async_notifications)
             if async_parsed.notify:
                 parsed.notify.extend(async_parsed.notify)
 
-        if result.get("timed_out"):
+        if result.timed_out:
             self._update_runtime_after_command(command, parsed)
             timeout_message = f"Timeout waiting for command response after {timeout_sec}s"
             if allow_running_timeout and (
@@ -419,18 +416,14 @@ class SessionCommandRunner:
             wrap_cli_command("info inferiors"),
             timeout_sec=DEFAULT_TIMEOUT_SEC,
         )
-        if "error" in result:
-            logger.debug(
-                "Skipping inferior refresh after async topology change: %s", result["error"]
-            )
+        if result.error is not None:
+            logger.debug("Skipping inferior refresh after async topology change: %s", result.error)
             return
-        if bool(result.get("timed_out", False)):
+        if result.timed_out:
             logger.debug("Skipping inferior refresh after async topology change due to timeout")
             return
 
-        raw_responses = result.get("command_responses", [])
-        command_responses = raw_responses if isinstance(raw_responses, list) else []
-        parsed = parse_mi_responses(command_responses)
+        parsed = parse_mi_responses(result.command_responses)
         if parsed.is_error_result():
             logger.debug(
                 "Skipping inferior refresh after async topology change: %s",

@@ -491,27 +491,25 @@ class SessionExecutionService:
             )
 
         result = self._command_runner.wait_for_stop(timeout_sec)
-        if "error" in result:
+        if result.error is not None:
             self._runtime.record_command_transcript(
                 CommandTranscriptEntry(
                     command="wait_for_stop",
                     status="error",
-                    fatal=bool(result.get("fatal", False)),
-                    error=str(result["error"]),
+                    fatal=result.fatal,
+                    error=result.error,
                     execution_state=self._runtime.execution_state,
                     stop_reason=self._runtime.stop_reason,
                     stop_kind=self._runtime.stop_kind,
                     timestamp=self._runtime.time_module.time(),
                 )
             )
-            return OperationError(message=str(result["error"]))
+            return OperationError(message=result.error)
 
-        raw_responses = result.get("command_responses", [])
-        command_responses = raw_responses if isinstance(raw_responses, list) else []
-        parsed = parse_mi_responses(command_responses)
+        parsed = parse_mi_responses(result.command_responses)
         self._command_runner.update_runtime_after_command("wait_for_stop", parsed)
 
-        if result.get("timed_out"):
+        if result.timed_out:
             self._runtime.record_command_transcript(
                 CommandTranscriptEntry(
                     command="wait_for_stop",
@@ -703,29 +701,27 @@ class SessionExecutionService:
             timeout_sec=INTERRUPT_RESPONSE_TIMEOUT_SEC,
         )
 
-        if "error" in result:
+        if result.error is not None:
             self._runtime.record_command_transcript(
                 CommandTranscriptEntry(
                     command="interrupt",
                     sent_command="SIGINT",
                     status="error",
-                    fatal=bool(result.get("fatal", False)),
-                    error=str(result["error"]),
+                    fatal=result.fatal,
+                    error=result.error,
                     execution_state=self._runtime.execution_state,
                     stop_reason=self._runtime.stop_reason,
                     stop_kind=self._runtime.stop_kind,
                     timestamp=self._runtime.time_module.time(),
                 )
             )
-            return OperationError(message=str(result["error"]))
+            return OperationError(message=result.error)
 
-        raw_responses = result.get("command_responses", [])
-        command_responses = raw_responses if isinstance(raw_responses, list) else []
-        parsed = parse_mi_responses(command_responses)
+        parsed = parse_mi_responses(result.command_responses)
         self._command_runner.update_runtime_after_command("interrupt", parsed)
         parsed_result = payload_to_mapping(parsed.to_dict())
 
-        if result.get("timed_out"):
+        if result.timed_out:
             self._runtime.mark_inferior_running()
             self._runtime.record_command_transcript(
                 CommandTranscriptEntry(
@@ -786,14 +782,14 @@ class SessionExecutionService:
 
         result = self._command_runner.send_command_and_wait_for_prompt(mi_command, timeout_sec)
 
-        if "error" in result:
+        if result.error is not None:
             self._runtime.record_command_transcript(
                 CommandTranscriptEntry(
                     command=command,
                     sent_command=mi_command,
                     status="error",
-                    fatal=bool(result.get("fatal", False)),
-                    error=str(result["error"]),
+                    fatal=result.fatal,
+                    error=result.error,
                     execution_state=self._runtime.execution_state,
                     stop_reason=self._runtime.stop_reason,
                     stop_kind=self._runtime.stop_kind,
@@ -801,11 +797,11 @@ class SessionExecutionService:
                 )
             )
             return OperationError(
-                message=_augment_call_error(str(result["error"]), function_call),
+                message=_augment_call_error(result.error, function_call),
                 details={"function_call": function_call},
             )
 
-        if result.get("timed_out"):
+        if result.timed_out:
             self._runtime.record_command_transcript(
                 CommandTranscriptEntry(
                     command=command,
@@ -824,9 +820,7 @@ class SessionExecutionService:
                 details={"function_call": function_call},
             )
 
-        raw_responses = result.get("command_responses", [])
-        command_responses = raw_responses if isinstance(raw_responses, list) else []
-        parsed = parse_mi_responses(command_responses)
+        parsed = parse_mi_responses(result.command_responses)
         self._command_runner.update_runtime_after_command(command, parsed)
         if parsed.is_error_result():
             self._runtime.record_command_transcript(

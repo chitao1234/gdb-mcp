@@ -88,17 +88,3 @@ class MiTransportResponse:
     timed_out: bool = False
     error: str | None = None
     fatal: bool = False
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert into plain builtin containers for session-layer handling."""
-
-        result = {
-            "command_responses": list(self.command_responses),
-            "async_notifications": list(self.async_notifications),
-            "timed_out": self.timed_out,
-        }
-        if self.error is not None:
-            result["error"] = self.error
-        if self.fatal:
-            result["fatal"] = True
-        return result

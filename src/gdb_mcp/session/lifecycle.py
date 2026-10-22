@@ -251,8 +251,12 @@ class SessionLifecycleService:
                     "-gdb-version", timeout_sec=DEFAULT_TIMEOUT_SEC
                 )
 
-                if "error" in ready_check or ready_check.get("timed_out"):
-                    error_msg = ready_check.get("error", "Timeout waiting for GDB to initialize")
+                if ready_check.error is not None or ready_check.timed_out:
+                    error_msg = (
+                        ready_check.error
+                        if ready_check.error is not None
+                        else "Timeout waiting for GDB to initialize"
+                    )
                     logger.error("GDB failed to initialize: %s", error_msg)
                     if self._runtime.has_controller:
                         try:
@@ -265,15 +269,13 @@ class SessionLifecycleService:
                     self._runtime.mark_failed(message)
                     return OperationError(
                         message=message,
-                        fatal=bool(ready_check.get("fatal", False)),
+                        fatal=ready_check.fatal,
                     )
 
                 logger.info("GDB initialized and ready")
 
-                raw_startup_responses = ready_check.get("command_responses", [])
                 startup_responses = list(initial_startup_responses)
-                if isinstance(raw_startup_responses, list):
-                    startup_responses.extend(raw_startup_responses)
+                startup_responses.extend(ready_check.command_responses)
                 startup_result = parse_mi_responses(startup_responses)
                 startup_output_text = self._startup_output_text(startup_result)
 
