@@ -7,22 +7,14 @@ import argparse
 import pytest
 from pydantic import ValidationError
 
-from gdb_mcp.client.builders.workflow import (
-    build_run_until_failure_payload,
-    build_workflow_batch_payload,
-)
-from gdb_mcp.client.inputs import (
-    RunUntilFailureInput,
-    SessionStepInput,
-    WorkflowBatchInput,
-)
-from gdb_mcp.client.parsers import serialize_model
+from gdb_mcp.client.parsers import StepArgumentEvent, StepLabelEvent, StepToolEvent, serialize_model
 from gdb_mcp.client.specs.breakpoint import _build_breakpoint_manage, _build_breakpoint_query
 from gdb_mcp.client.specs.context import _build_context_query
 from gdb_mcp.client.specs.execution import _build_execution_manage
 from gdb_mcp.client.specs.inferior import _build_inferior_manage
 from gdb_mcp.client.specs.inspect import _build_inspect_query
 from gdb_mcp.client.specs.session import _build_session_query, _build_session_start
+from gdb_mcp.client.specs.workflow import _build_run_until_failure, _build_workflow_batch
 
 
 def test_build_session_start_payload_from_typed_input() -> None:
@@ -385,20 +377,19 @@ def test_build_inspect_source_payload() -> None:
 def test_build_workflow_batch_payload_from_typed_steps() -> None:
     """Typed steps are serialized into the batch wire format."""
 
-    typed_input = WorkflowBatchInput(
+    typed_input = argparse.Namespace(
         session_id=7,
-        steps=(
-            SessionStepInput(
-                tool="gdb_context_query",
-                label="stack",
-                arguments={"action": "backtrace", "query": {"max_frames": 20}},
-            ),
-        ),
+        step_events=[
+            StepToolEvent("gdb_context_query"),
+            StepLabelEvent("stack"),
+            StepArgumentEvent("action", "backtrace"),
+            StepArgumentEvent("query.max_frames", 20),
+        ],
         fail_fast=False,
         capture_stop_events=True,
     )
 
-    assert build_workflow_batch_payload(typed_input) == {
+    assert serialize_model(_build_workflow_batch(typed_input)) == {
         "session_id": 7,
         "steps": [
             {
@@ -412,10 +403,10 @@ def test_build_workflow_batch_payload_from_typed_steps() -> None:
     }
 
 
-def _run_until_failure_input() -> RunUntilFailureInput:
+def _run_until_failure_input() -> argparse.Namespace:
     """Build a fully populated campaign input for the payload test."""
 
-    return RunUntilFailureInput(
+    return argparse.Namespace(
         startup_program="/bin/true",
         startup_args=(),
         startup_init_commands=("set pagination off",),
@@ -423,7 +414,7 @@ def _run_until_failure_input() -> RunUntilFailureInput:
         startup_debugger_path=None,
         startup_working_dir=None,
         startup_core=None,
-        setup_steps=(),
+        setup_step_events=[],
         run_args=(),
         run_timeout_sec=15,
         max_iterations=2,
@@ -453,11 +444,10 @@ def _run_until_failure_input() -> RunUntilFailureInput:
 def test_build_run_until_failure_payload_from_typed_input() -> None:
     """Every campaign section is emitted in the expected nested shape."""
 
-    payload = build_run_until_failure_payload(_run_until_failure_input())
+    payload = serialize_model(_build_run_until_failure(_run_until_failure_input()))
 
     assert set(payload) == {
         "startup",
-        "setup_steps",
         "run_timeout_sec",
         "max_iterations",
         "failure",
@@ -469,7 +459,6 @@ def test_build_run_until_failure_payload_from_typed_input() -> None:
         "program": "/bin/true",
         "init_commands": ["set pagination off"],
     }
-    assert payload["setup_steps"] == []
     assert payload["run_timeout_sec"] == 15
     assert payload["max_iterations"] == 2
 
