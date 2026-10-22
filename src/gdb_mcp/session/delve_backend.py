@@ -422,7 +422,7 @@ class DelveRpcBackend:
                     self._request("State", {"NonBlocking": True}, timeout_sec=2), record=False
                 )
             except DelveRpcError as exc:
-                self.runtime.last_failure_message = str(exc)
+                self.runtime.record_failure_message(str(exc))
                 if not client.alive:
                     self.runtime.mark_transport_terminated(str(exc))
         return OperationSuccess(

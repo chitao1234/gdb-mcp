@@ -209,6 +209,10 @@ class SessionRuntime:
 
         self.mark_failed(message)
 
+    def record_failure_message(self, message: str) -> None:
+        with self._state_lock:
+            self.last_failure_message = message
+
     def mark_stopped(self) -> None:
         """Record a clean stop of the current session."""
 
