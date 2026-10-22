@@ -8,8 +8,8 @@
     nixpkgs-2505.url = "github:NixOS/nixpkgs/nixos-25.05";
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 
-    # Oldest baseline: GDB 7.1a with its Python 2.6, LLDB 4.0.1, and the
-    # matching compilers/Delve are pinned separately from the server Python.
+    # Oldest baseline and intermediate debugger pins. Python comes from the
+    # modern inputs above; only GDB 7.1a's embedded Python 2.6 is old.
     nixpkgs-1310 = {
       url = "github:NixOS/nixpkgs/release-13.10";
       flake = false;
@@ -20,6 +20,18 @@
     };
     nixpkgs-1709 = {
       url = "github:NixOS/nixpkgs/17.09";
+      flake = false;
+    };
+    nixpkgs-2009 = {
+      url = "github:NixOS/nixpkgs/20.09";
+      flake = false;
+    };
+    nixpkgs-2105 = {
+      url = "github:NixOS/nixpkgs/21.05";
+      flake = false;
+    };
+    nixpkgs-2111 = {
+      url = "github:NixOS/nixpkgs/21.11";
       flake = false;
     };
     nixpkgs-2305 = {
@@ -34,77 +46,99 @@
       inherit (nixpkgs-2311) lib;
       systems = [ "x86_64-linux" ];
 
-      # One row per era, not a cartesian product. Each profile takes Python,
-      # GDB, LLDB, Go, and Delve from the same nixpkgs snapshot so the
-      # versions were actually released and built together.
+      packagesFor =
+        system: input:
+        if builtins.isAttrs input && input ? legacyPackages then
+          input.legacyPackages.${system}
+        else
+          import input { inherit system; };
+
       profiles = {
-        py310-gdb13-lldb14-delve121 = {
-          channel = "nixos-23.11";
-          packages = inputs.nixpkgs-2311.legacyPackages;
-          python = "python310";
-          lldb = "lldb";
-        };
-        py311-gdb14-lldb17-delve122 = {
-          channel = "nixos-24.05";
-          packages = inputs.nixpkgs-2405.legacyPackages;
-          python = "python311";
-          lldb = "lldb";
-        };
-        py312-gdb15-lldb18-delve123 = {
-          channel = "nixos-24.11";
-          packages = inputs.nixpkgs-2411.legacyPackages;
-          python = "python312";
-          lldb = "lldb";
-        };
-        py313-gdb16-lldb19-delve124 = {
-          channel = "nixos-25.05";
-          packages = inputs.nixpkgs-2505.legacyPackages;
-          python = "python313";
-          lldb = "lldb";
-        };
-        py314-gdb17-lldb21-delve127 = {
-          channel = "nixpkgs-unstable";
-          packages = inputs.nixpkgs-unstable.legacyPackages;
-          python = "python314";
-          lldb = "lldb";
-        };
         oldest-py310-gdb71a-lldb40-delve120 = {
-          channel = "mixed";
           baseline = true;
+        };
+        legacy-py311-gdb92-lldb71-delve120 = {
+          legacy = true;
+          pythonPackages = inputs.nixpkgs-2405;
+          python = "python311";
+          gdbPackages = inputs.nixpkgs-2009;
+          lldbPackages = inputs.nixpkgs-2009;
+          goPackages = inputs.nixpkgs-2305;
+          delvePackages = inputs.nixpkgs-2305;
+        };
+        legacy-py312-gdb111-lldb111-delve121 = {
+          legacy = true;
+          pythonPackages = inputs.nixpkgs-2411;
+          python = "python312";
+          gdbPackages = inputs.nixpkgs-2111;
+          lldbPackages = inputs.nixpkgs-2105;
+          goPackages = inputs.nixpkgs-2311;
+          delvePackages = inputs.nixpkgs-2311;
+        };
+        full-py313-gdb13-lldb14-delve122 = {
+          pythonPackages = inputs.nixpkgs-2505;
+          python = "python313";
+          gdbPackages = inputs.nixpkgs-2311;
+          lldbPackages = inputs.nixpkgs-2311;
+          goPackages = inputs.nixpkgs-2405;
+          delvePackages = inputs.nixpkgs-2405;
+        };
+        full-py314-gdb15-lldb18-delve123 = {
+          pythonPackages = inputs.nixpkgs-unstable;
+          python = "python314";
+          gdbPackages = inputs.nixpkgs-2411;
+          lldbPackages = inputs.nixpkgs-2411;
+          goPackages = inputs.nixpkgs-2411;
+          delvePackages = inputs.nixpkgs-2411;
+        };
+        full-py313-gdb17-lldb21-delve127 = {
+          pythonPackages = inputs.nixpkgs-2505;
+          python = "python313";
+          gdbPackages = inputs.nixpkgs-unstable;
+          lldbPackages = inputs.nixpkgs-unstable;
+          goPackages = inputs.nixpkgs-unstable;
+          delvePackages = inputs.nixpkgs-unstable;
         };
       };
 
-      mkShell =
+      mkMixedShell =
         system: name: spec:
         let
-          pkgs = spec.packages.${system};
-          lldb = pkgs.${spec.lldb};
+          pkgs = nixpkgs-2311.legacyPackages.${system};
+          pythonPkgs = packagesFor system spec.pythonPackages;
+          gdbPkgs = packagesFor system spec.gdbPackages;
+          lldbPkgs = packagesFor system spec.lldbPackages;
+          goPkgs = packagesFor system spec.goPackages;
+          delvePkgs = packagesFor system spec.delvePackages;
+          lldb = lldbPkgs.lldb;
           lldbLib = if lldb ? lib then lldb.lib else lldb;
-          lldbFull = pkgs.symlinkJoin {
-            name = "lldb-${lldb.version}-with-headers";
-            paths = [
-              lldb
-              lldb.dev
-              lldbLib
-            ];
-          };
+          lldbFull =
+            if lldb ? dev then
+              pkgs.symlinkJoin {
+                name = "lldb-${lldb.version or lldb.name}-with-headers";
+                paths = [
+                  lldb
+                  lldb.dev
+                  lldbLib
+                ];
+              }
+            else
+              lldb;
         in
         pkgs.mkShell {
           name = "gdb-mcp-${name}";
           packages = [
-            pkgs.${spec.python}
-            pkgs.gdb
-            lldbFull
-            pkgs.go
-            pkgs.delve
             pkgs.gcc
+            pythonPkgs.${spec.python}
+            gdbPkgs.gdb
+            lldbFull
+            goPkgs.go
+            delvePkgs.delve
             pkgs.binutils
           ];
           GOTOOLCHAIN = "local";
           LLDB_PREFIX = "${lldbFull}";
-          # Pin the bridge compiler so a host-exported CXX cannot leak into
-          # this profile's bridge build.
-          LLDB_BRIDGE_CXX = "${pkgs.gcc}/bin/c++";
+          LLDB_BRIDGE_CXX = "${lldbPkgs.gcc}/bin/g++";
         };
 
       legacyFor =
@@ -225,7 +259,7 @@
         system:
         builtins.mapAttrs (
           name: spec:
-          if spec ? baseline then mkBaselineShell system name else mkShell system name spec
+          if spec ? baseline then mkBaselineShell system name else mkMixedShell system name spec
         ) profiles
       );
       ciProfileNames = builtins.attrNames profiles;

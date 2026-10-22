@@ -114,17 +114,16 @@ When adding new tests:
 ## Continuous Integration
 
 Tests run automatically on GitHub Actions for:
-- Curated Nix toolchain profiles covering Python 3.10-3.14, GDB 13-17,
-  LLDB 14-21, and Delve 1.21-1.27 (see `flake.nix`)
-- An oldest baseline with GDB 7.1a plus Python 2.6, LLDB 4.0.1, Delve 1.20.2,
-  and a modern Python 3.10 server
+- Six sampled Nix profiles covering Python 3.10-3.14, GDB 7.1a/9.2/11.1/13.2/
+  15.2/17.2, LLDB 4.0.1/7.1/11.1/14.0/18.1/21.1, and Delve 1.20.2-1.27
+  (see `flake.nix`)
+- An oldest baseline with GDB 7.1a plus Python 2.6, LLDB 4.0.1, and Delve 1.20.2
 - Every push to main/master
 - Every pull request
 
-`nix eval --json .#ciProfileNames` lists the exact profiles CI runs. Each era
-profile crosses no package versions beyond its snapshot; the oldest baseline
-mixes pins because the old debuggers and the server Python cannot share one.
-That profile runs unit tests plus the core GDB, LLDB, and Delve integration
-files.
+`nix eval --json .#ciProfileNames` lists the exact profiles CI runs. Python and
+the debugger packages use independent pins. The `oldest-` and `legacy-` rows
+run unit tests plus `tests/integration/test_compatibility_baseline.py`; the
+`full-` rows run the complete suite.
 
 See `.github/workflows/test.yml` for the CI configuration.

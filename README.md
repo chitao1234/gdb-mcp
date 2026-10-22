@@ -267,24 +267,22 @@ git diff --check
 
 ### Compatibility Profiles
 
-CI does not cross every Python, GDB, LLDB, Go, and Delve version. It runs a few
-curated eras plus one oldest-version baseline. Each era pins its tools to one
-Nixpkgs snapshot; the baseline mixes pins because GDB 7.1a, LLDB 4.0.1, and the
-server Python do not coexist in one snapshot. `flake.nix` is the source of
-truth:
+CI samples Python, GDB, LLDB, Go, and Delve instead of crossing every version.
+Python and each debugger are pinned independently, so an old GDB does not drag
+the server Python back with it. `flake.nix` is the source of truth:
 
 ```bash
 nix eval --json .#ciProfileNames      # names CI runs
-nix develop .#oldest-py310-gdb71a-lldb40-delve120
+nix develop .#legacy-py311-gdb92-lldb71-delve120
 ```
 
-The era rows cover Python 3.10-3.14, GDB 13-17, LLDB 14-21, and Delve
-1.21-1.27. The baseline row covers GDB 7.1a with Python 2.6 scripting support,
-LLDB 4.0.1, Delve 1.20.2, and a modern Python 3.10 server. The `flake.lock`
-file pins the exact snapshots.
+The six rows cover Python 3.10-3.14; GDB 7.1a, 9.2, 11.1, 13.2, 15.2, and
+17.2; LLDB 4.0.1, 7.1, 11.1, 14.0, 18.1, and 21.1; and Delve 1.20.2 through
+1.27. The oldest row also carries GDB's Python 2.6 scripting support. The
+`flake.lock` file pins the exact snapshots.
 
-The baseline runs unit tests plus the core GDB, LLDB, and Delve integration
-files instead of the full modern-feature suite.
+The `oldest-` and `legacy-` rows run unit tests plus
+`test_compatibility_baseline.py`; the `full-` rows run the complete suite.
 
 See [AGENTS.md](AGENTS.md) for repository conventions.
 
