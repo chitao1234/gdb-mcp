@@ -1164,9 +1164,7 @@ class TestClientCli:
             ],
             parser=build_parser(),
         )
-        typed_input = client_specs.parse_breakpoint_manage_input(args)
-
-        payload = serialize_model(client_specs._build_breakpoint_manage(typed_input))
+        payload = serialize_model(client_specs._build_breakpoint_manage(args))
 
         assert payload == {
             "session_id": SESSION_ID,

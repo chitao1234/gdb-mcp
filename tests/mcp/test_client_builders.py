@@ -7,19 +7,12 @@ import argparse
 import pytest
 from pydantic import ValidationError
 
-from gdb_mcp.client.builders.breakpoint import (
-    build_breakpoint_manage_payload,
-    build_breakpoint_query_payload,
-)
 from gdb_mcp.client.builders.inspect import build_inspect_query_payload
 from gdb_mcp.client.builders.workflow import (
     build_run_until_failure_payload,
     build_workflow_batch_payload,
 )
 from gdb_mcp.client.inputs import (
-    BreakpointCreateInput,
-    BreakpointManageInput,
-    BreakpointQueryInput,
     InspectQueryInput,
     LocationInput,
     RunUntilFailureInput,
@@ -27,6 +20,7 @@ from gdb_mcp.client.inputs import (
     WorkflowBatchInput,
 )
 from gdb_mcp.client.parsers import serialize_model
+from gdb_mcp.client.specs.breakpoint import _build_breakpoint_manage, _build_breakpoint_query
 from gdb_mcp.client.specs.context import _build_context_query
 from gdb_mcp.client.specs.execution import _build_execution_manage
 from gdb_mcp.client.specs.inferior import _build_inferior_manage
@@ -321,7 +315,7 @@ def test_build_context_query_backtrace_payload() -> None:
 def test_build_breakpoint_query_filtered_list_payload() -> None:
     """A false ``enabled`` filter is preserved rather than treated as absent."""
 
-    typed_input = BreakpointQueryInput(
+    typed_input = argparse.Namespace(
         action="list",
         session_id=7,
         number=None,
@@ -329,7 +323,7 @@ def test_build_breakpoint_query_filtered_list_payload() -> None:
         enabled=False,
     )
 
-    assert build_breakpoint_query_payload(typed_input) == {
+    assert serialize_model(_build_breakpoint_query(typed_input)) == {
         "session_id": 7,
         "action": "list",
         "query": {"kinds": ["code", "watch"], "enabled": False},
@@ -339,25 +333,15 @@ def test_build_breakpoint_query_filtered_list_payload() -> None:
 def test_build_breakpoint_manage_create_payload() -> None:
     """A create action nests the breakpoint definition."""
 
-    typed_input = BreakpointManageInput(
+    typed_input = argparse.Namespace(
         action="create",
         session_id=7,
-        breakpoint=BreakpointCreateInput(
-            kind="code",
-            location="main",
-            expression=None,
-            access=None,
-            event=None,
-            argument=None,
-            condition=None,
-            temporary=True,
-        ),
-        number=None,
-        condition=None,
-        clear_condition=None,
+        breakpoint_kind="code",
+        location="main",
+        temporary=True,
     )
 
-    assert build_breakpoint_manage_payload(typed_input) == {
+    assert serialize_model(_build_breakpoint_manage(typed_input)) == {
         "session_id": 7,
         "action": "create",
         "breakpoint": {"kind": "code", "location": "main", "temporary": True},
