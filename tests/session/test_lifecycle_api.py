@@ -86,6 +86,23 @@ class TestLifecycleApi:
         assert result["execution_state"] == "not_started"
         assert start_session.service.is_running is True
 
+    def test_start_session_resets_gdb_feature_probe_state(
+        self, start_session: StartHarness
+    ) -> None:
+        """Feature probes belong to one GDB process and reset on startup."""
+
+        backend = gdb_backend(start_session.service)
+        backend._execution._inferior_mi_supported = False
+        backend._inspection._disassembly._disassemble_a_supported = True
+        backend._inspection._memory._read_memory_bytes_supported = True
+
+        result = start_session(program="/bin/ls")
+
+        assert result["status"] == "success"
+        assert backend._execution._inferior_mi_supported is None
+        assert backend._inspection._disassembly._disassemble_a_supported is None
+        assert backend._inspection._memory._read_memory_bytes_supported is None
+
     def test_unexpected_startup_exception_is_not_reclassified_as_debugger_error(
         self, start_session: StartHarness
     ) -> None:
