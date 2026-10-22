@@ -332,6 +332,8 @@ class LldbInspection:
             payload = self._bridge._request(
                 "disassemble",
                 **asdict(request.location),
+                thread_id=request.thread_id,
+                frame=request.frame,
                 instruction_count=request.instruction_count,
                 mode=request.mode,
             )
@@ -370,6 +372,8 @@ class LldbInspection:
             payload = self._bridge._request(
                 "source",
                 **asdict(request.location),
+                thread_id=request.thread_id,
+                frame=request.frame,
                 context_before=request.context_before,
                 context_after=request.context_after,
             )
