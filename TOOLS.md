@@ -169,6 +169,11 @@ Errors are uniform across all tools and are returned as MCP tool results with `i
 ```
 
 Validation failures use `code="validation_error"` and populate `details.field_errors`; the top-level `message` lists every failure, including the selecting union tag when one applies, and is not truncated.
+Schema-validation failures inside workflow steps use paths such as
+`steps[1].arguments.query.expression`, or
+`setup_steps[1].arguments.query.expression` for a campaign setup step. The
+`tool` and `action` identify the invalid inner request. Steps are validated
+before execution, so an invalid step does not execute earlier valid steps.
 
 Request validation is separate from decoding debugger output. Additional
 debugger record fields, including nested fields and hyphenated keys, are kept;
