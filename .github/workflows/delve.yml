@@ -1,0 +1,38 @@
+name: Delve Compatibility
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  delve:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - delve: "1.20.2"
+            go: "1.20.14"
+          - delve: "1.24.2"
+            go: "1.24.2"
+          - delve: "1.27.2"
+            go: "1.27.1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache: false
+      - name: Install dependencies and Delve
+        run: |
+          pip install -e ".[dev]"
+          go install github.com/go-delve/delve/cmd/dlv@v${{ matrix.delve }}
+      - name: Allow sibling debugger attach
+        run: sudo sysctl -w kernel.yama.ptrace_scope=0
+      - name: Test Delve RPC workflows
+        run: pytest -q tests/integration/test_v2_session_delve.py -rs
