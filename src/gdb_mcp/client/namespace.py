@@ -204,40 +204,10 @@ def boolean(attributes: ParsedOptions, name: FlagOption) -> bool:
     return attributes[name]
 
 
-def optional_boolean(
-    attributes: ParsedOptions, name: FlagOption | OptionalFlagOption
-) -> bool | None:
-    """Return a flag, distinguishing absence from explicit false."""
-
-    return attributes.get(name)
-
-
 def text_tuple(attributes: ParsedOptions, name: TextListOption) -> tuple[str, ...]:
     """Return a repeated text option, defaulting to an empty tuple."""
 
     return tuple(attributes.get(name) or ())
-
-
-def optional_text_tuple(attributes: ParsedOptions, name: TextListOption) -> tuple[str, ...] | None:
-    """Return a repeated text option, distinguishing absence from empty."""
-
-    value = attributes.get(name)
-    return None if value is None else tuple(value)
-
-
-def integer_tuple(attributes: ParsedOptions, name: IntegerListOption) -> tuple[int, ...]:
-    """Return a repeated integer option, defaulting to an empty tuple."""
-
-    return tuple(attributes.get(name) or ())
-
-
-def optional_integer_tuple(
-    attributes: ParsedOptions, name: IntegerListOption
-) -> tuple[int, ...] | None:
-    """Return a repeated integer option, distinguishing absence from empty."""
-
-    value = attributes.get(name)
-    return None if value is None else tuple(value)
 
 
 def choice(value: object, allowed: tuple[ChoiceT, ...], *, name: str) -> ChoiceT:
@@ -253,23 +223,6 @@ def one_of(attributes: ParsedOptions, name: TextOption, allowed: tuple[ChoiceT, 
     """Return one required choice option."""
 
     return choice(attributes.get(name), allowed, name=name)
-
-
-def optional_one_of(
-    attributes: ParsedOptions, name: TextOption, allowed: tuple[ChoiceT, ...]
-) -> ChoiceT | None:
-    """Return one optional choice option."""
-
-    value = attributes.get(name)
-    return None if value is None else choice(value, allowed, name=name)
-
-
-def one_of_tuple(
-    attributes: ParsedOptions, name: TextListOption, allowed: tuple[ChoiceT, ...]
-) -> tuple[ChoiceT, ...]:
-    """Return a repeated choice option, defaulting to an empty tuple."""
-
-    return tuple(choice(item, allowed, name=name) for item in attributes.get(name) or ())
 
 
 def key_value_entries(attributes: ParsedOptions, name: KeyValueOption) -> list[tuple[str, str]]:
