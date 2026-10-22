@@ -47,7 +47,8 @@ callers see one contract.
 
 Debugger records preserve additional fields and their original keys, including
 hyphenated GDB/MI keys. A field the server cannot decode returns a
-`protocol_error` for that operation; invalid caller input returns
+`protocol_error` for that operation; disassembly also preserves instruction and
+mixed-source extension fields. Invalid caller input returns
 `validation_error`. Unfamiliar debugger error messages keep their text and use
 the fallback `error` code. These failures do not end an otherwise live session.
 Unexpected server implementation failures return `internal_error` and are

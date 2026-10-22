@@ -179,6 +179,8 @@ before execution, so an invalid step does not execute earlier valid steps.
 
 Request validation is separate from decoding debugger output. Additional
 debugger record fields, including nested fields and hyphenated keys, are kept;
+disassembly keeps instruction extensions and carries mixed-source extensions
+onto each instruction from that source group.
 an unfamiliar notification or native stop reason is not a decoding failure.
 Unclassified stop reasons retain their text and use `stop_kind="unknown"`.
 If a field consumed by an operation cannot be decoded, that operation returns
