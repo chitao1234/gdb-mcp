@@ -23,6 +23,7 @@ from gdb_mcp.domain import (
     StopEvent,
 )
 from gdb_mcp.domain.errors import DebuggerDecodeError
+from gdb_mcp.session.config import SessionConfig
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.lldb_backend import LldbSbBackend
 from gdb_mcp.session.lldb_bridge import BridgeClient
@@ -316,7 +317,7 @@ def test_factory_selects_the_lldb_backend() -> None:
 def test_lldb_rr_replay_points_to_connect_mode_and_reverse_caveat() -> None:
     backend, _ = _backend()
 
-    result = backend.start(debugger="lldb", replay="/tmp/rr-trace")
+    result = backend.start(SessionConfig.from_inputs(debugger="lldb", rr_replay="/tmp/rr-trace"))
 
     assert isinstance(result, OperationError)
     assert result.code == "unsupported_combination"

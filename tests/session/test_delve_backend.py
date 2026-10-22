@@ -10,6 +10,7 @@ import pytest
 from gdb_mcp import contracts as c
 from gdb_mcp.domain import OperationError, OperationSuccess
 from gdb_mcp.domain.errors import DebuggerDecodeError
+from gdb_mcp.session.config import SessionConfig
 from gdb_mcp.session.delve_backend import DelveRpcBackend
 from gdb_mcp.session.delve_values import (
     breakpoint_record,
@@ -51,7 +52,7 @@ def test_empty_session_does_not_resolve_or_spawn_delve(monkeypatch: pytest.Monke
 
 def test_failed_deferred_attach_can_be_retried(monkeypatch: pytest.MonkeyPatch) -> None:
     selected = backend()
-    assert isinstance(selected.start(), OperationSuccess)
+    assert isinstance(selected.start(SessionConfig(debugger=c.DEBUGGER_DELVE)), OperationSuccess)
     calls: list[int | None] = []
 
     def spawn(*, pid: int | None = None, timeout_sec: float = 30) -> None:

@@ -7,6 +7,8 @@ import time
 from unittest.mock import MagicMock, patch
 
 from gdb_mcp.domain import OperationError, OperationSuccess, SessionStartupInfo
+from gdb_mcp.session.config import SessionConfig
+from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.gdb_backend import GdbMiBackend
 from gdb_mcp.session.protocols import OsModuleProtocol, TimeModuleProtocol
 from gdb_mcp.session.service import SessionService
@@ -57,6 +59,39 @@ class TestSessionService:
         assert service.stop_history == ()
         assert service.command_transcript == ()
         assert service.runtime.workflow_lock is not None
+
+    def test_start_normalizes_inputs_before_calling_the_backend(self) -> None:
+        service = _service()
+        args = ["--verbose"]
+        commands = ["set pagination off"]
+        env = {"MODE": "debug"}
+        failure = OperationError("Debugger rejected startup")
+        with patch.object(service.backend, "start", return_value=failure) as start:
+            result = service.start(args=args, init_commands=commands, env=env)
+
+        config = start.call_args.args[0]
+        assert isinstance(config, SessionConfig)
+        assert result is failure
+        assert config.debugger == "gdb"
+        assert config.args == ("--verbose",)
+        assert config.init_commands == ("set pagination off",)
+        assert config.env == {"MODE": "debug"}
+        args.append("changed")
+        commands.clear()
+        env.clear()
+        assert config.args == ("--verbose",)
+        assert config.init_commands == ("set pagination off",)
+        assert config.env == {"MODE": "debug"}
+
+    def test_start_defaults_to_the_selected_backend(self) -> None:
+        for debugger in ("gdb", "lldb", "delve"):
+            service = create_default_session_service(debugger)
+            with patch.object(
+                service.backend, "start", return_value=OperationError("stopped")
+            ) as start:
+                service.start()
+
+            start.assert_called_once_with(SessionConfig(debugger=debugger))
 
     def test_start_success_uses_injected_controller_factory(
         self, prompt_response: PromptResponseBuilder

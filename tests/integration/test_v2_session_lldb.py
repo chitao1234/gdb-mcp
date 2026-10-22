@@ -14,6 +14,7 @@ from typing import cast
 import pytest
 
 from gdb_mcp.domain import OperationError, OperationSuccess
+from gdb_mcp.session.config import SessionConfig
 from gdb_mcp.session.lldb_backend import LldbSbBackend
 from gdb_mcp.session.protocols import OsModuleProtocol, TimeModuleProtocol
 
@@ -40,7 +41,9 @@ def test_lldb_start_breakpoint_run_and_status(compile_program: CompileProgram) -
         os_module=cast(OsModuleProtocol, os), time_module=cast(TimeModuleProtocol, time)
     )
     try:
-        started = backend.start(program=program, debugger="lldb", debugger_path=LLDB_PREFIX)
+        started = backend.start(
+            SessionConfig.from_inputs(program=program, debugger="lldb", debugger_path=LLDB_PREFIX)
+        )
         assert isinstance(started, OperationSuccess)
         assert started.value.target_loaded is True
 
@@ -80,7 +83,9 @@ def test_lldb_instruction_steps_and_return(
         os_module=cast(OsModuleProtocol, os), time_module=cast(TimeModuleProtocol, time)
     )
     try:
-        started = backend.start(program=program, debugger="lldb", debugger_path=LLDB_PREFIX)
+        started = backend.start(
+            SessionConfig.from_inputs(program=program, debugger="lldb", debugger_path=LLDB_PREFIX)
+        )
         assert isinstance(started, OperationSuccess)
         backend.set_breakpoint("add")
         ran = backend.run(timeout_sec=10)
