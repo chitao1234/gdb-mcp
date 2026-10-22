@@ -270,9 +270,7 @@ class InspectionDisassembly:
 
         addresses = sorted(
             int(address, 16)
-            for address in _CLI_DISASSEMBLE_INSN_ADDRESS_RE.findall(
-                result.value.backend_data.console_output
-            )
+            for address in _CLI_DISASSEMBLE_INSN_ADDRESS_RE.findall(result.value.console_output)
         )
         if not addresses:
             return OperationError(

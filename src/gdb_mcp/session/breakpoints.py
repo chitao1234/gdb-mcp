@@ -219,7 +219,7 @@ class SessionBreakpointService:
         if isinstance(result, OperationError):
             return result
 
-        number = self._extract_catchpoint_number(result.value.backend_data.console_output)
+        number = self._extract_catchpoint_number(result.value.console_output)
         if number is None:
             number = self._infer_new_catchpoint_number(previous_catchpoints)
         if number is None:
@@ -229,7 +229,7 @@ class SessionBreakpointService:
                     "backend_data": payload_to_mapping(
                         BackendData(
                             debugger="gdb",
-                            console_output=result.value.backend_data.console_output,
+                            console_output=result.value.console_output,
                             data={},
                         )
                     )
@@ -240,7 +240,7 @@ class SessionBreakpointService:
             number,
             create_details={
                 "created_breakpoint_number": number,
-                "create_console_output": result.value.backend_data.console_output.strip(),
+                "create_console_output": result.value.console_output.strip(),
             },
         )
 

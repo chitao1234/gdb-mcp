@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from ..domain import CommandExecutionInfo, OperationSuccess
-from ..transport.mi_parser import extract_mi_result_payload
+from ..domain import OperationSuccess
+from .gdb_command import GdbCommandResult
 
 
 def command_result_mapping(
-    result: OperationSuccess[CommandExecutionInfo],
+    result: OperationSuccess[GdbCommandResult],
 ) -> Mapping[str, object]:
     """Return the raw MI result mapping from one typed command result."""
 
-    payload = extract_mi_result_payload(result.value.backend_data.data)
+    payload = result.value.parsed.result
     if payload is None:
         return {}
     return payload

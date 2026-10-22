@@ -8,7 +8,6 @@ from typing import Literal
 
 from ..domain import (
     BackendData,
-    CommandExecutionInfo,
     CommandStatus,
     CommandTranscriptEntry,
     ExecutionState,
@@ -31,6 +30,7 @@ from ..transport import (
     wrap_cli_command,
 )
 from .constants import DEFAULT_TIMEOUT_SEC
+from .gdb_command import GdbCommandResult
 from .inferiors import inferior_ids, parse_inferiors_output
 from .runtime import SessionRuntime
 
@@ -118,7 +118,7 @@ class SessionCommandRunner:
         *,
         allow_running_timeout: bool = False,
         return_on_running: bool = False,
-    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+    ) -> OperationSuccess[GdbCommandResult] | OperationError:
         """Execute a GDB command and normalize CLI vs MI results."""
 
         if self._transport.controller is None:
@@ -188,16 +188,7 @@ class SessionCommandRunner:
                     error=timeout_message,
                 )
                 return OperationSuccess(
-                    CommandExecutionInfo(
-                        command=command,
-                        backend_data=BackendData(
-                            debugger="gdb",
-                            console_output="".join(
-                                item for item in parsed.console if isinstance(item, str)
-                            ),
-                            data=payload_to_mapping(parsed.command_data()),
-                        ),
-                    ),
+                    GdbCommandResult(command, parsed),
                     warnings=(
                         (
                             "Command acknowledged and inferior is still running. "
@@ -240,18 +231,7 @@ class SessionCommandRunner:
             parsed=parsed,
         )
 
-        return OperationSuccess(
-            CommandExecutionInfo(
-                command=command,
-                backend_data=BackendData(
-                    debugger="gdb",
-                    console_output="".join(
-                        item for item in parsed.console if isinstance(item, str)
-                    ),
-                    data=payload_to_mapping(parsed.command_data()),
-                ),
-            )
-        )
+        return OperationSuccess(GdbCommandResult(command, parsed))
 
     def _update_runtime_after_command(self, command: str, parsed: ParsedMiResponse) -> None:
         """Update inferior execution state based on the parsed MI response."""

@@ -14,7 +14,6 @@ from ..contracts import (
 )
 from ..domain import (
     BackendData,
-    CommandExecutionInfo,
     CommandTranscriptEntry,
     DetachOnForkInfo,
     FinishInfo,
@@ -43,6 +42,7 @@ from ..transport import (
 )
 from .command_runner import SessionCommandRunner
 from .constants import DEFAULT_TIMEOUT_SEC, INTERRUPT_RESPONSE_TIMEOUT_SEC
+from .gdb_command import GdbCommandResult
 from .inferiors import inferior_ids, parse_inferiors_output
 from .result_utils import command_result_mapping
 from .runtime import SessionRuntime
@@ -147,7 +147,7 @@ class SessionExecutionService:
         return OperationSuccess(
             LocationExecutionInfo(
                 command=result.value.command,
-                backend_data=result.value.backend_data,
+                backend_data=result.value.to_output().backend_data,
                 location=location,
                 execution_state=self._runtime.execution_state,
                 stop_reason=event.reason if event is not None else None,
@@ -159,7 +159,7 @@ class SessionExecutionService:
 
     def execute_command(
         self, command: str, timeout_sec: int = DEFAULT_TIMEOUT_SEC
-    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+    ) -> OperationSuccess[GdbCommandResult] | OperationError:
         """Execute a GDB command and return the parsed response."""
 
         return self._command_runner.execute_command_result(command, timeout_sec)
@@ -170,7 +170,7 @@ class SessionExecutionService:
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
         *,
         wait_for_stop: bool = True,
-    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+    ) -> OperationSuccess[GdbCommandResult] | OperationError:
         """Run the program."""
         if self._transport.controller is None:
             return OperationError(message="No active GDB session")
@@ -373,7 +373,7 @@ class SessionExecutionService:
 
     def attach_process(
         self, pid: int, timeout_sec: int = DEFAULT_TIMEOUT_SEC
-    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+    ) -> OperationSuccess[GdbCommandResult] | OperationError:
         """Attach GDB to a running process."""
 
         if self._transport.controller is None:
@@ -434,7 +434,7 @@ class SessionExecutionService:
         wait_for_stop: bool = True,
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
         reverse: bool = False,
-    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+    ) -> OperationSuccess[GdbCommandResult] | OperationError:
         """Continue execution of the program, forward or backward."""
         if self._transport.controller is None:
             return OperationError(message="No active GDB session")
@@ -581,7 +581,7 @@ class SessionExecutionService:
         wait_for_stop: bool = True,
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
         reverse: bool = False,
-    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+    ) -> OperationSuccess[GdbCommandResult] | OperationError:
         """Step into the next source line, forward or backward."""
         return self._command_runner.execute_command_result(
             _exec_command("-exec-step", reverse=reverse),
@@ -595,7 +595,7 @@ class SessionExecutionService:
         wait_for_stop: bool = True,
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
         reverse: bool = False,
-    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+    ) -> OperationSuccess[GdbCommandResult] | OperationError:
         """Step over the next source line, forward or backward."""
         return self._command_runner.execute_command_result(
             _exec_command("-exec-next", reverse=reverse),
@@ -609,7 +609,7 @@ class SessionExecutionService:
         wait_for_stop: bool = True,
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
         reverse: bool = False,
-    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+    ) -> OperationSuccess[GdbCommandResult] | OperationError:
         """Step into one machine instruction, forward or backward."""
         return self._command_runner.execute_command_result(
             _exec_command("-exec-step-instruction", reverse=reverse),
@@ -623,7 +623,7 @@ class SessionExecutionService:
         wait_for_stop: bool = True,
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
         reverse: bool = False,
-    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+    ) -> OperationSuccess[GdbCommandResult] | OperationError:
         """Step over one machine instruction, forward or backward."""
         return self._command_runner.execute_command_result(
             _exec_command("-exec-next-instruction", reverse=reverse),
@@ -633,7 +633,7 @@ class SessionExecutionService:
 
     def return_from_frame(
         self, *, value: str | None = None
-    ) -> OperationSuccess[CommandExecutionInfo] | OperationError:
+    ) -> OperationSuccess[GdbCommandResult] | OperationError:
         """Force the selected frame to return, optionally with a value."""
         command = "-exec-return"
         if value:
@@ -918,7 +918,7 @@ class SessionExecutionService:
         if isinstance(result, OperationError):
             return result
 
-        payload = self._parse_inferiors_output(result.value.backend_data.console_output)
+        payload = self._parse_inferiors_output(result.value.console_output)
         self._runtime.update_inferior_inventory(
             current_inferior_id=payload.current_inferior_id,
             count=len(payload.inferiors),

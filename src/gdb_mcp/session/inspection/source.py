@@ -208,7 +208,7 @@ class InspectionSource:
         if isinstance(result, OperationError):
             return result
 
-        listed = _parse_list_output(result.value.backend_data.console_output)
+        listed = _parse_list_output(result.value.console_output)
         if not listed:
             return OperationError(message=f"Source file not found: {file_selector}")
 

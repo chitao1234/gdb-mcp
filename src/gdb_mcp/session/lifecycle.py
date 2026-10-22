@@ -32,6 +32,7 @@ from ..transport import (
 from .command_runner import SessionCommandRunner
 from .config import SessionConfig
 from .constants import DEFAULT_TIMEOUT_SEC, FILE_LOAD_TIMEOUT_SEC, INIT_COMMAND_DELAY_SEC
+from .gdb_command import command_output
 from .runtime import SessionRuntime
 
 logger = logging.getLogger(__name__)
@@ -341,7 +342,7 @@ class SessionLifecycleService:
                         result = self._command_runner.execute_command_result(
                             cmd, timeout_sec=timeout
                         )
-                        initialization_results.append(result_to_envelope(result))
+                        initialization_results.append(result_to_envelope(command_output(result)))
 
                         if cmd_lower.startswith("core-file "):
                             self._runtime.time_module.sleep(INIT_COMMAND_DELAY_SEC)
@@ -552,7 +553,7 @@ class SessionLifecycleService:
             result = self._command_runner.execute_command_result(
                 env_cmd, timeout_sec=DEFAULT_TIMEOUT_SEC
             )
-            env_output.append(result_to_envelope(result))
+            env_output.append(result_to_envelope(command_output(result)))
 
             if isinstance(result, OperationError):
                 self._cleanup_failed_start(
@@ -642,7 +643,7 @@ class SessionLifecycleService:
             logger.debug("Unable to refresh target_loaded from GDB: %s", result.message)
             return result
 
-        output = result.value.backend_data.console_output.strip()
+        output = result.value.console_output.strip()
         if not output or output == "(no output)":
             return False
 
