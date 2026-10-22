@@ -266,6 +266,25 @@ class TestRuntimeFoundations:
         worker.join(timeout=1.0)
         assert finished.is_set()
 
+    def test_runtime_snapshot_copies_history_and_selection(
+        self, session_service: SessionService
+    ) -> None:
+        runtime = session_service.runtime
+        runtime.mark_inferior_paused("breakpoint-hit")
+        runtime.mark_thread_selected(1)
+        event = StopEvent(execution_state="paused", reason="breakpoint-hit")
+        runtime.record_stop_event(event)
+
+        snapshot = runtime.snapshot(debugger_alive=True)
+        runtime.mark_inferior_running()
+        runtime.mark_thread_selected(2)
+        runtime.record_stop_event(StopEvent(execution_state="paused", reason="later"))
+
+        assert snapshot.status.execution_state == "paused"
+        assert snapshot.current_thread_id == 1
+        assert snapshot.last_stop_event is event
+        assert snapshot.stop_history == (event,)
+
     def test_status_snapshot_keeps_execution_and_inventory_together(
         self, session_service: SessionService
     ) -> None:

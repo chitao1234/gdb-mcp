@@ -117,35 +117,40 @@ class TestCaptureBundle:
     """Test capture bundle generation from one live session service."""
 
     @pytest.mark.parametrize("snapshot_has_stop", [False, True])
-    def test_capture_status_uses_snapshot_and_keeps_optional_runtime_defaults(
+    def test_capture_metadata_uses_one_runtime_snapshot(
         self,
         session_service: SessionService,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         snapshot_has_stop: bool,
     ) -> None:
-        """Manifest and result metadata must agree when a snapshot omits stop fields."""
+        """Manifest, status artifact, and result metadata describe the same stop."""
 
-        session_service.runtime.mark_inferior_paused("breakpoint-hit")
-        snapshot = SessionStatusSnapshot(
-            debugger_alive=True,
-            target_loaded=True,
-            session_state=SessionState.READY,
-            execution_state="exited",
-            stop_reason="exited-normally" if snapshot_has_stop else None,
-            stop_kind="exit" if snapshot_has_stop else None,
+        runtime = session_service.runtime
+        runtime.mark_ready()
+        runtime.mark_inferior_exited(
+            "exited-normally" if snapshot_has_stop else None,
         )
+        snapshot = runtime.status_snapshot(debugger_alive=True)
+
+        def get_threads() -> OperationSuccess[ThreadListInfo]:
+            runtime.mark_inferior_paused("breakpoint-hit")
+            runtime.mark_thread_selected(9)
+            runtime.record_stop_event(StopEvent(execution_state="paused", reason="later-stop"))
+            return OperationSuccess(ThreadListInfo(threads=[], current_thread_id=None))
+
         _stub_bundle_sections(
             monkeypatch,
             session_service,
             get_status=lambda: OperationSuccess(snapshot),
+            get_threads=get_threads,
         )
 
         result = session_service.capture_bundle(output_dir=str(tmp_path), bundle_name="status")
 
         assert isinstance(result, OperationSuccess)
-        expected_reason = "exited-normally" if snapshot_has_stop else "breakpoint-hit"
-        expected_kind = "exit" if snapshot_has_stop else "breakpoint"
+        expected_reason = snapshot.stop_reason
+        expected_kind = snapshot.stop_kind
         assert result.value.execution_state == "exited"
         assert result.value.stop_reason == expected_reason
         assert result.value.stop_kind == expected_kind
@@ -153,6 +158,9 @@ class TestCaptureBundle:
         assert manifest["execution_state"] == "exited"
         assert manifest["stop_reason"] == expected_reason
         assert manifest["stop_kind"] == expected_kind
+        assert manifest["last_stop_event"] is None
+        assert mapping(manifest["session"])["current_thread_id"] is None
+        assert result.value.last_stop_event is None
         artifact = json_object((tmp_path / "status" / "session-status.json").read_text())
         assert artifact["execution_state"] == "exited"
         assert artifact["stop_reason"] == snapshot.stop_reason
@@ -165,6 +173,7 @@ class TestCaptureBundle:
 
         session_service.runtime.mark_thread_selected(1)
         session_service.runtime.mark_frame_selected(0)
+        session_service.runtime.mark_inferior_paused("breakpoint-hit")
         session_service.runtime.record_stop_event(
             StopEvent(
                 execution_state="paused",
