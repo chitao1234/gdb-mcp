@@ -17,6 +17,7 @@ import pytest
 
 from gdb_mcp.contracts import ACTION_JUMP, ACTION_UNTIL
 from gdb_mcp.domain import (
+    InspectionLocation,
     OperationError,
     OperationResult,
     OperationSuccess,
@@ -30,7 +31,18 @@ from gdb_mcp.session.lldb_backend import LldbSbBackend
 from gdb_mcp.session.lldb_bridge import BridgeClient
 from gdb_mcp.session.lldb_bridge_types import BridgeError
 from gdb_mcp.session.protocols import OsModuleProtocol, TimeModuleProtocol
-from gdb_mcp.session.requests import ExecutionOptions, FileLineLocation, SourceContextRequest
+from gdb_mcp.session.requests import (
+    AddressLocation,
+    AddressRangeLocation,
+    CurrentLocation,
+    DisassemblyLocation,
+    DisassemblyRequest,
+    ExecutionOptions,
+    FileLineLocation,
+    FileRangeLocation,
+    FunctionLocation,
+    SourceContextRequest,
+)
 
 
 class FakeBridge:
@@ -605,6 +617,50 @@ def test_catchpoint_uses_breakpoint_native_namespace_without_duplicates() -> Non
     listed = _value(backend.list_breakpoints())
     assert [record.number for record in listed.breakpoints] == ["1", "2"]
     assert [record.type for record in listed.breakpoints] == ["breakpoint", "catchpoint"]
+
+
+@pytest.mark.parametrize(
+    ("selector", "expected"),
+    [
+        (CurrentLocation(), InspectionLocation(kind="current")),
+        (FunctionLocation("main"), InspectionLocation(kind="function", function="main")),
+        (AddressLocation("0x123"), InspectionLocation(kind="address", address="0x123")),
+        (AddressRangeLocation("0x123", "0x456"), InspectionLocation(kind="address_range")),
+        (
+            FileLineLocation("main.c", 7),
+            InspectionLocation(kind="file_line", file="main.c", fullname="main.c", line=7),
+        ),
+        (
+            FileRangeLocation("main.c", 7, 10),
+            InspectionLocation(kind="file_line", file="main.c", fullname="main.c"),
+        ),
+    ],
+)
+def test_empty_disassembly_keeps_typed_request_metadata(
+    selector: DisassemblyLocation, expected: InspectionLocation
+) -> None:
+    backend, _ = _backend()
+
+    result = _value(backend.disassemble(DisassemblyRequest(location=selector)))
+
+    assert result.location == expected
+
+
+def test_source_range_falls_back_to_typed_request_metadata() -> None:
+    backend, bridge = _backend()
+    with patch.object(bridge, "request", return_value={"lines": []}) as source_request:
+        source = _value(
+            backend.get_source_context(
+                SourceContextRequest(location=FileRangeLocation("main.c", 7, 10))
+            )
+        )
+
+    assert source.location == InspectionLocation(kind="file_range", file="main.c")
+    assert source.range.start_line == 7
+    assert source.range.end_line == 10
+    source_request.assert_called_once_with(
+        "source", file="main.c", start_line=7, end_line=10, context_before=5, context_after=5
+    )
 
 
 def test_source_and_value_enrichment_are_published() -> None:
