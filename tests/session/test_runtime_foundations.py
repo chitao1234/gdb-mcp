@@ -165,6 +165,30 @@ class TestRuntimeFoundations:
         runtime.mark_inferior_paused("breakpoint-hit")
         assert _stop_kind(session_service) == "breakpoint"
 
+    def test_refined_stop_kind_follows_its_inferior(self, session_service: SessionService) -> None:
+        runtime = session_service.runtime
+        runtime.mark_inferior_paused("breakpoint", inferior_id=1)
+        runtime.mark_inferior_paused("breakpoint", stop_kind="watchpoint", inferior_id=2)
+
+        assert _stop_kind(session_service) == "breakpoint"
+
+        runtime.mark_inferior_selected(2)
+        assert _stop_kind(session_service) == "watchpoint"
+
+        runtime.mark_inferior_paused("breakpoint", inferior_id=1)
+        assert _stop_kind(session_service) == "watchpoint"
+
+        runtime.mark_inferior_running(inferior_id=2)
+        assert _stop_kind(session_service) == "unknown"
+
+    def test_startup_discards_stop_kind_refinement(self, session_service: SessionService) -> None:
+        runtime = session_service.runtime
+        runtime.mark_inferior_paused(None, stop_kind="watchpoint")
+
+        runtime.begin_startup(SessionConfig())
+
+        assert _stop_kind(session_service) == "unknown"
+
     def test_update_inferior_inventory_reconciles_state_map(
         self, session_service: SessionService
     ) -> None:
