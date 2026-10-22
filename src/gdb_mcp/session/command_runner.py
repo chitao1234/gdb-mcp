@@ -21,7 +21,7 @@ from ..domain import (
     stop_kind_from_reason,
 )
 from ..domain.adapters import frame_record
-from ..domain.parsing import as_int, as_optional_mapping, as_text_or_number
+from ..domain.parsing import as_int, as_optional_mapping, as_text, as_text_or_number
 from ..transport import (
     MiClient,
     MiTransportResponse,
@@ -253,15 +253,8 @@ class SessionCommandRunner:
     def _update_runtime_after_command(self, command: str, parsed: ParsedMiResponse) -> None:
         """Update inferior execution state based on the parsed MI response."""
 
-        stopped_reason: str | None = None
-        exit_code: int | None = None
-        stopped_inferior_id: int | None = None
-        saw_stopped = False
-        stop_event: StopEvent | None = None
         stopped_payload: Mapping[str, object] | None = None
         saw_inferior_topology_change = False
-        stopped_thread_id: int | None = None
-        stopped_frame_level: int | None = None
         for notify in parsed.notify:
             message = notify.message
             payload = notify.payload
@@ -300,59 +293,32 @@ class SessionCommandRunner:
                     saw_inferior_topology_change = True
                 continue
 
-            if message != "stopped":
-                continue
+            if message == "stopped" and stopped_payload is None:
+                stopped_payload = payload_dict
 
-            if saw_stopped:
-                continue
+        if stopped_payload is not None:
+            if saw_inferior_topology_change:
+                self._refresh_inferior_inventory_from_gdb()
 
-            saw_stopped = True
-            stopped_payload = payload
-            if stopped_payload is not None:
-                reason_value = stopped_payload.get("reason")
-                if isinstance(reason_value, str):
-                    stopped_reason = reason_value
-                exit_code = self._parse_exit_code(stopped_payload.get("exit-code"))
-                stopped_inferior_id = self._parse_inferior_id_from_thread_group(
-                    stopped_payload.get("thread-group")
-                )
-                frame_payload = as_optional_mapping(stopped_payload.get("frame"))
-                if frame_payload is not None:
-                    stopped_frame_level = as_int(frame_payload.get("level"))
-                stopped_thread_id = as_int(stopped_payload.get("thread-id"))
+            stop_event = self._build_stop_event(command, stopped_payload)
+            if stop_event.thread_id is not None:
+                self._runtime.mark_thread_selected(stop_event.thread_id)
+            frame = stop_event.frame
+            if frame is not None and frame.level is not None:
+                self._runtime.mark_frame_selected(frame.level)
 
-        if saw_stopped and saw_inferior_topology_change:
-            self._refresh_inferior_inventory_from_gdb()
-
-        if saw_stopped:
-            if stopped_inferior_id is None:
-                stopped_inferior_id = self._runtime.current_inferior_id
-            if stopped_thread_id is not None:
-                self._runtime.mark_thread_selected(stopped_thread_id)
-            if stopped_frame_level is not None:
-                self._runtime.mark_frame_selected(stopped_frame_level)
-
-        if saw_stopped:
-            if stopped_reason in {"exited", "exited-normally", "exited-signalled"}:
+            if stop_event.execution_state == "exited":
                 self._runtime.mark_inferior_exited(
-                    stopped_reason,
-                    exit_code,
-                    inferior_id=stopped_inferior_id,
+                    stop_event.reason,
+                    stop_event.exit_code,
+                    inferior_id=stop_event.inferior_id,
                 )
             else:
                 self._runtime.mark_inferior_paused(
-                    stopped_reason,
-                    inferior_id=stopped_inferior_id,
+                    stop_event.reason,
+                    inferior_id=stop_event.inferior_id,
                 )
-            stop_event = self._build_stop_event(
-                command,
-                stopped_payload,
-                stopped_reason,
-                exit_code,
-                stopped_inferior_id,
-            )
-            if stop_event is not None:
-                self._runtime.record_stop_event(stop_event)
+            self._runtime.record_stop_event(stop_event)
         elif parsed.result_class == "running":
             self._runtime.mark_inferior_running(inferior_id=self._runtime.current_inferior_id)
 
@@ -516,17 +482,17 @@ class SessionCommandRunner:
     def _build_stop_event(
         self,
         command: str,
-        payload: Mapping[str, object] | None,
-        stopped_reason: str | None,
-        exit_code: int | None,
-        inferior_id: int | None,
+        payload: Mapping[str, object],
     ) -> StopEvent:
         """Build a structured stop event from one MI stopped notification."""
 
-        payload_mapping: StructuredPayload = {}
-        if payload is not None:
-            payload_mapping = payload_to_mapping(payload)
+        payload_mapping = payload_to_mapping(payload)
 
+        stopped_reason = as_text(payload_mapping.get("reason"))
+        exit_code = self._parse_exit_code(payload_mapping.get("exit-code"))
+        inferior_id = self._parse_inferior_id_from_thread_group(payload_mapping.get("thread-group"))
+        if inferior_id is None:
+            inferior_id = self._runtime.current_inferior_id
         thread_id = as_int(payload_mapping.get("thread-id"))
         frame = as_optional_mapping(payload_mapping.get("frame"))
         signal_name = as_text_or_number(payload_mapping.get("signal-name"))
