@@ -5,19 +5,21 @@ from __future__ import annotations
 import pytest
 
 from gdb_mcp.domain import (
-    BackendData,
-    CommandExecutionInfo,
     OperationSuccess,
     StructuredPayload,
 )
+from gdb_mcp.session.gdb_command import GdbCommandResult
 from gdb_mcp.session.result_utils import command_result_mapping
+from gdb_mcp.transport.mi_parser import parse_mi_responses
 
 
-def _command_result(data: StructuredPayload) -> OperationSuccess[CommandExecutionInfo]:
+def _command_result(data: StructuredPayload) -> OperationSuccess[GdbCommandResult]:
     return OperationSuccess(
-        CommandExecutionInfo(
-            command="-thread-info",
-            backend_data=BackendData(debugger="gdb", console_output="", data=data),
+        GdbCommandResult(
+            "-thread-info",
+            parse_mi_responses(
+                [{"type": "result", "message": "done", "payload": data.get("result")}]
+            ),
         )
     )
 

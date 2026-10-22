@@ -9,11 +9,11 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 
 from gdb_mcp.domain import (
-    CommandExecutionInfo,
     OperationError,
     OperationResult,
     result_to_mapping,
 )
+from gdb_mcp.session.gdb_command import GdbCommandResult
 from gdb_mcp.session.service import SessionService
 from gdb_mcp.transport.protocols import GdbControllerProtocol
 from tests.support import gdb_backend, sequence, text
@@ -334,9 +334,7 @@ class TestLifecycleApi:
     ) -> None:
         """Environment setup failures should fail startup instead of reporting READY."""
 
-        def fail_environment(
-            command: str, **kwargs: object
-        ) -> OperationResult[CommandExecutionInfo]:
+        def fail_environment(command: str, **kwargs: object) -> OperationResult[GdbCommandResult]:
             del kwargs
             if command.startswith("set environment "):
                 return OperationError(message="Permission denied for environment setup")

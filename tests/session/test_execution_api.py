@@ -10,8 +10,9 @@ import pytest
 
 from gdb_mcp.contracts import ACTION_JUMP, ACTION_UNTIL
 from gdb_mcp.domain import OperationSuccess, StopEvent, payload_to_mapping, result_to_mapping
+from gdb_mcp.session.gdb_command import GdbCommandResult
 from gdb_mcp.session.service import SessionService
-from gdb_mcp.transport.mi_models import MiTransportResponse
+from gdb_mcp.transport.mi_models import MiTransportResponse, ParsedMiResponse
 from gdb_mcp.transport.protocols import GdbControllerProtocol
 from tests.support import (
     attach_controller,
@@ -778,7 +779,9 @@ class TestExecutionApi:
         with patch.object(
             gdb_backend(session)._command_runner, "execute_command_result"
         ) as mock_execute:
-            mock_execute.return_value = object()
+            mock_execute.return_value = OperationSuccess(
+                GdbCommandResult("info threads", ParsedMiResponse())
+            )
             session.execute_command("info threads", timeout_sec=9)
 
         mock_execute.assert_called_once_with("info threads", 9)

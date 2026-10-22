@@ -11,18 +11,17 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gdb_mcp.contracts import DEBUGGER_GDB
 from gdb_mcp.domain import (
-    BackendData,
-    CommandExecutionInfo,
     OperationResult,
     OperationSuccess,
     StructuredPayload,
     result_to_mapping,
 )
 from gdb_mcp.session.factory import create_default_session_service
+from gdb_mcp.session.gdb_command import GdbCommandResult
 from gdb_mcp.session.service import SessionService
 from gdb_mcp.transport.mi_models import MiRecord, MiTransportResponse
+from gdb_mcp.transport.mi_parser import parse_mi_responses
 from gdb_mcp.transport.protocols import (
     ControllerIoManagerProtocol,
     GdbControllerFactoryProtocol,
@@ -67,7 +66,7 @@ class CommandResultBuilder(Protocol):
         *,
         result: StructuredPayload | None = None,
         output: str | None = None,
-    ) -> OperationSuccess[CommandExecutionInfo]: ...
+    ) -> OperationSuccess[GdbCommandResult]: ...
 
 
 class ScriptedSessionBuilder(Protocol):
@@ -236,14 +235,19 @@ def command_result() -> CommandResultBuilder:
         *,
         result: StructuredPayload | None = None,
         output: str | None = None,
-    ) -> OperationSuccess[CommandExecutionInfo]:
+    ) -> OperationSuccess[GdbCommandResult]:
         return OperationSuccess(
-            CommandExecutionInfo(
-                command=command,
-                backend_data=BackendData(
-                    debugger=DEBUGGER_GDB,
-                    console_output="" if output is None else output,
-                    data={} if result is None else result,
+            GdbCommandResult(
+                command,
+                parse_mi_responses(
+                    [
+                        {"type": "console", "payload": output or ""},
+                        {
+                            "type": "result",
+                            "message": "done",
+                            "payload": (result or {}).get("result"),
+                        },
+                    ]
                 ),
             )
         )
@@ -316,8 +320,8 @@ class StartHarness:
         initial_output: list[dict[str, object]] | None = None,
         probe_target_loaded: bool | None = True,
         execute: (
-            Callable[..., OperationResult[CommandExecutionInfo]]
-            | list[OperationResult[CommandExecutionInfo]]
+            Callable[..., OperationResult[GdbCommandResult]]
+            | list[OperationResult[GdbCommandResult]]
             | None
         ) = None,
         controller_side_effect: BaseException | None = None,
@@ -396,9 +400,7 @@ class StartHarness:
             ]
         )
 
-    def _record_execute(
-        self, command: str, **kwargs: object
-    ) -> OperationSuccess[CommandExecutionInfo]:
+    def _record_execute(self, command: str, **kwargs: object) -> OperationSuccess[GdbCommandResult]:
         del kwargs
         self.executed.append(command)
         return self.maker.command_result(command, output="")

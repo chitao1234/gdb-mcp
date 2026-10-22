@@ -5,10 +5,10 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from gdb_mcp.domain import (
-    CommandExecutionInfo,
     OperationSuccess,
     result_to_mapping,
 )
+from gdb_mcp.session.gdb_command import GdbCommandResult
 from gdb_mcp.session.service import SessionService
 from tests.support import dig, gdb_backend, text
 
@@ -74,7 +74,7 @@ class TestSessionErrorPaths:
     ) -> None:
         """Breakpoint creation without MI result data should fail clearly."""
 
-        def mock_execute(command: str, **kwargs: object) -> OperationSuccess[CommandExecutionInfo]:
+        def mock_execute(command: str, **kwargs: object) -> OperationSuccess[GdbCommandResult]:
             del kwargs
             return command_result(command, result={"result": None})
 
