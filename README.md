@@ -57,7 +57,8 @@ a session id.
 Stop kinds follow the selected inferior, including watchpoint refinements.
 Each entry in session status `inferior_states` also carries its own `stop_kind`.
 LLDB inferior queries preserve known stop details when the inventory omits them
-and report running targets as running. Repeated status reads record each LLDB
+and report running targets as running. A reported reason or kind change clears
+the previous stop's crash detail. Repeated status reads record each LLDB
 stop once per process and inferior; restarting a session resets that identity.
 Stop and interrupt operations use the same failure classification as other tools.
 

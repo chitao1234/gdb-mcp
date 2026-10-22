@@ -609,7 +609,9 @@ Use `debugger="gdb"` with `rr_replay` when reverse execution is required.
 
 Inferior inventory reports the process execution state and preserves known stop
 details when its records omit them. A transition to running or not started clears
-the previous stop. Status polling records a stop once per process and inferior;
+the previous stop. A reported stop reason or kind change also clears stale
+`state_detail="crashed"`; omitted or unchanged stop fields preserve it.
+Status polling records a stop once per process and inferior;
 starting the session again resets stop identity. Unfamiliar execution states
 become `unknown` in both status output and the cached runtime state.
 
