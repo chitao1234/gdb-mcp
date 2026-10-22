@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import Callable
 from typing import TypeVar, cast
 from unittest.mock import patch
 
@@ -21,6 +22,7 @@ from gdb_mcp.domain import (
     OperationSuccess,
     StopEvent,
 )
+from gdb_mcp.domain.errors import DebuggerDecodeError
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.lldb_backend import LldbSbBackend
 from gdb_mcp.session.lldb_bridge import BridgeClient
@@ -202,6 +204,45 @@ def _backend() -> tuple[LldbSbBackend, FakeBridge]:
     bridge = FakeBridge()
     backend._client = cast(BridgeClient, bridge)
     return backend, bridge
+
+
+@pytest.mark.parametrize(
+    ("decoder", "payload"),
+    [
+        (LldbSbBackend._mapping, "not a mapping"),
+        (LldbSbBackend._mappings, "not a list"),
+        (LldbSbBackend._mappings, [{"ok": True}, "not a mapping"]),
+        (lambda value: LldbSbBackend._text({"field": value}, "field"), 1),
+        (lambda value: LldbSbBackend._integer({"field": value}, "field"), "1"),
+    ],
+)
+def test_lldb_decoders_reject_malformed_values(
+    decoder: Callable[[object], object], payload: object
+) -> None:
+    with pytest.raises(DebuggerDecodeError):
+        decoder(payload)
+
+
+def test_lldb_add_inferior_rejects_missing_id() -> None:
+    backend, _ = _backend()
+    with (
+        patch.object(
+            backend,
+            "_request",
+            side_effect=[{}, {"targets": [], "current_inferior_id": None}],
+        ),
+        pytest.raises(DebuggerDecodeError, match="inferior_id"),
+    ):
+        backend.add_inferior()
+
+
+def test_lldb_memory_rejects_missing_read_count() -> None:
+    backend, _ = _backend()
+    with (
+        patch.object(backend, "_request", return_value={"address": "0x10", "data": "00"}),
+        pytest.raises(DebuggerDecodeError, match="read count"),
+    ):
+        backend.read_memory("0x10", 1)
 
 
 @pytest.mark.parametrize("action", [ACTION_JUMP, ACTION_UNTIL])
