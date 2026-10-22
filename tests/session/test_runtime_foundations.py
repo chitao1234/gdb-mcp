@@ -15,6 +15,10 @@ def _stop_kind(session: SessionService) -> str:
     return session.runtime.stop_kind
 
 
+def _execution_state(session: SessionService) -> str:
+    return session.runtime.execution_state
+
+
 class TestRuntimeFoundations:
     """Test bounded runtime state used by higher-level workflow tools."""
 
@@ -95,6 +99,56 @@ class TestRuntimeFoundations:
         assert summaries[1].execution_state == "exited"
         assert "is_current" not in summaries[1].to_payload()
         assert runtime.current_inferior_id == 2
+
+    def test_updates_to_an_unselected_inferior_do_not_change_selected_status(
+        self, session_service: SessionService
+    ) -> None:
+        runtime = session_service.runtime
+        runtime.mark_inferior_paused("breakpoint-hit", inferior_id=1)
+        runtime.mark_inferior_exited("exited-normally", 7, inferior_id=2)
+
+        assert _execution_state(session_service) == "paused"
+        assert runtime.stop_reason == "breakpoint-hit"
+        assert runtime.exit_code is None
+
+        runtime.mark_inferior_selected(2)
+        runtime.mark_inferior_running(inferior_id=1)
+
+        assert _execution_state(session_service) == "exited"
+        assert runtime.stop_reason == "exited-normally"
+        assert runtime.exit_code == 7
+
+    def test_selected_state_survives_inventory_refresh_and_clears_with_last_inferior(
+        self, session_service: SessionService
+    ) -> None:
+        runtime = session_service.runtime
+        runtime.mark_inferior_exited("exited-normally", 0, inferior_id=2)
+        runtime.update_inferior_inventory(current_inferior_id=2, count=1, inferior_ids=(2,))
+
+        assert _execution_state(session_service) == "exited"
+        assert runtime.exit_code == 0
+
+        runtime.remove_inferior(2)
+
+        assert runtime.current_inferior_id is None
+        assert _execution_state(session_service) == "unknown"
+        assert runtime.stop_reason is None
+        assert runtime.exit_code is None
+
+    def test_startup_discards_previous_inferior_execution_state(
+        self, session_service: SessionService
+    ) -> None:
+        runtime = session_service.runtime
+        runtime.mark_inferior_exited("exited-normally", 7, inferior_id=2)
+
+        runtime.begin_startup(SessionConfig())
+        runtime.mark_ready()
+
+        assert runtime.current_inferior_id == 1
+        assert runtime.execution_state == "unknown"
+        assert runtime.stop_reason is None
+        assert runtime.exit_code is None
+        assert [state.inferior_id for state in runtime.inferiors_state_summary()] == [1]
 
     def test_a_refined_stop_kind_belongs_to_its_reason(
         self, session_service: SessionService
