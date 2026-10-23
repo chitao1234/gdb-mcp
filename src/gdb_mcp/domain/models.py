@@ -433,6 +433,7 @@ class ThreadListInfo(StructuredOutput):
 
     threads: list[ThreadRecord]
     current_thread_id: str | None
+    truncated: bool = False
 
 
 @dataclass(slots=True, frozen=True)

@@ -191,7 +191,11 @@ def build_tool_definitions() -> list[Tool]:
         ),
         Tool(
             name=TOOL_CONTEXT_QUERY,
-            description="List threads (goroutines for Delve) or inspect backtraces and frame information.",
+            description=(
+                "List threads (goroutines for Delve) or inspect backtraces and frame information. "
+                "Delve supports channel-wait filters and pending deferred calls. "
+                "Thread lists accept max_results and report truncation."
+            ),
             outputSchema=public_output_schema(TOOL_CONTEXT_QUERY),
             inputSchema=public_input_schema(ContextQueryArgs),
         ),
@@ -205,7 +209,8 @@ def build_tool_definitions() -> list[Tool]:
             name=TOOL_INSPECT_QUERY,
             description=(
                 "Evaluate expressions and inspect variables, registers, memory, source context, "
-                "or disassembly without using raw debugger commands."
+                "or disassembly without using raw debugger commands. Delve evaluate/variables "
+                "accept a frame-local deferred_call index for targets built before Go 1.17."
             ),
             outputSchema=public_output_schema(TOOL_INSPECT_QUERY),
             inputSchema=public_input_schema(

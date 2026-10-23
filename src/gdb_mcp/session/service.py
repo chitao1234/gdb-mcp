@@ -58,9 +58,11 @@ from .config import SessionConfig
 from .constants import DEFAULT_TIMEOUT_SEC
 from .requests import (
     DEFAULT_EXECUTION_OPTIONS,
+    DEFAULT_THREAD_QUERY,
     DisassemblyRequest,
     ExecutionOptions,
     SourceContextRequest,
+    ThreadQuery,
 )
 from .runtime import SessionRuntime
 from .state import SessionState
@@ -348,10 +350,12 @@ class SessionService:
 
         return self._backend.call_function(function_call=function_call, timeout_sec=timeout_sec)
 
-    def get_threads(self) -> OperationSuccess[ThreadListInfo] | OperationError:
+    def get_threads(
+        self, query: ThreadQuery = DEFAULT_THREAD_QUERY
+    ) -> OperationSuccess[ThreadListInfo] | OperationError:
         """Delegate thread inspection to the debugger backend."""
 
-        return self._backend.get_threads()
+        return self._backend.get_threads(query)
 
     def list_inferiors(self) -> OperationSuccess[InferiorListInfo] | OperationError:
         """Delegate inferior inventory inspection to the debugger backend."""
@@ -373,11 +377,13 @@ class SessionService:
         return self._backend.select_thread(thread_id=thread_id)
 
     def get_backtrace(
-        self, thread_id: int | None = None, max_frames: int = 100
+        self, thread_id: int | None = None, max_frames: int = 100, *, include_defers: bool = False
     ) -> OperationSuccess[BacktraceInfo] | OperationError:
         """Delegate backtrace retrieval to the debugger backend."""
 
-        return self._backend.get_backtrace(thread_id=thread_id, max_frames=max_frames)
+        return self._backend.get_backtrace(
+            thread_id=thread_id, max_frames=max_frames, include_defers=include_defers
+        )
 
     def get_frame_info(
         self, *, thread_id: int | None = None, frame: int | None = None
@@ -401,12 +407,17 @@ class SessionService:
         return self._backend.select_frame(frame_number=frame_number)
 
     def evaluate_expression(
-        self, expression: str, thread_id: int | None = None, frame: int | None = None
+        self,
+        expression: str,
+        thread_id: int | None = None,
+        frame: int | None = None,
+        *,
+        deferred_call: int | None = None,
     ) -> OperationSuccess[ExpressionValueInfo] | OperationError:
         """Delegate expression evaluation to the debugger backend."""
 
         return self._backend.evaluate_expression(
-            expression=expression, thread_id=thread_id, frame=frame
+            expression=expression, thread_id=thread_id, frame=frame, deferred_call=deferred_call
         )
 
     def read_memory(
@@ -417,11 +428,13 @@ class SessionService:
         return self._backend.read_memory(address=address, count=count, offset=offset)
 
     def get_variables(
-        self, thread_id: int | None = None, frame: int = 0
+        self, thread_id: int | None = None, frame: int = 0, *, deferred_call: int | None = None
     ) -> OperationSuccess[VariablesInfo] | OperationError:
         """Delegate local-variable inspection to the inspection service."""
 
-        return self._backend.get_variables(thread_id=thread_id, frame=frame)
+        return self._backend.get_variables(
+            thread_id=thread_id, frame=frame, deferred_call=deferred_call
+        )
 
     def get_source_context(
         self, request: SourceContextRequest

@@ -45,6 +45,7 @@ from .delve_values import (
 )
 from .inspection.register_classes import guess_register_family, is_vector_register
 from .requests import (
+    DEFAULT_THREAD_QUERY,
     AddressLocation,
     AddressRangeLocation,
     DisassemblyLocation,
@@ -53,6 +54,7 @@ from .requests import (
     FileRangeLocation,
     FunctionLocation,
     SourceContextRequest,
+    ThreadQuery,
 )
 from .runtime import SessionRuntime
 
@@ -64,26 +66,78 @@ class DelveInspection:
         self.runtime = runtime
         self._bridge = bridge
         self.memory_read_limit = 1000
+        self.channel_queries_supported = False
+        self.deferred_arguments_supported = False
 
-    def scope(self, thread_id: int | None = None, frame: int | None = None) -> dict[str, object]:
+    def scope(
+        self,
+        thread_id: int | None = None,
+        frame: int | None = None,
+        *,
+        deferred_call: int | None = None,
+    ) -> dict[str, object]:
         self._bridge._require_client()
         if self.runtime.execution_state == "running":
             raise DelveRpcError("Pause the target before inspecting it", "inferior_running")
-        return {
+        scope: dict[str, object] = {
             "GoroutineID": (
                 thread_id if thread_id is not None else self.runtime.current_thread_id or -1
             ),
             "Frame": frame if frame is not None else self.runtime.current_frame or 0,
         }
+        if deferred_call is not None:
+            if deferred_call < 1:
+                raise DelveRpcError("deferred_call must be positive", "validation_error")
+            if not self.deferred_arguments_supported:
+                raise DelveRpcError(
+                    "Delve cannot reliably inspect deferred arguments in targets built with Go 1.17 or later",
+                    "unsupported_operation",
+                )
+            scope["DeferredCall"] = deferred_call
+        return scope
 
     @_operation
-    def get_threads(self) -> OperationSuccess[ThreadListInfo]:
-        self.scope()
+    def get_threads(
+        self, query: ThreadQuery = DEFAULT_THREAD_QUERY
+    ) -> OperationSuccess[ThreadListInfo]:
+        scope = self.scope(query.thread_id, query.frame)
+        arguments: dict[str, object] = {}
+        if query.waiting_on_channel is not None:
+            if not self.channel_queries_supported:
+                raise DelveRpcError(
+                    "Channel-wait queries require Delve 1.21.1 or later", "unsupported_operation"
+                )
+            channel = self._variable(query.waiting_on_channel, query.thread_id, query.frame)
+            if integer(channel.get("kind"), 0) != 18:  # reflect.Chan
+                raise DelveRpcError(
+                    "waiting_on_channel must evaluate to a channel", "validation_error"
+                )
+            arguments = {
+                "Filters": [{"Kind": 8, "Arg": query.waiting_on_channel, "Negated": False}],
+                "EvalScope": scope,
+            }
         threads: list[ThreadRecord] = []
+        seen: set[int] = set()
         start = 0
+        truncated = False
         while True:
-            response = self._bridge._request("ListGoroutines", {"Start": start, "Count": 1000})
-            for goroutine in mappings(response.get("Goroutines")):
+            count = (
+                min(1000, query.max_results + 1 - len(threads))
+                if query.max_results is not None
+                else 1000
+            )
+            response = self._bridge._request(
+                "ListGoroutines", {**arguments, "Start": start, "Count": count}
+            )
+            page = mappings(response.get("Goroutines"))
+            for goroutine in page:
+                goroutine_id = integer(goroutine.get("id"))
+                if goroutine_id in seen:
+                    continue
+                seen.add(goroutine_id)
+                if query.max_results is not None and len(threads) >= query.max_results:
+                    truncated = True
+                    break
                 location = mapping(goroutine.get("userCurrentLoc")) or mapping(
                     goroutine.get("currentLoc")
                 )
@@ -99,6 +153,14 @@ class DelveInspection:
                     }
                 )
                 threads.append(ThreadRecord.from_payload(values))
+            if truncated:
+                break
+            if query.waiting_on_channel is not None:
+                # Channel queues can contain one goroutine more than Count and report Nextg=-1.
+                if len(page) < count:
+                    break
+                start += len(page)
+                continue
             next_start = integer(response.get("Nextg"), -1)
             if next_start < 0:
                 break
@@ -113,23 +175,29 @@ class DelveInspection:
                     if self.runtime.current_thread_id is not None
                     else None
                 ),
+                truncated=truncated,
             )
         )
 
-    def _stack(self, thread_id: int | None, max_frames: int) -> list[dict[str, object]]:
+    def _stack(
+        self, thread_id: int | None, max_frames: int, *, include_defers: bool = False
+    ) -> list[dict[str, object]]:
         scope = self.scope(thread_id)
         response = self._bridge._request(
-            "Stacktrace", {"Id": scope["GoroutineID"], "Depth": max_frames}
+            "Stacktrace",
+            {"Id": scope["GoroutineID"], "Depth": max_frames, "Defers": include_defers},
         )
         return mappings(response.get("Locations"))[:max_frames]
 
     @_operation
     def get_backtrace(
-        self, thread_id: int | None = None, max_frames: int = 100
+        self, thread_id: int | None = None, max_frames: int = 100, *, include_defers: bool = False
     ) -> OperationSuccess[BacktraceInfo]:
         frames = [
-            frame_record(location, index)
-            for index, location in enumerate(self._stack(thread_id, max_frames))
+            frame_record(location, index, include_defers=include_defers)
+            for index, location in enumerate(
+                self._stack(thread_id, max_frames, include_defers=include_defers)
+            )
         ]
         return OperationSuccess(
             BacktraceInfo(
@@ -173,12 +241,17 @@ class DelveInspection:
         )
 
     def _variable(
-        self, expression: str, thread_id: int | None = None, frame: int | None = None
+        self,
+        expression: str,
+        thread_id: int | None = None,
+        frame: int | None = None,
+        *,
+        deferred_call: int | None = None,
     ) -> dict[str, object]:
         response = self._bridge._request(
             "Eval",
             {
-                "Scope": self.scope(thread_id, frame),
+                "Scope": self.scope(thread_id, frame, deferred_call=deferred_call),
                 "Expr": expression,
                 "Cfg": VARIABLE_LOAD_CONFIG,
             },
@@ -192,9 +265,14 @@ class DelveInspection:
 
     @_operation
     def evaluate_expression(
-        self, expression: str, thread_id: int | None = None, frame: int | None = None
+        self,
+        expression: str,
+        thread_id: int | None = None,
+        frame: int | None = None,
+        *,
+        deferred_call: int | None = None,
     ) -> OperationSuccess[ExpressionValueInfo]:
-        variable = self._variable(expression, thread_id, frame)
+        variable = self._variable(expression, thread_id, frame, deferred_call=deferred_call)
         return OperationSuccess(
             ExpressionValueInfo(
                 expression, variable_value(variable), type=text(variable.get("type"))
@@ -203,10 +281,10 @@ class DelveInspection:
 
     @_operation
     def get_variables(
-        self, thread_id: int | None = None, frame: int = 0
+        self, thread_id: int | None = None, frame: int = 0, *, deferred_call: int | None = None
     ) -> OperationSuccess[VariablesInfo]:
         arguments: dict[str, object] = {
-            "Scope": self.scope(thread_id, frame),
+            "Scope": self.scope(thread_id, frame, deferred_call=deferred_call),
             "Cfg": VARIABLE_LOAD_CONFIG,
         }
         locals_response = self._bridge._request("ListLocalVars", arguments)

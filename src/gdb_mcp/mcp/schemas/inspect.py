@@ -22,11 +22,11 @@ from .common import (
     _coerce_int_like,
     _normalize_optional_text,
 )
-from .selectors import ThreadFrameContextArgs
+from .selectors import EvaluationContextArgs, ThreadFrameContextArgs
 
 
 class InspectEvaluateQueryArgs(StrictArgsModel):
-    context: ThreadFrameContextArgs | None = Field(
+    context: EvaluationContextArgs | None = Field(
         None, description="Optional thread/frame override"
     )
     expression: str = Field(..., description="Expression to evaluate")
@@ -41,7 +41,7 @@ class InspectEvaluateQueryArgs(StrictArgsModel):
 
 
 class InspectVariablesQueryArgs(StrictArgsModel):
-    context: ThreadFrameContextArgs | None = Field(
+    context: EvaluationContextArgs | None = Field(
         None, description="Optional thread/frame override"
     )
 

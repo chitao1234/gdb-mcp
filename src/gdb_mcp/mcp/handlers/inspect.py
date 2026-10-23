@@ -101,6 +101,9 @@ def _handle_inspect_query(
                 evaluate_query.expression,
                 thread_id=thread_id,
                 frame=frame,
+                deferred_call=(
+                    evaluate_query.context.deferred_call if evaluate_query.context else None
+                ),
             )
         case InspectVariablesAction():
             variables_query = action_args.query
@@ -108,6 +111,9 @@ def _handle_inspect_query(
             return session.get_variables(
                 thread_id=thread_id,
                 frame=0 if frame is None else frame,
+                deferred_call=(
+                    variables_query.context.deferred_call if variables_query.context else None
+                ),
             )
         case InspectRegistersAction():
             registers_query = action_args.query

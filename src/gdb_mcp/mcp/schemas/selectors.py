@@ -48,3 +48,11 @@ class ThreadFrameContextArgs(StrictArgsModel):
 
     thread_id: int | None = Field(None, gt=0, description="Optional thread override")
     frame: int | None = Field(None, ge=0, description="Optional frame override")
+
+
+class EvaluationContextArgs(ThreadFrameContextArgs):
+    """Evaluation scope, optionally within a pending Go deferred call."""
+
+    deferred_call: int | None = Field(
+        None, gt=0, description="One-based deferred-call index within the specified frame (Delve)"
+    )

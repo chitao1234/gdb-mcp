@@ -16,6 +16,7 @@ from gdb_mcp.mcp.schemas import (
 from ..namespace import NamespaceLike, ParsedOptions, one_of, snapshot
 from ..parsers import (
     CliUsageError,
+    add_boolean_flag,
     validate_model,
 )
 from .common import (
@@ -28,9 +29,9 @@ from .common import (
 def _validate_context_query_input(action: str, values: ParsedOptions) -> None:
     invalid_flags: list[str] = []
     if action == "threads":
-        if values.get("thread_id") is not None:
+        if values.get("thread_id") is not None and values.get("waiting_on_channel") is None:
             invalid_flags.append("--thread-id")
-        if values.get("frame") is not None:
+        if values.get("frame") is not None and values.get("waiting_on_channel") is None:
             invalid_flags.append("--frame")
         if values.get("max_frames") is not None:
             invalid_flags.append("--max-frames")
@@ -40,6 +41,13 @@ def _validate_context_query_input(action: str, values: ParsedOptions) -> None:
     elif action == "frame":
         if values.get("max_frames") is not None:
             invalid_flags.append("--max-frames")
+
+    if action != "threads":
+        for name in ("waiting_on_channel", "max_results"):
+            if values.get(name) is not None:
+                invalid_flags.append("--" + name.replace("_", "-"))
+    if action != "backtrace" and values.get("include_defers") is not None:
+        invalid_flags.append("--include-defers")
 
     _raise_invalid_action_flags(action, invalid_flags)
 
@@ -66,6 +74,11 @@ def _configure_context_query(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--thread-id", type=int, default=None)
     parser.add_argument("--frame", type=int, default=None)
     parser.add_argument("--max-frames", type=int, default=None)
+    parser.add_argument("--waiting-on-channel", default=None)
+    parser.add_argument("--max-results", type=int, default=None)
+    add_boolean_flag(
+        parser, "include_defers", help_text="Include deferred calls in backtraces", optional=True
+    )
 
 
 def _build_context_query(namespace: NamespaceLike) -> ContextQueryArgs:
@@ -74,9 +87,16 @@ def _build_context_query(namespace: NamespaceLike) -> ContextQueryArgs:
     _validate_context_query_input(action, values)
     query = {
         name: value
-        for name in ("thread_id", "frame", "max_frames")
+        for name in ("max_results", "waiting_on_channel", "include_defers", "max_frames")
         if (value := values.get(name)) is not None
     }
+    context = {
+        name: value for name in ("thread_id", "frame") if (value := values.get(name)) is not None
+    }
+    if action == "threads" and context:
+        query["context"] = context
+    else:
+        query.update(context)
     payload: dict[str, object] = {"session_id": values.get("session_id"), "action": action}
     if query:
         payload["query"] = query

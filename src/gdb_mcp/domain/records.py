@@ -50,15 +50,30 @@ class RecordModel(BaseModel):
         return self.model_dump(by_alias=True, exclude_unset=True)
 
 
-class FrameRecord(RecordModel):
-    """One stack frame."""
+class CodeLocationRecord(RecordModel):
+    """A code location reported by the debugger."""
 
-    level: int | None = None
     addr: str | None = None
     func: str | None = None
     file: str | None = None
     fullname: str | None = None
     line: int | None = None
+
+
+class DeferredCallRecord(RecordModel):
+    """One pending deferred call, indexed within its owning frame."""
+
+    index: int = Field(gt=0)
+    function: CodeLocationRecord | None = None
+    registered_at: CodeLocationRecord | None = None
+    unreadable: str | None = None
+
+
+class FrameRecord(CodeLocationRecord):
+    """One stack frame."""
+
+    level: int | None = None
+    defers: list[DeferredCallRecord] | None = None
 
 
 class ThreadRecord(RecordModel):

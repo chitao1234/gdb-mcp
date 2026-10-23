@@ -54,9 +54,11 @@ from .lifecycle import SessionLifecycleService
 from .protocols import OsModuleProtocol, TimeModuleProtocol
 from .requests import (
     DEFAULT_EXECUTION_OPTIONS,
+    DEFAULT_THREAD_QUERY,
     DisassemblyRequest,
     ExecutionOptions,
     SourceContextRequest,
+    ThreadQuery,
 )
 from .runtime import SessionRuntime
 
@@ -305,10 +307,27 @@ class GdbMiBackend:
 
         return self._execution.call_function(function_call, timeout_sec)
 
-    def get_threads(self) -> OperationSuccess[ThreadListInfo] | OperationError:
+    def get_threads(
+        self, query: ThreadQuery = DEFAULT_THREAD_QUERY
+    ) -> OperationSuccess[ThreadListInfo] | OperationError:
         """Delegate thread inspection to the inspection service."""
 
-        return self._inspection.get_threads()
+        if query.waiting_on_channel is not None:
+            return OperationError(
+                "Channel-wait queries require Delve", code="unsupported_operation"
+            )
+        result = self._inspection.get_threads()
+        if isinstance(result, OperationSuccess) and query.max_results is not None:
+            value = result.value
+            return OperationSuccess(
+                ThreadListInfo(
+                    value.threads[: query.max_results],
+                    value.current_thread_id,
+                    truncated=len(value.threads) > query.max_results,
+                ),
+                warnings=result.warnings,
+            )
+        return result
 
     def list_inferiors(self) -> OperationSuccess[InferiorListInfo] | OperationError:
         """Delegate inferior inventory inspection to the inspection service."""
@@ -330,10 +349,14 @@ class GdbMiBackend:
         return self._inspection.select_thread(thread_id)
 
     def get_backtrace(
-        self, thread_id: int | None = None, max_frames: int = 100
+        self, thread_id: int | None = None, max_frames: int = 100, *, include_defers: bool = False
     ) -> OperationSuccess[BacktraceInfo] | OperationError:
         """Delegate backtrace retrieval to the inspection service."""
 
+        if include_defers:
+            return OperationError(
+                "Deferred-call inspection requires Delve", code="unsupported_operation"
+            )
         return self._inspection.get_backtrace(thread_id, max_frames)
 
     def get_frame_info(
@@ -365,9 +388,15 @@ class GdbMiBackend:
         expression: str,
         thread_id: int | None = None,
         frame: int | None = None,
+        *,
+        deferred_call: int | None = None,
     ) -> OperationSuccess[ExpressionValueInfo] | OperationError:
         """Delegate expression evaluation to the inspection service."""
 
+        if deferred_call is not None:
+            return OperationError(
+                "Deferred-call inspection requires Delve", code="unsupported_operation"
+            )
         return self._inspection.evaluate_expression(expression, thread_id=thread_id, frame=frame)
 
     def read_memory(
@@ -382,10 +411,14 @@ class GdbMiBackend:
         return self._inspection.read_memory(address, count, offset=offset)
 
     def get_variables(
-        self, thread_id: int | None = None, frame: int = 0
+        self, thread_id: int | None = None, frame: int = 0, *, deferred_call: int | None = None
     ) -> OperationSuccess[VariablesInfo] | OperationError:
         """Delegate local-variable inspection to the inspection service."""
 
+        if deferred_call is not None:
+            return OperationError(
+                "Deferred-call inspection requires Delve", code="unsupported_operation"
+            )
         return self._inspection.get_variables(thread_id, frame)
 
     def get_source_context(

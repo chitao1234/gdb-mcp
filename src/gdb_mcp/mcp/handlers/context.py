@@ -10,6 +10,7 @@ from ...domain import (
     ThreadListInfo,
     ThreadSelectionInfo,
 )
+from ...session.requests import ThreadQuery
 from ...session.service import SessionService
 from ..schemas import (
     ContextManageArgs,
@@ -30,11 +31,20 @@ def _handle_context_query(
     action_args = args.root
     match action_args:
         case ContextQueryThreadsAction():
-            return session.get_threads()
+            query = action_args.query
+            return session.get_threads(
+                ThreadQuery(
+                    waiting_on_channel=query.waiting_on_channel,
+                    thread_id=query.context.thread_id if query.context else None,
+                    frame=query.context.frame if query.context else None,
+                    max_results=query.max_results,
+                )
+            )
         case ContextQueryBacktraceAction():
             return session.get_backtrace(
                 thread_id=action_args.query.thread_id,
                 max_frames=action_args.query.max_frames,
+                include_defers=action_args.query.include_defers,
             )
         case ContextQueryFrameAction():
             return session.get_frame_info(

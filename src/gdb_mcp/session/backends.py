@@ -56,9 +56,11 @@ from .config import SessionConfig
 from .constants import DEFAULT_TIMEOUT_SEC
 from .requests import (
     DEFAULT_EXECUTION_OPTIONS,
+    DEFAULT_THREAD_QUERY,
     DisassemblyRequest,
     ExecutionOptions,
     SourceContextRequest,
+    ThreadQuery,
 )
 from .runtime import SessionRuntime
 
@@ -271,10 +273,12 @@ class DebuggerBackend(Protocol):
         self, inferior_id: int
     ) -> OperationSuccess[InferiorSelectionInfo] | OperationError: ...
 
-    def get_threads(self) -> OperationSuccess[ThreadListInfo] | OperationError: ...
+    def get_threads(
+        self, query: ThreadQuery = DEFAULT_THREAD_QUERY
+    ) -> OperationSuccess[ThreadListInfo] | OperationError: ...
 
     def get_backtrace(
-        self, thread_id: int | None = None, max_frames: int = 100
+        self, thread_id: int | None = None, max_frames: int = 100, *, include_defers: bool = False
     ) -> OperationSuccess[BacktraceInfo] | OperationError: ...
 
     def get_frame_info(
@@ -297,10 +301,12 @@ class DebuggerBackend(Protocol):
         expression: str,
         thread_id: int | None = None,
         frame: int | None = None,
+        *,
+        deferred_call: int | None = None,
     ) -> OperationSuccess[ExpressionValueInfo] | OperationError: ...
 
     def get_variables(
-        self, thread_id: int | None = None, frame: int = 0
+        self, thread_id: int | None = None, frame: int = 0, *, deferred_call: int | None = None
     ) -> OperationSuccess[VariablesInfo] | OperationError: ...
 
     def get_registers(

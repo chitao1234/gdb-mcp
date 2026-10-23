@@ -177,6 +177,8 @@ def _validate_location_input(kind: str | None, values: ParsedOptions, *, context
 
 def _validate_inspect_query_input(action: str, values: ParsedOptions, kind: str | None) -> None:
     invalid_flags: list[str] = []
+    if action not in {"evaluate", "variables"} and values.get("deferred_call") is not None:
+        invalid_flags.append("--deferred-call")
     location_flags = [
         format_cli_flag(name)
         for name in (
@@ -347,6 +349,7 @@ def _configure_inspect_query(parser: argparse.ArgumentParser) -> None:
     _add_action(parser, choices=INSPECT_QUERY_ACTIONS)
     parser.add_argument("--thread-id", type=int, default=None)
     parser.add_argument("--frame", type=int, default=None)
+    parser.add_argument("--deferred-call", type=int, default=None)
     parser.add_argument("--expression", default=None)
     parser.add_argument(
         "--register-number",
@@ -440,7 +443,7 @@ def _build_inspect_query(namespace: NamespaceLike) -> InspectQueryArgs:
             query[name] = items
     context = {
         name: selector
-        for name in ("thread_id", "frame")
+        for name in ("thread_id", "frame", "deferred_call")
         if (selector := values.get(name)) is not None
     }
     if context:

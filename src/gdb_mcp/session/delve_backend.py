@@ -67,9 +67,11 @@ from .process_cleanup import cleanup_process
 from .protocols import OsModuleProtocol, TimeModuleProtocol
 from .requests import (
     DEFAULT_EXECUTION_OPTIONS,
+    DEFAULT_THREAD_QUERY,
     DisassemblyRequest,
     ExecutionOptions,
     SourceContextRequest,
+    ThreadQuery,
 )
 from .runtime import SessionRuntime
 from .state import SessionState
@@ -174,10 +176,20 @@ class DelveRpcBackend:
         if version.get("APIVersion") != 2:
             raise DelveRpcError("Delve did not select RPC API v2", "protocol_error")
         self._version = version
-        release = re.search(r"(\d+)\.(\d+)", text(version.get("DelveVersion")))
+        release = re.search(r"(\d+)\.(\d+)\.(\d+)", text(version.get("DelveVersion")))
         self._inspection.memory_read_limit = 1000
+        self._inspection.channel_queries_supported = False
+        target_go = re.search(r"go(\d+)\.(\d+)", text(version.get("TargetGoVersion")))
+        self._inspection.deferred_arguments_supported = bool(
+            target_go and (int(target_go[1]), int(target_go[2])) < (1, 17)
+        )
         if release:
             version_pair = int(release[1]), int(release[2])
+            self._inspection.channel_queries_supported = (*version_pair, int(release[3])) >= (
+                1,
+                21,
+                1,
+            )
             if version_pair < (1, 23):
                 # Older Delve silently accepts unknown Command names without executing them.
                 self._unsupported.add(ACTION_NEXT_INSTRUCTION)
@@ -536,13 +548,15 @@ class DelveRpcBackend:
     ) -> OperationSuccess[FunctionCallInfo] | OperationError:
         return self._execution.call_function(function_call, timeout_sec)
 
-    def get_threads(self) -> OperationSuccess[ThreadListInfo] | OperationError:
-        return self._inspection.get_threads()
+    def get_threads(
+        self, query: ThreadQuery = DEFAULT_THREAD_QUERY
+    ) -> OperationSuccess[ThreadListInfo] | OperationError:
+        return self._inspection.get_threads(query)
 
     def get_backtrace(
-        self, thread_id: int | None = None, max_frames: int = 100
+        self, thread_id: int | None = None, max_frames: int = 100, *, include_defers: bool = False
     ) -> OperationSuccess[BacktraceInfo] | OperationError:
-        return self._inspection.get_backtrace(thread_id, max_frames)
+        return self._inspection.get_backtrace(thread_id, max_frames, include_defers=include_defers)
 
     def get_frame_info(
         self, *, thread_id: int | None = None, frame: int | None = None
@@ -560,14 +574,21 @@ class DelveRpcBackend:
         return self._inspection.select_frame(frame_number)
 
     def evaluate_expression(
-        self, expression: str, thread_id: int | None = None, frame: int | None = None
+        self,
+        expression: str,
+        thread_id: int | None = None,
+        frame: int | None = None,
+        *,
+        deferred_call: int | None = None,
     ) -> OperationSuccess[ExpressionValueInfo] | OperationError:
-        return self._inspection.evaluate_expression(expression, thread_id, frame)
+        return self._inspection.evaluate_expression(
+            expression, thread_id, frame, deferred_call=deferred_call
+        )
 
     def get_variables(
-        self, thread_id: int | None = None, frame: int = 0
+        self, thread_id: int | None = None, frame: int = 0, *, deferred_call: int | None = None
     ) -> OperationSuccess[VariablesInfo] | OperationError:
-        return self._inspection.get_variables(thread_id, frame)
+        return self._inspection.get_variables(thread_id, frame, deferred_call=deferred_call)
 
     def get_registers(
         self,

@@ -48,6 +48,7 @@ TextOption: TypeAlias = Literal[
     "value",
     "wait_until",
     "working_dir",
+    "waiting_on_channel",
 ]
 IntegerOption: TypeAlias = Literal[
     "capture_max_frames",
@@ -70,6 +71,8 @@ IntegerOption: TypeAlias = Literal[
     "start_line",
     "thread_id",
     "timeout_sec",
+    "deferred_call",
+    "max_results",
 ]
 FlagOption: TypeAlias = Literal[
     "include_backtraces",
@@ -97,6 +100,7 @@ OptionalFlagOption: TypeAlias = Literal[
     "failure_on_error",
     "failure_on_timeout",
     "include_vector_registers",
+    "include_defers",
     "make_current",
     "temporary",
 ]

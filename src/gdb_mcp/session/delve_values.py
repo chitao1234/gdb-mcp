@@ -7,6 +7,7 @@ from collections.abc import Mapping
 
 from ..domain import BreakpointRecord, FrameRecord, VariableRecord
 from ..domain.errors import DebuggerDecodeError
+from ..domain.records import CodeLocationRecord, DeferredCallRecord
 
 
 def mapping(value: object) -> dict[str, object]:
@@ -64,11 +65,10 @@ def boolean(value: object) -> bool:
     raise DebuggerDecodeError(f"Delve value must be a boolean, got {type(value).__name__}")
 
 
-def frame_record(payload: object, level: int = 0) -> FrameRecord:
+def code_location_record(payload: object) -> CodeLocationRecord:
     location = mapping(payload)
     function = mapping(location.get("function"))
     values = dict(location)
-    values["level"] = level
     address = optional_integer(location.get("pc"))
     if address is not None:
         values["addr"] = hex(address)
@@ -76,6 +76,30 @@ def frame_record(payload: object, level: int = 0) -> FrameRecord:
         values["func"] = function["name"]
     if "file" in location:
         values["fullname"] = location["file"]
+    return CodeLocationRecord.from_payload(values)
+
+
+def frame_record(payload: object, level: int = 0, *, include_defers: bool = False) -> FrameRecord:
+    values = code_location_record(payload).to_payload()
+    values["level"] = level
+    if include_defers:
+        values["defers"] = [
+            DeferredCallRecord(
+                index=index,
+                function=(
+                    code_location_record(value["DeferredLoc"])
+                    if value.get("DeferredLoc") is not None
+                    else None
+                ),
+                registered_at=(
+                    code_location_record(value["DeferLoc"])
+                    if value.get("DeferLoc") is not None
+                    else None
+                ),
+                unreadable=text(value.get("Unreadable")) or None,
+            ).to_payload()
+            for index, value in enumerate(mappings(mapping(payload).get("Defers")), 1)
+        ]
     return FrameRecord.from_payload(values)
 
 

@@ -37,6 +37,7 @@ from .context import (
     ContextQueryBacktraceAction,
     ContextQueryFrameAction,
     ContextQueryThreadsAction,
+    ContextThreadsQueryArgs,
 )
 from .dedicated import (
     AttachProcessArgs,
@@ -104,6 +105,7 @@ from .selectors import (
     BreakpointSelectorArgs,
     CaptureMemoryRangeArgs,
     EmptyQuery,
+    EvaluationContextArgs,
     FrameSelectorArgs,
     ThreadFrameContextArgs,
     ThreadSelectorArgs,
@@ -165,7 +167,9 @@ __all__ = [
     "ContextQueryBacktraceAction",
     "ContextQueryFrameAction",
     "ContextQueryThreadsAction",
+    "ContextThreadsQueryArgs",
     "EmptyQuery",
+    "EvaluationContextArgs",
     "ExecuteCommandArgs",
     "ExecutionContinueAction",
     "ExecutionControlPayload",

@@ -18,6 +18,17 @@ DEFAULT_EXECUTION_OPTIONS = ExecutionOptions()
 
 
 @dataclass(frozen=True, slots=True)
+class ThreadQuery:
+    waiting_on_channel: str | None = None
+    thread_id: int | None = None
+    frame: int | None = None
+    max_results: int | None = None
+
+
+DEFAULT_THREAD_QUERY = ThreadQuery()
+
+
+@dataclass(frozen=True, slots=True)
 class CurrentLocation:
     kind: ClassVar[Literal["current"]] = "current"
 
