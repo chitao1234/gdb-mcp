@@ -21,7 +21,12 @@ from gdb_mcp.domain import OperationError, OperationSuccess, SessionStartupInfo
 from gdb_mcp.mcp.handlers import dispatch_tool_call
 from gdb_mcp.session.factory import create_default_session_service
 from gdb_mcp.session.registry import SessionRegistry
-from gdb_mcp.session.requests import DisassemblyRequest, ExecutionOptions, SourceContextRequest
+from gdb_mcp.session.requests import (
+    DisassemblyRequest,
+    ExecutionOptions,
+    SourceContextRequest,
+    ThreadQuery,
+)
 from tests.support import dig, mapping_list
 
 T = TypeVar("T")
@@ -42,6 +47,36 @@ func main() {
     if len(os.Args) > 1 {
         for { time.Sleep(10 * time.Millisecond) }
     }
+}
+"""
+
+GO_INSPECTION_PROGRAM = """package main
+import ("sync"; "time")
+var senders = make(chan int)
+var receivers = make(chan int)
+var unused = make(chan int)
+var nilChannel chan int
+//go:noinline
+func cleanup(value int) { }
+//go:noinline
+func inspect(sending chan int, receiving chan int) {
+    count := len(sending) + len(receiving) + len(nilChannel)
+    _ = count
+}
+func main() {
+    defer cleanup(11)
+    defer cleanup(22)
+    var ready sync.WaitGroup
+    ready.Add(1006)
+    for i := 0; i < 1003; i++ {
+        go func() { ready.Done(); senders <- 1 }()
+    }
+    for i := 0; i < 3; i++ {
+        go func() { ready.Done(); <-receivers }()
+    }
+    ready.Wait()
+    time.Sleep(100 * time.Millisecond)
+    inspect(senders, receivers)
 }
 """
 
@@ -88,6 +123,122 @@ def go_program(tmp_path: Path) -> Iterator[tuple[str, str, int]]:
     yield str(binary), str(source), PROGRAM.splitlines().index(
         '    fmt.Printf("total=%d\\n", total)'
     ) + 1
+
+
+@pytest.fixture
+def go_inspection_program(tmp_path: Path) -> str:
+    compiler = os.environ.get("GO_PATH") or shutil.which("go")
+    if compiler is None:
+        pytest.skip("Go compiler is not available")
+    source = tmp_path / "go_inspection.go"
+    source.write_text(GO_INSPECTION_PROGRAM)
+    binary = tmp_path / "go_inspection"
+    subprocess.run(
+        [compiler, "build", "-gcflags=all=-N -l", "-o", str(binary), str(source)],
+        check=True,
+        capture_output=True,
+    )
+    return str(binary)
+
+
+def test_delve_deferred_calls_and_channel_waiters(
+    delve_binary: str, go_inspection_program: str
+) -> None:
+    session = create_default_session_service(DEBUGGER_DELVE)
+    try:
+        started = success(
+            session.start(
+                program=go_inspection_program, debugger=DEBUGGER_DELVE, debugger_path=delve_binary
+            )
+        )
+        success(session.set_breakpoint("main.inspect"))
+        success(session.run(options=ExecutionOptions(timeout_sec=10)))
+        selected_thread = session.runtime.current_thread_id
+        selected_frame = session.runtime.current_frame
+        ordinary = success(session.get_backtrace(max_frames=10))
+        assert all("defers" not in frame.to_payload() for frame in ordinary.frames)
+        trace = success(session.get_backtrace(max_frames=10, include_defers=True))
+        owner = next(frame for frame in trace.frames if frame.func == "main.main")
+        assert owner.level is not None and owner.defers is not None
+        assert [defer.index for defer in owner.defers] == [1, 2]
+        for defer in owner.defers:
+            assert defer.function is not None and defer.function.func == "main.cleanup"
+            assert defer.registered_at is not None and defer.registered_at.line is not None
+        assert (
+            owner.defers[0].registered_at is not None and owner.defers[1].registered_at is not None
+        )
+        first_line, second_line = (
+            owner.defers[0].registered_at.line,
+            owner.defers[1].registered_at.line,
+        )
+        assert first_line is not None and second_line is not None and first_line > second_line
+        target_go = str(dig(started.diagnostics.backend_data.data, "version", "TargetGoVersion"))
+        go_release = re.search(r"go(\d+)\.(\d+)", target_go)
+        assert go_release is not None
+        for index, expected in ((1, "22"), (2, "11")):
+            value = session.evaluate_expression("value", frame=owner.level, deferred_call=index)
+            variables = session.get_variables(frame=owner.level, deferred_call=index)
+            if (int(go_release[1]), int(go_release[2])) < (1, 17):
+                assert success(value).value == expected
+                assert (
+                    next(
+                        variable.value
+                        for variable in success(variables).variables
+                        if variable.name == "value"
+                    )
+                    == expected
+                )
+            else:
+                for result in (value, variables):
+                    assert (
+                        isinstance(result, OperationError)
+                        and result.code == "unsupported_operation"
+                    )
+        if (int(go_release[1]), int(go_release[2])) < (1, 17):
+            invalid_defer = session.evaluate_expression("value", frame=owner.level, deferred_call=3)
+            assert isinstance(invalid_defer, OperationError)
+            assert "deferred calls" in invalid_defer.message
+
+        if _release(started) < (1, 21, 1):
+            unsupported = session.get_threads(ThreadQuery(waiting_on_channel="sending"))
+            assert (
+                isinstance(unsupported, OperationError)
+                and unsupported.code == "unsupported_operation"
+            )
+        else:
+            success(session.select_frame(owner.level))
+            selected_frame = owner.level
+            all_senders = success(
+                session.get_threads(ThreadQuery(waiting_on_channel="sending", frame=0))
+            )
+            assert len(all_senders.threads) == 1003 and not all_senders.truncated
+            assert len({thread.id for thread in all_senders.threads}) == 1003
+            limited = success(
+                session.get_threads(
+                    ThreadQuery(waiting_on_channel="sending", frame=0, max_results=10)
+                )
+            )
+            assert len(limited.threads) == 10 and limited.truncated
+            receivers = success(
+                session.get_threads(
+                    ThreadQuery(waiting_on_channel="receiving", frame=0, max_results=3)
+                )
+            )
+            assert len(receivers.threads) == 3 and not receivers.truncated
+            for channel in ("main.unused", "main.nilChannel"):
+                empty = success(session.get_threads(ThreadQuery(waiting_on_channel=channel)))
+                assert not empty.threads and not empty.truncated
+            bad = session.get_threads(ThreadQuery(waiting_on_channel="42"))
+            assert isinstance(bad, OperationError) and bad.code == "validation_error"
+            missing = session.get_threads(ThreadQuery(waiting_on_channel="missingChannel"))
+            assert isinstance(missing, OperationError)
+            assert success(
+                session.get_backtrace(thread_id=int(all_senders.threads[0].id or "0"))
+            ).frames
+        assert session.runtime.current_thread_id == selected_thread
+        assert session.runtime.current_frame == selected_frame
+    finally:
+        success(session.stop())
 
 
 def test_delve_go_workflow(

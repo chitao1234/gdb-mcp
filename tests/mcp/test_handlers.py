@@ -63,6 +63,7 @@ from gdb_mcp.session.requests import (
     FileRangeLocation,
     FunctionLocation,
     SourceContextRequest,
+    ThreadQuery,
 )
 from gdb_mcp.session.service import SessionService
 from tests.support import dig, mapping, mapping_list, text
@@ -908,7 +909,7 @@ class TestHandlerRouting:
             manager,
         )
 
-        session.get_threads.assert_called_once_with()
+        session.get_threads.assert_called_once_with(ThreadQuery())
 
     def test_context_query_frame_routes_with_thread_and_frame_override(self) -> None:
         """Context query frame should route optional thread/frame overrides."""
@@ -985,7 +986,7 @@ class TestHandlerRouting:
             manager,
         )
 
-        session.get_variables.assert_called_once_with(thread_id=3, frame=1)
+        session.get_variables.assert_called_once_with(thread_id=3, frame=1, deferred_call=None)
 
     def test_inspect_query_source_routes_file_range(self) -> None:
         """Inspect query source should route file-range selectors."""
@@ -1812,7 +1813,9 @@ class TestHandlerRouting:
             manager,
         )
 
-        session.evaluate_expression.assert_called_once_with("x", thread_id=2, frame=1)
+        session.evaluate_expression.assert_called_once_with(
+            "x", thread_id=2, frame=1, deferred_call=None
+        )
 
     @pytest.mark.parametrize(("thread_id", "frame"), [(2, 3), ("2", "3")])
     def test_get_registers_routes_thread_and_frame_overrides(
@@ -1898,7 +1901,9 @@ class TestHandlerRouting:
             manager,
         )
 
-        session.get_backtrace.assert_called_once_with(thread_id=2, max_frames=5)
+        session.get_backtrace.assert_called_once_with(
+            thread_id=2, max_frames=5, include_defers=False
+        )
 
     def test_disassemble_routes_normalized_selectors(self) -> None:
         """Disassembly requests should forward normalized selector values."""
@@ -1943,7 +1948,7 @@ class TestHandlerRouting:
             manager,
         )
 
-        session.get_variables.assert_called_once_with(thread_id=2, frame=3)
+        session.get_variables.assert_called_once_with(thread_id=2, frame=3, deferred_call=None)
 
     def test_get_source_context_routes_normalized_selectors(self) -> None:
         """Source-context requests should forward normalized selector values."""
