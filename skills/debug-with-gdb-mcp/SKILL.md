@@ -40,6 +40,27 @@ After `command_timeout`, query status, interrupt, or wait for stop; the
 execution request remains active. `gdb_run_until_failure` accepts
 `startup.debugger="delve"` for repeated launches.
 
+For a Go hang, pause the target, then query the channel's waiters:
+
+```json
+{"session_id":1,"action":"threads","query":{"waiting_on_channel":"worker.jobs","context":{"thread_id":17,"frame":0},"max_results":100}}
+```
+
+Call `gdb_context_query` with this payload. Delve 1.21.1+ returns goroutine
+IDs for subsequent backtrace queries; check `truncated` before assuming the
+list is complete. GDB, LLDB, and older Delve return `unsupported_operation`.
+Use `max_results` without the channel filter to bound any backend's inventory.
+
+Call `gdb_context_query(action="backtrace")` with
+`query={"include_defers":true}` to list each frame's pending deferred calls.
+Use a returned one-based `index` as `context.deferred_call` on
+`gdb_inspect_query(action="evaluate" | "variables")`, together with the
+owning frame and goroutine ID. This reads the deferred scope without
+executing it or changing selection. Refresh indices after execution resumes.
+Deferred argument inspection returns `unsupported_operation` for Go 1.17+
+targets; the deferred-call list remains available. Other backends return
+`unsupported_operation` for deferred-call inspection.
+
 ## Tool Families
 
 | Need | Tool |

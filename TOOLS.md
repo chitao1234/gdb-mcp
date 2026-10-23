@@ -464,6 +464,7 @@ compatibility checks remain enabled.
 | --- | --- |
 | Core workflow, including breakpoint enable/disable | 1.6.1 (compatibility floor) |
 | Watchpoints | 1.7.0 |
+| Channel-wait queries | 1.21.1 |
 | External Unix listener | 1.22.1 |
 | `next_instruction`, including reverse | 1.23.0 |
 | `jump` (`SetExecutionPoint`) | 1.27.2 |
@@ -958,11 +959,54 @@ Read thread and frame state without mutating selection.
 
 | Action | Request Shape | Success `result` |
 | --- | --- | --- |
-| `threads` | `{"session_id":7,"action":"threads","query":{}}` | `threads`, `current_thread_id` |
+| `threads` | `{"session_id":7,"action":"threads","query":{}}` | `threads`, `current_thread_id`, `truncated` |
 | `backtrace` | `{"session_id":7,"action":"backtrace","query":{"thread_id":3,"max_frames":20}}` | `thread_id`, `frames` |
 | `frame` | `{"session_id":7,"action":"frame","query":{"thread_id":3,"frame":1}}` | `frame` |
 
 All `backtrace` and `frame` selectors are optional. If omitted, the current selection is used without mutating it.
+
+### Channel Waiters
+
+`threads.query.max_results` optionally limits returned threads on all backends.
+`truncated=true` means additional matching threads exist. Without a limit the
+complete inventory is returned.
+
+For a paused Delve target, `waiting_on_channel` filters goroutines waiting to
+send to or receive from a channel. It requires Delve 1.21.1 or newer. The
+optional `context` specifies where to evaluate the expression; it is valid
+only with `waiting_on_channel`. Context overrides do not change selection.
+
+```json
+{"session_id":7,"action":"threads","query":{"waiting_on_channel":"worker.jobs","context":{"thread_id":17,"frame":0},"max_results":100}}
+```
+
+The returned IDs are goroutine IDs and can be passed to `backtrace` or other
+context tools. A nil channel or a channel without queued waiters returns an
+empty list. Duplicate goroutines are returned once. A non-channel expression
+returns `validation_error`; an unreadable or unresolved expression preserves
+Delve's error. The query is a snapshot of channel queues, not a deadlock
+diagnosis or a reliable classification of send versus receive waiters.
+GDB, LLDB, and older Delve releases return `unsupported_operation` for this
+filter. Running Delve targets return `inferior_running`.
+
+### Deferred Calls
+
+`backtrace.query.include_defers=true` includes pending Go deferred calls in
+each frame on Delve, including the 1.6.1 baseline:
+
+```json
+{"session_id":7,"action":"backtrace","query":{"thread_id":17,"max_frames":20,"include_defers":true}}
+```
+
+Each frame's `defers` list contains a one-based `index`, a `function` location,
+the `registered_at` location of the defer statement, and an optional
+`unreadable` explanation. Locations contain `func`, `addr`, `file`, `fullname`,
+and `line` where available. Entries retain Delve's execution order: index 1
+is the first pending call for that frame. Unreadable entries retain their
+index. Requested frames without defers have an empty list; the normalized
+`defers` field is omitted when not requested. Native debugger fields remain
+available as record extensions. GDB and LLDB return `unsupported_operation`
+when `include_defers=true`.
 
 ## `gdb_context_manage`
 
@@ -994,6 +1038,28 @@ Inspection results group the selected `thread_id` and `frame` under `context`.
 Their `location` contains `kind`, `function`, `address`, `file`, `fullname`,
 and `line` where available. `range` contains `start_address` and `end_address`
 for disassembly, or `start_line` and `end_line` for the source window.
+
+### Deferred Evaluation Scope
+
+`evaluate.query.context` and `variables.query.context` accept an optional
+positive `deferred_call` index from the requested frame's `defers` list:
+
+```json
+{"session_id":7,"action":"variables","query":{"context":{"thread_id":17,"frame":2,"deferred_call":1}}}
+```
+
+This inspects the first pending deferred call in goroutine 17, frame 2. It
+does not execute the call or change selection. Omitting `deferred_call` uses
+the ordinary frame scope. Indices apply only to their owning frame at the
+current stop; refresh the backtrace after resuming execution. An out-of-range
+index returns Delve's error.
+
+Deferred argument inspection is supported for targets built with Go before
+1.17. Delve does not reliably reconstruct captured deferred arguments with
+the Go 1.17+ register ABI, so these requests return `unsupported_operation`
+for modern targets; deferred-call listing remains available. GDB and LLDB
+also return `unsupported_operation`. Other inspection actions reject the
+`deferred_call` field as a validation error.
 
 ### Register Filters
 

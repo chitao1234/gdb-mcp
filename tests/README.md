@@ -68,6 +68,19 @@ Memory reads cross the 1,000-byte RPC limit used before 1.24.0. Attach tests
 require permission to trace sibling processes; on Linux the CI job sets
 `kernel.yama.ptrace_scope=0`.
 
+The Go inspection integration workflow checks frame-local deferred-call order,
+argument values before Go 1.17, and the modern register-ABI limitation. Its
+channel fixture has 1,003 senders and three receivers to cover pagination,
+result truncation, empty/nil channels, and preserved selection. To verify the
+channel-filter boundary, run it with matching Go 1.21 binaries for Delve
+1.21.0 and 1.21.1:
+
+```bash
+GOTOOLCHAIN=go1.21.13 \
+DELVE_TEST_BINARIES=/opt/delve/1.21.0/dlv:/opt/delve/1.21.1/dlv \
+  .venv/bin/pytest -q tests/integration/test_v2_session_delve.py -k deferred -rs
+```
+
 ```bash
 # Run only unit tests (excluding integration tests)
 .venv/bin/pytest -m "not integration"

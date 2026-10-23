@@ -208,6 +208,23 @@ Execution timeouts leave the command active; `interrupt`, `wait-stop`, and
 status queries remain available. Delve has no terminal-command RPC, so use the
 structured tools instead of `exec` or `init_commands`.
 
+On a paused target, inspect pending defers and channel waiters with the same
+context tools:
+
+```bash
+gdb-mcp-client bt --include-defers
+gdb-mcp-client threads --waiting-on-channel 'worker.jobs' --frame 0 --max-results 100
+```
+
+Channel queries require Delve 1.21.1 or newer and return goroutine IDs for
+subsequent backtraces. `--max-results` also bounds ordinary thread inventories
+on GDB and LLDB. Deferred-call records contain a frame-local, one-based index,
+the function location, and the defer statement location. For targets built
+before Go 1.17, `locals --frame 2 --deferred-call 1` inspects the first pending
+defer in frame 2. Modern Go targets support listing defers, but Delve cannot
+reliably inspect their captured arguments and returns `unsupported_operation`.
+These queries preserve the selected goroutine and frame.
+
 ## Where To Go Next
 
 - [TOOLS.md](TOOLS.md) — the tool contract: every tool, action, request field,
