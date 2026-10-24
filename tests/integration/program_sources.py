@@ -30,18 +30,12 @@ int main() {
 """
 
 CRASHING_C_PROGRAM = """
-#include <signal.h>
-#include <stdlib.h>
-
 int main(void) {
-#if defined(_WIN32)
-    /* Windows turns abort() into exit status 3, so dereference null instead:
-       GDB then reports SIGSEGV on every platform. */
+    /* A null write is SIGSEGV on POSIX and an access violation that GDB reports
+       as SIGSEGV on Windows. abort()/raise() only exits with a status there, so
+       it cannot produce a signal stop. */
     volatile int *crash = 0;
     *crash = 1;
-#else
-    raise(SIGABRT);
-#endif
     return 0;
 }
 """

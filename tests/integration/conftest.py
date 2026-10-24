@@ -7,7 +7,6 @@ import logging
 import shutil
 import signal
 import subprocess
-import sys
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -149,8 +148,7 @@ def _compile(
 
     tmpdir = Path(tempfile.mkdtemp(prefix=prefix)) if directory is None else directory
     source_file = tmpdir / filename
-    suffix = ".exe" if sys.platform == "win32" else ""
-    executable_file = tmpdir / f"{Path(filename).stem}{suffix}"
+    executable_file = tmpdir / Path(filename).stem
     source_file.write_text(source)
 
     compile_result = subprocess.run(
@@ -168,6 +166,19 @@ def _compile(
 
     if compile_result.returncode != 0:
         pytest.fail(f"Failed to compile test program: {compile_result.stderr}")
+
+    # A Windows toolchain appends .exe even when -o has no suffix; use whatever
+    # the linker actually produced instead of predicting the platform.
+    if not executable_file.exists():
+        for candidate in (
+            executable_file.with_name(executable_file.name + ".exe"),
+            executable_file.with_name(executable_file.name + ".EXE"),
+        ):
+            if candidate.exists():
+                executable_file = candidate
+                break
+    if not executable_file.exists():
+        pytest.fail(f"The compiler produced no executable at {executable_file}")
 
     return tmpdir, executable_file
 

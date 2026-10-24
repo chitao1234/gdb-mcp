@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import shutil
+import socket
 import subprocess
 import threading
 import time
@@ -401,8 +402,8 @@ def test_external_delve_disconnect_preserves_server(
     delve_binary: str, go_program: tuple[str, str, int], tmp_path: Path, endpoint_kind: str
 ) -> None:
     program, _, _ = go_program
-    if endpoint_kind == "unix" and os.name == "nt":
-        pytest.skip("Unix sockets require a Unix host")
+    if endpoint_kind == "unix" and not hasattr(socket, "AF_UNIX"):
+        pytest.skip("Unix sockets are not available on this platform")
     if endpoint_kind == "unix":
         help_text = subprocess.run(
             [delve_binary, "exec", "--help"], check=True, capture_output=True, text=True

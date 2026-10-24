@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import sys
+import os
 from pathlib import Path
 
 import pytest
@@ -276,8 +276,8 @@ def test_watchpoint_v2(
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="fork catchpoints need POSIX process creation",
+    not hasattr(os, "fork"),
+    reason="fork catchpoints need os.fork",
 )
 def test_catchpoint_v2(
     compile_program: CompileProgram,
