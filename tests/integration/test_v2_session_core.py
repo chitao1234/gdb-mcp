@@ -228,10 +228,6 @@ def test_run_until_failure_v2(
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="GDB for MinGW cannot install a hardware watchpoint before the target starts",
-)
 def test_watchpoint_v2(
     compile_program: CompileProgram,
     start_session: StartSession,
@@ -247,6 +243,12 @@ def test_watchpoint_v2(
     )
     session_id = start_session(program)
     try:
+        # Watchpoints need a loaded target, and whether they can also be inserted
+        # before the inferior runs is a debugger/target detail. Stop inside main
+        # first so the test exercises the supported path on every target.
+        create_breakpoint(call_gdb_tool, session_id, "main")
+        assert run(call_gdb_tool, session_id)["status"] == "success"
+
         watch = call_gdb_tool(
             "gdb_breakpoint_manage",
             {
@@ -257,7 +259,10 @@ def test_watchpoint_v2(
         )
         assert watch["status"] == "success"
 
-        execution = run(call_gdb_tool, session_id)
+        execution = call_gdb_tool(
+            "gdb_execution_manage",
+            {"session_id": session_id, "action": "continue", "execution": {}},
+        )
         assert execution["status"] == "success"
 
         status = status_query(call_gdb_tool, session_id)
