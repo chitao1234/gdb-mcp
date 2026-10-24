@@ -46,7 +46,7 @@ def test_daemon_stdin_lines_decodes_lines_and_ends_on_eof(
 def test_blocked_read_is_cancelled_promptly(pipe_fds: tuple[int, int]) -> None:
     """Cancelling a read blocked on the pipe must not leak the reader thread."""
 
-    read_fd, _write_fd = pipe_fds
+    read_fd, write_fd = pipe_fds
     source = DaemonStdinLines(read_fd)
 
     async def scenario() -> None:
@@ -60,4 +60,12 @@ def test_blocked_read_is_cancelled_promptly(pipe_fds: tuple[int, int]) -> None:
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(pending, timeout=2)
 
-    asyncio.run(scenario())
+    try:
+        asyncio.run(scenario())
+    finally:
+        # Windows ``_close`` takes the descriptor's lock, which a read blocked in
+        # another thread already holds; signal EOF so the reader exits first.
+        os.close(write_fd)
+        thread = source._thread
+        if thread is not None:
+            thread.join(timeout=5)
