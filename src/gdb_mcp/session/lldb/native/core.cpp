@@ -548,11 +548,15 @@ bool real_reason(StopReason reason) {
 bool fatal_signal(int signo) {
   switch (signo) {
   case SIGSEGV:
+#ifdef SIGBUS
   case SIGBUS:
+#endif
   case SIGILL:
   case SIGFPE:
   case SIGABRT:
+#ifdef SIGTRAP
   case SIGTRAP:
+#endif
     return true;
   default:
     return false;

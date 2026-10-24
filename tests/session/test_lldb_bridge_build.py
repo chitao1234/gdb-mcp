@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -98,3 +99,31 @@ def test_layer_cache_key_includes_the_compiler(
     build._build_layers(install, 18)
 
     assert "/toolchains/a/c++" in captured["extra"]
+
+
+def test_bridge_executable_name_is_platform_specific(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Windows bridge artifacts are executables; POSIX ones have no suffix."""
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert build._bridge_filename() == "gdb-mcp-lldb-bridge"
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert build._bridge_filename() == "gdb-mcp-lldb-bridge.exe"
+
+
+def test_windows_prefix_finds_the_runtime_dll_beside_the_tools(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows toolchains put liblldb.dll under bin and the import library under lib."""
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    prefix = tmp_path / "lldb"
+    (prefix / "bin").mkdir(parents=True)
+    (prefix / "lib").mkdir()
+    library = prefix / "bin" / "liblldb.dll"
+    library.touch()
+
+    install = build._find_install_from_prefix(prefix)
+
+    assert install is not None
+    assert install.liblldb == library
+    assert install.lib_dir == prefix / "lib"

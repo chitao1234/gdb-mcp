@@ -22,6 +22,14 @@ from .lldb_bridge_types import BridgeError, BridgeLaunch
 _NATIVE_DIR = Path(__file__).with_name("lldb") / "native"
 _VENDOR_INCLUDE = Path(__file__).with_name("lldb") / "vendor" / "include"
 _BRIDGE_NAME = "gdb-mcp-lldb-bridge"
+
+
+def _bridge_filename() -> str:
+    """Return the bridge executable name for this platform."""
+
+    return f"{_BRIDGE_NAME}.exe" if sys.platform == "win32" else _BRIDGE_NAME
+
+
 _LAYER_NAMES: dict[int, str] = {
     7: "errors",
     8: "args",
@@ -96,6 +104,10 @@ def _lib_name() -> str:
 def _find_install_from_prefix(prefix: Path) -> LldbInstall | None:
     lib_dir = prefix / "lib"
     liblldb = lib_dir / _lib_name()
+    if not liblldb.exists() and sys.platform == "win32":
+        # Windows toolchains keep the runtime DLL next to the tools, with the
+        # import library under lib/.
+        liblldb = prefix / "bin" / _lib_name()
     if not liblldb.exists():
         # Nix and some distro layouts keep the versioned library only.
         matches = sorted(lib_dir.glob("liblldb.so*")) if lib_dir.is_dir() else []
@@ -192,7 +204,7 @@ def discover_lldb(debugger_path: str | None = None) -> LldbInstall:
             raise BridgeError(f"LLDB_BRIDGE_EXECUTABLE is not a file: {path}", "not_found")
     prebuilt_dir = os.environ.get("LLDB_BRIDGE_DIR")
     if prebuilt_dir:
-        path = Path(prebuilt_dir).expanduser() / _BRIDGE_NAME
+        path = Path(prebuilt_dir).expanduser() / _bridge_filename()
         if path.is_file():
             return LldbInstall(
                 prefix=path.parent,
@@ -202,7 +214,9 @@ def discover_lldb(debugger_path: str | None = None) -> LldbInstall:
                 include_dir=None,
                 version=None,
             )
-        raise BridgeError(f"LLDB_BRIDGE_DIR does not contain {_BRIDGE_NAME}: {path}", "not_found")
+        raise BridgeError(
+            f"LLDB_BRIDGE_DIR does not contain {_bridge_filename()}: {path}", "not_found"
+        )
 
     tried: list[str] = []
     for prefix in _candidate_prefixes(debugger_path):
@@ -325,7 +339,7 @@ def _build_core(install: LldbInstall) -> Path:
         f"core:{sys.platform}:{_compiler()}",
     )
     build = cache / f"core-{key}"
-    bridge = build / _BRIDGE_NAME
+    bridge = build / _bridge_filename()
     if bridge.is_file():
         return bridge
     build.mkdir(parents=True, exist_ok=True)
@@ -346,20 +360,29 @@ def _build_core(install: LldbInstall) -> Path:
             str(object_file),
         ]
     )
-    stub = build / _lib_name()
-    _write_stub(compiler, object_file, stub)
     if sys.platform == "darwin":
         rpath = "@loader_path"
         flags: list[str] = []
-    elif sys.platform == "win32":
-        raise BridgeError(
-            "Building the LLDB bridge on Windows requires a prebuilt bridge; "
-            "set LLDB_BRIDGE_EXECUTABLE.",
-            "build_failed",
-        )
     else:
         rpath = "$ORIGIN"
         flags: list[str] = []
+    if sys.platform == "win32":
+        # Windows has no rpath or symbol stub: link the import library directly
+        # and let ``LldbInstall.environment`` put liblldb.dll on the search path.
+        _run(
+            compiler
+            + [
+                "-O2",
+                "-o",
+                str(bridge),
+                str(object_file),
+                f"-L{install.lib_dir}",
+                "-llldb",
+            ]
+        )
+        return bridge
+    stub = build / _lib_name()
+    _write_stub(compiler, object_file, stub)
     _run(
         compiler
         + flags
@@ -393,10 +416,13 @@ def _build_layers(install: LldbInstall, runtime_version: int | None) -> Path:
         minimum_version = {7: 7, 8: 8, 16: 14, 18: 17, 19: 19}[version]
         if runtime_version is not None and runtime_version < minimum_version:
             continue
-        output = (
-            layer_dir
-            / f"lldb_layer{version}_{_LAYER_NAMES[version]}{'.dylib' if sys.platform == 'darwin' else '.so'}"
-        )
+        if sys.platform == "darwin":
+            suffix = ".dylib"
+        elif sys.platform == "win32":
+            suffix = ".dll"
+        else:
+            suffix = ".so"
+        output = layer_dir / f"lldb_layer{version}_{_LAYER_NAMES[version]}{suffix}"
         if output.is_file():
             continue
         build = layer_dir / f"build{version}"
@@ -417,21 +443,35 @@ def _build_layers(install: LldbInstall, runtime_version: int | None) -> Path:
                     str(object_file),
                 ]
             )
-            stub = build / _lib_name()
-            _write_stub(compiler, object_file, stub)
             flags = ["-dynamiclib"] if sys.platform == "darwin" else ["-shared"]
-            _run(
-                compiler
-                + flags
-                + [
-                    "-O2",
-                    "-o",
-                    str(output),
-                    str(object_file),
-                    f"-L{build}",
-                    "-llldb",
-                ]
-            )
+            if sys.platform == "win32":
+                _run(
+                    compiler
+                    + flags
+                    + [
+                        "-O2",
+                        "-o",
+                        str(output),
+                        str(object_file),
+                        f"-L{install.lib_dir}",
+                        "-llldb",
+                    ]
+                )
+            else:
+                stub = build / _lib_name()
+                _write_stub(compiler, object_file, stub)
+                _run(
+                    compiler
+                    + flags
+                    + [
+                        "-O2",
+                        "-o",
+                        str(output),
+                        str(object_file),
+                        f"-L{build}",
+                        "-llldb",
+                    ]
+                )
         except BridgeError:
             # A layer whose API is not in this LLDB release simply stays absent.
             continue
@@ -454,7 +494,7 @@ def prepare_bridge(debugger_path: str | None = None) -> BridgeLaunch:
         )
 
     install = discover_lldb(debugger_path)
-    if install.liblldb == install.prefix / _BRIDGE_NAME:
+    if install.liblldb == install.prefix / _bridge_filename():
         return BridgeLaunch(
             executable=install.liblldb, layer_dir=None, environment=dict(os.environ)
         )

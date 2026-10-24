@@ -29,6 +29,7 @@ from .conftest import CompileProgram
 
 LLDB_PREFIX = os.environ.get("LLDB_PREFIX")
 LLDB_LIBRARY = os.environ.get("LLDB_LIBRARY")
+LLDB_BRIDGE = os.environ.get("LLDB_BRIDGE_EXECUTABLE") or os.environ.get("LLDB_BRIDGE_DIR")
 
 _LLDB_PROGRAM = """
 #include <stdio.h>
@@ -38,10 +39,10 @@ int main(void) { printf("%d\\n", add(2, 3)); return 0; }
 
 
 def test_lldb_start_breakpoint_run_and_status(compile_program: CompileProgram) -> None:
-    if LLDB_PREFIX is None and LLDB_LIBRARY is None:
+    if LLDB_PREFIX is None and LLDB_LIBRARY is None and LLDB_BRIDGE is None:
         pytest.fail(
-            "LLDB_PREFIX or LLDB_LIBRARY must select the LLDB installation; "
-            "LLDB integration coverage is not optional"
+            "LLDB_PREFIX, LLDB_LIBRARY, or LLDB_BRIDGE_EXECUTABLE must select the LLDB "
+            "installation; LLDB integration coverage is not optional"
         )
     program = compile_program(_LLDB_PROGRAM, filename="lldb_demo.c", compiler="gcc")
     backend = LldbSbBackend(
