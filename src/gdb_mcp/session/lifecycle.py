@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import sys
 from dataclasses import replace
 from typing import TypeAlias
 
@@ -34,6 +35,11 @@ from .config import SessionConfig
 from .constants import DEFAULT_TIMEOUT_SEC, FILE_LOAD_TIMEOUT_SEC, INIT_COMMAND_DELAY_SEC
 from .gdb_command import command_output
 from .runtime import SessionRuntime
+
+# Windows GDB children have no SIGINT delivery: ``os.kill(pid, SIGINT)`` would
+# terminate GDB, so interrupts go through ``-exec-interrupt`` and that command
+# only takes effect in async MI mode.
+_ASYNC_MI_INTERRUPT = sys.platform == "win32"
 
 logger = logging.getLogger(__name__)
 
@@ -267,6 +273,20 @@ class SessionLifecycleService:
                 startup_output_text = self._startup_output_text(startup_result)
 
                 warnings: list[str] = list(startup_warnings)
+
+                if _ASYNC_MI_INTERRUPT:
+                    async_result = self._command_runner.execute_command_result(
+                        "-gdb-set mi-async on",
+                        timeout_sec=DEFAULT_TIMEOUT_SEC,
+                    )
+                    if isinstance(async_result, OperationError):
+                        warnings.append(
+                            "Failed to enable async MI; gdb_execution_manage "
+                            f"action=interrupt may not work: {async_result.message}"
+                        )
+                    else:
+                        self._runtime.mi_async_interrupt = True
+
                 startup_output_lower = startup_output_text.lower()
                 if "no debugging symbols found" in startup_output_lower:
                     warnings.append("No debugging symbols found - program was not compiled with -g")

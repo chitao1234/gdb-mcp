@@ -88,6 +88,9 @@ class SessionRuntime:
     is_running: bool = False
     debugger: str = "gdb"
     target_loaded: bool = False
+    # Windows GDB has no SIGINT to forward, so interrupts go through the MI
+    # command and only work once startup enabled async MI.
+    mi_async_interrupt: bool = False
     attached_pid: int | None = None
     last_failure_message: str | None = None
     current_thread_id: int | None = None

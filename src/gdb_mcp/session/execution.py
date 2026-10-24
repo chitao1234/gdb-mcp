@@ -699,11 +699,25 @@ class SessionExecutionService:
             return OperationError(message="No active GDB session")
 
         gdb_process = controller.gdb_process
-        if gdb_process is None:
-            return OperationError(message="No GDB process running")
+        if self._runtime.mi_async_interrupt:
+            # Windows GDB has no SIGINT to forward: os.kill would terminate GDB
+            # itself. Startup enabled async MI, so the MI command stops the
+            # inferior instead.
+            def send_interrupt() -> None:
+                stdin = controller.io_manager.stdin
+                stdin.write(b"-exec-interrupt\n")
+                stdin.flush()
+
+        else:
+            if gdb_process is None:
+                return OperationError(message="No GDB process running")
+            pid = gdb_process.pid
+
+            def send_interrupt() -> None:
+                self._runtime.os_module.kill(pid, signal.SIGINT)
 
         result = self._command_runner.interrupt_and_wait_for_stop(
-            send_interrupt=lambda: self._runtime.os_module.kill(gdb_process.pid, signal.SIGINT),
+            send_interrupt=send_interrupt,
             timeout_sec=INTERRUPT_RESPONSE_TIMEOUT_SEC,
         )
 

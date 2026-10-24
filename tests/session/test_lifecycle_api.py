@@ -285,6 +285,21 @@ class TestLifecycleApi:
         assert any("DEBUG_MODE" in command for command in env_commands)
         assert any("LOG_LEVEL" in command for command in env_commands)
 
+    def test_start_session_enables_async_mi_before_interrupts(
+        self, start_session: StartHarness, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """MI-driven interrupts require async MI to be enabled at startup."""
+
+        from gdb_mcp.session import lifecycle
+
+        monkeypatch.setattr(lifecycle, "_ASYNC_MI_INTERRUPT", True)
+
+        result = start_session(program="/bin/ls")
+
+        assert result["status"] == "success"
+        assert "-gdb-set mi-async on" in start_session.executed
+        assert gdb_backend(start_session.service).runtime.mi_async_interrupt is True
+
     def test_start_session_applies_environment_before_init_commands(
         self, start_session: StartHarness
     ) -> None:

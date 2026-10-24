@@ -737,6 +737,26 @@ class TestExecutionApi:
         assert transcript_entry.stop_reason == "signal-received"
         mock_kill.assert_called_once()
 
+    def test_interrupt_uses_the_mi_command_when_async_mi_owns_interrupts(
+        self, running_session: SessionService
+    ) -> None:
+        """Async-MI sessions must not signal GDB: Windows would terminate it."""
+
+        controller = cast(MagicMock, gdb_backend(running_session).transport.controller)
+        controller.gdb_process.pid = 12345
+        controller.get_gdb_response.return_value = [
+            {"type": "notify", "message": "stopped", "payload": {"reason": "signal-received"}}
+        ]
+        running_session.runtime.mi_async_interrupt = True
+
+        with patch.object(running_session.runtime.os_module, "kill") as mock_kill:
+            result = result_to_mapping(running_session.interrupt())
+
+        assert result["status"] == "success"
+        mock_kill.assert_not_called()
+        controller.io_manager.stdin.write.assert_any_call(b"-exec-interrupt\n")
+        controller.io_manager.stdin.flush.assert_called()
+
     def test_interrupt_no_stopped_notification(self, running_session: SessionService) -> None:
         """Interrupt should warn when no stopped notification is received."""
 

@@ -444,3 +444,16 @@ def start_session(
     )
     monkeypatch.setattr("gdb_mcp.session.factory.GdbController", harness.controller_factory)
     return harness
+
+
+@pytest.fixture(autouse=True)
+def _posix_startup_sequence(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep session unit tests on the POSIX startup contract.
+
+    Windows sessions also enable async MI, which is covered by its own test;
+    the scripted sequences here describe the platform-independent prologue.
+    """
+
+    from gdb_mcp.session import lifecycle
+
+    monkeypatch.setattr(lifecycle, "_ASYNC_MI_INTERRUPT", False)
