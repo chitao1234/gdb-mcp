@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import socket
 from collections.abc import Callable
 from unittest.mock import Mock
 
@@ -400,3 +401,15 @@ def test_delve_register_records_keep_debugger_extensions(monkeypatch: pytest.Mon
         "name": "rax",
         "value": "0x0",
     }
+
+
+def test_unix_endpoint_requires_af_unix(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Platforms without unix sockets should reject the endpoint cleanly."""
+
+    monkeypatch.delattr(socket, "AF_UNIX", raising=False)
+    selected = backend()
+
+    with pytest.raises(DelveRpcError) as caught:
+        selected._connect("unix:///tmp/dlv.sock", timeout_sec=1)
+
+    assert caught.value.code == "unsupported_operation"

@@ -207,6 +207,10 @@ class DelveRpcBackend:
         if parsed.scheme == "tcp" and host and port:
             connection = socket.create_connection((host, port), timeout=timeout_sec)
         elif parsed.scheme == "unix" and parsed.path and not parsed.netloc:
+            if not hasattr(socket, "AF_UNIX"):
+                raise DelveRpcError(
+                    "Unix endpoints are not supported on this platform", "unsupported_operation"
+                )
             connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             try:
                 connection.settimeout(timeout_sec)
