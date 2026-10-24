@@ -286,8 +286,9 @@ rather than the server:
   prebuilt bridge.
 - `gdb_session_connect` accepts `tcp://` streams on Windows. `unix://` and
   `pty://` need POSIX sockets or a tty and are rejected there.
-- A console-less GDB child cannot receive SIGINT, so `action=interrupt` sends
-  `-exec-interrupt` and startup enables async MI.
+- A GDB child cannot receive SIGINT on Windows, and an externally owned GDB has
+  no child to signal, so `action=interrupt` sends `-exec-interrupt`; startup
+  enables async MI for both.
 - MinGW GDB cannot create core files and cannot install a watchpoint before the
   inferior starts. Set watchpoints after the first stop.
 - `rr` replay requires Linux. Delve cannot create hardware watchpoints on

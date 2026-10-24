@@ -36,9 +36,9 @@ from .constants import DEFAULT_TIMEOUT_SEC, FILE_LOAD_TIMEOUT_SEC, INIT_COMMAND_
 from .gdb_command import command_output
 from .runtime import SessionRuntime
 
-# Windows GDB children have no SIGINT delivery: ``os.kill(pid, SIGINT)`` would
-# terminate GDB, so interrupts go through ``-exec-interrupt`` and that command
-# only takes effect in async MI mode.
+# A Windows GDB child cannot receive SIGINT (``os.kill`` would terminate it),
+# and an externally owned GDB has no child to signal at all. Both interrupt
+# through ``-exec-interrupt``, which only takes effect in async MI mode.
 _ASYNC_MI_INTERRUPT = sys.platform == "win32"
 
 # rr drives Linux perf events; there is no Windows or macOS build to launch.
@@ -285,7 +285,7 @@ class SessionLifecycleService:
 
                 warnings: list[str] = list(startup_warnings)
 
-                if _ASYNC_MI_INTERRUPT:
+                if _ASYNC_MI_INTERRUPT or endpoint:
                     async_result = self._command_runner.execute_command_result(
                         "-gdb-set mi-async on",
                         timeout_sec=DEFAULT_TIMEOUT_SEC,

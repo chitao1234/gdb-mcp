@@ -700,9 +700,9 @@ class SessionExecutionService:
 
         gdb_process = controller.gdb_process
         if self._runtime.mi_async_interrupt:
-            # Windows GDB has no SIGINT to forward: os.kill would terminate GDB
-            # itself. Startup enabled async MI, so the MI command stops the
-            # inferior instead.
+            # A Windows GDB child cannot receive SIGINT, and an externally owned
+            # GDB has no child pid at all. Startup enabled async MI for both, so
+            # the MI command stops the inferior instead.
             def send_interrupt() -> None:
                 stdin = controller.io_manager.stdin
                 stdin.write(b"-exec-interrupt\n")

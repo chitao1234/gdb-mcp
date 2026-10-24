@@ -757,6 +757,23 @@ class TestExecutionApi:
         controller.io_manager.stdin.write.assert_any_call(b"-exec-interrupt\n")
         controller.io_manager.stdin.flush.assert_called()
 
+    def test_interrupt_uses_mi_without_a_child_process(
+        self, running_session: SessionService
+    ) -> None:
+        """An external GDB exposes no child pid, so MI is the only interrupt path."""
+
+        controller = cast(MagicMock, gdb_backend(running_session).transport.controller)
+        controller.gdb_process = None
+        controller.get_gdb_response.return_value = [
+            {"type": "notify", "message": "stopped", "payload": {"reason": "signal-received"}}
+        ]
+        running_session.runtime.mi_async_interrupt = True
+
+        result = result_to_mapping(running_session.interrupt())
+
+        assert result["status"] == "success"
+        controller.io_manager.stdin.write.assert_any_call(b"-exec-interrupt\n")
+
     def test_interrupt_no_stopped_notification(self, running_session: SessionService) -> None:
         """Interrupt should warn when no stopped notification is received."""
 

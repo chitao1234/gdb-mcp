@@ -545,6 +545,10 @@ With `debugger="gdb"` (the default), `endpoint` is a GDB/MI stream:
 rejects both; `tcp://` works on every platform. Delve's `unix://` endpoint has
 the same POSIX requirement.
 
+An externally owned GDB is interrupted through MI (`-exec-interrupt`), so the
+server enables async MI on it at startup. This is the only interrupt path when
+no debugger child pid is available.
+
 With `debugger="lldb"`, `endpoint` is passed to `SBTarget::ConnectRemote`, so it
 is a remote stub URL such as `connect://host:port`. The optional `program`
 names the executable to associate with the remote target. LLDB remote sessions

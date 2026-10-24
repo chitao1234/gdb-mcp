@@ -316,6 +316,24 @@ class TestLifecycleApi:
         assert "Linux" in text(result["message"])
         assert not start_session.controller_factory.called
 
+    def test_start_session_enables_async_mi_for_an_external_connection(
+        self, start_session: StartHarness, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An externally owned GDB has no pid to signal, so it needs async MI."""
+
+        controller = MagicMock(spec=GdbControllerProtocol)
+        controller.gdb_process = None
+        monkeypatch.setattr(
+            "gdb_mcp.session.lifecycle.create_external_controller",
+            lambda endpoint, **kwargs: controller,
+        )
+
+        result = start_session(endpoint="tcp://127.0.0.1:4399")
+
+        assert result["status"] == "success"
+        assert "-gdb-set mi-async on" in start_session.executed
+        assert gdb_backend(start_session.service).runtime.mi_async_interrupt is True
+
     def test_start_session_applies_environment_before_init_commands(
         self, start_session: StartHarness
     ) -> None:
