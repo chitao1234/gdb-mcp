@@ -26,8 +26,8 @@ _RECORD_WAIT_TIMEOUT_SEC = 5.0
 
 
 @dataclass
-class UnixMiServer:
-    """A running unix-socket MI server and the client reading from it."""
+class MiServer:
+    """A running socket MI server and the client reading from it."""
 
     controller: ExternalMiController
     records: list[MiRecord] = field(default_factory=list)
@@ -49,8 +49,58 @@ class UnixMiServer:
         return self.records
 
 
+def _serve_payloads(
+    server: socket.socket,
+    payloads: list[bytes],
+    advance: threading.Event,
+    closing: threading.Event,
+) -> None:
+    """Accept one connection and stream payloads as the client drains them."""
+
+    connection, _ = server.accept()
+    with connection:
+        for payload in payloads:
+            connection.sendall(payload)
+            advance.wait(timeout=_SERVER_HANDSHAKE_TIMEOUT_SEC)
+            advance.clear()
+            if closing.is_set():
+                return
+        # Keep the stream open until the test tears the fixture down instead
+        # of sleeping to outlive the controller's final poll.
+        closing.wait(timeout=_SERVER_HANDSHAKE_TIMEOUT_SEC)
+
+
+def _mi_server(
+    server: socket.socket,
+    endpoint: str,
+    payloads: list[bytes],
+) -> Iterator[MiServer]:
+    """Drive one externally connected controller against a prepared server."""
+
+    advance = threading.Event()
+    closing = threading.Event()
+    thread = threading.Thread(
+        target=_serve_payloads,
+        args=(server, payloads, advance, closing),
+        daemon=True,
+    )
+    thread.start()
+    controller = ExternalMiController(
+        endpoint,
+        time_to_check_for_additional_output_sec=0.05,
+    )
+    try:
+        yield MiServer(controller=controller, advance=advance)
+    finally:
+        closing.set()
+        advance.set()
+        controller.exit()
+        server.close()
+        thread.join(timeout=2)
+
+
 @pytest.fixture
-def unix_mi_server(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[UnixMiServer]:
+def unix_mi_server(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[MiServer]:
     """Serve preloaded MI payloads over a unix socket and yield the client."""
 
     if not hasattr(socket, "AF_UNIX"):
@@ -60,37 +110,23 @@ def unix_mi_server(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[U
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(socket_path)
     server.listen(1)
-    advance = threading.Event()
-    closing = threading.Event()
+    yield from _mi_server(server, f"unix://{socket_path}", payloads)
 
-    def serve() -> None:
-        connection, _ = server.accept()
-        with connection:
-            for payload in payloads:
-                connection.sendall(payload)
-                advance.wait(timeout=_SERVER_HANDSHAKE_TIMEOUT_SEC)
-                advance.clear()
-                if closing.is_set():
-                    return
-            # Keep the stream open until the test tears the fixture down instead
-            # of sleeping to outlive the controller's final poll.
-            closing.wait(timeout=_SERVER_HANDSHAKE_TIMEOUT_SEC)
 
-    thread = threading.Thread(target=serve, daemon=True)
-    thread.start()
+@pytest.fixture
+def tcp_mi_server(request: pytest.FixtureRequest) -> Iterator[MiServer]:
+    """Serve preloaded MI payloads over loopback TCP and yield the client.
 
-    controller = ExternalMiController(
-        f"unix://{socket_path}",
-        time_to_check_for_additional_output_sec=0.05,
-    )
-    try:
-        yield UnixMiServer(controller=controller, advance=advance)
-    finally:
-        closing.set()
-        advance.set()
-        controller.exit()
-        server.close()
-        thread.join(timeout=2)
+    Sockets need their own non-blocking reader on Windows; pygdbmi's pipe-only
+    setup cannot drive them there.
+    """
+
+    payloads = cast(list[bytes], request.param)
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    host, port = server.getsockname()[:2]
+    yield from _mi_server(server, f"tcp://{host}:{port}", payloads)
 
 
 class TestParseMiEndpoint:
@@ -154,7 +190,7 @@ class TestExternalMiController:
         ],
         indirect=True,
     )
-    def test_reads_records_over_unix_socket(self, unix_mi_server: UnixMiServer) -> None:
+    def test_reads_records_over_unix_socket(self, unix_mi_server: MiServer) -> None:
         """Records written by an external process should reach the controller."""
 
         records = unix_mi_server.collect_until_result()
@@ -172,7 +208,7 @@ class TestExternalMiController:
         ],
         indirect=True,
     )
-    def test_reads_records_with_crlf_line_endings(self, unix_mi_server: UnixMiServer) -> None:
+    def test_reads_records_with_crlf_line_endings(self, unix_mi_server: MiServer) -> None:
         """A tty-style CRLF stream must still yield a result record.
 
         A cooked tty (for example ``socat ... ,pty`` without ``raw,echo=0``)
@@ -185,6 +221,49 @@ class TestExternalMiController:
         assert results, records
         assert results[0].get("message") == "done"
         assert not [record for record in records if record.get("type") == "output"]
+
+    @pytest.mark.parametrize(
+        "tcp_mi_server",
+        [
+            [
+                b'=thread-group-added,id="i1"\n',
+                b'1^done,bkpt={number="1"}\n',
+            ]
+        ],
+        indirect=True,
+    )
+    def test_reads_records_over_tcp_socket(self, tcp_mi_server: MiServer) -> None:
+        """Records written by a TCP peer should reach the controller."""
+
+        records = tcp_mi_server.collect_until_result()
+
+        assert any(record.get("type") == "result" for record in records)
+
+    @pytest.mark.parametrize(
+        "tcp_mi_server",
+        [
+            [
+                b'=thread-group-added,id="i1"\r\n',
+                b'~"GNU gdb 15.1\\n"\r\n',
+                b"1^done\r\n(gdb) \r\n",
+            ]
+        ],
+        indirect=True,
+    )
+    def test_reads_records_with_crlf_line_endings_over_tcp(self, tcp_mi_server: MiServer) -> None:
+        """A CRLF TCP stream must yield a result record, not an output record."""
+
+        records = tcp_mi_server.collect_until_result()
+        results = [record for record in records if record.get("type") == "result"]
+        assert results, records
+        assert results[0].get("message") == "done"
+
+    @pytest.mark.parametrize("tcp_mi_server", [[]], indirect=True)
+    def test_tcp_exit_is_idempotent(self, tcp_mi_server: MiServer) -> None:
+        """Detaching from a TCP peer twice should be a no-op."""
+
+        tcp_mi_server.controller.exit()
+        tcp_mi_server.controller.exit()
 
     def test_unreachable_endpoint_raises(self) -> None:
         """A missing socket path should surface as an endpoint error."""
@@ -201,7 +280,7 @@ class TestExternalMiController:
             ExternalMiController("unix:///tmp/gdb-mcp.sock")
 
     @pytest.mark.parametrize("unix_mi_server", [[]], indirect=True)
-    def test_exit_is_idempotent(self, unix_mi_server: UnixMiServer) -> None:
+    def test_exit_is_idempotent(self, unix_mi_server: MiServer) -> None:
         """Detaching twice should be a no-op instead of raising."""
 
         unix_mi_server.controller.exit()

@@ -10,10 +10,13 @@ from __future__ import annotations
 import logging
 import os
 import socket
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, BinaryIO, Literal, cast
 
+from pygdbmi import gdbmiparser
+from pygdbmi.constants import GdbTimeoutError
 from pygdbmi.IoManager import IoManager
 
 from .mi_models import MiRecord
@@ -201,6 +204,93 @@ def open_endpoint(endpoint: MiEndpoint, *, timeout_sec: float) -> _EndpointConne
     return _open_pty(endpoint)
 
 
+_SOCKET_READ_SIZE = 65536
+_SOCKET_POLL_INTERVAL_SEC = 0.001
+
+
+class _SocketMiManager:
+    """Line-oriented MI reader for a non-blocking socket stream.
+
+    ``pygdbmi.IoManager`` can only make pipes non-blocking on Windows
+    (``msvcrt.get_osfhandle`` plus ``SetNamedPipeHandleState``), which fails on
+    a socket handle. The stream is already non-blocking here, so this reader
+    polls it directly and keeps the same timeout contract.
+    """
+
+    def __init__(
+        self,
+        stream: BinaryIO,
+        time_to_check_for_additional_output_sec: float,
+    ) -> None:
+        self._stream = stream
+        self._buffer = b""
+        self._time_to_check = time_to_check_for_additional_output_sec
+
+    @property
+    def stdin(self) -> BinaryIO:
+        """Expose the duplex stream as the command writer."""
+
+        return self._stream
+
+    def get_gdb_response(
+        self,
+        timeout_sec: float = 0.0,
+        raise_error_on_timeout: bool = True,
+    ) -> list[MiRecord]:
+        """Collect complete MI records until the stream goes quiet or times out."""
+
+        deadline = time.monotonic() + max(0.0, timeout_sec)
+        responses: list[MiRecord] = []
+        while True:
+            line = self._readline()
+            while line is not None:
+                responses.extend(self._parse(line))
+                line = self._readline()
+
+            if responses and self._time_to_check > 0:
+                deadline = min(time.monotonic() + self._time_to_check, deadline)
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(_SOCKET_POLL_INTERVAL_SEC)
+
+        if not responses and raise_error_on_timeout:
+            raise GdbTimeoutError(f"Did not get response from gdb after {timeout_sec} seconds")
+        return responses
+
+    def _readline(self) -> bytes | None:
+        """Return one complete line, or None while the stream has nothing new."""
+
+        while b"\n" not in self._buffer:
+            try:
+                chunk = self._stream.read(_SOCKET_READ_SIZE)
+            except (BlockingIOError, InterruptedError):
+                return None
+            if chunk is None:
+                return None
+            if not chunk:
+                if not self._buffer:
+                    return None
+                line, self._buffer = self._buffer, b""
+                return line
+            self._buffer += chunk
+
+        line, _, self._buffer = self._buffer.partition(b"\n")
+        return line + b"\n"
+
+    @staticmethod
+    def _parse(line: bytes) -> list[MiRecord]:
+        text = line.decode(errors="replace").strip("\n")
+        if not text:
+            return []
+        try:
+            parsed = gdbmiparser.parse_response(text)
+        except Exception:  # pragma: no cover - parser rejects malformed records
+            logger.debug("Ignoring unparseable MI line: %r", line)
+            return []
+        parsed["stream"] = "stdout"
+        return [cast(MiRecord, parsed)]
+
+
 class ExternalMiController:
     """`GdbControllerProtocol` backed by a GDB/MI stream started elsewhere.
 
@@ -224,15 +314,22 @@ class ExternalMiController:
             ) from exc
 
         self._stream: BinaryIO = cast(BinaryIO, _CrLfNormalizingStream(self._connection.stream))
-        self._io_manager = IoManager(
-            self._stream,
-            self._stream,
-            None,
-            time_to_check_for_additional_output_sec,
-        )
-        self.io_manager: ControllerIoManagerProtocol = cast(
-            ControllerIoManagerProtocol, self._io_manager
-        )
+        manager: IoManager | _SocketMiManager
+        if os.name == "nt":
+            # pygdbmi's Windows non-blocking setup only understands pipe handles.
+            manager = _SocketMiManager(
+                self._stream,
+                time_to_check_for_additional_output_sec,
+            )
+        else:
+            manager = IoManager(
+                self._stream,
+                self._stream,
+                None,
+                time_to_check_for_additional_output_sec,
+            )
+        self._io_manager = manager
+        self.io_manager: ControllerIoManagerProtocol = cast(ControllerIoManagerProtocol, manager)
         # The external process owns gdb, so gdb-mcp has no child to poll.
         self.gdb_process: GdbProcessProtocol | None = None
         self._closed = False
