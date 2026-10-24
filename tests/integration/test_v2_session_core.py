@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -227,6 +228,10 @@ def test_run_until_failure_v2(
 
 
 @pytest.mark.integration
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="GDB for MinGW cannot install a hardware watchpoint before the target starts",
+)
 def test_watchpoint_v2(
     compile_program: CompileProgram,
     start_session: StartSession,
@@ -265,6 +270,10 @@ def test_watchpoint_v2(
 
 
 @pytest.mark.integration
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="fork catchpoints need POSIX process creation",
+)
 def test_catchpoint_v2(
     compile_program: CompileProgram,
     start_session: StartSession,

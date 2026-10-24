@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import pty
 import subprocess
 
 import pytest
@@ -38,6 +37,7 @@ def test_connect_to_externally_started_gdb_over_pty(
 ) -> None:
     """gdb-mcp should attach to a gdb that another process started on a pty."""
 
+    pty = pytest.importorskip("pty", reason="pty endpoints require POSIX")
     program = compile_program(
         _CONNECT_C_PROGRAM,
         filename="connect_target.c",
@@ -46,7 +46,8 @@ def test_connect_to_externally_started_gdb_over_pty(
 
     # The external process owns the pty master; gdb-mcp opens the slave path.
     master, slave = pty.openpty()
-    slave_name = os.ttyname(slave)
+    ttyname = getattr(os, "ttyname")  # noqa: B009 - POSIX-only attribute
+    slave_name = ttyname(slave)
     process = subprocess.Popen(
         ["gdb", "--quiet", "--interpreter=mi2", program],
         stdin=master,

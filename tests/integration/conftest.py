@@ -7,6 +7,7 @@ import logging
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -148,7 +149,8 @@ def _compile(
 
     tmpdir = Path(tempfile.mkdtemp(prefix=prefix)) if directory is None else directory
     source_file = tmpdir / filename
-    executable_file = tmpdir / Path(filename).stem
+    suffix = ".exe" if sys.platform == "win32" else ""
+    executable_file = tmpdir / f"{Path(filename).stem}{suffix}"
     source_file.write_text(source)
 
     compile_result = subprocess.run(
@@ -300,6 +302,9 @@ def compile_program_with_core(_tempdirs: list[Path]) -> CompileProgramWithCore:
         )
 
         if not core_file.exists():
+            combined = run_result.stdout + run_result.stderr
+            if "Can't create a corefile" in combined:
+                pytest.skip("This platform's GDB cannot create core files")
             pytest.fail(
                 "Expected GDB to generate a core dump but none was produced. "
                 f"stdout={run_result.stdout!r} stderr={run_result.stderr!r}"

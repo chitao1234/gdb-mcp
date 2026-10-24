@@ -178,7 +178,12 @@ def test_source_context_honours_substitute_path(
 
     started = start_session_payload(
         moved_program,
-        debugger_args=["-ex", f"set substitute-path {build_dir} {moved_dir}"],
+        # DWARF records forward slashes on Windows; substitute-path matches the
+        # recorded spelling, so both sides use the debug-info form.
+        debugger_args=[
+            "-ex",
+            f"set substitute-path {build_dir.as_posix()} {moved_dir.as_posix()}",
+        ],
     )
     session_id = integer(dig(started, "result", "session_id"))
 
