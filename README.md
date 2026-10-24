@@ -275,6 +275,24 @@ Server logs go to stderr, which keeps stdout clean for stdio transport.
 `GDB_MCP_LOG_LEVEL=DEBUG` adds the GDB/MI traffic, which is the fastest way to
 see what the server actually asked GDB.
 
+### Windows
+
+GDB and LLDB both work on Windows; the remaining limits come from the debuggers
+rather than the server:
+
+- Set `GDB_PATH` to the MinGW GDB and `LLDB_PREFIX` to the LLDB installation.
+  The LLDB bridge is built on first use with the C++ toolchain on `PATH`; set
+  `LLDB_BRIDGE_CXX` to choose one, or `LLDB_BRIDGE_EXECUTABLE` to supply a
+  prebuilt bridge.
+- `gdb_session_connect` accepts `tcp://` streams on Windows. `unix://` and
+  `pty://` need POSIX sockets or a tty and are rejected there.
+- A console-less GDB child cannot receive SIGINT, so `action=interrupt` sends
+  `-exec-interrupt` and startup enables async MI.
+- MinGW GDB cannot create core files and cannot install a watchpoint before the
+  inferior starts. Set watchpoints after the first stop.
+- `rr` replay requires Linux. Delve cannot create hardware watchpoints on
+  Windows, and fork catchpoints need POSIX process creation.
+
 ## Troubleshooting
 
 - **`gdb` not found** — check `which gdb` and `gdb --version`, then point

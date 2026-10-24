@@ -541,6 +541,10 @@ With `debugger="gdb"` (the default), `endpoint` is a GDB/MI stream:
 | `unix:///path/to/socket` | GDB/MI exposed over a Unix domain socket |
 | `pty:///dev/pts/N` | GDB/MI carried by a pty/tty device |
 
+`unix://` needs a POSIX host and `pty://` additionally needs a tty, so Windows
+rejects both; `tcp://` works on every platform. Delve's `unix://` endpoint has
+the same POSIX requirement.
+
 With `debugger="lldb"`, `endpoint` is passed to `SBTarget::ConnectRemote`, so it
 is a remote stub URL such as `connect://host:port`. The optional `program`
 names the executable to associate with the remote target. LLDB remote sessions
