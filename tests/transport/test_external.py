@@ -53,6 +53,8 @@ class UnixMiServer:
 def unix_mi_server(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[UnixMiServer]:
     """Serve preloaded MI payloads over a unix socket and yield the client."""
 
+    if not hasattr(socket, "AF_UNIX"):
+        pytest.skip("unix sockets are not available on this platform")
     payloads = cast(list[bytes], request.param)
     socket_path = str(tmp_path / "gdb.sock")
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -189,6 +191,14 @@ class TestExternalMiController:
 
         with pytest.raises(EndpointError):
             ExternalMiController("unix:///tmp/definitely-not-here-gdb-mcp.sock")
+
+    def test_unix_endpoint_requires_af_unix(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Platforms without unix sockets should reject the endpoint cleanly."""
+
+        monkeypatch.delattr(socket, "AF_UNIX", raising=False)
+
+        with pytest.raises(EndpointError):
+            ExternalMiController("unix:///tmp/gdb-mcp.sock")
 
     @pytest.mark.parametrize("unix_mi_server", [[]], indirect=True)
     def test_exit_is_idempotent(self, unix_mi_server: UnixMiServer) -> None:

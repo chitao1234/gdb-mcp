@@ -10,15 +10,21 @@ from __future__ import annotations
 import logging
 import os
 import socket
-import termios
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import BinaryIO, Literal, cast
+from typing import Any, BinaryIO, Literal, cast
 
 from pygdbmi.IoManager import IoManager
 
 from .mi_models import MiRecord
 from .protocols import ControllerIoManagerProtocol, GdbProcessProtocol
+
+try:  # pragma: no cover - platform dependent
+    import termios as _termios_module
+except ImportError:  # Windows has no termios; pty endpoints are rejected there.
+    _termios_module = None  # type: ignore[assignment]
+
+_termios: Any = _termios_module
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +138,8 @@ def _open_tcp(endpoint: MiEndpoint, timeout_sec: float) -> _EndpointConnection:
 
 def _open_unix(endpoint: MiEndpoint, timeout_sec: float) -> _EndpointConnection:
     assert endpoint.path is not None
+    if not hasattr(socket, "AF_UNIX"):
+        raise EndpointError("unix endpoints are not supported on this platform")
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.settimeout(timeout_sec)
     sock.connect(endpoint.path)
@@ -142,6 +150,14 @@ def _adopt_socket(sock: socket.socket) -> _EndpointConnection:
     """Wrap a connected socket as an unbuffered read/write binary stream."""
 
     sock.setblocking(False)
+    if os.name == "nt":  # pragma: no cover - Windows has no usable socket fds.
+        stream = cast(BinaryIO, sock.makefile("rwb", buffering=0))
+
+        def close() -> None:
+            stream.close()
+            sock.close()
+
+        return _EndpointConnection(stream=stream, close=close)
     fd = sock.detach()
     stream = cast(BinaryIO, os.fdopen(fd, "r+b", buffering=0))
     return _EndpointConnection(stream=stream, close=stream.close)
@@ -149,13 +165,16 @@ def _adopt_socket(sock: socket.socket) -> _EndpointConnection:
 
 def _open_pty(endpoint: MiEndpoint) -> _EndpointConnection:
     assert endpoint.path is not None
-    fd = os.open(endpoint.path, os.O_RDWR | os.O_NOCTTY)
-    _configure_raw_tty(fd)
+    if _termios is None:
+        raise EndpointError("pty endpoints are not supported on this platform")
+    # O_NOCTTY is POSIX-only; pty endpoints are already rejected without termios.
+    fd = os.open(endpoint.path, os.O_RDWR | getattr(os, "O_NOCTTY", 0))
+    _configure_raw_tty(fd, _termios)
     stream = cast(BinaryIO, os.fdopen(fd, "r+b", buffering=0))
     return _EndpointConnection(stream=stream, close=stream.close)
 
 
-def _configure_raw_tty(fd: int) -> None:
+def _configure_raw_tty(fd: int, termios: Any) -> None:
     """Disable echo and line editing on a tty so MI bytes pass through untouched."""
 
     try:
