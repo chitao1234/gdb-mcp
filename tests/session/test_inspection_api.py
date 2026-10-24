@@ -13,6 +13,7 @@ from gdb_mcp.session.requests import (
     SourceContextRequest,
 )
 from gdb_mcp.session.service import SessionService
+from gdb_mcp.transport import escape_mi_string
 from tests.support import mapping_list, sequence
 
 from .conftest import MiConsoleBuilder, MiRecordBuilder, ScriptedSessionBuilder
@@ -514,7 +515,8 @@ class TestStructuredCodeInspectionApi:
         lines = mapping_list(result["lines"])
         assert lines[1]["line_number"] == 2
         assert lines[1]["is_current"] is True
-        assert f"list {source_file}:1,{source_file}:2" in "".join(controller.decoded_writes)
+        selector = escape_mi_string(str(source_file))
+        assert f"list {selector}:1,{selector}:2" in "".join(controller.decoded_writes)
 
     def test_get_source_context_resolves_wrapped_info_line(
         self,
@@ -555,7 +557,8 @@ class TestStructuredCodeInspectionApi:
         assert location["function"] == "add"
         assert location["line"] == 1
         assert mapping_list(result["lines"])[0]["line_number"] == 1
-        assert f"list {source_file}:1,{source_file}:1" in "".join(controller.decoded_writes)
+        selector = escape_mi_string(str(source_file))
+        assert f"list {selector}:1,{selector}:1" in "".join(controller.decoded_writes)
 
     def test_get_source_context_resolves_info_line_without_code(
         self,
@@ -595,7 +598,8 @@ class TestStructuredCodeInspectionApi:
         assert location["file"] == str(source_file)
         assert location["line"] == 4
         assert mapping_list(result["lines"])[0]["line_number"] == 4
-        assert f"list {source_file}:4,{source_file}:4" in "".join(controller.decoded_writes)
+        selector = escape_mi_string(str(source_file))
+        assert f"list {selector}:4,{selector}:4" in "".join(controller.decoded_writes)
 
     def test_get_source_context_with_thread_and_frame_restores_selection(
         self,
