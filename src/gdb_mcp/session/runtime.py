@@ -88,8 +88,8 @@ class SessionRuntime:
     is_running: bool = False
     debugger: str = "gdb"
     target_loaded: bool = False
-    # Windows GDB has no SIGINT to forward, so interrupts go through the MI
-    # command and only work once startup enabled async MI.
+    # Interrupts go through MI when the debugger child cannot be signalled
+    # (Windows) or does not exist (an external endpoint); startup sets this.
     mi_async_interrupt: bool = False
     attached_pid: int | None = None
     last_failure_message: str | None = None
@@ -179,6 +179,9 @@ class SessionRuntime:
         self.inferior_states.clear()
         self.follow_fork_mode = None
         self.detach_on_fork = None
+        # Async MI belongs to the debugger child that enabled it, so a new
+        # startup or a stopped session must fall back to the platform default.
+        self.mi_async_interrupt = False
 
     def mark_ready(self) -> None:
         """Mark the session as ready for requests."""

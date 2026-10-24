@@ -438,3 +438,16 @@ class TestRuntimeFoundations:
         assert snapshot.inferior_states is not None
         assert snapshot.inferior_states[0].execution_state == "paused"
         assert snapshot.inferior_states[1].exit_code == 0
+
+
+def test_mark_stopped_clears_async_mi_interrupt() -> None:
+    """Async MI belongs to the current debugger child, not to the service."""
+
+    session = create_default_session_service(c.DEBUGGER_GDB)
+    runtime = session.runtime
+    runtime.mark_ready()
+    runtime.mi_async_interrupt = True
+
+    runtime.mark_stopped()
+
+    assert runtime.mi_async_interrupt is False

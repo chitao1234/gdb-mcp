@@ -334,6 +334,30 @@ class TestLifecycleApi:
         assert "-gdb-set mi-async on" in start_session.executed
         assert gdb_backend(start_session.service).runtime.mi_async_interrupt is True
 
+    def test_restarting_a_local_session_clears_the_external_async_flag(
+        self,
+        start_session: StartHarness,
+        session_service: SessionService,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A local restart must interrupt by signal again, not through MI."""
+
+        controller = MagicMock(spec=GdbControllerProtocol)
+        controller.gdb_process = None
+        monkeypatch.setattr(
+            "gdb_mcp.session.lifecycle.create_external_controller",
+            lambda endpoint, **kwargs: controller,
+        )
+
+        assert start_session(endpoint="tcp://127.0.0.1:4399")["status"] == "success"
+        runtime = gdb_backend(session_service).runtime
+        assert runtime.mi_async_interrupt is True
+
+        assert result_to_mapping(session_service.stop())["status"] == "success"
+        assert start_session(program="/bin/ls")["status"] == "success"
+
+        assert runtime.mi_async_interrupt is False
+
     def test_start_session_applies_environment_before_init_commands(
         self, start_session: StartHarness
     ) -> None:
