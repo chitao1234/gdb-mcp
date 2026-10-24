@@ -457,3 +457,15 @@ def _posix_startup_sequence(monkeypatch: pytest.MonkeyPatch) -> None:
     from gdb_mcp.session import lifecycle
 
     monkeypatch.setattr(lifecycle, "_ASYNC_MI_INTERRUPT", False)
+
+
+@pytest.fixture(autouse=True)
+def _linux_rr_replay(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep scripted rr tests on the Linux launch contract.
+
+    rr has no build outside Linux; the platform guard has its own test.
+    """
+
+    from gdb_mcp.session import lifecycle
+
+    monkeypatch.setattr(lifecycle, "_RR_REPLAY_SUPPORTED", True)

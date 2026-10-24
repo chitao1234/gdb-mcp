@@ -41,6 +41,9 @@ from .runtime import SessionRuntime
 # only takes effect in async MI mode.
 _ASYNC_MI_INTERRUPT = sys.platform == "win32"
 
+# rr drives Linux perf events; there is no Windows or macOS build to launch.
+_RR_REPLAY_SUPPORTED = sys.platform.startswith("linux")
+
 logger = logging.getLogger(__name__)
 
 SerializedResultMapping: TypeAlias = StructuredPayload
@@ -172,6 +175,14 @@ class SessionLifecycleService:
                     message = f"Unsupported debugger {debugger!r}: supported values are {supported}"
                     self._runtime.mark_failed(message)
                     return OperationError(message=message, code="unsupported_combination")
+                if replay and not _RR_REPLAY_SUPPORTED:
+                    message = (
+                        "rr replay requires Linux; this platform has no rr build to launch. "
+                        "Record and replay the trace on a Linux host."
+                    )
+                    self._runtime.mark_failed(message)
+                    return OperationError(message=message, code="unsupported_operation")
+
                 if replay and (args or core):
                     message = (
                         "An rr trace already owns the target; do not also pass args or core "

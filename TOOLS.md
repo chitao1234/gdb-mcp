@@ -766,7 +766,8 @@ Run or synchronize execution state.
 also accept `"reverse": true`, which runs the command backwards
 (`-exec-continue --reverse`, `-exec-step-instruction --reverse`, and friends).
 It requires a target that can execute in reverse: an `rr_replay` session, or a
-gdb recording started with `record`/`target record-full`. `run`, `interrupt`,
+gdb recording started with `record`/`target record-full`. `rr_replay` is
+Linux-only; other platforms return `code="unsupported_operation"`. `run`, `interrupt`,
 `return`, `jump`, `until`, and `wait_for_stop` reject the flag. LLDB has no reverse execution and
 returns `code="unsupported_combination"` when `reverse` is true.
 

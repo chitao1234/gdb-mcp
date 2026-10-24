@@ -300,6 +300,22 @@ class TestLifecycleApi:
         assert "-gdb-set mi-async on" in start_session.executed
         assert gdb_backend(start_session.service).runtime.mi_async_interrupt is True
 
+    def test_start_session_rejects_rr_replay_without_a_linux_host(
+        self, start_session: StartHarness, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """rr has no build outside Linux, so the request must fail cleanly."""
+
+        from gdb_mcp.session import lifecycle
+
+        monkeypatch.setattr(lifecycle, "_RR_REPLAY_SUPPORTED", False)
+
+        result = start_session(rr_replay="/traces/app-0")
+
+        assert result["status"] == "error"
+        assert result["code"] == "unsupported_operation"
+        assert "Linux" in text(result["message"])
+        assert not start_session.controller_factory.called
+
     def test_start_session_applies_environment_before_init_commands(
         self, start_session: StartHarness
     ) -> None:
