@@ -8,10 +8,10 @@ from collections.abc import Callable
 from typing import BinaryIO, cast
 
 from pygdbmi.gdbcontroller import GdbController
-from pygdbmi.IoManager import IoManager
 
 from ..contracts import DEBUGGER_DELVE, DEBUGGER_GDB, DEBUGGER_LLDB
 from ..transport import MiTransportError
+from ..transport.mi_io import BoundedMiIoManager
 from ..transport.protocols import GdbControllerProtocol
 from .backends import DebuggerBackend
 from .constants import (
@@ -70,10 +70,10 @@ class _GdbController(GdbController):
 
         stdin = self.gdb_process.stdin
         stdout = self.gdb_process.stdout
-        self.io_manager = IoManager(
+        self.io_manager = BoundedMiIoManager(
             cast(BinaryIO, stdin),
             cast(BinaryIO, stdout),
-            self.gdb_process.stderr,
+            cast(BinaryIO | None, self.gdb_process.stderr),
             self.time_to_check_for_additional_output_sec,
         )
         return self.gdb_process.pid

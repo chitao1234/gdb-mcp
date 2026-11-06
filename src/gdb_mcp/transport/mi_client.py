@@ -7,6 +7,7 @@ import threading
 import time
 from collections.abc import Callable
 
+from .mi_buffer import MiRecordBuffer
 from .mi_models import MiRecord, MiTransportResponse
 from .protocols import GdbControllerFactoryProtocol, GdbControllerProtocol
 
@@ -89,7 +90,7 @@ class MiClient:
         if not self._controller:
             return []
 
-        records: list[MiRecord] = []
+        records = MiRecordBuffer()
         deadline = time.monotonic() + timeout_sec
 
         with self._command_lock:
@@ -125,9 +126,10 @@ class MiClient:
                         self._exit_unlocked()
                         raise MiTransportError(f"GDB internal fatal error: {str(payload).strip()}")
 
-                records.extend(responses)
+                for response in responses:
+                    records.append(response)
 
-        return records
+        return records.records
 
     def exit(self) -> None:
         """Stop the current controller if one exists."""
@@ -196,8 +198,8 @@ class MiClient:
                 self._exit_unlocked()
                 return MiTransportResponse(error=f"Failed to send command: {exc}", fatal=True)
 
-            command_responses: list[MiRecord] = []
-            async_notifications: list[MiRecord] = []
+            command_responses = MiRecordBuffer()
+            async_notifications = MiRecordBuffer()
             start_time = time.monotonic()
             last_activity_time = start_time
             last_alive_check = 0.0
@@ -226,8 +228,8 @@ class MiClient:
                         logger.error(error_details)
                         self._exit_unlocked()
                         return MiTransportResponse(
-                            command_responses=command_responses,
-                            async_notifications=async_notifications,
+                            command_responses=command_responses.records,
+                            async_notifications=async_notifications.records,
                             error=error_details,
                             fatal=True,
                         )
@@ -242,15 +244,18 @@ class MiClient:
 
                 try:
                     responses = self._controller.get_gdb_response(
-                        timeout_sec=self._poll_timeout_sec,
+                        timeout_sec=min(
+                            self._poll_timeout_sec,
+                            max(0.0, timeout_sec - (time.monotonic() - start_time)),
+                        ),
                         raise_error_on_timeout=False,
                     )
                 except (BrokenPipeError, OSError) as exc:
                     logger.error("Communication error while reading responses: %s", exc)
                     self._exit_unlocked()
                     return MiTransportResponse(
-                        command_responses=command_responses,
-                        async_notifications=async_notifications,
+                        command_responses=command_responses.records,
+                        async_notifications=async_notifications.records,
                         error=f"Communication error: {exc}",
                         fatal=True,
                     )
@@ -260,8 +265,8 @@ class MiClient:
                         result_class != "running" or saw_stop_after_running or return_on_running
                     ):
                         return MiTransportResponse(
-                            command_responses=command_responses,
-                            async_notifications=async_notifications,
+                            command_responses=command_responses.records,
+                            async_notifications=async_notifications.records,
                         )
                     continue
 
@@ -283,8 +288,8 @@ class MiClient:
                         logger.error("GDB internal fatal error detected: %s", payload)
                         self._exit_unlocked()
                         return MiTransportResponse(
-                            command_responses=command_responses,
-                            async_notifications=async_notifications,
+                            command_responses=command_responses.records,
+                            async_notifications=async_notifications.records,
                             error=f"GDB internal fatal error: {str(payload).strip()}",
                             fatal=True,
                         )
@@ -326,8 +331,8 @@ class MiClient:
                     result_class != "running" or saw_stop_after_running or return_on_running
                 ):
                     return MiTransportResponse(
-                        command_responses=command_responses,
-                        async_notifications=async_notifications,
+                        command_responses=command_responses.records,
+                        async_notifications=async_notifications.records,
                     )
 
             elapsed = time.monotonic() - start_time
@@ -337,8 +342,8 @@ class MiClient:
                 elapsed,
             )
             return MiTransportResponse(
-                command_responses=command_responses,
-                async_notifications=async_notifications,
+                command_responses=command_responses.records,
+                async_notifications=async_notifications.records,
                 timed_out=True,
             )
 
@@ -414,20 +419,23 @@ class MiClient:
         if self._controller is None:
             return MiTransportResponse(error="No active GDB session")
 
-        command_responses: list[MiRecord] = []
+        command_responses = MiRecordBuffer()
         start_time = time.monotonic()
 
         while time.monotonic() - start_time < timeout_sec:
             try:
                 responses = self._controller.get_gdb_response(
-                    timeout_sec=self._poll_timeout_sec,
+                    timeout_sec=min(
+                        self._poll_timeout_sec,
+                        max(0.0, timeout_sec - (time.monotonic() - start_time)),
+                    ),
                     raise_error_on_timeout=False,
                 )
             except (BrokenPipeError, OSError) as exc:
                 logger.error("Communication error %s: %s", fatal_context, exc)
                 self._exit_unlocked()
                 return MiTransportResponse(
-                    command_responses=command_responses,
+                    command_responses=command_responses.records,
                     error=f"Communication error: {exc}",
                     fatal=True,
                 )
@@ -444,15 +452,15 @@ class MiClient:
                     logger.error("GDB internal fatal error detected %s: %s", fatal_context, payload)
                     self._exit_unlocked()
                     return MiTransportResponse(
-                        command_responses=command_responses,
+                        command_responses=command_responses.records,
                         error=f"GDB internal fatal error: {str(payload).strip()}",
                         fatal=True,
                     )
 
                 if response_type == "notify" and response.get("message") == "stopped":
-                    return MiTransportResponse(command_responses=command_responses)
+                    return MiTransportResponse(command_responses=command_responses.records)
 
-        return MiTransportResponse(command_responses=command_responses, timed_out=True)
+        return MiTransportResponse(command_responses=command_responses.records, timed_out=True)
 
     @staticmethod
     def _is_fatal_payload(payload: object) -> bool:
