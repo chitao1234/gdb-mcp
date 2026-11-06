@@ -236,6 +236,14 @@ Rules that keep this reliable:
 
 - `batch` runs ordered tool steps with `--step <tool>` / `--step-arg path=value` / `--step-label text`; it exits non-zero when any step fails.
 - `campaign` repeats start → setup → run → collect until a failure predicate matches (exit code, stop reason, execution state, regex, timeout) and writes a capture; use it for flaky reproductions.
+- `--run-timeout-sec` bounds each run phase; startup, setup, capture, and cleanup
+  take additional time. Campaigns interrupt a matching running target before
+  capture. Read `capture_error` if that interrupt fails. Responses keep the
+  latest 1,000 iterations within an 8 MiB inline history budget; add
+  `iterations_omitted` to the array length for the completed count. When
+  `iterations_path` is present, read that server-local
+  JSONL file for all iteration envelopes, including results marked
+  `result_truncated`. GDB output can also carry a truncation marker.
 - `capture` writes a forensic bundle (frames, variables, registers, memory ranges, transcript) to `--output-dir`.
 
 Each of these has many flags; read `gdb-mcp-client campaign --help` before composing one, and prefer `--json` so you can parse counts and paths.

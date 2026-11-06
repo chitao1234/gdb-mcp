@@ -67,6 +67,14 @@ contains the complete tool envelope under `result`; read its `status`, `action`,
 and error `code` there. The CLI exits nonzero if any step returned an error.
 Each step captures its new stop event even when the retained history is full.
 Invalid batch or campaign setup steps report every field error with its step path.
+Campaigns honor the run timeout even when GDB output is continuous. A matching
+running target is interrupted before capture. Campaign responses keep the latest
+1,000 iterations and summarize operation envelopes larger than 256 KiB. Inline
+history also has an 8 MiB budget accounting for both MCP representations. When a
+limit applies, `iterations_path` points to the complete iteration envelopes in a
+JSONL file on the server. `iterations_omitted` counts earlier entries and each
+entry's `result_truncated` identifies a summarized envelope. GDB stream output
+is bounded separately and carries an explicit truncation marker.
 Capture status, manifest metadata, and returned stop metadata share one runtime
 snapshot taken before the inspection sections run.
 Backend execution observations update state, selection, and new stop events

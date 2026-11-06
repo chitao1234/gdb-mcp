@@ -1235,7 +1235,9 @@ binary selection, and replay settings are forwarded to each fresh session.
 - `startup`: full `gdb_session_start` payload reused for every iteration
 - `setup_steps`: optional batch-style setup steps run before `run`
 - `run_args`: optional argv override for the run phase
-- `run_timeout_sec`
+- `run_timeout_sec`: positive run-phase timeout in seconds (default 30), including
+  when GDB output is continuous. Startup, setup, capture, and cleanup take
+  additional time; this is not a deadline for the entire campaign.
 - `max_iterations`
 - `failure`
 - `capture`
@@ -1267,6 +1269,9 @@ binary selection, and replay settings are forwarded to each fresh session.
 - `include_stop_history`
 
 `capture.bundle_name` and `capture.bundle_name_prefix` are mutually exclusive.
+Before capture, a matching inferior that is still running is interrupted. If
+the interrupt fails, capture is skipped and `capture_error` and a warning explain
+the failure. The iteration retains the run's original result and state.
 
 ### Success Fields
 
@@ -1275,6 +1280,9 @@ binary selection, and replay settings are forwarded to each fresh session.
 - `capture_bundle`
 - `capture_error`
 - `iterations`
+- `iterations_omitted`: number of earlier iterations omitted from inline history
+- `iterations_path`: server-local JSONL path containing all complete iteration
+  envelopes when inline limits apply; otherwise `null`
 
 These fields are inside the success envelope's `result` object. Any `warnings`
 array is at the envelope root.
@@ -1283,17 +1291,38 @@ Each `iterations[]` entry contains:
 
 - `iteration`
 - `phase`
-- `result` (the complete envelope from the operation for this phase)
+- `result` (the operation envelope, summarized when `result_truncated` is true)
 - `execution_state`
 - `stop_reason`
 - `stop_kind`
 - `exit_code`
 - `matched_failure`
 - `trigger`
+- `result_truncated`: whether the operation envelope was summarized inline
 
-The completed count is the length of `iterations`. State and stop information
-belongs to each iteration, so the campaign result does not repeat a potentially
-different final state at its root.
+Inline history retains up to the latest 1,000 iterations within an aggregate
+8 MiB budget accounting for both the structured and JSON-text MCP representations,
+including escaping. When the budget is reached, older entries move to the JSONL
+file so newer results remain inline. Operation envelopes whose serialized JSON
+exceeds 256 KiB are summarized while preserving success/error status and, for
+errors, the code and up to 2048 message characters. Small
+envelopes remain complete. Failure predicates run before summarization.
+When any limit applies, the server writes all iteration envelopes to
+`iterations_path` in a persistent `gdb-mcp-campaign-*` directory under its
+temporary directory. Each JSONL line is one complete iteration; the caller can
+read or remove that directory after collecting the evidence. Capture settings
+do not disable this overflow file.
+
+The completed count is `len(iterations) + iterations_omitted`. State and stop
+information belongs to each iteration, so the campaign result does not repeat a
+potentially different final state at its root.
+
+GDB transport retention is bounded separately: each response buffer keeps up to
+256 Ki characters of stream output and 1024 records, with
+`[gdb-mcp: debugger output truncated]` marking omitted traffic. The command result
+and first observed stop record survive truncation. The JSONL file preserves the operation
+envelopes produced after these transport limits. An individual MI record larger
+than 16 MiB fails the transport and closes that debugger session.
 
 ## `gdb_execute_command`
 

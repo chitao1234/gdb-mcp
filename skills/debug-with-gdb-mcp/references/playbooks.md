@@ -474,6 +474,15 @@ Use `gdb_run_until_failure` to avoid ad-hoc loops:
 
 When you need a deterministic single output directory name, use `capture.bundle_name` instead of `bundle_name_prefix`.
 
+`run_timeout_sec` bounds the run phase; startup, setup, capture, and cleanup take
+additional time. A matching running target is interrupted before capture. If
+`capture_error` reports an interrupt failure, inspect the iteration's original
+run error. Read `iterations_path` on the server when it is present: it preserves
+all iteration envelopes when the response reaches its 1,000-entry or 8 MiB inline
+history budget, or sets `result_truncated` on a large result. The completed count
+is the inline array length plus `iterations_omitted`. GDB output can also contain
+an explicit truncation marker.
+
 ## Playbook 9: Reverse Debugging an rr Recording
 
 Use when a failure is rare and you want to step *backwards* from the crash instead of
