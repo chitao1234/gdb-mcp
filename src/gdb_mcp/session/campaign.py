@@ -24,6 +24,7 @@ from ..domain import (
     StructuredPayload,
     result_to_envelope,
 )
+from .campaign_history import CampaignHistory
 from .locking import session_workflow_context
 from .requests import ExecutionOptions
 from .service import SessionService
@@ -104,7 +105,7 @@ class RunUntilFailureService:
             else None
         )
 
-        iteration_summaries: list[RunUntilFailureIterationInfo] = []
+        history = CampaignHistory()
         matched_iteration: RunUntilFailureIterationInfo | None = None
         capture_bundle: CaptureBundleInfo | None = None
         capture_error: str | None = None
@@ -133,7 +134,7 @@ class RunUntilFailureService:
                         matched_failure=True,
                         trigger="startup_error",
                     )
-                    iteration_summaries.append(matched_iteration)
+                    history.append(matched_iteration)
                     break
 
                 if request.setup_steps:
@@ -155,7 +156,7 @@ class RunUntilFailureService:
                             stop_kind=setup_status.stop_kind,
                             exit_code=setup_status.exit_code,
                         )
-                        iteration_summaries.append(matched_iteration)
+                        history.append(matched_iteration)
                         break
 
                 run_result = session.run(
@@ -211,7 +212,7 @@ class RunUntilFailureService:
                     matched_failure=matched,
                     trigger=trigger,
                 )
-                iteration_summaries.append(iteration_summary)
+                history.append(iteration_summary)
 
                 if matched:
                     matched_iteration = iteration_summary
@@ -224,7 +225,7 @@ class RunUntilFailureService:
             warnings = (f"Capture bundle failed: {capture_error}",)
 
         if matched_iteration is None:
-            message = f"No failure matched after {len(iteration_summaries)} iterations"
+            message = f"No failure matched after {history.completed} iterations"
         else:
             message = f"Failure matched on iteration {matched_iteration.iteration}: {matched_iteration.trigger}"
 
@@ -234,7 +235,9 @@ class RunUntilFailureService:
                 iterations_requested=request.max_iterations,
                 capture_bundle=capture_bundle,
                 capture_error=capture_error,
-                iterations=iteration_summaries,
+                iterations=list(history.iterations),
+                iterations_omitted=history.completed - len(history.iterations),
+                iterations_path=str(history.path) if history.path is not None else None,
             ),
             warnings=warnings,
         )

@@ -270,6 +270,7 @@ class RunUntilFailureIterationInfo(StructuredOutput):
     exit_code: int | None = None
     matched_failure: bool = False
     trigger: str | None = None
+    result_truncated: bool = False
 
 
 @dataclass(slots=True, frozen=True)
@@ -279,6 +280,8 @@ class RunUntilFailureInfo(StructuredOutput):
     message: str
     iterations_requested: int
     iterations: list[RunUntilFailureIterationInfo]
+    iterations_omitted: int = 0
+    iterations_path: str | None = None
     capture_bundle: CaptureBundleInfo | None = None
     capture_error: str | None = None
 
