@@ -177,7 +177,17 @@ class RunUntilFailureService:
                     compiled_regex=compiled_regex,
                 )
 
-                if matched and request.capture.enabled:
+                capture_ready = matched and request.capture.enabled
+                if capture_ready and status_snapshot.execution_state == "running":
+                    interrupt_result = session.interrupt()
+                    if isinstance(interrupt_result, OperationError):
+                        capture_ready = False
+                        capture_error = (
+                            "Could not stop the running inferior for capture: "
+                            f"{interrupt_result.message}"
+                        )
+
+                if capture_ready:
                     capture_result = session.capture_bundle(
                         output_dir=request.capture.output_dir,
                         bundle_name=self._bundle_name(
@@ -255,7 +265,11 @@ class RunUntilFailureService:
         """Return whether one iteration matches the configured failure predicates."""
 
         if isinstance(result, OperationError):
-            if criteria.failure_on_timeout and "timeout" in result.message.lower():
+            if criteria.failure_on_timeout and (
+                result.code == "command_timeout"
+                or "timeout" in result.message.lower()
+                or "timed out" in result.message.lower()
+            ):
                 return True, "timeout"
             if criteria.failure_on_error:
                 return True, "run_error"

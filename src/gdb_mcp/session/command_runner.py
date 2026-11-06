@@ -207,6 +207,7 @@ class SessionCommandRunner:
             partial = parsed.output_text()
             return OperationError(
                 message=f"{partial}\n{timeout_message}" if partial else timeout_message,
+                code="command_timeout",
                 details={"command": command},
             )
 
