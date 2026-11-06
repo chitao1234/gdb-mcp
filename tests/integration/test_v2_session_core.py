@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -225,6 +227,54 @@ def test_run_until_failure_v2(
     assert result["status"] == "success"
     assert mapping_list(dig(result, "result", "iterations"))[-1]["matched_failure"] is True
     assert dig(result, "result", "capture_bundle", "bundle_name") == "failure"
+
+
+@pytest.mark.integration
+def test_noisy_campaign_honors_run_timeout_and_captures_the_interrupted_target(
+    compile_program: CompileProgram,
+    default_init_commands: list[str],
+    tmp_path: Path,
+    call_gdb_tool: CallGdbTool,
+) -> None:
+    """Continuous output must not hide the deadline or block forensic capture."""
+
+    program = compile_program(
+        """
+        #include <stdio.h>
+        #include <time.h>
+        int main(void) {
+            time_t started = time(NULL);
+            while (time(NULL) - started < 12) {
+                puts("continuous campaign output: 012345678901234567890123456789");
+                fflush(stdout);
+            }
+            return 0;
+        }
+        """,
+        filename="noisy_campaign.c",
+        compiler="gcc",
+    )
+    started = time.monotonic()
+    result = call_gdb_tool(
+        "gdb_run_until_failure",
+        {
+            "startup": {"program": program, "init_commands": default_init_commands},
+            "run_timeout_sec": 1,
+            "max_iterations": 2,
+            "capture": {"output_dir": str(tmp_path), "bundle_name": "timeout"},
+        },
+    )
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 10, f"Campaign exceeded its run timeout: {elapsed:.1f}s"
+    assert result["status"] == "success"
+    iterations = mapping_list(dig(result, "result", "iterations"))
+    assert len(iterations) == 1
+    assert iterations[0]["trigger"] == "timeout"
+    assert dig(iterations[0], "result", "code") == "command_timeout"
+    assert len(json.dumps(result).encode()) < 1024 * 1024
+    assert dig(result, "result", "capture_bundle", "execution_state") == "paused"
+    assert dig(result, "result", "capture_error") is None
 
 
 @pytest.mark.integration

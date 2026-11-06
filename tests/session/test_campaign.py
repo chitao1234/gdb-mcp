@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from unittest.mock import MagicMock, Mock
 
 import pytest
@@ -23,6 +25,7 @@ from gdb_mcp.domain import (
     StartupDiagnostics,
     StopEvent,
 )
+from gdb_mcp.mcp.serializer import serialize_result
 from gdb_mcp.session.campaign import (
     RunUntilFailureCaptureRequest,
     RunUntilFailureCriteria,
@@ -91,6 +94,7 @@ class TestRunUntilFailureService:
             ("Timeout waiting for command response", False, True, "run_error"),
             ("Timeout waiting for command response", True, False, "timeout"),
             ("Timeout waiting for command response", False, False, None),
+            ("Timed out waiting for RPCServer.Command", True, False, "timeout"),
         ],
     )
     def test_run_errors_respect_failure_predicates_and_keep_the_debugger_payload(
@@ -147,6 +151,184 @@ class TestRunUntilFailureService:
         }
         assert iteration.execution_state is None
         session.run.assert_not_called()
+
+    @pytest.mark.parametrize("interrupt_fails", [False, True])
+    def test_timeout_stops_the_inferior_before_capture(self, interrupt_fails: bool) -> None:
+        session = _fake_session(
+            status=SessionStatusSnapshot(
+                debugger_alive=True,
+                target_loaded=True,
+                session_state=SessionState.READY,
+                execution_state="running",
+            ),
+            capture=_bundle(),
+        )
+        session.run.return_value = OperationError(
+            message="Deadline reached", code="command_timeout"
+        )
+        session.interrupt.return_value = (
+            OperationError(message="Interrupt timed out")
+            if interrupt_fails
+            else OperationSuccess(SessionMessage(message="stopped"))
+        )
+        result = RunUntilFailureService(lambda: session).run_until_failure(
+            RunUntilFailureRequest(run_timeout_sec=1, max_iterations=2)
+        )
+
+        assert result.value.iterations[0].trigger == "timeout"
+        assert len(result.value.iterations) == 1
+        session.interrupt.assert_called_once()
+        if interrupt_fails:
+            session.capture_bundle.assert_not_called()
+            assert result.value.capture_error is not None
+            assert result.warnings
+        else:
+            calls = [call[0] for call in session.method_calls]
+            assert calls.index("interrupt") < calls.index("capture_bundle")
+            assert result.value.capture_bundle is not None
+        session.stop.assert_called_once()
+
+    def test_large_campaign_response_fits_the_clients_transport_buffer(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "gdb_mcp.session.campaign_history.tempfile.mkdtemp", lambda **_: str(tmp_path)
+        )
+        session = _fake_session(
+            status=SessionStatusSnapshot(
+                debugger_alive=True,
+                target_loaded=True,
+                session_state=SessionState.READY,
+                execution_state="exited",
+                stop_reason="exited-normally",
+                exit_code=0,
+            )
+        )
+        output = 'output with escapes: \\"\n雪' * 12000
+        session.run.return_value = OperationSuccess(
+            CommandExecutionInfo(
+                command="-exec-run",
+                backend_data=BackendData(debugger=DEBUGGER_GDB, console_output=output, data={}),
+            )
+        )
+        result = RunUntilFailureService(lambda: session).run_until_failure(
+            RunUntilFailureRequest(
+                max_iterations=110,
+                capture=RunUntilFailureCaptureRequest(enabled=False),
+            )
+        )
+
+        wire = serialize_result(result).model_dump_json().encode()
+        assert len(wire) < 10 * 1024 * 1024
+        assert len(result.value.iterations) == 110
+        assert result.value.iterations_omitted == 0
+        assert result.value.iterations[0].iteration == 1
+        assert result.value.iterations[-1].iteration == 110
+        assert all(item.result_truncated for item in result.value.iterations)
+        assert result.value.iterations_path is not None
+        full_iterations = [
+            json.loads(line) for line in Path(result.value.iterations_path).read_text().splitlines()
+        ]
+        assert len(full_iterations) == 110
+        assert full_iterations[0]["iteration"] == 1
+        assert full_iterations[-1]["result"]["result"]["backend_data"]["console_output"] == output
+
+    def test_small_iteration_history_spills_when_the_retention_limit_is_reached(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "gdb_mcp.session.campaign_history.tempfile.mkdtemp", lambda **_: str(tmp_path)
+        )
+        session = _fake_session(
+            status=SessionStatusSnapshot(
+                debugger_alive=True,
+                target_loaded=True,
+                session_state=SessionState.READY,
+                execution_state="exited",
+            )
+        )
+        result = RunUntilFailureService(lambda: session).run_until_failure(
+            RunUntilFailureRequest(
+                max_iterations=1001, capture=RunUntilFailureCaptureRequest(enabled=False)
+            )
+        )
+        assert result.value.iterations_omitted == 1
+        assert result.value.iterations_path is not None
+        assert len(result.value.iterations) == 1000
+        assert len(Path(result.value.iterations_path).read_text().splitlines()) == 1001
+        assert not any(item.result_truncated for item in result.value.iterations)
+
+    @pytest.mark.parametrize(("count", "output_size"), [(1, 64 * 1024), (1000, 1024)])
+    def test_larger_results_and_longer_history_stay_inline_when_they_fit(
+        self, count: int, output_size: int
+    ) -> None:
+        session = _fake_session(
+            status=SessionStatusSnapshot(
+                debugger_alive=True,
+                target_loaded=True,
+                session_state=SessionState.READY,
+                execution_state="exited",
+            )
+        )
+        session.run.return_value = OperationSuccess(
+            CommandExecutionInfo(
+                command="-exec-run",
+                backend_data=BackendData(
+                    debugger=DEBUGGER_GDB, console_output="x" * output_size, data={}
+                ),
+            )
+        )
+        result = RunUntilFailureService(lambda: session).run_until_failure(
+            RunUntilFailureRequest(
+                max_iterations=count, capture=RunUntilFailureCaptureRequest(enabled=False)
+            )
+        )
+
+        assert len(result.value.iterations) == count
+        assert result.value.iterations_omitted == 0
+        assert result.value.iterations_path is None
+        assert not any(item.result_truncated for item in result.value.iterations)
+        assert len(serialize_result(result).model_dump_json().encode()) < 10 * 1024 * 1024
+
+    @pytest.mark.parametrize("output", ["x" * (64 * 1024), '\\"\n雪' * 12000])
+    def test_aggregate_wire_budget_spills_history_before_the_client_buffer_overflows(
+        self, output: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "gdb_mcp.session.campaign_history.tempfile.mkdtemp", lambda **_: str(tmp_path)
+        )
+        session = _fake_session(
+            status=SessionStatusSnapshot(
+                debugger_alive=True,
+                target_loaded=True,
+                session_state=SessionState.READY,
+                execution_state="exited",
+            )
+        )
+        session.run.return_value = OperationSuccess(
+            CommandExecutionInfo(
+                command="-exec-run",
+                backend_data=BackendData(debugger=DEBUGGER_GDB, console_output=output, data={}),
+            )
+        )
+        result = RunUntilFailureService(lambda: session).run_until_failure(
+            RunUntilFailureRequest(
+                max_iterations=100, capture=RunUntilFailureCaptureRequest(enabled=False)
+            )
+        )
+
+        assert len(serialize_result(result).model_dump_json().encode()) < 10 * 1024 * 1024
+        assert 0 < len(result.value.iterations) < 100
+        assert result.value.iterations_omitted + len(result.value.iterations) == 100
+        assert result.value.iterations[-1].iteration == 100
+        assert not any(item.result_truncated for item in result.value.iterations)
+        assert result.value.iterations_path is not None
+        full_iterations = [
+            json.loads(line) for line in Path(result.value.iterations_path).read_text().splitlines()
+        ]
+        assert len(full_iterations) == 100
+        assert full_iterations[0]["iteration"] == 1
+        assert full_iterations[-1]["result"]["result"]["backend_data"]["console_output"] == output
 
     def test_matches_default_signal_stop_and_captures_bundle(self) -> None:
         """Signal stops should match the default failure criteria and trigger capture."""
